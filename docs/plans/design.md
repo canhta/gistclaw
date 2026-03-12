@@ -1520,6 +1520,7 @@ v1 uses `CREATE TABLE IF NOT EXISTS`. Breaking schema changes require manual `DR
 | `DAILY_LIMIT_USD` | No | `5.0` | Daily cost cap; soft-stop at 100% |
 | `LLM_PROVIDER` | No | `openai-key` | `openai-key` (stable) \| `copilot` (advanced) \| `codex-oauth` (advanced) |
 | `OPENAI_API_KEY` | If `openai-key` | — | OpenAI API key |
+| `OPENAI_MODEL` | No | `gpt-4o` | OpenAI model name; used by `openai-key` provider |
 | `COPILOT_GRPC_ADDR` | No | `localhost:4321` | Copilot gRPC bridge address |
 | `OPENCODE_PORT` | No | `8766` | Port for `opencode serve` |
 | `GISTCLAW_BRAVE_API_KEY` | No | — | Brave Search API key |

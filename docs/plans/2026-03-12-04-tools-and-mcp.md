@@ -1314,13 +1314,13 @@ func TestCallTool_MalformedToolName(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // Tool namespacing: Tool.Name uses double underscore "{server}__{tool}".
+// GetAllTools returns []providers.Tool so gateway can append directly.
 // ---------------------------------------------------------------------------
 
 func TestTool_NamespaceFormat(t *testing.T) {
-	// We can't connect a real server in unit tests, but we verify the Tool
-	// struct field semantics via a direct construction check.
-	tool := mcp.Tool{
-		ServerName:  "filesystem",
+	// Verify the providers.Tool type used by GetAllTools() uses the double
+	// underscore separator convention by constructing one directly.
+	tool := providers.Tool{
 		Name:        "filesystem__read_file",
 		Description: "Reads a file",
 		InputSchema: map[string]any{"type": "object"},
@@ -1329,13 +1329,13 @@ func TestTool_NamespaceFormat(t *testing.T) {
 		t.Errorf("Tool.Name %q does not contain double underscore separator", tool.Name)
 	}
 	parts := strings.SplitN(tool.Name, "__", 2)
-	if parts[0] != tool.ServerName {
-		t.Errorf("Tool.Name prefix %q != ServerName %q", parts[0], tool.ServerName)
+	if parts[0] != "filesystem" {
+		t.Errorf("Tool.Name server prefix %q != expected 'filesystem'", parts[0])
 	}
 }
 
 // ---------------------------------------------------------------------------
-// GetAllTools: returns non-nil slice even when no servers connected.
+// GetAllTools: returns []providers.Tool, non-nil even when no servers connected.
 // ---------------------------------------------------------------------------
 
 func TestGetAllTools_AlwaysNonNil(t *testing.T) {
@@ -1353,7 +1353,7 @@ func TestGetAllTools_AlwaysNonNil(t *testing.T) {
 go test ./internal/mcp/... -run TestNewMCPManager -run TestCallTool -run TestGetAllTools -run TestTool_Namespace -v
 ```
 
-Expected: `FAIL` — `mcp.NewMCPManager`, `mcp.MCPManager`, `mcp.Tool` not defined yet.
+Expected: `FAIL` — `mcp.NewMCPManager`, `mcp.MCPManager`, `providers.Tool` not defined yet.
 
 **Step 3: Add dependency**
 
