@@ -2,12 +2,12 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/canhta/gistclaw/internal/config"
@@ -27,7 +27,7 @@ type SearchProvider interface {
 }
 
 // NewSearchProvider auto-detects which provider to use based on which API key
-// is set in cfg. Priority: Brave → Gemini → xAI → Perplexity.
+// is set in cfg. Priority: Brave → Gemini → xAI → Perplexity → OpenRouter.
 // Returns nil if no key is configured (caller should omit the web_search tool).
 func NewSearchProvider(cfg config.Config) SearchProvider {
 	return NewSearchProviderWithBaseURL(cfg, nil)
@@ -35,7 +35,7 @@ func NewSearchProvider(cfg config.Config) SearchProvider {
 
 // NewSearchProviderWithBaseURL is like NewSearchProvider but allows overriding
 // base URLs for each backend. Used in tests to point at httptest servers.
-// Keys in baseURLs: "brave", "gemini", "xai", "perplexity".
+// Keys in baseURLs: "brave", "gemini", "xai", "perplexity", "openrouter".
 func NewSearchProviderWithBaseURL(cfg config.Config, baseURLs map[string]string) SearchProvider {
 	timeout := cfg.Tuning.WebSearchTimeout
 	if timeout == 0 {
@@ -77,6 +77,12 @@ func NewSearchProviderWithBaseURL(cfg config.Config, baseURLs map[string]string)
 			u = "https://api.perplexity.ai/chat/completions"
 		}
 		return &perplexityProvider{apiKey: cfg.PerplexityAPIKey, baseURL: u, client: client}
+	case cfg.OpenRouterAPIKey != "":
+		u := base("openrouter")
+		if u == "" {
+			u = "https://openrouter.ai/api/v1/chat/completions"
+		}
+		return &openrouterProvider{apiKey: cfg.OpenRouterAPIKey, baseURL: u, client: client}
 	}
 	return nil
 }
@@ -154,11 +160,14 @@ func (g *geminiProvider) Search(ctx context.Context, query string, count int) ([
 			{"parts": []map[string]any{{"text": "Search the web for: " + query + "\nReturn top results as JSON array with fields title, url, snippet."}}},
 		},
 	}
-	data, _ := json.Marshal(body)
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("gemini: marshal request: %w", err)
+	}
 
 	endpoint := fmt.Sprintf("%s?key=%s", g.baseURL, g.apiKey)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint,
-		strings.NewReader(string(data)))
+		bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("gemini: build request: %w", err)
 	}
@@ -187,6 +196,7 @@ func (g *geminiProvider) Search(ctx context.Context, query string, count int) ([
 		return nil, fmt.Errorf("gemini: decode: %w", err)
 	}
 
+	// TODO: parse structured search results; returning synthesised text as single result for now.
 	if len(payload.Candidates) == 0 {
 		return nil, nil
 	}
@@ -216,10 +226,13 @@ func (x *xaiProvider) Search(ctx context.Context, query string, count int) ([]Se
 			{"role": "user", "content": fmt.Sprintf("Search the web for: %s\nReturn up to %d results as JSON array: [{\"title\":\"...\",\"url\":\"...\",\"snippet\":\"...\"}]", query, count)},
 		},
 	}
-	data, _ := json.Marshal(body)
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("xai: marshal request: %w", err)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, x.baseURL,
-		strings.NewReader(string(data)))
+		bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("xai: build request: %w", err)
 	}
@@ -247,6 +260,7 @@ func (x *xaiProvider) Search(ctx context.Context, query string, count int) ([]Se
 		return nil, fmt.Errorf("xai: decode: %w", err)
 	}
 
+	// TODO: parse structured search results; returning synthesised text as single result for now.
 	if len(payload.Choices) == 0 {
 		return nil, nil
 	}
@@ -272,10 +286,13 @@ func (p *perplexityProvider) Search(ctx context.Context, query string, count int
 			{"role": "user", "content": query},
 		},
 	}
-	data, _ := json.Marshal(body)
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("perplexity: marshal request: %w", err)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.baseURL,
-		strings.NewReader(string(data)))
+		bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("perplexity: build request: %w", err)
 	}
@@ -321,4 +338,64 @@ func (p *perplexityProvider) Search(ctx context.Context, query string, count int
 		})
 	}
 	return results, nil
+}
+
+// ---------------------------------------------------------------------------
+// OpenRouter backend — OpenAI-compatible API.
+// ---------------------------------------------------------------------------
+
+type openrouterProvider struct {
+	apiKey  string
+	baseURL string
+	client  *http.Client
+}
+
+func (o *openrouterProvider) Name() string { return "openrouter" }
+
+func (o *openrouterProvider) Search(ctx context.Context, query string, count int) ([]SearchResult, error) {
+	body := map[string]any{
+		"model": "openai/gpt-4o-mini",
+		"messages": []map[string]any{
+			{"role": "user", "content": fmt.Sprintf("Search the web for: %s\nReturn up to %d results as JSON array: [{\"title\":\"...\",\"url\":\"...\",\"snippet\":\"...\"}]", query, count)},
+		},
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("openrouter: marshal request: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, o.baseURL,
+		bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("openrouter: build request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+o.apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := o.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("openrouter: do request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("openrouter: HTTP %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		Choices []struct {
+			Message struct {
+				Content string `json:"content"`
+			} `json:"message"`
+		} `json:"choices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, fmt.Errorf("openrouter: decode: %w", err)
+	}
+
+	// TODO: parse structured search results; returning synthesised text as single result for now.
+	if len(payload.Choices) == 0 {
+		return nil, nil
+	}
+	return []SearchResult{{Title: query, URL: "", Snippet: payload.Choices[0].Message.Content}}, nil
 }

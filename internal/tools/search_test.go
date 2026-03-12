@@ -83,6 +83,14 @@ func TestNewSearchProvider_FallsToPerplexity(t *testing.T) {
 	}
 }
 
+func TestNewSearchProvider_FallsToOpenRouter(t *testing.T) {
+	cfg := config.Config{OpenRouterAPIKey: "or-key"}
+	p := tools.NewSearchProvider(cfg)
+	if p == nil || p.Name() != "openrouter" {
+		t.Errorf("expected openrouter provider, got %v", p)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Brave backend: integration test against httptest server.
 // ---------------------------------------------------------------------------
@@ -196,5 +204,82 @@ func TestSearchResultFields(t *testing.T) {
 	r := results[0]
 	if r.Title == "" || r.URL == "" || r.Snippet == "" {
 		t.Errorf("empty field in result: %+v", r)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Gemini backend: returns synthesised text snippet.
+// ---------------------------------------------------------------------------
+
+func TestGeminiSearch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"candidates": []map[string]any{
+				{
+					"content": map[string]any{
+						"parts": []map[string]any{
+							{"text": "Golang is an open-source language."},
+						},
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	cfg := config.Config{GeminiAPIKey: "gemini-key"}
+	p := tools.NewSearchProviderWithBaseURL(cfg, map[string]string{"gemini": srv.URL})
+	if p == nil {
+		t.Fatal("expected non-nil provider")
+	}
+
+	results, err := p.Search(context.Background(), "golang", 3)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least 1 result")
+	}
+	if results[0].Snippet == "" {
+		t.Errorf("expected non-empty snippet, got empty")
+	}
+	if results[0].Snippet != "Golang is an open-source language." {
+		t.Errorf("results[0].Snippet = %q", results[0].Snippet)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// xAI backend: returns synthesised text snippet.
+// ---------------------------------------------------------------------------
+
+func TestXAISearch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "xAI search result about golang"}},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	cfg := config.Config{XAIAPIKey: "xai-key"}
+	p := tools.NewSearchProviderWithBaseURL(cfg, map[string]string{"xai": srv.URL})
+	if p == nil {
+		t.Fatal("expected non-nil provider")
+	}
+
+	results, err := p.Search(context.Background(), "golang", 3)
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least 1 result")
+	}
+	if results[0].Snippet != "xAI search result about golang" {
+		t.Errorf("results[0].Snippet = %q", results[0].Snippet)
 	}
 }
