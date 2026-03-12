@@ -255,13 +255,13 @@ func (s *Service) dispatchCallback(ctx context.Context, msg channel.InboundMessa
 			// "hitl:<id>:opt:<n>" — resolve the option index to the actual label.
 			if len(parts) == 4 {
 				idxStr := parts[3]
-				idx := 0
-				fmt.Sscanf(idxStr, "%d", &idx)
-				if idx >= 0 && idx < len(item.question.Options) {
+				var idx int
+				if n, _ := fmt.Sscanf(idxStr, "%d", &idx); n != 1 {
+					log.Warn().Str("id", id).Str("idx", idxStr).Msg("hitl: opt index not parseable; using empty")
+				} else if idx >= 0 && idx < len(item.question.Options) {
 					answer = item.question.Options[idx].Label
 				} else {
 					log.Warn().Str("id", id).Str("idx", idxStr).Msg("hitl: opt index out of range; using empty")
-					answer = ""
 				}
 			}
 		case "custom":

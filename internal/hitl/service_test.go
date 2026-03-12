@@ -209,9 +209,9 @@ func TestCallbackAllowOnce(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	go svc.Run(ctx)
+	errCh := make(chan error, 1)
+	go func() { errCh <- svc.Run(ctx) }()
 	time.Sleep(20 * time.Millisecond)
 
 	if err := svc.RequestPermission(ctx, req); err != nil {
@@ -245,6 +245,9 @@ func TestCallbackAllowOnce(t *testing.T) {
 	if len(pending) != 0 {
 		t.Errorf("expected 0 pending after resolve, got %d", len(pending))
 	}
+
+	cancel()
+	<-errCh
 }
 
 // TestCallbackReject verifies that "hitl:<id>:reject" resolves with Allow=false.
@@ -262,9 +265,9 @@ func TestCallbackReject(t *testing.T) {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	go svc.Run(ctx)
+	errCh := make(chan error, 1)
+	go func() { errCh <- svc.Run(ctx) }()
 	time.Sleep(20 * time.Millisecond)
 
 	if err := svc.RequestPermission(ctx, req); err != nil {
@@ -285,6 +288,9 @@ func TestCallbackReject(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 		t.Fatal("timed out waiting for decision on 'reject' callback")
 	}
+
+	cancel()
+	<-errCh
 }
 
 // TestDrainPendingSendsHITLDecisionDeny verifies that DrainPending sends
@@ -293,9 +299,9 @@ func TestDrainPendingSendsHITLDecisionDeny(t *testing.T) {
 	svc, _, _, _ := newTestService(t, defaultTuning())
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	go svc.Run(ctx)
+	errCh := make(chan error, 1)
+	go func() { errCh <- svc.Run(ctx) }()
 	time.Sleep(20 * time.Millisecond)
 
 	// Register two in-flight requests.
@@ -328,6 +334,9 @@ func TestDrainPendingSendsHITLDecisionDeny(t *testing.T) {
 			t.Errorf("%s: timed out waiting for decision from DrainPending", chPair.name)
 		}
 	}
+
+	cancel()
+	<-errCh
 }
 
 // TestStartupAutoRejectUpdatesSQLite verifies that on Run() startup, any hitl_pending
@@ -378,9 +387,9 @@ func TestRequestQuestionSequential(t *testing.T) {
 	svc, ch, _, rep := newTestService(t, defaultTuning())
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	go svc.Run(ctx)
+	runErrCh := make(chan error, 1)
+	go func() { runErrCh <- svc.Run(ctx) }()
 	time.Sleep(20 * time.Millisecond)
 
 	req := hitl.QuestionRequest{
@@ -446,4 +455,7 @@ func TestRequestQuestionSequential(t *testing.T) {
 	if len(call.answers[1]) != 1 || call.answers[1][0] != "yes" {
 		t.Errorf("answers[1] = %v, want [yes]", call.answers[1])
 	}
+
+	cancel()
+	<-runErrCh
 }
