@@ -7,6 +7,7 @@ import (
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
+	"github.com/openai/openai-go/shared"
 
 	"github.com/canhta/gistclaw/internal/providers"
 )
@@ -19,7 +20,7 @@ var pricingTable = map[string][2]float64{
 
 // Provider implements providers.LLMProvider using the OpenAI API key path.
 type Provider struct {
-	client *openai.Client
+	client openai.Client
 	model  string
 }
 
@@ -45,11 +46,11 @@ func (p *Provider) Name() string { return "openai" }
 // Chat implements providers.LLMProvider.
 func (p *Provider) Chat(ctx context.Context, messages []providers.Message, tools []providers.Tool) (*providers.LLMResponse, error) {
 	params := openai.ChatCompletionNewParams{
-		Model:    openai.F(p.model),
-		Messages: openai.F(convertMessages(messages)),
+		Model:    p.model,
+		Messages: convertMessages(messages),
 	}
 	if len(tools) > 0 {
-		params.Tools = openai.F(convertTools(tools))
+		params.Tools = convertTools(tools)
 	}
 
 	completion, err := p.client.Chat.Completions.New(ctx, params)
@@ -106,7 +107,7 @@ func convertMessages(messages []providers.Message) []openai.ChatCompletionMessag
 		case "system":
 			out = append(out, openai.SystemMessage(m.Content))
 		case "tool":
-			out = append(out, openai.ToolMessage(m.ToolCallID, m.Content))
+			out = append(out, openai.ToolMessage(m.Content, m.ToolCallID))
 		}
 	}
 	return out
@@ -117,12 +118,11 @@ func convertTools(tools []providers.Tool) []openai.ChatCompletionToolParam {
 	out := make([]openai.ChatCompletionToolParam, 0, len(tools))
 	for _, t := range tools {
 		out = append(out, openai.ChatCompletionToolParam{
-			Type: openai.F(openai.ChatCompletionToolTypeFunction),
-			Function: openai.F(openai.FunctionDefinitionParam{
-				Name:        openai.F(t.Name),
-				Description: openai.F(t.Description),
-				Parameters:  openai.F(openai.FunctionParameters(t.InputSchema)),
-			}),
+			Function: shared.FunctionDefinitionParam{
+				Name:        t.Name,
+				Description: openai.String(t.Description),
+				Parameters:  shared.FunctionParameters(t.InputSchema),
+			},
 		})
 	}
 	return out

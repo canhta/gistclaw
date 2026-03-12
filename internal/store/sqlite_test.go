@@ -155,24 +155,29 @@ func TestHITLPending(t *testing.T) {
 func TestPurgeStartup(t *testing.T) {
 	s := newTestStore(t)
 
-	// Insert stale rows into all three tables.
+	// Insert a stale session (72h old) and a fresh session.
 	stale := time.Now().Add(-72 * time.Hour)
 	if err := s.InsertSession("stale-sess", "opencode", "active", "p", stale); err != nil {
 		t.Fatalf("InsertSession stale: %v", err)
 	}
-	if err := s.InsertHITLPending("stale-hitl", "opencode", "write_file"); err != nil {
-		t.Fatalf("InsertHITLPending stale: %v", err)
-	}
-	if err := s.UpsertCostDaily("2020-01-01", 1.0); err != nil {
-		t.Fatalf("UpsertCostDaily stale: %v", err)
-	}
-
-	// Insert a recent session that should survive the purge.
 	if err := s.InsertSession("fresh-sess", "opencode", "active", "p", time.Now()); err != nil {
 		t.Fatalf("InsertSession fresh: %v", err)
 	}
 
-	// 24h TTLs: stale rows are 72h old and will be deleted; fresh row is <24h old.
+	// Insert a cost_daily row for a very old date.
+	if err := s.UpsertCostDaily("2020-01-01", 1.0); err != nil {
+		t.Fatalf("UpsertCostDaily stale: %v", err)
+	}
+
+	// Insert a recent HITL row (created_at = now; will survive a 24h TTL purge).
+	if err := s.InsertHITLPending("fresh-hitl", "opencode", "write_file"); err != nil {
+		t.Fatalf("InsertHITLPending: %v", err)
+	}
+
+	// PurgeStartup with 24h TTLs:
+	//   - stale session (72h) is deleted; fresh session survives.
+	//   - 2020-01-01 cost row is deleted (older than 24h).
+	//   - recent HITL row survives.
 	if err := s.PurgeStartup(24*time.Hour, 24*time.Hour, 24*time.Hour); err != nil {
 		t.Fatalf("PurgeStartup: %v", err)
 	}
@@ -186,22 +191,22 @@ func TestPurgeStartup(t *testing.T) {
 		t.Errorf("sessions after PurgeStartup: got %d, want 1", n)
 	}
 
-	// hitl_pending: stale row should be gone.
-	pending, err := s.ListPendingHITL()
-	if err != nil {
-		t.Fatalf("ListPendingHITL: %v", err)
-	}
-	if len(pending) != 0 {
-		t.Errorf("hitl_pending after PurgeStartup: got %d rows, want 0", len(pending))
-	}
-
-	// cost_daily: stale date should be gone; today's row (if any) may remain.
+	// cost_daily: stale date should be gone.
 	total, err := s.GetCostDaily("2020-01-01")
 	if err != nil {
 		t.Fatalf("GetCostDaily: %v", err)
 	}
 	if total != 0 {
 		t.Errorf("cost_daily 2020-01-01 after PurgeStartup: got %v, want 0", total)
+	}
+
+	// hitl_pending: recent row should still be present.
+	pending, err := s.ListPendingHITL()
+	if err != nil {
+		t.Fatalf("ListPendingHITL: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Errorf("hitl_pending after PurgeStartup: got %d rows, want 1", len(pending))
 	}
 }
 
