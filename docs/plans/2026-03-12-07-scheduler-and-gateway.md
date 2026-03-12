@@ -817,7 +817,7 @@ import (
 
 // Job represents a scheduled task.
 type Job struct {
-	ID             string
+	ID             string     // UUID v4
 	Kind           string     // "at" | "every" | "cron"
 	Target         agent.Kind // typed enum; stored as string in SQLite
 	Prompt         string
@@ -991,7 +991,7 @@ func (s *Service) handleMissedJobs(ctx context.Context) error {
 
 // --- CRUD methods (called by gateway tool loop) ---
 
-// CreateJob validates and inserts a new job. Assigns a new ULID-style ID (uuid v4).
+// CreateJob validates and inserts a new job. Assigns a new UUID v4 ID.
 func (s *Service) CreateJob(j Job) error {
 	if err := validateJob(j); err != nil {
 		return err
@@ -1970,6 +1970,7 @@ import (
 
 	"github.com/rs/zerolog/log"
 
+	"github.com/canhta/gistclaw/internal/agent"
 	"github.com/canhta/gistclaw/internal/channel"
 	"github.com/canhta/gistclaw/internal/config"
 	"github.com/canhta/gistclaw/internal/hitl"
@@ -2096,6 +2097,10 @@ func (s *Service) handle(ctx context.Context, msg channel.InboundMessage) {
 	// Command routing
 	text := strings.TrimSpace(msg.Text)
 	switch {
+	case text == "/oc", text == "/oc ":
+		_ = s.ch.SendMessage(ctx, msg.ChatID, "Usage: /oc <task> — e.g. /oc build the auth module")
+	case text == "/cc", text == "/cc ":
+		_ = s.ch.SendMessage(ctx, msg.ChatID, "Usage: /cc <task> — e.g. /cc refactor the service layer")
 	case strings.HasPrefix(text, "/oc "):
 		prompt := strings.TrimPrefix(text, "/oc ")
 		if err := s.opencode.SubmitTask(ctx, msg.ChatID, prompt); err != nil {
@@ -2163,7 +2168,6 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 	const doomLoopMax = 3
 	type callSig struct{ name, input string }
 	lastCalls := make([]callSig, 0, doomLoopMax)
-	identicalCount := 0
 
 	for {
 		resp, err := s.llm.Chat(ctx, msgs, toolRegistry)
@@ -2198,25 +2202,20 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 				}
 			}
 			if identical {
-				identicalCount++
-				if identicalCount >= 1 {
-					log.Warn().Str("tool", tc.Name).Msg("gateway: doom-loop detected; forcing final answer")
-					// Inject guard message and call LLM one final time without tools
-					msgs = append(msgs, providers.Message{
-						Role:    "tool",
-						Content: "[Tool call loop detected. Provide your best answer now.]",
-						ToolCallID: tc.ID,
-					})
-					finalResp, ferr := s.llm.Chat(ctx, msgs, nil)
-					if ferr != nil {
-						_ = s.ch.SendMessage(ctx, chatID, "⚠️ LLM error after doom-loop guard: "+ferr.Error())
-						return
-					}
-					_ = s.ch.SendMessage(ctx, chatID, finalResp.Content)
+				log.Warn().Str("tool", tc.Name).Msg("gateway: doom-loop detected; forcing final answer")
+				// Inject guard message and call LLM one final time without tools
+				msgs = append(msgs, providers.Message{
+					Role:    "tool",
+					Content: "[Tool call loop detected. Provide your best answer now.]",
+					ToolCallID: tc.ID,
+				})
+				finalResp, ferr := s.llm.Chat(ctx, msgs, nil)
+				if ferr != nil {
+					_ = s.ch.SendMessage(ctx, chatID, "⚠️ LLM error after doom-loop guard: "+ferr.Error())
 					return
 				}
-			} else {
-				identicalCount = 0
+				_ = s.ch.SendMessage(ctx, chatID, finalResp.Content)
+				return
 			}
 		}
 
@@ -2300,7 +2299,7 @@ func (s *Service) execScheduleJob(input map[string]any) string {
 	prompt, _ := input["prompt"].(string)
 	schedule, _ := input["schedule"].(string)
 
-	targetKind, err := agentKindFromString(targetStr)
+	targetKind, err := agent.KindFromString(targetStr)
 	if err != nil {
 		return "schedule_job error: invalid target: " + err.Error()
 	}
@@ -2325,29 +2324,7 @@ func (s *Service) execListJobs() string {
 	if len(jobs) == 0 {
 		return "[]"
 	}
-	type item struct {
-		ID        string `json:"id"`
-		Kind      string `json:"kind"`
-		Target    string `json:"target"`
-		Prompt    string `json:"prompt"`
-		Schedule  string `json:"schedule"`
-		NextRunAt string `json:"next_run_at"`
-		Enabled   bool   `json:"enabled"`
-	}
-	items := make([]item, len(jobs))
-	for i, j := range jobs {
-		items[i] = item{
-			ID:        j.ID,
-			Kind:      j.Kind,
-			Target:    j.Target.String(),
-			Prompt:    j.Prompt,
-			Schedule:  j.Schedule,
-			NextRunAt: j.NextRunAt.Format(time.RFC3339),
-			Enabled:   j.Enabled,
-		}
-	}
-	b, _ := json.MarshalIndent(items, "", "  ")
-	return string(b)
+	return scheduler.JobsToJSON(jobs)
 }
 
 func (s *Service) execUpdateJob(input map[string]any) string {
@@ -2565,28 +2542,11 @@ func truncateToolResult(s string) string {
 
 	return s
 }
-
-// agentKindFromString converts an LLM-supplied string to agent.Kind.
-// Imported indirectly to avoid circular dependency.
-func agentKindFromString(s string) (agentKind, error) {
-	// Use the agent package via scheduler.Job.Target field.
-	// Import agent directly.
-	return agentKindFromStringImpl(s)
-}
 ```
 
-> **Important:** The `agentKindFromString` helper needs to import `internal/agent`. Add the import
-> and replace the stub at the bottom with a direct call:
->
-> ```go
-> import "github.com/canhta/gistclaw/internal/agent"
->
-> // In execScheduleJob:
-> targetKind, err := agent.KindFromString(targetStr)
-> ```
->
-> Remove the `agentKindFromString` wrapper and `agentKind` type entirely — they are
-> scaffolding artifacts. Import `agent` directly.
+> **Important:** `execScheduleJob` calls `agent.KindFromString(targetStr)` directly.
+> Add `"github.com/canhta/gistclaw/internal/agent"` to the import block above.
+> There is no `agentKindFromString` wrapper — that was removed as a scaffolding artifact.
 >
 > Similarly, check `mcp.Manager` type name (it may be `*mcp.MCPManager` from Plan 4 —
 > adjust the field and constructor parameter type accordingly).
