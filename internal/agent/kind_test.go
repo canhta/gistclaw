@@ -14,6 +14,7 @@ func TestKindString(t *testing.T) {
 		{agent.KindOpenCode, "opencode"},
 		{agent.KindClaudeCode, "claudecode"},
 		{agent.KindChat, "chat"},
+		{agent.KindUnknown, "unknown(-1)"},
 	}
 	for _, c := range cases {
 		if got := c.kind.String(); got != c.want {
@@ -31,8 +32,8 @@ func TestKindFromString(t *testing.T) {
 		{"opencode", agent.KindOpenCode, true},
 		{"claudecode", agent.KindClaudeCode, true},
 		{"chat", agent.KindChat, true},
-		{"unknown", 0, false},
-		{"", 0, false},
+		{"unknown", agent.KindUnknown, false},
+		{"", agent.KindUnknown, false},
 	}
 	for _, c := range cases {
 		got, err := agent.KindFromString(c.s)
@@ -42,7 +43,7 @@ func TestKindFromString(t *testing.T) {
 		if !c.ok && err == nil {
 			t.Errorf("KindFromString(%q) expected error, got nil", c.s)
 		}
-		if c.ok && got != c.want {
+		if got != c.want {
 			t.Errorf("KindFromString(%q) = %v, want %v", c.s, got, c.want)
 		}
 	}

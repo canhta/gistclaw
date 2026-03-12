@@ -72,3 +72,37 @@ func TestLoadDefaults(t *testing.T) {
 		t.Errorf("HookServerAddr default: got %q", cfg.HookServerAddr)
 	}
 }
+
+func TestOperatorChatIDEmptySlice(t *testing.T) {
+	// Config with empty AllowedUserIDs — not reachable via Load() (validation rejects it),
+	// but the method must not panic and must return 0 as the safe default.
+	cfg := config.Config{}
+	if got := cfg.OperatorChatID(); got != 0 {
+		t.Errorf("OperatorChatID() with empty slice = %d, want 0", got)
+	}
+}
+
+func TestHasSearchProviderFalseWhenNoKeys(t *testing.T) {
+	cfg := config.Config{} // all search API key fields empty
+	if cfg.HasSearchProvider() {
+		t.Error("HasSearchProvider() = true with no keys configured, want false")
+	}
+}
+
+func TestHasSearchProviderTrueForEachKey(t *testing.T) {
+	cases := []struct {
+		name string
+		cfg  config.Config
+	}{
+		{"brave", config.Config{BraveAPIKey: "k"}},
+		{"gemini", config.Config{GeminiAPIKey: "k"}},
+		{"xai", config.Config{XAIAPIKey: "k"}},
+		{"perplexity", config.Config{PerplexityAPIKey: "k"}},
+		{"openrouter", config.Config{OpenRouterAPIKey: "k"}},
+	}
+	for _, c := range cases {
+		if !c.cfg.HasSearchProvider() {
+			t.Errorf("HasSearchProvider() = false with %s key set, want true", c.name)
+		}
+	}
+}

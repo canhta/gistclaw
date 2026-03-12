@@ -6,9 +6,12 @@ import "fmt"
 type Kind int
 
 const (
-	KindOpenCode Kind = iota
-	KindClaudeCode
-	KindChat
+	// KindUnknown is a sentinel for unrecognised or uninitialised values.
+	// Explicit -1 ensures a zero-value Kind is not silently treated as KindOpenCode.
+	KindUnknown    Kind = -1
+	KindOpenCode   Kind = 0
+	KindClaudeCode Kind = 1
+	KindChat       Kind = 2
 )
 
 // String returns the SQLite-compatible string representation.
@@ -26,7 +29,7 @@ func (k Kind) String() string {
 }
 
 // KindFromString parses the string representation stored in SQLite.
-// Returns an error for any unrecognised value.
+// Returns KindUnknown and an error for any unrecognised value.
 func KindFromString(s string) (Kind, error) {
 	switch s {
 	case "opencode":
@@ -36,6 +39,6 @@ func KindFromString(s string) (Kind, error) {
 	case "chat":
 		return KindChat, nil
 	default:
-		return 0, fmt.Errorf("agent: unknown kind %q", s)
+		return KindUnknown, fmt.Errorf("agent: unknown kind %q", s)
 	}
 }
