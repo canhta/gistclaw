@@ -1,7 +1,13 @@
-.PHONY: tidy test
+.PHONY: tidy vet test lint
 
 tidy:
 	go mod tidy
 
-test:
+vet:
+	go vet ./...
+
+test: vet
 	go test ./...
+
+lint:
+	golangci-lint run ./...
