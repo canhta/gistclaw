@@ -101,7 +101,10 @@ func (s *Store) InsertSession(id, agent, status, prompt string, createdAt time.T
 		`INSERT INTO sessions (id, agent, status, prompt, created_at) VALUES (?, ?, ?, ?, ?)`,
 		id, agent, status, prompt, createdAt.UTC().Format(time.RFC3339),
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("store: insert session %q: %w", id, err)
+	}
+	return nil
 }
 
 // CountSessions returns the total number of session rows.
@@ -130,7 +133,10 @@ func (s *Store) SetLastUpdateID(channelID string, updateID int64) error {
 		 ON CONFLICT(channel_id) DO UPDATE SET last_update_id = excluded.last_update_id`,
 		channelID, updateID,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("store: set last update ID for %q: %w", channelID, err)
+	}
+	return nil
 }
 
 // GetProviderCredentials returns the stored credential JSON for provider.
@@ -153,7 +159,10 @@ func (s *Store) SetProviderCredentials(provider, data string) error {
 		 ON CONFLICT(provider) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at`,
 		provider, data,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("store: set provider credentials for %q: %w", provider, err)
+	}
+	return nil
 }
 
 // UpsertCostDaily sets (not adds) the total_usd for date.
@@ -182,7 +191,10 @@ func (s *Store) InsertHITLPending(id, agent, toolName string) error {
 		`INSERT INTO hitl_pending (id, agent, tool_name, status) VALUES (?, ?, ?, 'pending')`,
 		id, agent, toolName,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("store: insert HITL pending %q: %w", id, err)
+	}
+	return nil
 }
 
 // ListPendingHITL returns all hitl_pending rows with status "pending".
@@ -207,10 +219,17 @@ func (s *Store) ListPendingHITL() ([]HITLRecord, error) {
 }
 
 // ResolveHITL updates the status of a hitl_pending record.
+// Returns ErrNotFound if no record exists with the given id.
 func (s *Store) ResolveHITL(id, status string) error {
-	_, err := s.db.Exec(
+	res, err := s.db.Exec(
 		`UPDATE hitl_pending SET status = ?, resolved_at = datetime('now') WHERE id = ?`,
 		status, id,
 	)
-	return err
+	if err != nil {
+		return fmt.Errorf("store: resolve HITL %q: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("store: resolve HITL %q: %w", id, ErrNotFound)
+	}
+	return nil
 }

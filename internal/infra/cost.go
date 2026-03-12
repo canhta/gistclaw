@@ -25,12 +25,12 @@ type Notifier interface {
 // It is safe for concurrent use.
 //
 // Concurrency design:
-//   - cents (atomic.Int64) is incremented lock-free; CurrentUSD() reads it without a lock.
-//   - mu guards only the mutable state that cannot be atomic: today string, notified flags,
-//     and the SQLite write (which must use the post-increment total).
+//   - cents (atomic.Int64) is incremented under mu; CurrentUSD() reads it lock-free.
+//   - mu serialises daily reset, the cents increment, notification flag checks, and
+//     the SQLite write so that all three are always consistent with each other.
 type CostGuard struct {
-	cents       atomic.Int64 // spend in integer micro-dollars (1e6 per USD); lock-free
-	mu          sync.Mutex   // guards today, notified80, notified100, and SQLite write
+	cents       atomic.Int64 // spend in integer micro-dollars (1e6 per USD)
+	mu          sync.Mutex   // guards today, cents increment, notified flags, and SQLite write
 	limitUSD    float64
 	store       *store.Store
 	notifier    Notifier // may be nil in tests
@@ -52,6 +52,7 @@ func NewCostGuard(s *store.Store, limitUSD float64, notifier Notifier) *CostGuar
 }
 
 // WithOperator sets the operator chat ID for notifications. Returns g for chaining.
+// Must be called before Track is first invoked (construction-time only).
 func (g *CostGuard) WithOperator(chatID int64) *CostGuard {
 	g.operatorID = chatID
 	return g
@@ -64,24 +65,24 @@ func (g *CostGuard) Track(ctx context.Context, usd float64) error {
 		return nil
 	}
 
-	// Increment the atomic counter lock-free first.
 	microDollars := int64(math.Round(usd * 1e6))
-	newTotal := g.cents.Add(microDollars)
-	totalUSD := float64(newTotal) / 1e6
 
-	// Lock only for: daily reset check, notification flag check, and SQLite write.
+	// All mutable state — daily reset check, atomic increment, notification flags,
+	// and SQLite write — is performed under the lock so they are always consistent.
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// Daily reset: if the date has changed, reset counter and notification flags.
+	// Daily reset: if the date has changed, zero the counter and notification flags
+	// before adding the new charge. This prevents cross-day carry-over.
 	if today := todayUTC(); today != g.today {
 		g.today = today
 		g.cents.Store(0)
-		newTotal = 0
-		totalUSD = 0
 		g.notified80 = false
 		g.notified100 = false
 	}
+
+	newTotal := g.cents.Add(microDollars)
+	totalUSD := float64(newTotal) / 1e6
 
 	// Persist to SQLite (uses totalUSD computed after any reset).
 	if err := g.store.UpsertCostDaily(g.today, totalUSD); err != nil {

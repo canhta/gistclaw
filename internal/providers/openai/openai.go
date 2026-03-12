@@ -1,0 +1,129 @@
+// internal/providers/openai/openai.go
+package openai
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
+
+	"github.com/canhta/gistclaw/internal/providers"
+)
+
+// pricingTable maps model name to (inputPerMToken, outputPerMToken) in USD.
+var pricingTable = map[string][2]float64{
+	"gpt-4o":      {2.50, 10.00},
+	"gpt-4o-mini": {0.15, 0.60},
+}
+
+// Provider implements providers.LLMProvider using the OpenAI API key path.
+type Provider struct {
+	client *openai.Client
+	model  string
+}
+
+// New creates an OpenAI provider using the official SDK with the default base URL.
+func New(apiKey, model string) *Provider {
+	client := openai.NewClient(option.WithAPIKey(apiKey))
+	return &Provider{client: client, model: model}
+}
+
+// NewWithBaseURL creates an OpenAI provider pointing at a custom base URL.
+// Used in tests to point at httptest.Server.
+func NewWithBaseURL(apiKey, model, baseURL string) *Provider {
+	client := openai.NewClient(
+		option.WithAPIKey(apiKey),
+		option.WithBaseURL(baseURL),
+	)
+	return &Provider{client: client, model: model}
+}
+
+// Name implements providers.LLMProvider.
+func (p *Provider) Name() string { return "openai" }
+
+// Chat implements providers.LLMProvider.
+func (p *Provider) Chat(ctx context.Context, messages []providers.Message, tools []providers.Tool) (*providers.LLMResponse, error) {
+	params := openai.ChatCompletionNewParams{
+		Model:    openai.F(p.model),
+		Messages: openai.F(convertMessages(messages)),
+	}
+	if len(tools) > 0 {
+		params.Tools = openai.F(convertTools(tools))
+	}
+
+	completion, err := p.client.Chat.Completions.New(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("openai: chat completions: %w", err)
+	}
+	if len(completion.Choices) == 0 {
+		return nil, fmt.Errorf("openai: no choices in response")
+	}
+
+	choice := completion.Choices[0]
+	resp := &providers.LLMResponse{
+		Content: choice.Message.Content,
+		Usage: providers.Usage{
+			PromptTokens:     int(completion.Usage.PromptTokens),
+			CompletionTokens: int(completion.Usage.CompletionTokens),
+			TotalCostUSD:     computeCost(p.model, int(completion.Usage.PromptTokens), int(completion.Usage.CompletionTokens)),
+		},
+	}
+
+	if len(choice.Message.ToolCalls) > 0 {
+		tc := choice.Message.ToolCalls[0]
+		resp.ToolCall = &providers.ToolCall{
+			ID:        tc.ID,
+			Name:      tc.Function.Name,
+			InputJSON: tc.Function.Arguments,
+		}
+	}
+
+	return resp, nil
+}
+
+// computeCost returns the total cost in USD for the given token counts and model.
+// Returns 0 for unknown models.
+func computeCost(model string, promptTokens, completionTokens int) float64 {
+	pricing, ok := pricingTable[model]
+	if !ok {
+		return 0
+	}
+	inputCost := float64(promptTokens) * pricing[0] / 1e6
+	outputCost := float64(completionTokens) * pricing[1] / 1e6
+	return inputCost + outputCost
+}
+
+// convertMessages converts providers.Message slice to the openai SDK format.
+func convertMessages(messages []providers.Message) []openai.ChatCompletionMessageParamUnion {
+	out := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
+	for _, m := range messages {
+		switch m.Role {
+		case "user":
+			out = append(out, openai.UserMessage(m.Content))
+		case "assistant":
+			out = append(out, openai.AssistantMessage(m.Content))
+		case "system":
+			out = append(out, openai.SystemMessage(m.Content))
+		case "tool":
+			out = append(out, openai.ToolMessage(m.ToolCallID, m.Content))
+		}
+	}
+	return out
+}
+
+// convertTools converts providers.Tool slice to the openai SDK tool format.
+func convertTools(tools []providers.Tool) []openai.ChatCompletionToolParam {
+	out := make([]openai.ChatCompletionToolParam, 0, len(tools))
+	for _, t := range tools {
+		out = append(out, openai.ChatCompletionToolParam{
+			Type: openai.F(openai.ChatCompletionToolTypeFunction),
+			Function: openai.F(openai.FunctionDefinitionParam{
+				Name:        openai.F(t.Name),
+				Description: openai.F(t.Description),
+				Parameters:  openai.F(openai.FunctionParameters(t.InputSchema)),
+			}),
+		})
+	}
+	return out
+}

@@ -2,7 +2,7 @@
 package store_test
 
 import (
-	"os"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -152,7 +152,63 @@ func TestHITLPending(t *testing.T) {
 	}
 }
 
-func TestPurgeOldFiles(_ *testing.T) {
-	// Ensure test binary does not leave temp files.
-	os.RemoveAll("./test.db")
+func TestPurgeStartup(t *testing.T) {
+	s := newTestStore(t)
+
+	// Insert stale rows into all three tables.
+	stale := time.Now().Add(-72 * time.Hour)
+	if err := s.InsertSession("stale-sess", "opencode", "active", "p", stale); err != nil {
+		t.Fatalf("InsertSession stale: %v", err)
+	}
+	if err := s.InsertHITLPending("stale-hitl", "opencode", "write_file"); err != nil {
+		t.Fatalf("InsertHITLPending stale: %v", err)
+	}
+	if err := s.UpsertCostDaily("2020-01-01", 1.0); err != nil {
+		t.Fatalf("UpsertCostDaily stale: %v", err)
+	}
+
+	// Insert a recent session that should survive the purge.
+	if err := s.InsertSession("fresh-sess", "opencode", "active", "p", time.Now()); err != nil {
+		t.Fatalf("InsertSession fresh: %v", err)
+	}
+
+	// 24h TTLs: stale rows are 72h old and will be deleted; fresh row is <24h old.
+	if err := s.PurgeStartup(24*time.Hour, 24*time.Hour, 24*time.Hour); err != nil {
+		t.Fatalf("PurgeStartup: %v", err)
+	}
+
+	// Sessions: only the fresh one should remain.
+	n, err := s.CountSessions()
+	if err != nil {
+		t.Fatalf("CountSessions: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("sessions after PurgeStartup: got %d, want 1", n)
+	}
+
+	// hitl_pending: stale row should be gone.
+	pending, err := s.ListPendingHITL()
+	if err != nil {
+		t.Fatalf("ListPendingHITL: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("hitl_pending after PurgeStartup: got %d rows, want 0", len(pending))
+	}
+
+	// cost_daily: stale date should be gone; today's row (if any) may remain.
+	total, err := s.GetCostDaily("2020-01-01")
+	if err != nil {
+		t.Fatalf("GetCostDaily: %v", err)
+	}
+	if total != 0 {
+		t.Errorf("cost_daily 2020-01-01 after PurgeStartup: got %v, want 0", total)
+	}
+}
+
+func TestResolveHITLNotFound(t *testing.T) {
+	s := newTestStore(t)
+	err := s.ResolveHITL("nonexistent", "approved")
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("ResolveHITL missing ID: got %v, want ErrNotFound", err)
+	}
 }
