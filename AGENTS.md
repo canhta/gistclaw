@@ -6,10 +6,19 @@ located in `docs/plans/`. Only Plan 1 (foundation packages) is complete as of wr
 
 ---
 
+## Lint & Vet
+
+```bash
+make lint          # golangci-lint run ./...
+make vet           # go vet ./... (runs automatically before make test)
+```
+
+---
+
 ## Build & Test Commands
 
 ```bash
-# Run all tests
+# Run all tests (runs go vet first)
 go test ./...
 make test          # alias
 
@@ -32,9 +41,6 @@ go build ./...
 go mod tidy
 make tidy          # alias
 ```
-
-No lint tooling (golangci-lint, staticcheck) is configured yet. When added it will
-appear in the Makefile. Until then, `go vet ./...` is the available static check.
 
 ---
 
