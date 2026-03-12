@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/canhta/gistclaw/internal/config"
 	"github.com/canhta/gistclaw/internal/mcp"
-	"github.com/canhta/gistclaw/internal/providers"
 )
 
 // ---------------------------------------------------------------------------
@@ -15,7 +15,7 @@ import (
 // ---------------------------------------------------------------------------
 
 func TestNewMCPManager_EmptyConfig(t *testing.T) {
-	m := mcp.NewMCPManager(map[string]mcp.MCPServerConfig{})
+	m := mcp.NewMCPManager(map[string]mcp.MCPServerConfig{}, config.Tuning{})
 	if m == nil {
 		t.Fatal("expected non-nil manager")
 	}
@@ -45,7 +45,7 @@ func TestNewMCPManager_BadServerSkipped(t *testing.T) {
 	}
 
 	// Must not panic; connection failure is logged as WARN and server is skipped.
-	m := mcp.NewMCPManager(configs)
+	m := mcp.NewMCPManager(configs, config.Tuning{})
 	if m == nil {
 		t.Fatal("expected non-nil manager even with bad server config")
 	}
@@ -67,7 +67,7 @@ func TestNewMCPManager_BadServerSkipped(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCallTool_UnknownServer(t *testing.T) {
-	m := mcp.NewMCPManager(map[string]mcp.MCPServerConfig{})
+	m := mcp.NewMCPManager(map[string]mcp.MCPServerConfig{}, config.Tuning{})
 	result, err := m.CallTool(context.Background(), "nonexistent__tool", map[string]any{"arg": "val"})
 	if err != nil {
 		t.Fatalf("expected no error for unknown server, got: %v", err)
@@ -85,7 +85,7 @@ func TestCallTool_UnknownServer(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCallTool_MalformedToolName(t *testing.T) {
-	m := mcp.NewMCPManager(map[string]mcp.MCPServerConfig{})
+	m := mcp.NewMCPManager(map[string]mcp.MCPServerConfig{}, config.Tuning{})
 	_, err := m.CallTool(context.Background(), "notnamespaced", map[string]any{})
 	if err == nil {
 		t.Fatal("expected error for malformed tool name")
@@ -93,24 +93,56 @@ func TestCallTool_MalformedToolName(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Tool namespacing: Tool.Name uses double underscore "{server}__{tool}".
-// GetAllTools returns []providers.Tool so gateway can append directly.
+// Tool namespacing: double underscore convention verified via CallTool routing.
+// The "__" separator is what routes "server__tool" to the right server.
+// A name without "__" must error; a name with "__" must route (or report missing).
+// Live-server tests with real tool listings are in integration tests.
 // ---------------------------------------------------------------------------
 
-func TestTool_NamespaceFormat(t *testing.T) {
-	// Verify the providers.Tool type used by GetAllTools() uses the double
-	// underscore separator convention by constructing one directly.
-	tool := providers.Tool{
-		Name:        "filesystem__read_file",
-		Description: "Reads a file",
-		InputSchema: map[string]any{"type": "object"},
+func TestCallTool_DoubleUnderscoreRouting(t *testing.T) {
+	m := mcp.NewMCPManager(map[string]mcp.MCPServerConfig{}, config.Tuning{})
+
+	cases := []struct {
+		name    string
+		tool    string
+		wantErr bool
+		wantMsg string
+	}{
+		{
+			name:    "single underscore — not a separator, must error",
+			tool:    "server_tool",
+			wantErr: true,
+		},
+		{
+			name:    "double underscore routes to server (not connected → not available)",
+			tool:    "myserver__read_file",
+			wantErr: false,
+			wantMsg: "not available",
+		},
+		{
+			name:    "multiple underscores — split on first occurrence",
+			tool:    "srv__tool__subname",
+			wantErr: false,
+			wantMsg: "not available",
+		},
 	}
-	if !strings.Contains(tool.Name, "__") {
-		t.Errorf("Tool.Name %q does not contain double underscore separator", tool.Name)
-	}
-	parts := strings.SplitN(tool.Name, "__", 2)
-	if parts[0] != "filesystem" {
-		t.Errorf("Tool.Name server prefix %q != expected 'filesystem'", parts[0])
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := m.CallTool(context.Background(), tc.tool, map[string]any{})
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error, got result=%q", result)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.wantMsg != "" && !strings.Contains(result, tc.wantMsg) {
+				t.Errorf("result %q does not contain %q", result, tc.wantMsg)
+			}
+		})
 	}
 }
 
@@ -119,9 +151,25 @@ func TestTool_NamespaceFormat(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetAllTools_AlwaysNonNil(t *testing.T) {
-	m := mcp.NewMCPManager(nil)
+	m := mcp.NewMCPManager(nil, config.Tuning{})
 	tools := m.GetAllTools()
 	if tools == nil {
 		t.Fatal("GetAllTools must return non-nil slice")
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Tuning: custom timeouts are respected (zero values use defaults, no panic).
+// ---------------------------------------------------------------------------
+
+func TestNewMCPManager_TuningZeroUsesDefaults(t *testing.T) {
+	// Zero Tuning means defaults kick in; manager must still construct without panic.
+	m := mcp.NewMCPManager(map[string]mcp.MCPServerConfig{}, config.Tuning{
+		MCPConnectTimeout: 0,
+		MCPCallTimeout:    0,
+	})
+	if m == nil {
+		t.Fatal("expected non-nil manager with zero Tuning")
+	}
+	_ = m.Close()
 }
