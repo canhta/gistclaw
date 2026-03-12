@@ -459,6 +459,9 @@ func defaultTuning() config.Tuning {
 	}
 }
 
+// operatorChatID used in tests — any non-zero value is fine for unit tests.
+const testOperatorChatID int64 = 42
+
 // --- tests ---
 
 // TestScheduler_EveryJob verifies an "every" job fires when its next_run_at is reached.
@@ -466,7 +469,7 @@ func TestScheduler_EveryJob(t *testing.T) {
 	s := newTestStore(t)
 	target := &mockTarget{}
 	tuning := defaultTuning()
-	svc := scheduler.NewService(s, target, tuning)
+	svc := scheduler.NewService(s, target, tuning, testOperatorChatID)
 
 	now := time.Now().UTC()
 	row := store.JobRow{
@@ -497,7 +500,7 @@ func TestScheduler_EveryJob(t *testing.T) {
 func TestScheduler_AtJob(t *testing.T) {
 	s := newTestStore(t)
 	target := &mockTarget{}
-	svc := scheduler.NewService(s, target, defaultTuning())
+	svc := scheduler.NewService(s, target, defaultTuning(), testOperatorChatID)
 
 	now := time.Now().UTC()
 	row := store.JobRow{
@@ -540,7 +543,7 @@ func TestScheduler_AtJob(t *testing.T) {
 func TestScheduler_CronJob(t *testing.T) {
 	s := newTestStore(t)
 	target := &mockTarget{}
-	svc := scheduler.NewService(s, target, defaultTuning())
+	svc := scheduler.NewService(s, target, defaultTuning(), testOperatorChatID)
 
 	now := time.Now().UTC()
 	row := store.JobRow{
@@ -588,7 +591,7 @@ func TestScheduler_MissedJobsOnStartup(t *testing.T) {
 		SchedulerTick:       100 * time.Millisecond,
 		MissedJobsFireLimit: 2, // fire only 2 immediately; rest advance
 	}
-	svc := scheduler.NewService(s, target, tuning)
+	svc := scheduler.NewService(s, target, tuning, testOperatorChatID)
 
 	now := time.Now().UTC()
 	for i := range 5 {
@@ -635,7 +638,7 @@ func TestScheduler_MissedJobsOnStartup(t *testing.T) {
 func TestScheduler_KindChat(t *testing.T) {
 	s := newTestStore(t)
 	target := &mockTarget{}
-	svc := scheduler.NewService(s, target, defaultTuning())
+	svc := scheduler.NewService(s, target, defaultTuning(), testOperatorChatID)
 
 	now := time.Now().UTC()
 	row := store.JobRow{
@@ -665,7 +668,7 @@ func TestScheduler_KindChat(t *testing.T) {
 // TestScheduler_Tools verifies Tools() returns exactly 4 tools with correct names and schemas.
 func TestScheduler_Tools(t *testing.T) {
 	s := newTestStore(t)
-	svc := scheduler.NewService(s, &mockTarget{}, defaultTuning())
+	svc := scheduler.NewService(s, &mockTarget{}, defaultTuning(), testOperatorChatID)
 
 	tools := svc.Tools()
 	if len(tools) != 4 {
@@ -701,7 +704,7 @@ func TestScheduler_Tools(t *testing.T) {
 // TestScheduler_CRUD verifies CreateJob / ListJobs / UpdateJob / DeleteJob service methods.
 func TestScheduler_CRUD(t *testing.T) {
 	s := newTestStore(t)
-	svc := scheduler.NewService(s, &mockTarget{}, defaultTuning())
+	svc := scheduler.NewService(s, &mockTarget{}, defaultTuning(), testOperatorChatID)
 
 	j := scheduler.Job{
 		Kind:     "every",
@@ -746,7 +749,7 @@ func TestScheduler_CRUD(t *testing.T) {
 // TestScheduler_CreateJob_InvalidKind verifies CreateJob rejects unknown job kinds.
 func TestScheduler_CreateJob_InvalidKind(t *testing.T) {
 	s := newTestStore(t)
-	svc := scheduler.NewService(s, &mockTarget{}, defaultTuning())
+	svc := scheduler.NewService(s, &mockTarget{}, defaultTuning(), testOperatorChatID)
 	j := scheduler.Job{
 		Kind:     "invalid",
 		Target:   agent.KindOpenCode,
@@ -761,7 +764,7 @@ func TestScheduler_CreateJob_InvalidKind(t *testing.T) {
 // TestScheduler_CreateJob_InvalidCronExpr verifies gronx cron validation on CreateJob.
 func TestScheduler_CreateJob_InvalidCronExpr(t *testing.T) {
 	s := newTestStore(t)
-	svc := scheduler.NewService(s, &mockTarget{}, defaultTuning())
+	svc := scheduler.NewService(s, &mockTarget{}, defaultTuning(), testOperatorChatID)
 	j := scheduler.Job{
 		Kind:     "cron",
 		Target:   agent.KindOpenCode,
@@ -834,14 +837,17 @@ type JobTarget interface {
 
 // Service runs the scheduler: fires jobs on schedule, manages CRUD.
 type Service struct {
-	store  *store.Store
-	target JobTarget
-	tuning config.Tuning
+	store           *store.Store
+	target          JobTarget
+	tuning          config.Tuning
+	operatorChatID  int64 // chatID used for KindChat jobs and error notifications
 }
 
 // NewService creates a new scheduler Service.
-func NewService(s *store.Store, target JobTarget, tuning config.Tuning) *Service {
-	return &Service{store: s, target: target, tuning: tuning}
+// operatorChatID is cfg.OperatorChatID() — the chatID to use when a KindChat job fires
+// or when a job fires an error notification.
+func NewService(s *store.Store, target JobTarget, tuning config.Tuning, operatorChatID int64) *Service {
+	return &Service{store: s, target: target, tuning: tuning, operatorChatID: operatorChatID}
 }
 
 // Run starts the scheduler loop. Blocks until ctx is cancelled.
@@ -889,9 +895,7 @@ func (s *Service) fireJob(ctx context.Context, row store.JobRow, now time.Time) 
 
 	var fireErr error
 	if j.Target == agent.KindChat {
-		// chatID for scheduled chat is determined by convention: encode chatID in prompt as
-		// "chatID:<n>:<text>" or fall back to 0 (operator). For v1 simplicity, use 0.
-		fireErr = s.target.SendChat(ctx, 0, j.Prompt)
+		fireErr = s.target.SendChat(ctx, s.operatorChatID, j.Prompt)
 	} else {
 		fireErr = s.target.RunAgentTask(ctx, j.Target, j.Prompt)
 	}
@@ -899,7 +903,7 @@ func (s *Service) fireJob(ctx context.Context, row store.JobRow, now time.Time) 
 	if fireErr != nil {
 		log.Warn().Str("job_id", j.ID).Err(fireErr).Msg("scheduler: job fire error; skipped")
 		// Notify operator via SendChat — best-effort; ignore error.
-		_ = s.target.SendChat(ctx, 0, "⏰ Scheduled job skipped: agent busy.")
+		_ = s.target.SendChat(ctx, s.operatorChatID, "⏰ Scheduled job skipped: agent busy.")
 		return
 	}
 
@@ -1228,8 +1232,9 @@ func jobToRow(j Job) store.JobRow {
 	}
 }
 
-// jobsToJSON serialises a slice of Jobs for tool results.
-func jobsToJSON(jobs []Job) string {
+// JobsToJSON serialises a slice of Jobs for tool results.
+// Exported so gateway (and other callers) can reuse it without duplicating the format.
+func JobsToJSON(jobs []Job) string {
 	type item struct {
 		ID        string `json:"id"`
 		Kind      string `json:"kind"`
@@ -1291,6 +1296,18 @@ git commit -m "feat(scheduler): add scheduler.Service with Job CRUD, ticker loop
 **Files:**
 - Create: `internal/gateway/service.go`
 - Create: `internal/gateway/service_test.go`
+
+> **Plan 5 amendment required:** `hitl.Service` must implement a `Resolve(id string, action string) error`
+> method so that `gateway.Service` can deliver keyboard button presses to waiting HITL handlers
+> without a runtime type assertion. Add this method to `internal/hitl/service.go` before
+> implementing Task 3. The method looks up the pending request by ID in the `sync.Map` and
+> sends the appropriate `HITLDecision` on the stored `DecisionCh`.
+
+> **Plan 4 amendment required:** `mcp.Manager` must expose a `ServerStatus() map[string]bool`
+> method that returns the name and liveness of each configured MCP server. This is called by
+> `buildStatus` to populate the "MCP servers" line of the `/status` response (design §13).
+> Add this method to `internal/mcp/manager.go` before implementing Task 3.
+> If no servers are configured, it must return an empty (non-nil) map.
 
 ### Step 1: Write the failing tests
 
@@ -1486,7 +1503,7 @@ func newTestScheduler(t *testing.T, s *store.Store) *scheduler.Service {
 	return scheduler.NewService(s, &noopJobTarget{}, config.Tuning{
 		SchedulerTick:       time.Second,
 		MissedJobsFireLimit: 5,
-	})
+	}, 42) // 42 = operator chatID matching AllowedUserIDs in test config
 }
 
 type noopJobTarget struct{}
@@ -1516,6 +1533,8 @@ func newService(t *testing.T, ch channel.Channel, llm providers.LLMProvider) *ga
 		mcp.NewManager(nil), // empty MCP manager
 		sched,
 		s,
+		nil,        // costGuard: nil is safe for unit tests (buildStatus guards for nil)
+		time.Now(), // startTime
 		cfg,
 	)
 }
@@ -1556,7 +1575,7 @@ func TestGateway_OCCommand(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, oc, &mockCCService{}, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewManager(nil), sched, s, cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewManager(nil), sched, s, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -1582,7 +1601,7 @@ func TestGateway_CCCommand(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, cc, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewManager(nil), sched, s, cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewManager(nil), sched, s, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -1609,7 +1628,7 @@ func TestGateway_StopCommand(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, oc, cc, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewManager(nil), sched, s, cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewManager(nil), sched, s, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -1651,7 +1670,7 @@ func TestGateway_StatusCommand(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewManager(nil), sched, s, cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewManager(nil), sched, s, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -1851,7 +1870,7 @@ func TestGateway_ScheduleJobTool(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewManager(nil), sched, s, cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewManager(nil), sched, s, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -1880,7 +1899,7 @@ func TestGateway_LLMError(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, failLLM,
-		&mockSearch{}, &mockFetcher{}, mcp.NewManager(nil), sched, s, cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewManager(nil), sched, s, nil, time.Now(), cfg)
 	_ = llm // unused; suppress warning
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
@@ -1954,6 +1973,7 @@ import (
 	"github.com/canhta/gistclaw/internal/channel"
 	"github.com/canhta/gistclaw/internal/config"
 	"github.com/canhta/gistclaw/internal/hitl"
+	"github.com/canhta/gistclaw/internal/infra"
 	"github.com/canhta/gistclaw/internal/mcp"
 	"github.com/canhta/gistclaw/internal/providers"
 	"github.com/canhta/gistclaw/internal/scheduler"
@@ -1999,10 +2019,14 @@ type Service struct {
 	mcp        *mcp.Manager           // adjust type name to match Plan 4 impl
 	sched      *scheduler.Service
 	store      *store.Store
+	costGuard  *infra.CostGuard       // tracks daily LLM spend; read by buildStatus
+	startTime  time.Time              // set in NewService; used by buildStatus for Uptime line
 	cfg        config.Config
 }
 
 // NewService creates a new gateway Service.
+// costGuard is *infra.CostGuard from Plan 2 (tracks daily LLM spend).
+// startTime should be time.Now() at the call site (typically app.New in Plan 8).
 func NewService(
 	ch channel.Channel,
 	h hitlService,
@@ -2014,6 +2038,8 @@ func NewService(
 	m *mcp.Manager,
 	sched *scheduler.Service,
 	st *store.Store,
+	costGuard *infra.CostGuard,
+	startTime time.Time,
 	cfg config.Config,
 ) *Service {
 	return &Service{
@@ -2027,6 +2053,8 @@ func NewService(
 		mcp:        m,
 		sched:      sched,
 		store:      st,
+		costGuard:  costGuard,
+		startTime:  startTime,
 		cfg:        cfg,
 	}
 }
@@ -2118,20 +2146,8 @@ func (s *Service) handleCallback(ctx context.Context, msg channel.InboundMessage
 	}
 	id, action := parts[0], parts[1]
 	log.Debug().Str("hitl_id", id).Str("action", action).Msg("gateway: HITL callback received")
-	// HITL resolution is handled by hitl.Service internally via the pending map.
-	// Gateway signals by resolving the pending request through the HITL approver.
-	// The hitl.Service stores a map of id → decision channel; resolution is via a separate
-	// method. For v1, we use a type assertion to access the concrete *hitl.Service Resolve method
-	// if available. If the Approver does not expose Resolve, log and drop.
-	type resolver interface {
-		Resolve(id string, action string) error
-	}
-	if r, ok := s.hitl.(resolver); ok {
-		if err := r.Resolve(id, action); err != nil {
-			log.Warn().Str("hitl_id", id).Err(err).Msg("gateway: HITL Resolve failed")
-		}
-	} else {
-		log.Debug().Str("hitl_id", id).Msg("gateway: HITL approver does not implement Resolve; callback dropped")
+	if err := s.hitl.Resolve(id, action); err != nil {
+		log.Warn().Str("hitl_id", id).Err(err).Msg("gateway: HITL Resolve failed")
 	}
 }
 
@@ -2393,10 +2409,24 @@ func (s *Service) buildToolRegistry() []providers.Tool {
 	return registry
 }
 
-// buildStatus formats the /status response.
+// buildStatus formats the /status response (design §13).
+// Output format:
+//
+//	GistClaw status (UTC)
+//	Uptime: 2h 34m
+//	OpenCode: idle
+//	ClaudeCode: idle
+//	HITL pending: 0
+//	Scheduled jobs: 3 active  (next: in 14 min)
+//	Daily cost: $0.42 / $5.00 (8%)
+//	MCP servers: filesystem ✓  github ✓  myserver ✗ (failed)
 func (s *Service) buildStatus(ctx context.Context) string {
 	var sb strings.Builder
-	sb.WriteString("GistClaw status\n")
+	sb.WriteString("GistClaw status (UTC)\n")
+
+	// Uptime
+	uptime := time.Since(s.startTime).Round(time.Minute)
+	fmt.Fprintf(&sb, "Uptime: %s\n", formatDuration(uptime))
 
 	ocStatus := "idle"
 	if s.opencode.IsAlive(ctx) {
@@ -2428,9 +2458,20 @@ func (s *Service) buildStatus(ctx context.Context) string {
 	}
 	if activeCount > 0 && !nextRun.IsZero() {
 		diff := time.Until(nextRun).Round(time.Minute)
-		fmt.Fprintf(&sb, "Scheduled jobs: %d active (next: in %v)\n", activeCount, diff)
+		fmt.Fprintf(&sb, "Scheduled jobs: %d active  (next: in %s)\n", activeCount, formatDuration(diff))
 	} else {
 		fmt.Fprintf(&sb, "Scheduled jobs: %d active\n", activeCount)
+	}
+
+	// Daily cost (from infra.CostGuard)
+	if s.costGuard != nil {
+		currentUSD := s.costGuard.CurrentUSD()
+		limitUSD := s.costGuard.LimitUSD()
+		pct := 0.0
+		if limitUSD > 0 {
+			pct = currentUSD / limitUSD * 100
+		}
+		fmt.Fprintf(&sb, "Daily cost: $%.2f / $%.2f (%.0f%%)\n", currentUSD, limitUSD, pct)
 	}
 
 	// MCP servers
@@ -2448,6 +2489,20 @@ func (s *Service) buildStatus(ctx context.Context) string {
 	}
 
 	return sb.String()
+}
+
+// formatDuration formats a duration in a human-readable "Xh Ym" or "Ym" style
+// matching the design §13 example output.
+func formatDuration(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh %dm", h, m)
+	}
+	return fmt.Sprintf("%dm", m)
 }
 
 // --- tool definitions ---

@@ -60,10 +60,10 @@ func main() {
 		log.Fatal().Err(err).Msg("config: load failed")
 	}
 
-	// Configure zerolog level
+	// Configure zerolog: JSON to stdout (structured, journalctl-parseable)
 	level, _ := zerolog.ParseLevel(cfg.LogLevel)
 	zerolog.SetGlobalLevel(level)
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}) // JSON in prod; override if needed
+	log.Logger = zerolog.New(os.Stdout).With().Timestamp().Logger()
 
 	a, err := app.NewApp(cfg)
 	if err != nil {
@@ -543,7 +543,7 @@ Check all required sections exist:
 grep -E "^## " README.md
 ```
 
-Expected output (all six headers):
+Expected output (all five headers):
 ```
 ## Prerequisites
 ## Install
@@ -699,6 +699,25 @@ systemd (Restart=always, StartLimitBurst=5)
 3. LLM may call `web_search` or `web_fetch` (doom-loop guard: 3 identical calls → forced final answer)
 4. Final text answer → `channel.SendMessage`; cost tracked automatically by decorator
 
+### Flow F — Plain chat without tool use
+
+1. No command prefix → `gateway.Service` builds tool registry
+2. Calls `trackedLLM.Chat(ctx, messages, tools)`
+3. LLM decides NOT to call any tool — returns final text directly
+4. `channel.SendMessage(chatID, answer)`; cost tracked automatically by decorator
+
+### Flow G — `question.asked` with multiple questions
+
+1. SSE fires `question.asked` with `questions` array (e.g. two questions)
+2. `opencode.Service` calls `hitl.Approver.RequestQuestion(ctx, QuestionRequest{ChatID, ID, Questions})`
+3. `hitl.Service` processes questions **sequentially**:
+   - Sends question[0] keyboard; waits for user reply
+   - Records answer (e.g. `["testify"]`)
+   - Sends question[1] keyboard; waits for user reply
+   - Records answer (e.g. `["yes"]`)
+4. `hitl.Service` sends a **single** POST reply: `POST /question/:id/reply {"answers":[["testify"],["yes"]]}`
+5. Agent continues with all answers at once
+
 ---
 
 ## 3. Interface Contracts
@@ -750,10 +769,49 @@ type Approver interface {
 OpenCode and ClaudeCode services call this interface. HITL internals (SQLite, keyboard,
 timers) are hidden behind it.
 
+### `opencode.Service` (`internal/opencode/service.go`)
+
+```go
+type Service interface {
+    Run(ctx context.Context) error
+    SubmitTask(ctx context.Context, chatID int64, prompt string) error
+    Stop(ctx context.Context) error
+    IsAlive(ctx context.Context) bool
+}
+```
+
+### `claudecode.Service` (`internal/claudecode/service.go`)
+
+```go
+type Service interface {
+    Run(ctx context.Context) error
+    SubmitTask(ctx context.Context, chatID int64, prompt string) error
+    Stop(ctx context.Context) error
+    IsAlive(ctx context.Context) bool
+}
+```
+
+`claudecode.Service` additionally owns the HTTP server at `:8765` for `gistclaw-hook`
+communication. The `IsAlive` implementation checks FSM state (`Idle`, `Running`, or
+`WaitingInput`) — not `os.FindProcess`.
+
+### `scheduler.JobTarget` (`internal/scheduler/service.go`)
+
+```go
+type JobTarget interface {
+    RunAgentTask(ctx context.Context, kind agent.Kind, prompt string) error
+    SendChat(ctx context.Context, chatID int64, text string) error
+}
+```
+
+`JobTarget` is wired in `app.NewApp` — `scheduler.Service` does not import `gateway` or
+any concrete agent service. `agent.Kind` is a typed enum; no stringly-typed agent identifiers.
+
 ### `AgentHealthChecker` (`internal/infra/heartbeat.go`)
 
 ```go
 type AgentHealthChecker interface {
+    Name() string
     IsAlive(ctx context.Context) bool
 }
 ```
@@ -819,21 +877,21 @@ Expected:
 ## 4. Supervision Model
 ```
 
-Verify flow labels A through E are all present:
+Verify flow labels A through G are all present:
 
 ```bash
-grep -E "### Flow [A-E]" ARCHITECTURE.md
+grep -E "### Flow [A-G]" ARCHITECTURE.md
 ```
 
-Expected: 5 lines (Flow A, B, C, D, E).
+Expected: 7 lines (Flow A, B, C, D, E, F, G).
 
-Verify all four interface contracts are documented:
+Verify all seven interface contracts are documented:
 
 ```bash
-grep -E "### .*(Channel|LLMProvider|Approver|HealthChecker)" ARCHITECTURE.md
+grep -E "### .*(Channel|LLMProvider|Approver|opencode\.Service|claudecode\.Service|JobTarget|HealthChecker)" ARCHITECTURE.md
 ```
 
-Expected: 4 lines.
+Expected: 7 lines.
 
 Verify Go import paths are correct (no placeholder paths):
 
