@@ -1669,15 +1669,26 @@ import (
 	"github.com/canhta/gistclaw/internal/store"
 )
 
+// QuestionReplier posts the collected answers back to the agent API.
+// Implemented by opencode.Service; injected into hitl.Service at construction.
+// This keeps hitl.Service decoupled from the OpenCode HTTP client.
+type QuestionReplier interface {
+	// ReplyQuestion posts {"answers": answers} to /question/:id/reply on the agent API.
+	// id is the full question request ID (e.g. "question_<ulid>").
+	// answers is one []string per question, each containing the selected/typed labels.
+	ReplyQuestion(ctx context.Context, id string, answers [][]string) error
+}
+
 // Approver is the interface implemented by Service.
 // Called by opencode.Service and claudecode.Service.
 type Approver interface {
 	// RequestPermission registers a permission request, sends a keyboard to the operator,
 	// and returns immediately (non-blocking). The caller blocks on req.DecisionCh.
 	RequestPermission(ctx context.Context, req PermissionRequest) error
-	// RequestQuestion sends each question sequentially, waits for user answers, and
-	// returns all answers as [][]string (one slice per question).
-	RequestQuestion(ctx context.Context, req QuestionRequest) ([][]string, error)
+	// RequestQuestion sends each question sequentially, collects user answers, then
+	// calls QuestionReplier.ReplyQuestion with all answers and returns its error.
+	// Design §7: returns only error; hitl.Service owns the reply POST (Flow G §5).
+	RequestQuestion(ctx context.Context, req QuestionRequest) error
 }
 
 // pendingItem stores the in-flight state for a PermissionRequest.
@@ -1685,29 +1696,33 @@ type pendingItem struct {
 	decisionCh chan<- HITLDecision
 }
 
-// questionWaiter is used to hand off a question answer from the event loop.
-type questionWaiter struct {
-	id      string // full question request ID (e.g. "question_seq01")
-	answerCh chan string // receives exactly one answer string (e.g. "testify")
+// questionWaiterItem stores a single pending question answer slot.
+// The Question is stored so the callback handler can resolve option index → label.
+type questionWaiterItem struct {
+	answerCh chan string // receives exactly one answer string (the resolved label)
+	question Question   // original question; used to map opt:<n> → label
 }
 
 // Service implements Approver. It is started by app.Run via withRestart.
 type Service struct {
-	ch     channel.Channel
-	store  *store.Store
-	tuning config.Tuning
+	ch      channel.Channel
+	store   *store.Store
+	tuning  config.Tuning
+	replier QuestionReplier // posts /question/:id/reply to the agent API
 
 	// pending tracks in-flight PermissionRequests keyed by ID.
 	pending sync.Map
 
-	// questionWaiters is a sync.Map[string, chan string] keyed by question request ID.
-	// Each entry is written by the event loop when a matching callback arrives.
+	// questionWaiters is a sync.Map[string, questionWaiterItem] keyed by question request ID.
+	// Each entry is written by RequestQuestion and consumed by the event loop callback.
 	questionWaiters sync.Map
 }
 
 // NewService creates a new HITL service.
-func NewService(ch channel.Channel, s *store.Store, tuning config.Tuning) *Service {
-	return &Service{ch: ch, store: s, tuning: tuning}
+// replier is called by RequestQuestion to POST answers to the agent API after all
+// questions are answered. Pass nil only in tests that do not exercise RequestQuestion.
+func NewService(ch channel.Channel, s *store.Store, tuning config.Tuning, replier QuestionReplier) *Service {
+	return &Service{ch: ch, store: s, tuning: tuning, replier: replier}
 }
 
 // Run is the main event loop. It:

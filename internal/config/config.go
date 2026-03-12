@@ -66,7 +66,11 @@ func Load() (Config, error) {
 
 // OperatorChatID returns the Telegram chat ID to use for supervisor notifications.
 // This is always AllowedUserIDs[0], which is guaranteed non-empty by Load().
+// Returns 0 if AllowedUserIDs is empty (safe: Telegram IDs are never zero).
 func (c Config) OperatorChatID() int64 {
+	if len(c.AllowedUserIDs) == 0 {
+		return 0
+	}
 	return c.AllowedUserIDs[0]
 }
 
