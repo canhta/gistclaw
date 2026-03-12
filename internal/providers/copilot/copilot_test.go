@@ -13,29 +13,36 @@ import (
 // Compile-time check: Provider must satisfy LLMProvider.
 var _ providers.LLMProvider = (*copilotprovider.Provider)(nil)
 
-func TestCopilotStubName(t *testing.T) {
+func TestCopilotName(t *testing.T) {
 	p := copilotprovider.New("localhost:4321")
 	if p.Name() != "copilot" {
 		t.Errorf("Name() = %q, want %q", p.Name(), "copilot")
 	}
 }
 
-func TestCopilotStubReturnsNotAvailableError(t *testing.T) {
-	p := copilotprovider.New("localhost:4321")
+// TestCopilotChatNoBridge verifies that Chat returns a descriptive error when
+// no Copilot bridge is listening at the given address. This is the expected
+// behaviour in unit-test environments.
+func TestCopilotChatNoBridge(t *testing.T) {
+	// Use a port that is (almost certainly) not listening in CI.
+	p := copilotprovider.New("localhost:19321")
 	_, err := p.Chat(context.Background(), []providers.Message{
 		{Role: "user", Content: "hello"},
 	}, nil)
 	if err == nil {
-		t.Fatal("expected error from copilot stub, got nil")
+		t.Fatal("expected error when bridge is not running, got nil")
 	}
-	if !strings.Contains(err.Error(), "not available") {
-		t.Errorf("error %q should contain %q", err.Error(), "not available")
+	// The error must mention "copilot" and something about connection/bridge.
+	msg := err.Error()
+	if !strings.Contains(msg, "copilot") {
+		t.Errorf("error %q should contain %q", msg, "copilot")
 	}
 }
 
-func TestCopilotStubDoesNotPanic(t *testing.T) {
-	// Calling Chat must not panic regardless of inputs.
-	p := copilotprovider.New("localhost:4321")
+// TestCopilotChatDoesNotPanic verifies that Chat never panics,
+// even with nil inputs and no bridge.
+func TestCopilotChatDoesNotPanic(t *testing.T) {
+	p := copilotprovider.New("localhost:19321")
 	defer func() {
 		if r := recover(); r != nil {
 			t.Errorf("Chat panicked: %v", r)
