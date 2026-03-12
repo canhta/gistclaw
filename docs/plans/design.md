@@ -639,14 +639,21 @@ type QuestionRequest struct {
 }
 
 type HITLDecision struct {
-    Allow  bool
-    Always bool
+	Allow  bool
+	Always bool
+	// Stop signals the caller (opencode.Service or claudecode.Service) to abort
+	// the active agent session after denying the permission. Set when the user
+	// presses "⏹ Stop". hitl.Service has no reference to agent services; callers
+	// check this field and call their own Stop(ctx) method if true.
+	Stop bool
 }
 
 // internal/hitl/service.go
 type Approver interface {
-    RequestPermission(ctx context.Context, req PermissionRequest) error
-    RequestQuestion(ctx context.Context, req QuestionRequest) error
+	RequestPermission(ctx context.Context, req PermissionRequest) error
+	// RequestQuestion collects answers sequentially, then calls QuestionReplier.ReplyQuestion
+	// internally. Returns only error; hitl.Service owns the POST /question/:id/reply call.
+	RequestQuestion(ctx context.Context, req QuestionRequest) error
 }
 ```
 
@@ -971,7 +978,10 @@ Tier 2: `AgentHealthChecker.IsAlive()` (interface in `internal/infra`) every
 Write `hitl_pending` record before sending Telegram keyboard. Prevents the race where
 a user replies faster than the record is created.
 
-On restart: auto-reject all `status:pending` records, notify operator for each.
+On restart: auto-reject all `status:pending` records; log `INFO` for each.
+Operator Telegram notification is **not sent** on startup auto-reject because `chat_id`
+is not stored in `hitl_pending` (keeping the schema minimal). The operator sees rejections
+in the agent output when the session resumes without the expected tool approval.
 
 ### 9.12 SOUL.md: mtime cache + correct injection
 

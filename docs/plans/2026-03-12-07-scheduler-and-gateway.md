@@ -1372,7 +1372,7 @@ func (m *mockChannel) sentMessages() []string {
 	return cp
 }
 
-// --- mock hitl.Approver ---
+// --- mock hitl.Approver + HITLResolver ---
 
 type mockApprover struct{}
 
@@ -1381,6 +1381,10 @@ func (m *mockApprover) RequestPermission(_ context.Context, _ hitl.PermissionReq
 }
 
 func (m *mockApprover) RequestQuestion(_ context.Context, _ hitl.QuestionRequest) error {
+	return nil
+}
+
+func (m *mockApprover) Resolve(_ string, _ string) error {
 	return nil
 }
 
@@ -1971,10 +1975,22 @@ type ccService interface {
 	IsAlive(ctx context.Context) bool
 }
 
+// hitlService is the subset of hitl.Service used by gateway.
+// It extends hitl.Approver with Resolve, which handles keyboard callback replies.
+// hitl.Service must implement all four methods; hitl.Approver (the interface in
+// internal/hitl/types.go) is extended here to include Resolve so gateway.Service
+// never needs a runtime type assertion.
+type hitlService interface {
+	hitl.Approver
+	// Resolve delivers a keyboard button press to the waiting HITL handler.
+	// id is the permission/question ID; action is one of "once", "always", "reject", "stop".
+	Resolve(id string, action string) error
+}
+
 // Service is the channel-agnostic gateway controller.
 type Service struct {
 	ch         channel.Channel
-	hitl       hitl.Approver
+	hitl       hitlService
 	opencode   ocService
 	claudecode ccService
 	llm        providers.LLMProvider
@@ -1989,7 +2005,7 @@ type Service struct {
 // NewService creates a new gateway Service.
 func NewService(
 	ch channel.Channel,
-	h hitl.Approver,
+	h hitlService,
 	oc ocService,
 	cc ccService,
 	llm providers.LLMProvider,

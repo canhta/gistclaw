@@ -325,6 +325,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/canhta/gistclaw/internal/channel"
+	"github.com/canhta/gistclaw/internal/hitl"
 	"github.com/canhta/gistclaw/internal/opencode"
 )
 
@@ -338,18 +340,22 @@ func (f *fakeChannel) SendMessage(_ context.Context, _ int64, text string) error
 	f.messages = append(f.messages, text)
 	return nil
 }
-func (f *fakeChannel) SendKeyboard(_ context.Context, _ int64, _ interface{}) error { return nil }
-func (f *fakeChannel) SendTyping(_ context.Context, _ int64) error                  { return nil }
-func (f *fakeChannel) Name() string                                                  { return "fake" }
-func (f *fakeChannel) Receive(_ context.Context) (<-chan interface{}, error)         { return nil, nil }
+func (f *fakeChannel) SendKeyboard(_ context.Context, _ int64, _ channel.KeyboardPayload) error {
+	return nil
+}
+func (f *fakeChannel) SendTyping(_ context.Context, _ int64) error              { return nil }
+func (f *fakeChannel) Name() string                                              { return "fake" }
+func (f *fakeChannel) Receive(_ context.Context) (<-chan channel.InboundMessage, error) {
+	return nil, nil
+}
 
 type fakeApprover struct{ called atomic.Bool }
 
-func (a *fakeApprover) RequestPermission(_ context.Context, req interface{}) error {
+func (a *fakeApprover) RequestPermission(_ context.Context, req hitl.PermissionRequest) error {
 	a.called.Store(true)
 	return nil
 }
-func (a *fakeApprover) RequestQuestion(_ context.Context, req interface{}) error {
+func (a *fakeApprover) RequestQuestion(_ context.Context, req hitl.QuestionRequest) error {
 	a.called.Store(true)
 	return nil
 }
@@ -652,7 +658,6 @@ import (
 
 	"github.com/canhta/gistclaw/internal/channel"
 	"github.com/canhta/gistclaw/internal/hitl"
-	"github.com/canhta/gistclaw/internal/infra"
 )
 
 // Service is the interface satisfied by *serviceImpl.
@@ -678,7 +683,8 @@ type serviceImpl struct {
 	cmd       *exec.Cmd
 }
 
-// Narrow dependency interfaces — keeps serviceImpl testable without importing infra/hitl directly.
+// Narrow dependency interfaces — keeps serviceImpl testable without importing infra directly.
+// The concrete infra types satisfy these interfaces; tests provide lightweight fakes.
 
 type hitlApprover interface {
 	RequestPermission(ctx context.Context, req hitl.PermissionRequest) error
@@ -693,14 +699,16 @@ type soulLoader interface {
 	Load() (string, error)
 }
 
-// New constructs a new opencode.Service. All dependencies are injected.
-func New(cfg Config, ch channel.Channel, approver hitl.Approver, guard *infra.CostGuard, soul *infra.SOULLoader) Service {
+// New constructs a new opencode.Service. All dependencies are injected as interfaces.
+// In production, pass *infra.CostGuard and *infra.SOULLoader (both satisfy the narrow
+// interfaces above). In tests, pass lightweight fakes.
+func New(cfg Config, ch channel.Channel, approver hitlApprover, guard costTracker, soul soulLoader) Service {
 	return &serviceImpl{
-		cfg:   cfg,
-		ch:    ch,
-		hitl:  approver,
-		guard: guard,
-		soul:  soul,
+		cfg:    cfg,
+		ch:     ch,
+		hitl:   approver,
+		guard:  guard,
+		soul:   soul,
 		client: &http.Client{Timeout: 10 * time.Second},
 	}
 }
@@ -894,6 +902,7 @@ func (s *serviceImpl) consumeSSE(ctx context.Context, chatID int64, sessionID st
 	defer resp.Body.Close()
 
 	var buf strings.Builder // accumulates text output
+	var hadOutput bool      // true once any text part has been received
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -913,6 +922,7 @@ func (s *serviceImpl) consumeSSE(ctx context.Context, chatID int64, sessionID st
 			}
 			switch ev.Part.Type {
 			case "text":
+				hadOutput = true
 				buf.WriteString(ev.Part.Text)
 				// Flush to Telegram at 4096-char boundary.
 				for buf.Len() >= 4096 {
@@ -961,19 +971,19 @@ func (s *serviceImpl) consumeSSE(ctx context.Context, chatID int64, sessionID st
 
 		case "session.status":
 			if ev.Status != nil && ev.Status.Type == "idle" {
-				// Flush remaining buffer.
-				if buf.Len() > 0 {
-					_ = s.ch.SendMessage(ctx, chatID, buf.String())
-					buf.Reset()
-				}
 				// Clear session.
 				s.mu.Lock()
 				s.sessionID = ""
 				s.mu.Unlock()
 				// Send completion or zero-output message.
-				if buf.Len() == 0 {
+				if !hadOutput {
 					_ = s.ch.SendMessage(ctx, chatID, "⚠️ Agent finished but produced no output.")
 				} else {
+					// Flush any remaining buffered text.
+					if buf.Len() > 0 {
+						_ = s.ch.SendMessage(ctx, chatID, buf.String())
+						buf.Reset()
+					}
 					_ = s.ch.SendMessage(ctx, chatID, "✅ Done")
 				}
 				return nil
@@ -982,30 +992,6 @@ func (s *serviceImpl) consumeSSE(ctx context.Context, chatID int64, sessionID st
 	}
 	return scanner.Err()
 }
-```
-
-> **Note on `buf` zero-output check:** After flushing the buffer on `session.status idle`, `buf.Len()` will be 0. The zero-output check and "✅ Done" message both use `buf.Len() == 0` after the flush — so the logic is: if any text was accumulated (flushed earlier or just now), we've already sent it, so always send "✅ Done". Only if no text parts were ever received do we send the warning. Track this with a separate `hadOutput bool` flag.
-
-**Corrected consumeSSE — zero-output tracking:**
-
-```go
-// Replace the session.status case with this corrected version:
-var hadOutput bool // tracks whether any text output was accumulated
-
-// In the "text" case, set: hadOutput = true
-// In the "session.status" idle case:
-//   if !hadOutput {
-//       _ = s.ch.SendMessage(ctx, chatID, "⚠️ Agent finished but produced no output.")
-//   } else {
-//       if buf.Len() > 0 {
-//           _ = s.ch.SendMessage(ctx, chatID, buf.String())
-//           buf.Reset()
-//       }
-//       _ = s.ch.SendMessage(ctx, chatID, "✅ Done")
-//   }
-```
-
-The full, corrected implementation accounts for this — the code above is a complete implementation scaffold. Review and adjust the `hadOutput` logic when implementing.
 
 **Step 4: Run test to verify it passes**
 
@@ -1228,15 +1214,17 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/canhta/gistclaw/internal/claudecode"
 	"github.com/canhta/gistclaw/internal/hitl"
 )
+
+> **Note:** `"fmt"` is required for the `itoa` helper function defined at the bottom of the test file.
 
 // fakeChannelForHook implements the narrow interface needed by hooksrv.
 type fakeChannelForHook struct{ messages []string }
@@ -1278,10 +1266,7 @@ func pickFreePort(t *testing.T) int {
 
 func TestHookSrv_PreTool_Allow(t *testing.T) {
 	port := pickFreePort(t)
-	addr := "127.0.0.1:" + strings.TrimPrefix(strings.Split("0", "")[0], "") // formatted below
-	_ = addr
-	addrStr := http.CanonicalHeaderKey("") // placeholder; real addr built below
-	_ = addrStr
+	listenAddr := "127.0.0.1:" + itoa(port)
 
 	approver := &fakeApproverForHook{
 		decision: hitl.HITLDecision{Allow: true},
@@ -1289,12 +1274,7 @@ func TestHookSrv_PreTool_Allow(t *testing.T) {
 	}
 	ch := &fakeChannelForHook{}
 	chatID := int64(123)
-	srv := claudecode.NewHookServer(
-		net.JoinHostPort("127.0.0.1", strings.TrimPrefix(http.CanonicalHeaderKey(""), "")),
-		chatID, approver, ch,
-	)
-	// Use a free port.
-	listenAddr := "127.0.0.1:" + itoa(port)
+	srv := claudecode.NewHookServer(listenAddr, chatID, approver, ch)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -1453,8 +1433,6 @@ func itoa(n int) string {
 }
 ```
 
-> **Note:** The test file references `fmt` but does not import it in the snippet. Ensure `"fmt"` is in the import list when writing the file.
-
 **Step 2: Run test to verify it fails**
 
 ```bash
@@ -1476,6 +1454,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -1496,12 +1475,29 @@ type hookApprover interface {
 }
 
 // HookServer is the HTTP server at 127.0.0.1:8765 that gistclaw-hook calls back into.
+// It is long-lived: started once in claudecode.Service.Run() and shared across tasks.
+// Call SetChatID before each task to route responses to the correct Telegram chat.
 type HookServer struct {
 	addr        string
+	mu          sync.RWMutex
 	chatID      int64
 	approver    hookApprover
 	channel     hookSender
 	hitlTimeout time.Duration
+}
+
+// SetChatID updates the Telegram chat ID used for HITL routing.
+// Call this before starting each new task.
+func (s *HookServer) SetChatID(chatID int64) {
+	s.mu.Lock()
+	s.chatID = chatID
+	s.mu.Unlock()
+}
+
+func (s *HookServer) getChatID() int64 {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.chatID
 }
 
 // NewHookServer constructs a HookServer with the default HITL timeout (5 minutes).
@@ -1570,7 +1566,7 @@ func (s *HookServer) handlePreTool(w http.ResponseWriter, r *http.Request) {
 	decisionCh := make(chan hitl.HITLDecision, 1)
 	permID := fmt.Sprintf("permission_%d", time.Now().UnixNano())
 	req := hitl.PermissionRequest{
-		ChatID:     s.chatID,
+		ChatID:     s.getChatID(),
 		ID:         permID,
 		Permission: hookEvent.ToolName,
 		Patterns:   []string{string(hookEvent.ToolInput)},
@@ -1607,7 +1603,7 @@ func (s *HookServer) handleNotification(w http.ResponseWriter, r *http.Request) 
 	}
 	_ = json.Unmarshal(body, &notif)
 	if notif.Message != "" {
-		_ = s.channel.SendMessage(r.Context(), s.chatID, notif.Message)
+		_ = s.channel.SendMessage(r.Context(), s.getChatID(), notif.Message)
 	}
 	w.WriteHeader(http.StatusOK)
 }
@@ -1615,7 +1611,7 @@ func (s *HookServer) handleNotification(w http.ResponseWriter, r *http.Request) 
 // handleStop handles POST /hook/stop.
 // Notifies the operator and is used by the service FSM to detect subprocess exit.
 func (s *HookServer) handleStop(w http.ResponseWriter, r *http.Request) {
-	_ = s.channel.SendMessage(r.Context(), s.chatID, "Claude Code session stopped.")
+	_ = s.channel.SendMessage(r.Context(), s.getChatID(), "Claude Code session stopped.")
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -1691,7 +1687,21 @@ import (
 	"time"
 
 	"github.com/canhta/gistclaw/internal/claudecode"
+	"github.com/canhta/gistclaw/internal/hitl"
 )
+
+// --- fakes shared within this test file ---
+// (fakeChannelForHook, fakeApproverForHook, neverApprover, pickFreePort, itoa are defined in hooksrv_test.go)
+
+type claudecodeFakeCostGuard struct{ tracked float64 }
+
+func (g *claudecodeFakeCostGuard) Track(usd float64) { g.tracked += usd }
+
+type claudecodeFakeSOULLoader struct{}
+
+func (s *claudecodeFakeSOULLoader) Load() (string, error) { return "you are a helpful agent", nil }
+
+// ---
 
 // newEchoScript writes a shell script to a temp dir that mimics claude -p
 // by printing stream-json lines to stdout and exiting cleanly.
@@ -1729,8 +1739,8 @@ func TestClaudeCodeService_SubmitTask_StreamsText(t *testing.T) {
 	fakeClaude := newEchoScript(t, lines)
 
 	ch := &fakeChannelForHook{}
-	guard := &fakeCostGuard{}
-	soul := &fakeSOULLoader{}
+	guard := &claudecodeFakeCostGuard{}
+	soul := &claudecodeFakeSOULLoader{}
 	approver := &fakeApproverForHook{decision: hitl.HITLDecision{Allow: true}, delay: 0}
 
 	cfg := claudecode.Config{
@@ -1777,7 +1787,7 @@ func TestClaudeCodeService_SubmitTask_ZeroOutput(t *testing.T) {
 	ch := &fakeChannelForHook{}
 	svc := claudecode.New(
 		claudecode.Config{Dir: t.TempDir(), HookServerAddr: "127.0.0.1:" + itoa(pickFreePort(t))},
-		fakeClaude, ch, &fakeApproverForHook{}, &fakeCostGuard{}, &fakeSOULLoader{},
+		fakeClaude, ch, &fakeApproverForHook{}, &claudecodeFakeCostGuard{}, &claudecodeFakeSOULLoader{},
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1808,7 +1818,7 @@ func TestClaudeCodeService_SubmitTask_ErrorResult(t *testing.T) {
 	ch := &fakeChannelForHook{}
 	svc := claudecode.New(
 		claudecode.Config{Dir: t.TempDir(), HookServerAddr: "127.0.0.1:" + itoa(pickFreePort(t))},
-		fakeClaude, ch, &fakeApproverForHook{}, &fakeCostGuard{}, &fakeSOULLoader{},
+		fakeClaude, ch, &fakeApproverForHook{}, &claudecodeFakeCostGuard{}, &claudecodeFakeSOULLoader{},
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1842,7 +1852,7 @@ func TestClaudeCodeService_Busy_RejectsSecondTask(t *testing.T) {
 	ch := &fakeChannelForHook{}
 	svc := claudecode.New(
 		claudecode.Config{Dir: t.TempDir(), HookServerAddr: "127.0.0.1:" + itoa(pickFreePort(t))},
-		script, ch, &fakeApproverForHook{}, &fakeCostGuard{}, &fakeSOULLoader{},
+		script, ch, &fakeApproverForHook{}, &claudecodeFakeCostGuard{}, &claudecodeFakeSOULLoader{},
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -1870,7 +1880,7 @@ func TestClaudeCodeService_Busy_RejectsSecondTask(t *testing.T) {
 func TestClaudeCodeService_Name(t *testing.T) {
 	svc := claudecode.New(
 		claudecode.Config{Dir: t.TempDir(), HookServerAddr: "127.0.0.1:8765"},
-		"claude", &fakeChannelForHook{}, &fakeApproverForHook{}, &fakeCostGuard{}, &fakeSOULLoader{},
+		"claude", &fakeChannelForHook{}, &fakeApproverForHook{}, &claudecodeFakeCostGuard{}, &claudecodeFakeSOULLoader{},
 	)
 	if svc.Name() != "claudecode" {
 		t.Errorf("Name: got %q, want claudecode", svc.Name())
@@ -1880,7 +1890,7 @@ func TestClaudeCodeService_Name(t *testing.T) {
 func TestClaudeCodeService_IsAlive_IdleIsAlive(t *testing.T) {
 	svc := claudecode.New(
 		claudecode.Config{Dir: t.TempDir(), HookServerAddr: "127.0.0.1:8765"},
-		"claude", &fakeChannelForHook{}, &fakeApproverForHook{}, &fakeCostGuard{}, &fakeSOULLoader{},
+		"claude", &fakeChannelForHook{}, &fakeApproverForHook{}, &claudecodeFakeCostGuard{}, &claudecodeFakeSOULLoader{},
 	)
 	// Idle state with no subprocess = alive (service is ready to accept work).
 	ctx := context.Background()
@@ -1922,8 +1932,24 @@ import (
 
 	"github.com/canhta/gistclaw/internal/channel"
 	"github.com/canhta/gistclaw/internal/hitl"
-	"github.com/canhta/gistclaw/internal/infra"
 )
+
+// Narrow dependency interfaces — keeps claudecodeServiceImpl testable without
+// importing infra directly. The concrete infra types satisfy these interfaces;
+// tests provide lightweight fakes.
+
+type claudecodeApprover interface {
+	RequestPermission(ctx context.Context, req hitl.PermissionRequest) error
+	RequestQuestion(ctx context.Context, req hitl.QuestionRequest) error
+}
+
+type claudecodeCostTracker interface {
+	Track(usd float64)
+}
+
+type claudecodeSoulLoader interface {
+	Load() (string, error)
+}
 
 // fsmState is the FSM state for claudecode.Service.
 type fsmState int32
@@ -1949,19 +1975,22 @@ type claudecodeServiceImpl struct {
 	cfg         Config
 	claudeBin   string // path/name of the claude binary (injected for testing)
 	ch          channel.Channel
-	approver    hitl.Approver
-	guard       *infra.CostGuard
-	soul        *infra.SOULLoader
+	approver    claudecodeApprover
+	guard       claudecodeCostTracker
+	soul        claudecodeSoulLoader
 
-	state fsmState  // accessed via atomic
-	mu    sync.Mutex
-	cmd   *exec.Cmd // current subprocess; nil when Idle
+	state   fsmState   // accessed via atomic
+	mu      sync.Mutex
+	cmd     *exec.Cmd  // current subprocess; nil when Idle
+	hookSrv *HookServer // long-lived hook server; started in Run()
 }
 
-// New constructs a claudecode.Service.
+// New constructs a claudecode.Service. All dependencies are injected as interfaces.
+// In production, pass *infra.CostGuard and *infra.SOULLoader (both satisfy the narrow
+// interfaces above). In tests, pass lightweight fakes.
 // claudeBin is the path or name of the claude binary. In tests, pass the path to a
 // fake script. In production, pass "claude" (resolved via PATH).
-func New(cfg Config, claudeBin string, ch channel.Channel, approver hitl.Approver, guard *infra.CostGuard, soul *infra.SOULLoader) Service {
+func New(cfg Config, claudeBin string, ch channel.Channel, approver claudecodeApprover, guard claudecodeCostTracker, soul claudecodeSoulLoader) Service {
 	if cfg.HookServerAddr == "" {
 		cfg.HookServerAddr = "127.0.0.1:8765"
 	}
@@ -1977,11 +2006,21 @@ func New(cfg Config, claudeBin string, ch channel.Channel, approver hitl.Approve
 
 func (s *claudecodeServiceImpl) Name() string { return "claudecode" }
 
-// Run is a no-op loop: claudecode.Service does not have a persistent background
-// subprocess. It starts a subprocess per SubmitTask call. Run blocks until ctx is done.
+// Run starts the long-lived hook HTTP server and blocks until ctx is cancelled.
+// The hook server is started once here (not per-task) so Claude Code can call
+// gistclaw-hook at any point after Run() begins without a race condition.
 func (s *claudecodeServiceImpl) Run(ctx context.Context) error {
-	<-ctx.Done()
-	return nil
+	s.hookSrv = NewHookServer(s.cfg.HookServerAddr, 0, s.approver, s.ch)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- s.hookSrv.ListenAndServe(ctx, s.cfg.HookServerAddr)
+	}()
+	select {
+	case <-ctx.Done():
+		return nil
+	case err := <-errCh:
+		return err
+	}
 }
 
 // IsAlive returns true if the FSM is in any active state (Idle, Running, or WaitingInput).
@@ -2036,16 +2075,13 @@ func (s *claudecodeServiceImpl) SubmitTask(ctx context.Context, chatID int64, pr
 		return fmt.Errorf("claudecode: start subprocess: %w", err)
 	}
 
-	// Start hook HTTP server.
-	hookSrv := NewHookServer(s.cfg.HookServerAddr, chatID, s.approver, s.ch)
-	hookCtx, hookCancel := context.WithCancel(ctx)
-	hookErrCh := make(chan error, 1)
-	go func() {
-		hookErrCh <- hookSrv.ListenAndServe(hookCtx, s.cfg.HookServerAddr)
-	}()
+	// Update the long-lived hook server's chatID for this task.
+	// The hook server was started in Run() and is shared across tasks.
+	if s.hookSrv != nil {
+		s.hookSrv.SetChatID(chatID)
+	}
 
-	// Parse stream-json output.
-	var buf strings.Builder
+	// Parse stream-json output.	var buf strings.Builder
 	hadOutput := false
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
@@ -2094,20 +2130,12 @@ func (s *claudecodeServiceImpl) SubmitTask(ctx context.Context, chatID int64, pr
 		}
 	}
 
-	// Subprocess finished; cancel hook server.
-	hookCancel()
+	// Subprocess finished.
 	_ = cmd.Wait()
 
 	s.mu.Lock()
 	s.cmd = nil
 	s.mu.Unlock()
-
-	// Wait for hook server to shut down.
-	select {
-	case <-hookErrCh:
-	case <-time.After(2 * time.Second):
-		log.Warn().Msg("claudecode: hook server did not stop in 2s")
-	}
 
 	return scanner.Err()
 }
@@ -2245,6 +2273,7 @@ git commit -m "feat(claudecode): implement Claude Code subprocess service with F
 package main_test
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -2352,12 +2381,9 @@ func TestHookBinary_NetworkError_ExitsTwo(t *testing.T) {
 	bin := buildHook(t)
 
 	// Use an address where nothing is listening.
-	cmd := exec.Command(bin, "--addr", "127.0.0.1:19998")
-	cmd.Stdin = strings.NewReader(`{"tool_name":"Bash"}`)
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd = exec.CommandContext(ctx, bin, "--addr", "127.0.0.1:19998")
+	cmd := exec.CommandContext(ctx, bin, "--addr", "127.0.0.1:19998")
 	cmd.Stdin = strings.NewReader(`{"tool_name":"Bash"}`)
 
 	err := cmd.Run()
@@ -2373,8 +2399,6 @@ func TestHookBinary_NetworkError_ExitsTwo(t *testing.T) {
 	}
 }
 ```
-
-> **Note:** The test file references `context` — add `"context"` to the import list. The `TestHookBinary_NetworkError_ExitsTwo` test creates a second `cmd` via `exec.CommandContext` — ensure the right variable is used.
 
 **Step 2: Run test to verify it fails**
 

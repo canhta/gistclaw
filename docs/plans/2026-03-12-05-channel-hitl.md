@@ -53,6 +53,9 @@ func TestHITLDecisionZeroValue(t *testing.T) {
 	if d.Always {
 		t.Error("zero-value HITLDecision.Always must be false")
 	}
+	if d.Stop {
+		t.Error("zero-value HITLDecision.Stop must be false")
+	}
 }
 
 func TestPermissionRequestFields(t *testing.T) {
@@ -138,10 +141,15 @@ Expected: `FAIL` — package does not exist yet.
 package hitl
 
 // HITLDecision is the resolved decision for a PermissionRequest.
-// Allow=false, Always=false is the safe zero-value (deny once).
+// Allow=false, Always=false, Stop=false is the safe zero-value (deny once).
 type HITLDecision struct {
 	Allow  bool
 	Always bool
+	// Stop is true when the user pressed "⏹ Stop" (deny + abort the active agent session).
+	// The caller (opencode.Service or claudecode.Service) checks this field and calls
+	// its own Stop(ctx) method if true. This avoids a circular dependency between
+	// hitl.Service and the agent services.
+	Stop bool
 }
 
 // Option is a single selectable answer for a Question.
@@ -862,6 +870,55 @@ func TestNewTelegramChannelConstructor(t *testing.T) {
 	}
 }
 
+// TestSendMessageRetriesNetworkError verifies that a transient network error (non-*telego.Error)
+// is retried up to 3 times before returning an error, per §9.21 "Telegram 5xx / network".
+func TestSendMessageRetriesNetworkError(t *testing.T) {
+	var callCount atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if strings.Contains(path, "getMe") {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"ok":     true,
+				"result": map[string]any{"id": 1, "is_bot": true, "first_name": "TestBot", "username": "testbot"},
+			})
+			return
+		}
+		if strings.Contains(path, "sendMessage") {
+			// Simulate a network error by closing the connection immediately.
+			callCount.Add(1)
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				t.Error("ResponseWriter does not implement Hijacker")
+				return
+			}
+			conn, _, _ := hj.Hijack()
+			conn.Close() // causes EOF on the client side
+			return
+		}
+		http.NotFound(w, r)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	s := newTestStore(t)
+	ch, err := tgchan.NewTelegramChannelWithBaseURL("test-token", s, srv.URL)
+	if err != nil {
+		t.Fatalf("NewTelegramChannelWithBaseURL: %v", err)
+	}
+
+	ctx := context.Background()
+	err = ch.SendMessage(ctx, 123, "hello")
+	if err == nil {
+		t.Fatal("expected error after exhausted network retries, got nil")
+	}
+	// Expect 4 total attempts: initial + 3 retries.
+	if got := callCount.Load(); got != 4 {
+		t.Errorf("expected 4 sendMessage attempts (1 initial + 3 retries), got %d", got)
+	}
+}
+
 // Ensure TelegramChannel's unused import of telego compiles correctly.
 var _ *telego.Bot // reference telego to confirm it's imported in the test binary
 ```
@@ -1034,10 +1091,14 @@ func extractMessage(u telego.Update) *channel.InboundMessage {
 		}
 	}
 	if m := u.Message; m != nil {
+		var userID int64
+		if m.From != nil { // m.From is nil for channel posts and some forwarded messages
+			userID = m.From.ID
+		}
 		return &channel.InboundMessage{
 			ID:     fmt.Sprintf("%d", u.UpdateID),
 			ChatID: m.Chat.ID,
-			UserID: m.From.ID,
+			UserID: userID,
 			Text:   m.Text,
 		}
 	}
@@ -1107,6 +1168,7 @@ func buildInlineKeyboard(payload channel.KeyboardPayload) *telego.InlineKeyboard
 // sendWithRetry executes fn with Telegram-specific retry logic:
 //   - 429 Too Many Requests: read RetryAfter, sleep, retry (unlimited).
 //   - 5xx server errors: 3 retries at 500ms / 1s / 2s.
+//   - Network errors (non-*telego.Error): treated same as 5xx — 3 retries at 500ms / 1s / 2s.
 //   - 403 Forbidden (blocked): log WARN, return nil (no retry, no error).
 func (t *TelegramChannel) sendWithRetry(ctx context.Context, fn func() error) error {
 	const maxRetries = 3
@@ -1156,10 +1218,22 @@ func (t *TelegramChannel) sendWithRetry(ctx context.Context, fn func() error) er
 				}
 				continue
 			}
+			// Other telego errors (e.g. 4xx client errors except 403/429) are non-retriable.
+			return err
+		} else {
+			// Network / transport error — treat same as 5xx per §9.21.
+			if attempt >= maxRetries {
+				return fmt.Errorf("telegram: network error after %d retries: %w", maxRetries, err)
+			}
+			delay := delays[attempt]
+			log.Warn().Int("attempt", attempt+1).Dur("delay", delay).Err(err).Msg("telegram: network error; retrying")
+			select {
+			case <-time.After(delay):
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+			continue
 		}
-
-		// Non-retriable error.
-		return err
 	}
 }
 
@@ -1173,15 +1247,18 @@ func isTelegoError(err error, out **telego.Error) bool {
 	return false
 }
 
-// splitText splits text into chunks of at most maxLen characters.
-// Splitting is hard — no word-boundary awareness. If text fits in one chunk,
-// returns a single-element slice.
+// splitText splits text into chunks of at most maxLen runes.
+// Uses rune count (not byte length) for the guard and the split loop so both
+// are consistent. This avoids the byte/rune mismatch where len("emoji") > 4096
+// bytes but the string contains far fewer than 4096 Telegram characters.
+// Note: Telegram counts characters as UTF-16 code units; emoji are 2 code units
+// each, so this is still an approximation. For v1 ASCII/CJK workloads it is correct.
 func splitText(text string, maxLen int) []string {
-	if len(text) <= maxLen {
+	runes := []rune(text)
+	if len(runes) <= maxLen {
 		return []string{text}
 	}
 	var chunks []string
-	runes := []rune(text)
 	for len(runes) > 0 {
 		end := maxLen
 		if end > len(runes) {
@@ -1292,8 +1369,35 @@ func (m *mockChannel) inject(msg channel.InboundMessage) {
 	m.inbound <- msg
 }
 
-// newTestService creates a hitl.Service with a mock channel and temp SQLite store.
-func newTestService(t *testing.T, tuning config.Tuning) (*hitl.Service, *mockChannel, *store.Store) {
+// mockReplier captures ReplyQuestion calls for test assertions.
+type mockReplier struct {
+	mu      sync.Mutex
+	calls   []replyCall
+}
+
+type replyCall struct {
+	id      string
+	answers [][]string
+}
+
+func (m *mockReplier) ReplyQuestion(_ context.Context, id string, answers [][]string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, replyCall{id: id, answers: answers})
+	return nil
+}
+
+func (m *mockReplier) lastCall() (replyCall, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.calls) == 0 {
+		return replyCall{}, false
+	}
+	return m.calls[len(m.calls)-1], true
+}
+
+// newTestService creates a hitl.Service with a mock channel, temp SQLite store, and mock replier.
+func newTestService(t *testing.T, tuning config.Tuning) (*hitl.Service, *mockChannel, *store.Store, *mockReplier) {
 	t.Helper()
 	s, err := store.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -1301,8 +1405,9 @@ func newTestService(t *testing.T, tuning config.Tuning) (*hitl.Service, *mockCha
 	}
 	t.Cleanup(func() { s.Close() })
 	ch := newMockChannel()
-	svc := hitl.NewService(ch, s, tuning)
-	return svc, ch, s
+	rep := &mockReplier{}
+	svc := hitl.NewService(ch, s, tuning, rep)
+	return svc, ch, s, rep
 }
 
 func defaultTuning() config.Tuning {
@@ -1315,7 +1420,7 @@ func defaultTuning() config.Tuning {
 // TestRequestPermissionStoresPending verifies that RequestPermission writes a
 // hitl_pending record with status "pending" before returning.
 func TestRequestPermissionStoresPending(t *testing.T) {
-	svc, _, s := newTestService(t, defaultTuning())
+	svc, _, s, _ := newTestService(t, defaultTuning())
 
 	decisionCh := make(chan hitl.HITLDecision, 1)
 	req := hitl.PermissionRequest{
@@ -1355,7 +1460,7 @@ func TestRequestPermissionStoresPending(t *testing.T) {
 // TestRequestPermissionSendsKeyboard verifies that RequestPermission sends a keyboard
 // via the channel.
 func TestRequestPermissionSendsKeyboard(t *testing.T) {
-	svc, ch, _ := newTestService(t, defaultTuning())
+	svc, ch, _, _ := newTestService(t, defaultTuning())
 
 	decisionCh := make(chan hitl.HITLDecision, 1)
 	req := hitl.PermissionRequest{
@@ -1399,7 +1504,7 @@ func TestRequestPermissionSendsKeyboard(t *testing.T) {
 // TestCallbackAllowOnce verifies that a "hitl:<id>:once" callback resolves the
 // PermissionRequest with Allow=true, Always=false and updates SQLite.
 func TestCallbackAllowOnce(t *testing.T) {
-	svc, ch, s := newTestService(t, defaultTuning())
+	svc, ch, s, _ := newTestService(t, defaultTuning())
 
 	decisionCh := make(chan hitl.HITLDecision, 1)
 	req := hitl.PermissionRequest{
@@ -1452,7 +1557,7 @@ func TestCallbackAllowOnce(t *testing.T) {
 
 // TestCallbackReject verifies that "hitl:<id>:reject" resolves with Allow=false.
 func TestCallbackReject(t *testing.T) {
-	svc, ch, _ := newTestService(t, defaultTuning())
+	svc, ch, _, _ := newTestService(t, defaultTuning())
 
 	decisionCh := make(chan hitl.HITLDecision, 1)
 	req := hitl.PermissionRequest{
@@ -1493,7 +1598,7 @@ func TestCallbackReject(t *testing.T) {
 // TestDrainPendingSendsHITLDecisionDeny verifies that DrainPending sends
 // HITLDecision{Allow: false} on all registered in-flight channels.
 func TestDrainPendingSendsHITLDecisionDeny(t *testing.T) {
-	svc, _, _ := newTestService(t, defaultTuning())
+	svc, _, _, _ := newTestService(t, defaultTuning())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1553,7 +1658,7 @@ func TestStartupAutoRejectUpdatesSQLite(t *testing.T) {
 	}
 
 	ch := newMockChannel()
-	svc := hitl.NewService(ch, s, tuning)
+	svc := hitl.NewService(ch, s, tuning, nil) // replier=nil: no questions tested here
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -1575,9 +1680,10 @@ func TestStartupAutoRejectUpdatesSQLite(t *testing.T) {
 }
 
 // TestRequestQuestionSequential verifies that RequestQuestion processes each question
-// in order and returns answers collected from channel callbacks.
+// in order, resolves option indices to labels, and calls QuestionReplier.ReplyQuestion
+// with the correct label strings (not raw indices) — fixes issues #1 and #2.
 func TestRequestQuestionSequential(t *testing.T) {
-	svc, ch, _ := newTestService(t, defaultTuning())
+	svc, ch, _, rep := newTestService(t, defaultTuning())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -1601,42 +1707,52 @@ func TestRequestQuestionSequential(t *testing.T) {
 		},
 	}
 
-	answersCh := make(chan [][]string, 1)
+	errCh := make(chan error, 1)
 	go func() {
-		answers, err := svc.RequestQuestion(ctx, req)
-		if err != nil {
-			t.Errorf("RequestQuestion: %v", err)
-		}
-		answersCh <- answers
+		// RequestQuestion now returns only error (design §7).
+		// Answers are delivered via mockReplier.ReplyQuestion.
+		errCh <- svc.RequestQuestion(ctx, req)
 	}()
 
 	// Wait for first question keyboard, then answer it.
 	time.Sleep(50 * time.Millisecond)
 	ch.inject(channel.InboundMessage{
 		ChatID:       100,
-		CallbackData: "hitl:question_seq01:opt:0", // choose "testify"
+		CallbackData: "hitl:question_seq01:opt:0", // choose "testify" (index 0)
 	})
 
 	// Wait for second question keyboard, then answer it.
 	time.Sleep(50 * time.Millisecond)
 	ch.inject(channel.InboundMessage{
 		ChatID:       100,
-		CallbackData: "hitl:question_seq01:opt:0", // choose "yes"
+		CallbackData: "hitl:question_seq01:opt:0", // choose "yes" (index 0)
 	})
 
 	select {
-	case answers := <-answersCh:
-		if len(answers) != 2 {
-			t.Fatalf("expected 2 answer groups, got %d", len(answers))
-		}
-		if len(answers[0]) != 1 || answers[0][0] != "testify" {
-			t.Errorf("answers[0] = %v, want [testify]", answers[0])
-		}
-		if len(answers[1]) != 1 || answers[1][0] != "yes" {
-			t.Errorf("answers[1] = %v, want [yes]", answers[1])
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("RequestQuestion returned error: %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for question answers")
+		t.Fatal("timed out waiting for RequestQuestion to complete")
+	}
+
+	// Verify the replier was called with actual labels, not raw indices.
+	call, ok := rep.lastCall()
+	if !ok {
+		t.Fatal("expected mockReplier.ReplyQuestion to be called")
+	}
+	if call.id != "question_seq01" {
+		t.Errorf("ReplyQuestion id = %q, want question_seq01", call.id)
+	}
+	if len(call.answers) != 2 {
+		t.Fatalf("expected 2 answer groups, got %d", len(call.answers))
+	}
+	if len(call.answers[0]) != 1 || call.answers[0][0] != "testify" {
+		t.Errorf("answers[0] = %v, want [testify]", call.answers[0])
+	}
+	if len(call.answers[1]) != 1 || call.answers[1][0] != "yes" {
+		t.Errorf("answers[1] = %v, want [yes]", call.answers[1])
 	}
 }
 ```
@@ -1809,9 +1925,13 @@ func (s *Service) RequestPermission(ctx context.Context, req PermissionRequest) 
 }
 
 // RequestQuestion processes questions sequentially.
-// For each question: sends a keyboard, waits for user reply (or timeout).
-// Returns [][]string with one entry per question.
-func (s *Service) RequestQuestion(ctx context.Context, req QuestionRequest) ([][]string, error) {
+// For each question: sends a keyboard, registers a waiter, blocks until the user
+// replies or timeout. The waiter stores the Question so the callback handler can
+// resolve an option index into the actual label string (fixes issue #2).
+// After all questions are answered, calls s.replier.ReplyQuestion with collected
+// answers and returns its error. This keeps the reply POST inside hitl.Service
+// per design §7 / Flow G §5 (fixes issue #1).
+func (s *Service) RequestQuestion(ctx context.Context, req QuestionRequest) error {
 	allAnswers := make([][]string, len(req.Questions))
 
 	for i, q := range req.Questions {
@@ -1820,10 +1940,10 @@ func (s *Service) RequestQuestion(ctx context.Context, req QuestionRequest) ([][
 			log.Warn().Err(err).Str("id", req.ID).Int("q", i).Msg("hitl: failed to send question keyboard")
 		}
 
-		// Register a waiter channel for this question request ID.
-		// The event loop will write the answer when a matching callback arrives.
+		// Register a waiter for this question. The event loop resolves opt:<n> to
+		// the label using item.question.Options[n].Label.
 		answerCh := make(chan string, 1)
-		s.questionWaiters.Store(req.ID, answerCh)
+		s.questionWaiters.Store(req.ID, questionWaiterItem{answerCh: answerCh, question: q})
 
 		var answer string
 		select {
@@ -1832,7 +1952,7 @@ func (s *Service) RequestQuestion(ctx context.Context, req QuestionRequest) ([][
 			log.Warn().Str("id", req.ID).Int("q", i).Msg("hitl: question timed out; using empty answer")
 			answer = ""
 		case <-ctx.Done():
-			return allAnswers, ctx.Err()
+			return ctx.Err()
 		}
 
 		s.questionWaiters.Delete(req.ID)
@@ -1844,7 +1964,13 @@ func (s *Service) RequestQuestion(ctx context.Context, req QuestionRequest) ([][
 		}
 	}
 
-	return allAnswers, nil
+	// POST all answers to the agent API in a single call (design Flow G §5).
+	if s.replier != nil {
+		if err := s.replier.ReplyQuestion(ctx, req.ID, allAnswers); err != nil {
+			return fmt.Errorf("hitl: reply question %s: %w", req.ID, err)
+		}
+	}
+	return nil
 }
 
 // dispatchCallback handles inbound callback messages whose data starts with "hitl:".
@@ -1873,7 +1999,10 @@ func (s *Service) dispatchCallback(ctx context.Context, msg channel.InboundMessa
 		case "reject":
 			decision = HITLDecision{Allow: false}
 		case "stop":
-			decision = HITLDecision{Allow: false}
+			// Deny this permission AND signal the caller to abort the active session.
+			// The caller (opencode.Service / claudecode.Service) checks decision.Stop
+			// and calls its own Stop(ctx) if true (fixes issue #5).
+			decision = HITLDecision{Allow: false, Stop: true}
 		default:
 			log.Warn().Str("action", action).Msg("hitl: unknown permission action")
 			return
@@ -1893,27 +2022,33 @@ func (s *Service) dispatchCallback(ctx context.Context, msg channel.InboundMessa
 
 	// Check if it's a question callback.
 	if val, ok := s.questionWaiters.Load(id); ok {
-		answerCh := val.(chan string)
+		item := val.(questionWaiterItem)
 		var answer string
 		switch action {
 		case "opt":
-			// "hitl:<id>:opt:<n>" — look up the option label from the index.
-			// We receive the index as a string; the answer is the index itself for now.
-			// The caller (opencode.Service) resolves the label from the original Question.
-			// To send the actual label, we'd need to store the Question alongside the waiter.
-			// For v1: send the raw opt index; opencode.Service will map it.
+			// "hitl:<id>:opt:<n>" — resolve the option index to the actual label (fixes issue #2).
+			// The Question is stored in the waiter so we can map index → label here,
+			// rather than returning a raw integer string to the caller.
 			if len(parts) == 4 {
-				answer = parts[3] // the option index string, e.g. "0"
+				idxStr := parts[3]
+				idx := 0
+				fmt.Sscanf(idxStr, "%d", &idx)
+				if idx >= 0 && idx < len(item.question.Options) {
+					answer = item.question.Options[idx].Label
+				} else {
+					log.Warn().Str("id", id).Str("idx", idxStr).Msg("hitl: opt index out of range; using empty")
+					answer = ""
+				}
 			}
 		case "custom":
 			// User wants to type a custom answer. For v1: return empty string and let
-			// the caller handle the free-text follow-up.
+			// the timeout path deliver empty answers to unblock the agent.
 			answer = ""
 		default:
 			answer = action
 		}
 		select {
-		case answerCh <- answer:
+		case item.answerCh <- answer:
 		default:
 		}
 		return
