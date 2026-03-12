@@ -79,8 +79,12 @@ func (t *TelegramChannel) Receive(ctx context.Context) (<-chan channel.InboundMe
 		var offset int64
 
 		// Load the last seen update ID from SQLite to resume correctly after restart.
+		// lastPersisted tracks the highest update ID written to SQLite; used for dedup
+		// without a per-update SQLite read in the hot loop.
+		var lastPersisted int64
 		if last, err := t.store.GetLastUpdateID(t.stateKey); err == nil && last > 0 {
 			offset = last + 1
+			lastPersisted = last
 		}
 
 		for {
@@ -111,11 +115,11 @@ func (t *TelegramChannel) Receive(ctx context.Context) (<-chan channel.InboundMe
 				updateID := int64(u.UpdateID)
 				offset = updateID + 1
 
-				// Dedup: persist last update ID; skip if we've already processed this.
-				lastSeen, _ := t.store.GetLastUpdateID(t.stateKey)
-				if updateID <= lastSeen {
+				// Dedup: skip updates we've already persisted (handles replay on restart).
+				if updateID <= lastPersisted {
 					continue
 				}
+				lastPersisted = updateID
 				if err := t.store.SetLastUpdateID(t.stateKey, updateID); err != nil {
 					log.Warn().Err(err).Msg("telegram: failed to persist update ID")
 				}
@@ -218,10 +222,9 @@ func buildInlineKeyboard(payload channel.KeyboardPayload) *telego.InlineKeyboard
 	for i, row := range payload.Rows {
 		buttons := make([]telego.InlineKeyboardButton, len(row))
 		for j, btn := range row {
-			cbData := btn.CallbackData
 			buttons[j] = telego.InlineKeyboardButton{
 				Text:         btn.Label,
-				CallbackData: cbData,
+				CallbackData: btn.CallbackData,
 			}
 		}
 		rows[i] = buttons
