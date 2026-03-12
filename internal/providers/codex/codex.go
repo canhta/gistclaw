@@ -88,7 +88,7 @@ func (p *Provider) Chat(ctx context.Context, messages []providers.Message, _ []p
 	if err != nil {
 		return nil, fmt.Errorf("codex: do request: %w", err)
 	}
-	defer httpResp.Body.Close()
+	defer httpResp.Body.Close() //nolint:errcheck
 
 	if httpResp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("codex: backend returned HTTP %d", httpResp.StatusCode)

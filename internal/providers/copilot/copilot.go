@@ -70,7 +70,7 @@ func (p *Provider) Chat(ctx context.Context, msgs []providers.Message, _ []provi
 	if err != nil {
 		return nil, fmt.Errorf("copilot: create session: %w", err)
 	}
-	defer session.Destroy() //nolint:errcheck
+	defer session.Disconnect() //nolint:errcheck
 
 	// Send the prompt and wait for the assistant reply.
 	resp, err := session.SendAndWait(ctx, copilot.MessageOptions{

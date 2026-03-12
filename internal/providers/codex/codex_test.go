@@ -22,7 +22,7 @@ func newTestStore(t *testing.T) *store.Store {
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { s.Close() }) //nolint:errcheck
 	return s
 }
 

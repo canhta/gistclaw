@@ -23,7 +23,7 @@ func newFetcher() tools.WebFetcher {
 func TestFetch_ExtractsReadableContent(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<!DOCTYPE html><html><head><title>Test Page</title></head><body>
+		_, _ = fmt.Fprint(w, `<!DOCTYPE html><html><head><title>Test Page</title></head><body>
 <article>
 <h1>Hello World</h1>
 <p>This is the main content of the article that should be extracted by readability.</p>
@@ -113,7 +113,7 @@ func TestFetch_Cloudflare403Retry(t *testing.T) {
 		}
 		// Second attempt with fallback UA succeeds.
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<html><body><article><p>Retry content is here and has enough text to pass readability.</p></article></body></html>`)
+		_, _ = fmt.Fprint(w, `<html><body><article><p>Retry content is here and has enough text to pass readability.</p></article></body></html>`)
 	}))
 	defer srv.Close()
 

@@ -205,7 +205,7 @@ func (s *Store) ListPendingHITL() ([]HITLRecord, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	var out []HITLRecord
 	for rows.Next() {
 		var r HITLRecord

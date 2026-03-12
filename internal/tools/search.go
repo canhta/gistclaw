@@ -112,7 +112,7 @@ func (b *braveProvider) Search(ctx context.Context, query string, count int) ([]
 	if err != nil {
 		return nil, fmt.Errorf("brave: do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("brave: HTTP %d", resp.StatusCode)
@@ -177,7 +177,7 @@ func (g *geminiProvider) Search(ctx context.Context, query string, count int) ([
 	if err != nil {
 		return nil, fmt.Errorf("gemini: do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("gemini: HTTP %d", resp.StatusCode)
@@ -243,7 +243,7 @@ func (x *xaiProvider) Search(ctx context.Context, query string, count int) ([]Se
 	if err != nil {
 		return nil, fmt.Errorf("xai: do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("xai: HTTP %d", resp.StatusCode)
@@ -303,7 +303,7 @@ func (p *perplexityProvider) Search(ctx context.Context, query string, count int
 	if err != nil {
 		return nil, fmt.Errorf("perplexity: do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("perplexity: HTTP %d", resp.StatusCode)
@@ -376,7 +376,7 @@ func (o *openrouterProvider) Search(ctx context.Context, query string, count int
 	if err != nil {
 		return nil, fmt.Errorf("openrouter: do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("openrouter: HTTP %d", resp.StatusCode)

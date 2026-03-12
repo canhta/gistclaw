@@ -80,7 +80,7 @@ func (f *webFetcher) doFetch(ctx context.Context, rawURL string, userAgent strin
 	if err != nil {
 		return "", 0, false, fmt.Errorf("fetch: do request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		cfBlocked := resp.StatusCode == http.StatusForbidden && resp.Header.Get("cf-mitigated") != ""

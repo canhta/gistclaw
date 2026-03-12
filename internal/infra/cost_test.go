@@ -18,7 +18,7 @@ func newTestCostGuard(t *testing.T, limitUSD float64) *infra.CostGuard {
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { s.Close() })             //nolint:errcheck
 	return infra.NewCostGuard(s, limitUSD, nil) // nil notifier for unit tests
 }
 
