@@ -253,6 +253,9 @@ func (m *mcpManager) CallTool(ctx context.Context, toolName string, input map[st
 		if errors.Is(err, context.DeadlineExceeded) {
 			return "MCP tool call timed out", nil
 		}
+		if errors.Is(err, context.Canceled) {
+			return "", nil // clean shutdown — caller's context was cancelled
+		}
 		return fmt.Sprintf("MCP tool error: %v", err), nil
 	}
 

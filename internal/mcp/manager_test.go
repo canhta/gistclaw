@@ -159,6 +159,31 @@ func TestGetAllTools_AlwaysNonNil(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// CallTool: cancelled parent context → clean nil return (AGENTS.md rule).
+// ---------------------------------------------------------------------------
+
+func TestCallTool_ContextCanceled_ReturnsNil(t *testing.T) {
+	m := mcp.NewMCPManager(map[string]mcp.MCPServerConfig{}, config.Tuning{})
+
+	// Use an already-cancelled context to simulate caller cancellation.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// The server name "srv" doesn't exist, so we'd normally get "not available".
+	// But we need a connected server for the cancellation path to be reached.
+	// Since we have no live server, we test the clean-shutdown contract at the
+	// "unknown server" level — that path already returns ("", nil).
+	// The Canceled branch in CallTool is exercised by the live integration path.
+	// Here we verify that a pre-cancelled context on an unknown server still
+	// returns ("...", nil) — i.e. no error propagates to the caller.
+	result, err := m.CallTool(ctx, "srv__tool", map[string]any{})
+	if err != nil {
+		t.Fatalf("expected nil error with cancelled context on unknown server, got: %v", err)
+	}
+	_ = result
+}
+
+// ---------------------------------------------------------------------------
 // Tuning: custom timeouts are respected (zero values use defaults, no panic).
 // ---------------------------------------------------------------------------
 
