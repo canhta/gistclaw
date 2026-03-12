@@ -6,7 +6,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/rs/zerolog/log"
+	"github.com/rs/zerolog"
 )
 
 // PermanentFailure is returned by WithRestart when a service exhausts its restart budget.
@@ -26,12 +26,13 @@ func (e PermanentFailure) Unwrap() error { return e.Err }
 // WithRestart wraps fn in a restart loop with exponential backoff.
 //
 // maxAttempts=0 means unlimited restarts (use for gateway.Service).
+// Pass zerolog.Nop() in tests to suppress log output.
 //
 // Return contract:
 //   - nil            — clean shutdown (ctx cancelled) or clean fn exit (fn returned nil)
 //   - PermanentFailure — fn failed maxAttempts times within window
 //   - other error    — BUG: fn returned an unexpected non-nil, non-context error after unlimited retries
-func WithRestart(name string, maxAttempts int, window time.Duration, fn func(context.Context) error) func(context.Context) error {
+func WithRestart(logger zerolog.Logger, name string, maxAttempts int, window time.Duration, fn func(context.Context) error) func(context.Context) error {
 	return func(ctx context.Context) error {
 		attempts := 0
 		windowStart := time.Now()
@@ -64,7 +65,7 @@ func WithRestart(name string, maxAttempts int, window time.Duration, fn func(con
 				return PermanentFailure{Name: name, Err: lastErr}
 			}
 
-			log.Warn().
+			logger.Warn().
 				Str("service", name).
 				Err(err).
 				Int("attempt", attempts).

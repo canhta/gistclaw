@@ -7,13 +7,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
+
 	"github.com/canhta/gistclaw/internal/app"
 )
+
+var nopLogger = zerolog.Nop()
 
 func TestWithRestartCleanShutdown(t *testing.T) {
 	// fn returns nil → withRestart returns nil (clean exit)
 	fn := func(ctx context.Context) error { return nil }
-	wrapped := app.WithRestart("svc", 3, time.Minute, fn)
+	wrapped := app.WithRestart(nopLogger, "svc", 3, time.Minute, fn)
 	ctx := context.Background()
 	if err := wrapped(ctx); err != nil {
 		t.Fatalf("expected nil, got %v", err)
@@ -23,7 +27,7 @@ func TestWithRestartCleanShutdown(t *testing.T) {
 func TestWithRestartContextCancelled(t *testing.T) {
 	// fn returns ctx.Err() → withRestart returns nil (clean shutdown)
 	fn := func(ctx context.Context) error { return ctx.Err() }
-	wrapped := app.WithRestart("svc", 3, time.Minute, fn)
+	wrapped := app.WithRestart(nopLogger, "svc", 3, time.Minute, fn)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if err := wrapped(ctx); err != nil {
@@ -35,7 +39,7 @@ func TestWithRestartPermanentFailure(t *testing.T) {
 	// fn always fails → exhausts maxAttempts → returns PermanentFailure
 	sentinel := errors.New("boom")
 	fn := func(ctx context.Context) error { return sentinel }
-	wrapped := app.WithRestart("mysvc", 3, time.Minute, fn)
+	wrapped := app.WithRestart(nopLogger, "mysvc", 3, time.Minute, fn)
 	err := wrapped(context.Background())
 	var pf app.PermanentFailure
 	if !errors.As(err, &pf) {
@@ -59,7 +63,7 @@ func TestWithRestartRestartsOnTransientError(t *testing.T) {
 		}
 		return nil
 	}
-	wrapped := app.WithRestart("svc", 5, time.Minute, fn)
+	wrapped := app.WithRestart(nopLogger, "svc", 5, time.Minute, fn)
 	if err := wrapped(context.Background()); err != nil {
 		t.Fatalf("expected nil after recovery, got %v", err)
 	}
@@ -75,7 +79,7 @@ func TestWithRestartWindowReset(t *testing.T) {
 	// does NOT reset, so attempt 2 triggers PermanentFailure.
 	// (A 50ms window would reset after each 1s sleep, causing an infinite loop.)
 	fn := func(ctx context.Context) error { return errors.New("fail") }
-	wrapped := app.WithRestart("svc", 2, 10*time.Second, fn)
+	wrapped := app.WithRestart(nopLogger, "svc", 2, 10*time.Second, fn)
 	err := wrapped(context.Background())
 	var pf app.PermanentFailure
 	if !errors.As(err, &pf) {
