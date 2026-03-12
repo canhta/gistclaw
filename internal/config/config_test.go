@@ -71,6 +71,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.HookServerAddr != "127.0.0.1:8765" {
 		t.Errorf("HookServerAddr default: got %q", cfg.HookServerAddr)
 	}
+	if cfg.OpenAIModel != "gpt-4o" {
+		t.Errorf("OpenAIModel default: got %q, want %q", cfg.OpenAIModel, "gpt-4o")
+	}
 }
 
 func TestOperatorChatIDEmptySlice(t *testing.T) {

@@ -20,6 +20,7 @@ type Config struct {
 
 	// LLM provider credentials
 	OpenAIAPIKey    string `env:"OPENAI_API_KEY"`
+	OpenAIModel     string `env:"OPENAI_MODEL"      envDefault:"gpt-4o"`
 	CopilotGRPCAddr string `env:"COPILOT_GRPC_ADDR" envDefault:"localhost:4321"`
 
 	// Infrastructure

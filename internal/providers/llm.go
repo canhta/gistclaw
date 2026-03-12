@@ -1,13 +1,7 @@
 // internal/providers/llm.go
 package providers
 
-import (
-	"context"
-	"fmt"
-
-	"github.com/canhta/gistclaw/internal/config"
-	"github.com/canhta/gistclaw/internal/store"
-)
+import "context"
 
 // Usage represents token consumption and cost for a single Chat call.
 // All providers must populate TotalCostUSD.
@@ -59,15 +53,4 @@ type LLMProvider interface {
 
 	// Name returns the provider identifier, e.g. "openai", "copilot", "codex".
 	Name() string
-}
-
-// New selects and constructs the LLMProvider implementation based on cfg.LLMProvider.
-// Values: "openai-key" (default), "copilot", "codex-oauth".
-// Returns an error if the provider value is unrecognised or required credentials
-// are missing.
-//
-// Note: concrete sub-packages are imported in task 6 when the implementations exist.
-func New(_ config.Config, _ *store.Store) (LLMProvider, error) {
-	// Implementations wired in Task 6.
-	return nil, fmt.Errorf("providers.New: not yet wired (complete Tasks 3-5 first)")
 }
