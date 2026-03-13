@@ -17,16 +17,8 @@ import (
 
 const defaultHITLTimeout = 5 * time.Minute
 
-// hookSender is the narrow channel interface needed by the hook server.
-type hookSender interface {
-	SendMessage(ctx context.Context, chatID int64, text string) error
-}
-
-// hookApprover is the narrow HITL interface needed by the hook server.
-type hookApprover interface {
-	RequestPermission(ctx context.Context, req hitl.PermissionRequest) error
-	RequestQuestion(ctx context.Context, req hitl.QuestionRequest) error
-}
+// hookApprover and hookSender are removed; use claudecodeChannel and claudecodeApprover
+// declared in service.go as the canonical interface names for this package.
 
 // HookServer is the HTTP server at 127.0.0.1:8765 that gistclaw-hook calls back into.
 // It is long-lived: started once in claudecode.Service.Run() and shared across tasks.
@@ -35,8 +27,8 @@ type HookServer struct {
 	addr        string
 	mu          sync.RWMutex
 	chatID      int64
-	approver    hookApprover
-	channel     hookSender
+	approver    claudecodeApprover
+	channel     claudecodeChannel
 	hitlTimeout time.Duration
 }
 
@@ -57,13 +49,13 @@ func (s *HookServer) getChatID() int64 {
 // NewHookServer constructs a HookServer with the default HITL timeout (5 minutes).
 // addr is used only as a metadata field for construction; the actual listen address
 // is passed to ListenAndServe.
-func NewHookServer(addr string, chatID int64, approver hookApprover, ch hookSender) *HookServer {
+func NewHookServer(addr string, chatID int64, approver claudecodeApprover, ch claudecodeChannel) *HookServer {
 	return NewHookServerWithTimeout(addr, chatID, approver, ch, defaultHITLTimeout)
 }
 
 // NewHookServerWithTimeout constructs a HookServer with a custom HITL timeout.
 // Use this in tests to avoid waiting 5 minutes.
-func NewHookServerWithTimeout(addr string, chatID int64, approver hookApprover, ch hookSender, timeout time.Duration) *HookServer {
+func NewHookServerWithTimeout(addr string, chatID int64, approver claudecodeApprover, ch claudecodeChannel, timeout time.Duration) *HookServer {
 	return &HookServer{
 		addr:        addr,
 		chatID:      chatID,

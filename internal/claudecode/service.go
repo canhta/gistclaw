@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -13,6 +14,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rs/zerolog/log"
 
@@ -46,9 +48,8 @@ type claudecodeSoulLoader interface {
 type fsmState int32
 
 const (
-	fsmIdle         fsmState = iota // No subprocess running; ready for new task.
-	fsmRunning                      // Subprocess running; processing output.
-	fsmWaitingInput                 // Subprocess blocked on hook/pretool approval.
+	fsmIdle    fsmState = iota // No subprocess running; ready for new task.
+	fsmRunning                 // Subprocess running (including HITL waits).
 )
 
 // Service is the interface satisfied by *serviceImpl.
@@ -101,10 +102,13 @@ func (s *claudecodeServiceImpl) Name() string { return "claudecode" }
 // The hook server is started once here (not per-task) so Claude Code can call
 // gistclaw-hook at any point after Run() begins without a race condition.
 func (s *claudecodeServiceImpl) Run(ctx context.Context) error {
-	s.hookSrv = NewHookServer(s.cfg.HookServerAddr, 0, s.approver, s.ch)
+	srv := NewHookServer(s.cfg.HookServerAddr, 0, s.approver, s.ch)
+	s.mu.Lock()
+	s.hookSrv = srv
+	s.mu.Unlock()
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- s.hookSrv.ListenAndServe(ctx, s.cfg.HookServerAddr)
+		errCh <- srv.ListenAndServe(ctx, s.cfg.HookServerAddr)
 	}()
 	select {
 	case <-ctx.Done():
@@ -168,13 +172,17 @@ func (s *claudecodeServiceImpl) SubmitTask(ctx context.Context, chatID int64, pr
 
 	// Update the long-lived hook server's chatID for this task.
 	// The hook server was started in Run() and is shared across tasks.
-	if s.hookSrv != nil {
-		s.hookSrv.SetChatID(chatID)
+	s.mu.Lock()
+	hookSrv := s.hookSrv
+	s.mu.Unlock()
+	if hookSrv != nil {
+		hookSrv.SetChatID(chatID)
 	}
 
 	// Parse stream-json output.
 	var buf strings.Builder
 	hadOutput := false
+	gotResult := false
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -191,16 +199,22 @@ func (s *claudecodeServiceImpl) SubmitTask(ctx context.Context, chatID int64, pr
 		case "text":
 			hadOutput = true
 			buf.WriteString(ev.Text)
-			// Flush at 4096-char boundary.
+			// Flush at 4096-char boundary; step back to a valid UTF-8 boundary.
 			for buf.Len() >= 4096 {
-				chunk := buf.String()[:4096]
-				_ = s.ch.SendMessage(ctx, chatID, chunk)
-				rest := buf.String()[4096:]
+				str := buf.String()
+				cut := 4096
+				for cut > 0 && !utf8.ValidString(str[:cut]) {
+					cut--
+				}
+				chunk := str[:cut]
+				rest := str[cut:]
 				buf.Reset()
 				buf.WriteString(rest)
+				_ = s.ch.SendMessage(ctx, chatID, chunk)
 			}
 
 		case "result":
+			gotResult = true
 			s.guard.Track(ev.TotalCostUSD)
 			// Flush remaining buffer.
 			if buf.Len() > 0 {
@@ -222,8 +236,12 @@ func (s *claudecodeServiceImpl) SubmitTask(ctx context.Context, chatID int64, pr
 		}
 	}
 
-	// Subprocess finished.
+	// Subprocess finished — SubmitTask owns Wait().
 	_ = cmd.Wait()
+
+	if !gotResult {
+		_ = s.ch.SendMessage(ctx, chatID, "⚠️ Claude Code exited unexpectedly.")
+	}
 
 	s.mu.Lock()
 	s.cmd = nil
@@ -233,6 +251,7 @@ func (s *claudecodeServiceImpl) SubmitTask(ctx context.Context, chatID int64, pr
 }
 
 // Stop sends SIGTERM to the subprocess, waits 2s, then sends SIGKILL.
+// SubmitTask owns cmd.Wait(); Stop only signals.
 func (s *claudecodeServiceImpl) Stop(_ context.Context) error {
 	s.mu.Lock()
 	cmd := s.cmd
@@ -242,22 +261,16 @@ func (s *claudecodeServiceImpl) Stop(_ context.Context) error {
 		return nil
 	}
 
+	// Signal SIGTERM. SubmitTask owns Wait(); we just signal.
 	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		log.Warn().Err(err).Msg("claudecode: SIGTERM")
+		return nil
 	}
 
-	done := make(chan struct{})
-	go func() {
-		_ = cmd.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// Exited cleanly after SIGTERM.
-	case <-time.After(2 * time.Second):
-		log.Warn().Msg("claudecode: subprocess did not exit after SIGTERM; sending SIGKILL")
-		_ = cmd.Process.Kill()
+	// Give process 2s to exit. If still alive, send SIGKILL.
+	time.Sleep(2 * time.Second)
+	if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		log.Warn().Err(err).Msg("claudecode: SIGKILL")
 	}
 	return nil
 }
@@ -272,7 +285,7 @@ func (s *claudecodeServiceImpl) patchSettings() error {
 	// Backup.
 	existing, err := os.ReadFile(settingsPath)
 	if err == nil {
-		_ = os.WriteFile("/tmp/gistclaw-claude-settings.bak", existing, 0600)
+		_ = os.WriteFile(settingsPath+".bak", existing, 0600)
 	}
 
 	// Read existing (or start with {}).
