@@ -29,6 +29,7 @@ const (
 // All service boundaries are Go interfaces; the concrete type is unexported.
 type Manager interface {
 	GetAllTools() []providers.Tool
+	ServerStatus() map[string]bool
 	CallTool(ctx context.Context, toolName string, input map[string]any) (string, error)
 	Close() error
 }
@@ -222,6 +223,19 @@ func (m *mcpManager) GetAllTools() []providers.Tool {
 		all = append(all, srv.tools...)
 	}
 	return all
+}
+
+// ServerStatus returns a map of server name → connected (true) for all
+// currently connected MCP servers. Returns an empty (non-nil) map if no
+// servers are configured.
+func (m *mcpManager) ServerStatus() map[string]bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	status := make(map[string]bool)
+	for name := range m.servers {
+		status[name] = true // connected servers are live
+	}
+	return status
 }
 
 // CallTool calls a tool on the appropriate MCP server.

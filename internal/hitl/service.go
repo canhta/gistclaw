@@ -280,6 +280,41 @@ func (s *Service) dispatchCallback(ctx context.Context, msg channel.InboundMessa
 	log.Warn().Str("id", id).Str("action", action).Msg("hitl: received callback for unknown request")
 }
 
+// Resolve looks up a pending PermissionRequest by id and sends the appropriate
+// HITLDecision based on action ("once", "always", "reject", "stop").
+// Returns an error if id is not found or action is unknown.
+func (s *Service) Resolve(id string, action string) error {
+	val, ok := s.pending.Load(id)
+	if !ok {
+		return fmt.Errorf("hitl: Resolve: id %q not found", id)
+	}
+	item := val.(pendingItem)
+
+	var decision HITLDecision
+	switch action {
+	case "once":
+		decision = HITLDecision{Allow: true, Always: false}
+	case "always":
+		decision = HITLDecision{Allow: true, Always: true}
+	case "reject":
+		decision = HITLDecision{Allow: false}
+	case "stop":
+		decision = HITLDecision{Allow: false, Stop: true}
+	default:
+		return fmt.Errorf("hitl: Resolve: unknown action %q", action)
+	}
+
+	select {
+	case item.decisionCh <- decision:
+	default:
+	}
+	s.pending.Delete(id)
+	if err := s.store.ResolveHITL(id, "resolved"); err != nil {
+		log.Warn().Err(err).Str("id", id).Msg("hitl: Resolve: failed to update SQLite")
+	}
+	return nil
+}
+
 // startupAutoReject marks all hitl_pending records with status "pending" as
 // "auto_rejected" in SQLite. On restart, the in-memory sync.Map is empty so there
 // are no channels to notify — only SQLite is updated.
