@@ -55,8 +55,10 @@ All other variables have sensible defaults. See `sample.env` for the full annota
 
 **Local (foreground):**
 
+Environment variables are not auto-loaded from `.env`. Export them first:
+
 ```bash
-make run
+export $(grep -v '^#' .env | xargs) && make run
 ```
 
 **Production (systemd on VPS):**
