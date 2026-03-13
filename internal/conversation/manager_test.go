@@ -37,8 +37,12 @@ func TestLoad_Empty(t *testing.T) {
 
 func TestSaveAndLoad(t *testing.T) {
 	m, _ := newTestManager(t, 20, 0)
-	_ = m.Save(1, "user", "hello")
-	_ = m.Save(1, "assistant", "world")
+	if err := m.Save(1, "user", "hello"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	if err := m.Save(1, "assistant", "world"); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
 	msgs, err := m.Load(1)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
@@ -54,22 +58,28 @@ func TestSaveAndLoad(t *testing.T) {
 func TestLoad_RespectsWindowTurns(t *testing.T) {
 	m, _ := newTestManager(t, 2, 0) // windowTurns=2 → max 4 rows
 	for i := 0; i < 10; i++ {
-		_ = m.Save(1, "user", "msg")
-		_ = m.Save(1, "assistant", "reply")
+		if err := m.Save(1, "user", "msg"); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		if err := m.Save(1, "assistant", "reply"); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
 	}
 	msgs, err := m.Load(1)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(msgs) > 4 {
-		t.Errorf("Load window: got %d msgs, want ≤4 (windowTurns*2)", len(msgs))
+	if len(msgs) != 4 {
+		t.Errorf("Load window: got %d msgs, want 4 (windowTurns*2)", len(msgs))
 	}
 }
 
 func TestMaybeSummarize_DisabledByDefault(t *testing.T) {
 	m, s := newTestManager(t, 20, 0) // summarizeAtTurns=0
 	for i := 0; i < 30; i++ {
-		_ = m.Save(1, "user", "msg")
+		if err := m.Save(1, "user", "msg"); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
 	}
 	// Mock LLM that must NOT be called.
 	llm := &failIfCalledProvider{t: t}
@@ -86,7 +96,9 @@ func TestMaybeSummarize_DisabledByDefault(t *testing.T) {
 func TestMaybeSummarize_BelowThreshold_NoOp(t *testing.T) {
 	m, s := newTestManager(t, 20, 16)
 	for i := 0; i < 10; i++ { // 10 < 16 threshold
-		_ = m.Save(1, "user", "msg")
+		if err := m.Save(1, "user", "msg"); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
 	}
 	llm := &failIfCalledProvider{t: t}
 	err := m.MaybeSummarize(context.Background(), 1, llm)
@@ -100,10 +112,14 @@ func TestMaybeSummarize_BelowThreshold_NoOp(t *testing.T) {
 }
 
 func TestMaybeSummarize_AtThreshold_Summarizes(t *testing.T) {
-	m, s := newTestManager(t, 20, 5)
+	m, _ := newTestManager(t, 20, 5)
 	for i := 0; i < 5; i++ {
-		_ = m.Save(1, "user", fmt.Sprintf("msg %d", i))
-		_ = m.Save(1, "assistant", fmt.Sprintf("reply %d", i))
+		if err := m.Save(1, "user", fmt.Sprintf("msg %d", i)); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		if err := m.Save(1, "assistant", fmt.Sprintf("reply %d", i)); err != nil {
+			t.Fatalf("Save: %v", err)
+		}
 	} // 10 rows ≥ 5
 	llm := &stubSummaryProvider{summary: "old stuff summarized"}
 	err := m.MaybeSummarize(context.Background(), 1, llm)
@@ -112,8 +128,8 @@ func TestMaybeSummarize_AtThreshold_Summarizes(t *testing.T) {
 	}
 	msgs, _ := m.Load(1)
 	// Should be: 1 summary row + 4 recent rows = 5
-	if len(msgs) > 5 {
-		t.Errorf("after summarization: got %d msgs, want ≤5", len(msgs))
+	if len(msgs) != 5 {
+		t.Errorf("after summarization: got %d msgs, want 5", len(msgs))
 	}
 	// Summary row should exist.
 	found := false
@@ -126,7 +142,6 @@ func TestMaybeSummarize_AtThreshold_Summarizes(t *testing.T) {
 	if !found {
 		t.Error("expected a summary row after summarization")
 	}
-	_ = s // suppress unused warning
 }
 
 // failIfCalledProvider panics if Chat is called (used to assert LLM is NOT called).

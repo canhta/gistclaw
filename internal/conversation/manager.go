@@ -11,6 +11,9 @@ import (
 	"github.com/canhta/gistclaw/internal/store"
 )
 
+// keepRecentRows is the number of recent rows preserved verbatim during summarization.
+const keepRecentRows = 4
+
 // Manager handles conversation history with optional proactive summarization.
 type Manager interface {
 	// Load returns history for chatID capped at windowTurns*2 rows (chronological order).
@@ -67,6 +70,9 @@ func (m *manager) MaybeSummarize(ctx context.Context, chatID int64, llm provider
 	if m.summarizeAtTurns <= 0 {
 		return nil // disabled
 	}
+	if ctx.Err() != nil {
+		return nil // clean shutdown
+	}
 	count, err := m.store.CountMessages(chatID)
 	if err != nil {
 		return fmt.Errorf("conversation: count: %w", err)
@@ -80,18 +86,18 @@ func (m *manager) MaybeSummarize(ctx context.Context, chatID int64, llm provider
 	if err != nil {
 		return fmt.Errorf("conversation: load for summarization: %w", err)
 	}
-	if len(rows) < 4 {
+	if len(rows) < keepRecentRows {
 		return nil // too few rows to meaningfully summarize
 	}
 
-	// Partition: keep last 4 rows intact; summarize the rest.
-	olderRows := rows[:len(rows)-4]
-	recentRows := rows[len(rows)-4:]
+	// Partition: keep last keepRecentRows rows intact; summarize the rest.
+	olderRows := rows[:len(rows)-keepRecentRows]
+	recentRows := rows[len(rows)-keepRecentRows:]
 
 	// Build summarization prompt.
 	var sb strings.Builder
 	for _, r := range olderRows {
-		sb.WriteString(strings.ToUpper(r.Role[:1]) + r.Role[1:])
+		sb.WriteString(r.Role)
 		sb.WriteString(": ")
 		sb.WriteString(r.Content)
 		sb.WriteString("\n")
@@ -103,6 +109,9 @@ func (m *manager) MaybeSummarize(ctx context.Context, chatID int64, llm provider
 	resp, err := llm.Chat(ctx, []providers.Message{{Role: "user", Content: prompt}}, nil)
 	if err != nil {
 		return fmt.Errorf("conversation: summarize LLM call: %w", err)
+	}
+	if resp == nil {
+		return fmt.Errorf("conversation: summarize: provider returned nil response")
 	}
 
 	summary := fmt.Sprintf("[Summary as of %s]: %s", time.Now().Format("2006-01-02"), resp.Content)
