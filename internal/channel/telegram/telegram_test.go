@@ -138,21 +138,21 @@ func TestSendMessageSplitsLongText(t *testing.T) {
 	}
 }
 
-func TestSendMessageSplitsExactlyAt4096(t *testing.T) {
+func TestSendMessageSplitsExactlyAtTelegramLimit(t *testing.T) {
 	fake := newFakeTelegramServer(t)
 	s := newTestStore(t)
 	ch, err := tgchan.NewTelegramChannelWithBaseURL(validToken, s, fake.server.URL)
 	if err != nil {
 		t.Fatalf("NewTelegramChannelWithBaseURL: %v", err)
 	}
-	exactText := strings.Repeat("b", 4096)
+	// telegramLimit = 4096-32 = 4064; a message exactly at this size fits in one send.
+	exactText := strings.Repeat("b", tgchan.TelegramLimit)
 	ctx := context.Background()
 	if err := ch.SendMessage(ctx, 123, exactText); err != nil {
-		t.Fatalf("SendMessage exact 4096: %v", err)
+		t.Fatalf("SendMessage exact telegramLimit: %v", err)
 	}
-	// Exactly 4096 chars — fits in one message.
 	if fake.callCount.Load() != 1 {
-		t.Errorf("expected 1 sendMessage call for exactly 4096-char text, got %d", fake.callCount.Load())
+		t.Errorf("expected 1 sendMessage call for %d-char text, got %d", tgchan.TelegramLimit, fake.callCount.Load())
 	}
 }
 

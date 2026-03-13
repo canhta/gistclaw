@@ -27,6 +27,7 @@ type Config struct {
 	OpenCodePort   int    `env:"OPENCODE_PORT"    envDefault:"8766"`
 	HookServerAddr string `env:"HOOK_SERVER_ADDR" envDefault:"127.0.0.1:8765"`
 	SoulPath       string `env:"SOUL_PATH"        envDefault:"./SOUL.md"`
+	MemoryPath     string `env:"MEMORY_PATH"      envDefault:"./MEMORY.md"`
 	SQLitePath     string `env:"SQLITE_PATH"      envDefault:"./gistclaw.db"`
 	LogLevel       string `env:"LOG_LEVEL"        envDefault:"info"`
 	MCPConfigPath  string `env:"MCP_CONFIG_PATH"  envDefault:"./gistclaw.yaml"`

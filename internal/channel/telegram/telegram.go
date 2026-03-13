@@ -15,10 +15,7 @@ import (
 	"github.com/canhta/gistclaw/internal/store"
 )
 
-const (
-	maxMessageLen   = 4096
-	longPollTimeout = 30 // seconds passed to Telegram getUpdates
-)
+const longPollTimeout = 30 // seconds passed to Telegram getUpdates
 
 // TelegramChannel implements channel.Channel using Telegram Bot API long-polling.
 // It deduplicates updates via store.GetLastUpdateID / store.SetLastUpdateID keyed
@@ -173,10 +170,10 @@ func extractMessage(u telego.Update) *channel.InboundMessage {
 	return nil
 }
 
-// SendMessage sends text to chatID. If text exceeds 4096 characters, it is hard-split
-// at 4096-character boundaries and each chunk is sent as a separate message.
+// SendMessage sends text to chatID. Long messages are split at line boundaries
+// with code-block fence healing; see SplitMessage for details.
 func (t *TelegramChannel) SendMessage(ctx context.Context, chatID int64, text string) error {
-	chunks := splitText(text, maxMessageLen)
+	chunks := SplitMessage(text, telegramLimit)
 	for _, chunk := range chunks {
 		if err := t.sendWithRetry(ctx, func() error {
 			_, err := t.bot.SendMessage(ctx, &telego.SendMessageParams{
@@ -316,20 +313,3 @@ func (t *TelegramChannel) sendWithRetry(ctx context.Context, fn func() error) er
 	}
 }
 
-// splitText splits text into chunks of at most maxLen runes.
-func splitText(text string, maxLen int) []string {
-	runes := []rune(text)
-	if len(runes) <= maxLen {
-		return []string{text}
-	}
-	var chunks []string
-	for len(runes) > 0 {
-		end := maxLen
-		if end > len(runes) {
-			end = len(runes)
-		}
-		chunks = append(chunks, string(runes[:end]))
-		runes = runes[end:]
-	}
-	return chunks
-}

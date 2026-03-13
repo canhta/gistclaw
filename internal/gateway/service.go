@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -60,6 +61,7 @@ type Service struct {
 	store      *store.Store
 	costGuard  *infra.CostGuard  // tracks daily LLM spend; read by buildStatus; may be nil
 	soul       *infra.SOULLoader // nil-safe; injected as system prompt in plain chat
+	memory     *infra.SOULLoader // nil-safe; MEMORY.md appended to system prompt after SOUL
 	startTime  time.Time         // set in NewService; used by buildStatus for Uptime line
 	cfg        config.Config
 }
@@ -80,6 +82,7 @@ func NewService(
 	st *store.Store,
 	costGuard *infra.CostGuard,
 	soul *infra.SOULLoader,
+	memory *infra.SOULLoader,
 	startTime time.Time,
 	cfg config.Config,
 ) *Service {
@@ -96,6 +99,7 @@ func NewService(
 		store:      st,
 		costGuard:  costGuard,
 		soul:       soul,
+		memory:     memory,
 		startTime:  startTime,
 		cfg:        cfg,
 	}
@@ -205,13 +209,10 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 
 	var msgs []providers.Message
 
-	// 1. SOUL system prompt (mtime-cached).
-	if s.soul != nil {
-		if content, err := s.soul.Load(); err != nil {
-			log.Warn().Err(err).Msg("gateway: SOUL load failed; proceeding without system prompt")
-		} else if content != "" {
-			msgs = append(msgs, providers.Message{Role: "system", Content: content})
-		}
+	// 1. Composed system prompt: SOUL + MEMORY.md (both mtime-cached).
+	//    Combined into one system message so the LLM sees a single coherent prompt.
+	if sysContent := s.buildSystemPrompt(); sysContent != "" {
+		msgs = append(msgs, providers.Message{Role: "system", Content: sysContent})
 	}
 
 	// 2. Conversation history — oldest first, before the current user message.
@@ -331,6 +332,26 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 	}
 }
 
+// buildSystemPrompt combines SOUL.md and MEMORY.md into a single system message string.
+// Returns empty string if both are unavailable (nil loader or missing file is non-fatal).
+func (s *Service) buildSystemPrompt() string {
+	var parts []string
+	if s.soul != nil {
+		if content, err := s.soul.Load(); err != nil {
+			log.Warn().Err(err).Msg("gateway: SOUL load failed")
+		} else if content != "" {
+			parts = append(parts, content)
+		}
+	}
+	if s.memory != nil {
+		if content, err := s.memory.Load(); err == nil && content != "" {
+			parts = append(parts, "# Memory\n\n"+content)
+		}
+		// missing MEMORY.md on first run is normal — silently ignored
+	}
+	return strings.Join(parts, "\n\n")
+}
+
 // sendFinal persists the assistant response to history and sends it to the user.
 // Used by all successful exit paths in handlePlainChat so saves are never missed.
 func (s *Service) sendFinal(ctx context.Context, chatID int64, content string) {
@@ -410,6 +431,10 @@ func (s *Service) executeToolWithInput(ctx context.Context, tc *providers.ToolCa
 		return s.execUpdateJob(input)
 	case "delete_job":
 		return s.execDeleteJob(input)
+	case "update_memory":
+		return s.execUpdateMemory(input)
+	case "clear_memory":
+		return s.execClearMemory()
 	default:
 		// MCP tool: format is "{server}__{tool}" (double underscore)
 		if strings.Contains(tc.Name, "__") {
@@ -520,6 +545,42 @@ func (s *Service) execMCPTool(ctx context.Context, toolName string, input map[st
 	return result
 }
 
+func (s *Service) execUpdateMemory(input map[string]any) string {
+	if s.memory == nil {
+		return "update_memory: memory not configured"
+	}
+	content, _ := input["content"].(string)
+	if content == "" {
+		return "update_memory: 'content' parameter required"
+	}
+	path := s.memory.Path()
+	timestamp := time.Now().UTC().Format("2006-01-02 15:04")
+	entry := fmt.Sprintf("## %s\n%s\n\n", timestamp, content)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, 0o644)
+	if err != nil {
+		log.Warn().Err(err).Msg("gateway: update_memory open failed")
+		return "update_memory error: " + err.Error()
+	}
+	defer f.Close()
+	if _, err := f.WriteString(entry); err != nil {
+		log.Warn().Err(err).Msg("gateway: update_memory write failed")
+		return "update_memory error: " + err.Error()
+	}
+	return `{"status":"ok","message":"Memory updated."}`
+}
+
+func (s *Service) execClearMemory() string {
+	if s.memory == nil {
+		return "clear_memory: memory not configured"
+	}
+	path := s.memory.Path()
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		log.Warn().Err(err).Msg("gateway: clear_memory failed")
+		return "clear_memory error: " + err.Error()
+	}
+	return `{"status":"ok","message":"Memory cleared."}`
+}
+
 // buildToolRegistry assembles the three-category tool registry.
 func (s *Service) buildToolRegistry() []providers.Tool {
 	var registry []providers.Tool
@@ -541,6 +602,9 @@ func (s *Service) buildToolRegistry() []providers.Tool {
 
 	// System — scheduler control
 	registry = append(registry, s.sched.Tools()...)
+
+	// Memory — always registered; tools self-report "not configured" if loader is nil
+	registry = append(registry, updateMemoryTool(), clearMemoryTool())
 
 	return registry
 }
@@ -675,6 +739,34 @@ func webFetchTool() providers.Tool {
 				},
 			},
 			"required": []string{"url"},
+		},
+	}
+}
+
+func updateMemoryTool() providers.Tool {
+	return providers.Tool{
+		Name:        "update_memory",
+		Description: "Append a dated entry to MEMORY.md for long-term recall across conversations. Use to remember facts, decisions, or context that should persist.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"content": map[string]any{
+					"type":        "string",
+					"description": "The information to remember",
+				},
+			},
+			"required": []string{"content"},
+		},
+	}
+}
+
+func clearMemoryTool() providers.Tool {
+	return providers.Tool{
+		Name:        "clear_memory",
+		Description: "Erase all contents of MEMORY.md. Use only when the memory is stale or explicitly requested.",
+		InputSchema: map[string]any{
+			"type":       "object",
+			"properties": map[string]any{},
 		},
 	}
 }

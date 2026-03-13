@@ -274,6 +274,7 @@ func newServiceFull(t *testing.T, ch channel.Channel, llm providers.LLMProvider,
 		s,
 		nil,        // costGuard: nil is safe for unit tests (buildStatus guards for nil)
 		soul,       // SOULLoader: nil = no system prompt
+		nil,        // memory: nil = no MEMORY.md
 		time.Now(), // startTime
 		cfg,
 	)
@@ -315,7 +316,7 @@ func TestGateway_OCCommand(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, oc, &mockCCService{}, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -341,7 +342,7 @@ func TestGateway_CCCommand(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, cc, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -368,7 +369,7 @@ func TestGateway_StopCommand(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, oc, cc, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -410,7 +411,7 @@ func TestGateway_StatusCommand(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -605,7 +606,7 @@ func TestGateway_ScheduleJobTool(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -634,7 +635,7 @@ func TestGateway_LLMError(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, failLLM,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, nil, time.Now(), cfg)
 	_ = llm // unused; suppress warning
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
@@ -951,7 +952,7 @@ func TestGateway_History_UserAndAssistantSaved(t *testing.T) {
 		},
 	}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -999,7 +1000,7 @@ func TestGateway_History_InjectedIntoPriorMessages(t *testing.T) {
 		},
 	}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -1069,7 +1070,7 @@ func TestGateway_MaxIterations(t *testing.T) {
 	svc := gateway.NewService(
 		ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
 		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}),
-		sched, s, nil, nil, time.Now(), cfg,
+		sched, s, nil, nil, nil, time.Now(), cfg,
 	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -1092,5 +1093,111 @@ func TestGateway_MaxIterations(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected forced final answer to be sent; got: %v", sent)
+	}
+}
+
+// newServiceWithMemory creates a service wired with both soul and memory loaders.
+func newServiceWithMemory(t *testing.T, ch channel.Channel, llm providers.LLMProvider, soul, memory *infra.SOULLoader) *gateway.Service {
+	t.Helper()
+	s := newTestStore(t)
+	sched := newTestScheduler(t, s)
+	cfg := config.Config{
+		AllowedUserIDs: []int64{42},
+		Tuning: config.Tuning{
+			SchedulerTick:           time.Second,
+			MissedJobsFireLimit:     5,
+			MaxIterations:           20,
+			LLMRetryDelay:           10 * time.Millisecond,
+			ConversationWindowTurns: 20,
+		},
+	}
+	return gateway.NewService(
+		ch, &mockApprover{},
+		&mockOCService{isAlive: false}, &mockCCService{isAlive: false},
+		llm, &mockSearch{}, &mockFetcher{},
+		mcp.NewMCPManager(nil, config.Tuning{}),
+		sched, s, nil, soul, memory, time.Now(), cfg,
+	)
+}
+
+// TestGateway_UpdateMemory verifies the update_memory tool appends a dated entry to MEMORY.md.
+func TestGateway_UpdateMemory(t *testing.T) {
+	memPath := filepath.Join(t.TempDir(), "MEMORY.md")
+	memory := infra.NewSOULLoader(memPath)
+
+	ch := newMockChannel()
+	llm := &mockLLM{
+		responses: []*providers.LLMResponse{
+			{
+				Content: "",
+				ToolCall: &providers.ToolCall{
+					ID:        "call-mem",
+					Name:      "update_memory",
+					InputJSON: `{"content":"User prefers concise answers."}`,
+				},
+			},
+			{Content: "Memory saved.", ToolCall: nil},
+		},
+	}
+	svc := newServiceWithMemory(t, ch, llm, nil, memory)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "remember that I prefer concise answers"}
+	time.Sleep(300 * time.Millisecond)
+
+	data, err := os.ReadFile(memPath)
+	if err != nil {
+		t.Fatalf("MEMORY.md not created: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "User prefers concise answers.") {
+		t.Errorf("expected memory content in MEMORY.md; got: %q", content)
+	}
+	// Must contain a dated heading in the format "## YYYY-MM-DD HH:MM"
+	if !strings.Contains(content, "## ") {
+		t.Errorf("expected dated heading in MEMORY.md; got: %q", content)
+	}
+}
+
+// TestGateway_ClearMemory verifies the clear_memory tool empties MEMORY.md.
+func TestGateway_ClearMemory(t *testing.T) {
+	memPath := filepath.Join(t.TempDir(), "MEMORY.md")
+	if err := os.WriteFile(memPath, []byte("## 2026-01-01 00:00\nOld memory.\n\n"), 0o644); err != nil {
+		t.Fatalf("write initial MEMORY.md: %v", err)
+	}
+	memory := infra.NewSOULLoader(memPath)
+
+	ch := newMockChannel()
+	llm := &mockLLM{
+		responses: []*providers.LLMResponse{
+			{
+				Content: "",
+				ToolCall: &providers.ToolCall{
+					ID:        "call-clear",
+					Name:      "clear_memory",
+					InputJSON: `{}`,
+				},
+			},
+			{Content: "Memory cleared.", ToolCall: nil},
+		},
+	}
+	svc := newServiceWithMemory(t, ch, llm, nil, memory)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "clear your memory"}
+	time.Sleep(300 * time.Millisecond)
+
+	data, err := os.ReadFile(memPath)
+	if err != nil {
+		t.Fatalf("MEMORY.md missing after clear: %v", err)
+	}
+	if len(data) != 0 {
+		t.Errorf("expected MEMORY.md to be empty after clear_memory; got: %q", string(data))
 	}
 }

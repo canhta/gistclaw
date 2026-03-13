@@ -37,6 +37,7 @@ type App struct {
 	cfg    config.Config
 	store  *store.Store
 	soul   *infra.SOULLoader
+	memory *infra.SOULLoader
 	rawLLM providers.LLMProvider
 	mcp    mcp.Manager
 }
@@ -66,6 +67,9 @@ func NewApp(cfg config.Config) (*App, error) {
 	// SOULLoader — lazy file reads; does not fail if SOUL.md is missing.
 	soul := infra.NewSOULLoader(cfg.SoulPath)
 
+	// MemoryLoader — same pattern; does not fail if MEMORY.md is missing.
+	memory := infra.NewSOULLoader(cfg.MemoryPath)
+
 	// Build LLM provider (validates API key format; no network call).
 	rawLLM, err := factory.New(cfg, s)
 	if err != nil {
@@ -83,6 +87,7 @@ func NewApp(cfg config.Config) (*App, error) {
 		cfg:    cfg,
 		store:  s,
 		soul:   soul,
+		memory: memory,
 		rawLLM: rawLLM,
 		mcp:    mcpManager,
 	}, nil
@@ -171,6 +176,7 @@ func (a *App) Run(ctx context.Context) error {
 		s,
 		costGuard,
 		a.soul,
+		a.memory,
 		time.Now(),
 		cfg,
 	)

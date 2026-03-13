@@ -23,6 +23,11 @@ func NewSOULLoader(path string) *SOULLoader {
 	return &SOULLoader{path: path}
 }
 
+// Path returns the file path this loader reads from.
+func (l *SOULLoader) Path() string {
+	return l.path
+}
+
 // Load returns the current content of SOUL.md.
 // On first call, or when the file has been modified, it reads from disk.
 // Returns an error if the file cannot be read.
