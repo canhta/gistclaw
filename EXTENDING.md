@@ -148,10 +148,12 @@ or triggered by the gateway. The typed enum lives in `internal/agent/kind.go`.
    type Kind int
 
    const (
-       KindOpenCode   Kind = iota
-       KindClaudeCode
-       KindChat
-       KindNewAgent   // add here
+       // KindUnknown is a sentinel; explicit -1 so zero-value Kind is not treated as KindOpenCode.
+       KindUnknown    Kind = -1
+       KindOpenCode   Kind = 0
+       KindClaudeCode Kind = 1
+       KindChat       Kind = 2
+       KindNewAgent   Kind = 3 // add here
    )
    ```
 
@@ -164,7 +166,7 @@ or triggered by the gateway. The typed enum lives in `internal/agent/kind.go`.
        case KindClaudeCode: return "claudecode"
        case KindChat:       return "chat"
        case KindNewAgent:   return "newagent"
-       default:             return "unknown"
+       default:             return fmt.Sprintf("unknown(%d)", int(k))
        }
    }
    ```
@@ -178,7 +180,7 @@ or triggered by the gateway. The typed enum lives in `internal/agent/kind.go`.
        case "claudecode": return KindClaudeCode, nil
        case "chat":       return KindChat, nil
        case "newagent":   return KindNewAgent, nil
-       default:           return 0, fmt.Errorf("unknown agent kind: %s", s)
+       default:           return KindUnknown, fmt.Errorf("agent: unknown kind %q", s)
        }
    }
    ```
