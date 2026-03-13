@@ -1344,6 +1344,105 @@ func TestGateway_RunScheduledChat(t *testing.T) {
 	}
 }
 
+// TestScheduleJob_GatewayTarget verifies that when the LLM calls the schedule_job tool
+// with target="gateway", the resulting job in the store has target="gateway".
+func TestScheduleJob_GatewayTarget(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		responses: []*providers.LLMResponse{
+			{
+				Content: "",
+				ToolCall: &providers.ToolCall{
+					ID:        "call-gw",
+					Name:      "schedule_job",
+					InputJSON: `{"kind":"in","target":"gateway","prompt":"search for gold price","schedule":"300"}`,
+				},
+				Usage: providers.Usage{},
+			},
+			{Content: "Scheduled!", ToolCall: nil, Usage: providers.Usage{}},
+		},
+	}
+	s := newTestStore(t)
+	sched := newTestScheduler(t, s)
+	cfg := config.Config{AllowedUserIDs: []int64{42}}
+	conv := conversation.NewManager(s, 20, 0)
+	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, conv, time.Now(), cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "get me gold prices in 5 minutes"}
+	time.Sleep(300 * time.Millisecond)
+
+	rows, err := s.ListAllJobs()
+	if err != nil {
+		t.Fatalf("ListAllJobs: %v", err)
+	}
+	if len(rows) == 0 {
+		t.Fatal("expected schedule_job tool to create a job in store; got none")
+	}
+	if rows[0].Target != "gateway" {
+		t.Errorf("stored job Target = %q, want %q", rows[0].Target, "gateway")
+	}
+}
+
+// TestGateway_Status_ListsAllJobs verifies that /status lists each job's 8-char ID prefix,
+// kind, target, and a truncated prompt when jobs exist in the store.
+func TestGateway_Status_ListsAllJobs(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{}
+	s := newTestStore(t)
+	sched := newTestScheduler(t, s)
+	cfg := config.Config{AllowedUserIDs: []int64{42}}
+	conv := conversation.NewManager(s, 20, 0)
+	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, conv, time.Now(), cfg)
+
+	// Insert a job directly into the store with a known ID prefix.
+	now := time.Now().UTC()
+	row := store.JobRow{
+		ID:        "abcd1234-0000-0000-0000-000000000001",
+		Kind:      "every",
+		Target:    "gateway",
+		Prompt:    "get gold prices and send summary",
+		Schedule:  "3600",
+		NextRunAt: now.Add(time.Hour),
+		Enabled:   true,
+		CreatedAt: now,
+	}
+	if err := s.InsertJob(row); err != nil {
+		t.Fatalf("InsertJob: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "/status"}
+	time.Sleep(150 * time.Millisecond)
+
+	msgs := ch.sentMessages()
+	if len(msgs) == 0 {
+		t.Fatal("expected /status response, got none")
+	}
+	status := strings.Join(msgs, "\n")
+
+	// Must contain the 8-char ID prefix
+	if !strings.Contains(status, "abcd1234") {
+		t.Errorf("/status missing job ID prefix 'abcd1234'; got:\n%s", status)
+	}
+	// Must contain the target
+	if !strings.Contains(status, "gateway") {
+		t.Errorf("/status missing 'gateway' target; got:\n%s", status)
+	}
+	// Must contain part of the prompt (first 40 chars or less)
+	if !strings.Contains(status, "get gold prices") {
+		t.Errorf("/status missing prompt snippet; got:\n%s", status)
+	}
+}
+
 // TestGateway_ClearMemory verifies the curate_memory tool can rewrite MEMORY.md.
 // The old clear_memory tool is gone; curate_memory now manages memory curation.
 // This test uses the remember tool to write content and then curate_memory to rewrite it.

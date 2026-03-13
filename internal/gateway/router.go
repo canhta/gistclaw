@@ -123,23 +123,58 @@ func (s *Service) buildStatus(ctx context.Context) string {
 	}
 	fmt.Fprintf(&sb, "HITL pending: %d\n", hitlCount)
 
-	// Scheduled jobs
+	// Scheduled jobs — summary line + one row per job
 	jobs, _ := s.sched.ListJobs()
 	activeCount := 0
-	var nextRun time.Time
+	disabledCount := 0
 	for _, j := range jobs {
 		if j.Enabled {
 			activeCount++
-			if nextRun.IsZero() || j.NextRunAt.Before(nextRun) {
-				nextRun = j.NextRunAt
-			}
+		} else {
+			disabledCount++
 		}
 	}
-	if activeCount > 0 && !nextRun.IsZero() {
-		diff := time.Until(nextRun).Round(time.Minute)
-		fmt.Fprintf(&sb, "Scheduled jobs: %d active  (next: in %s)\n", activeCount, formatDuration(diff))
+	if disabledCount > 0 {
+		fmt.Fprintf(&sb, "Scheduled jobs: %d active, %d disabled\n", activeCount, disabledCount)
 	} else {
 		fmt.Fprintf(&sb, "Scheduled jobs: %d active\n", activeCount)
+	}
+
+	// Sort: enabled first (by next_run_at ascending), disabled last.
+	sort.Slice(jobs, func(i, k int) bool {
+		if jobs[i].Enabled != jobs[k].Enabled {
+			return jobs[i].Enabled // enabled before disabled
+		}
+		return jobs[i].NextRunAt.Before(jobs[k].NextRunAt)
+	})
+
+	for _, j := range jobs {
+		idPrefix := j.ID
+		if len(idPrefix) > 8 {
+			idPrefix = idPrefix[:8]
+		}
+		prompt := j.Prompt
+		if len([]rune(prompt)) > 40 {
+			runes := []rune(prompt)
+			prompt = string(runes[:40]) + "…"
+		}
+		enabled := "✓"
+		if !j.Enabled {
+			enabled = "✗"
+		}
+		var when string
+		if !j.Enabled {
+			when = "disabled"
+		} else {
+			diff := time.Until(j.NextRunAt).Round(time.Minute)
+			if diff < 0 {
+				when = "overdue"
+			} else {
+				when = "next in " + formatDuration(diff)
+			}
+		}
+		fmt.Fprintf(&sb, "  [%s] %s %s → %s: %q %s %s\n",
+			idPrefix, j.Kind, j.Schedule, j.Target.String(), prompt, enabled, when)
 	}
 
 	// Daily cost (from infra.CostGuard)
