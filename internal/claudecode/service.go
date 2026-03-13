@@ -250,7 +250,8 @@ func (s *claudecodeServiceImpl) SubmitTask(ctx context.Context, chatID int64, pr
 	return scanner.Err()
 }
 
-// Stop sends SIGTERM to the subprocess, waits 2s, then sends SIGKILL.
+// Stop sends SIGTERM to the subprocess; if it has not exited after 2s, sends SIGKILL.
+// The kill-after-delay runs in a goroutine to avoid blocking the caller.
 // SubmitTask owns cmd.Wait(); Stop only signals.
 func (s *claudecodeServiceImpl) Stop(_ context.Context) error {
 	s.mu.Lock()
@@ -268,10 +269,13 @@ func (s *claudecodeServiceImpl) Stop(_ context.Context) error {
 	}
 
 	// Give process 2s to exit. If still alive, send SIGKILL.
-	time.Sleep(2 * time.Second)
-	if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
-		log.Warn().Err(err).Msg("claudecode: SIGKILL")
-	}
+	// Run in a goroutine so Stop() returns immediately.
+	go func() {
+		time.Sleep(2 * time.Second)
+		if err := cmd.Process.Kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			log.Warn().Err(err).Msg("claudecode: SIGKILL")
+		}
+	}()
 	return nil
 }
 
@@ -299,12 +303,18 @@ func (s *claudecodeServiceImpl) patchSettings() error {
 	}
 
 	// Patch only the hooks key.
+	// Include --addr flag when using a non-default hook server address so that
+	// gistclaw-hook connects to the correct server in multi-instance deployments.
+	addrFlag := ""
+	if s.cfg.HookServerAddr != "" && s.cfg.HookServerAddr != "127.0.0.1:8765" {
+		addrFlag = " --addr " + s.cfg.HookServerAddr
+	}
 	settings["hooks"] = map[string]interface{}{
 		"PreToolUse": []map[string]interface{}{
 			{
 				"matcher": ".*",
 				"hooks": []map[string]string{
-					{"type": "command", "command": "gistclaw-hook"},
+					{"type": "command", "command": "gistclaw-hook" + addrFlag},
 				},
 			},
 		},
@@ -312,14 +322,14 @@ func (s *claudecodeServiceImpl) patchSettings() error {
 			{
 				"matcher": ".*",
 				"hooks": []map[string]string{
-					{"type": "command", "command": "gistclaw-hook --type notification"},
+					{"type": "command", "command": "gistclaw-hook --type notification" + addrFlag},
 				},
 			},
 		},
 		"Stop": []map[string]interface{}{
 			{
 				"hooks": []map[string]string{
-					{"type": "command", "command": "gistclaw-hook --type stop"},
+					{"type": "command", "command": "gistclaw-hook --type stop" + addrFlag},
 				},
 			},
 		},

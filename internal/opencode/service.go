@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/rs/zerolog/log"
 
@@ -113,6 +114,7 @@ func (s *serviceImpl) Run(ctx context.Context) error {
 	}
 	if !s.IsAlive(ctx) {
 		_ = cmd.Process.Kill()
+		_ = cmd.Wait() // reap zombie; ignore error (process may already be dead)
 		return fmt.Errorf("opencode: failed to start within %ds", timeout)
 	}
 
@@ -285,11 +287,16 @@ func (s *serviceImpl) consumeSSE(ctx context.Context, chatID int64, sessionID st
 			case "text":
 				hadOutput = true
 				buf.WriteString(ev.Part.Text)
-				// Flush to Telegram at 4096-char boundary.
+				// Flush to Telegram at 4096-char boundary, respecting UTF-8 codepoints.
 				for buf.Len() >= 4096 {
-					chunk := buf.String()[:4096]
+					str := buf.String()
+					cut := 4096
+					for cut > 0 && !utf8.ValidString(str[:cut]) {
+						cut--
+					}
+					chunk := str[:cut]
+					rest := str[cut:]
 					_ = s.ch.SendMessage(ctx, chatID, chunk)
-					rest := buf.String()[4096:]
 					buf.Reset()
 					buf.WriteString(rest)
 				}

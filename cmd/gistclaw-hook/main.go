@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -37,6 +38,11 @@ func main() {
 		os.Exit(2)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		writeStderr(denyResponse(fmt.Sprintf("hook server returned HTTP %d", resp.StatusCode)))
+		os.Exit(2)
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
