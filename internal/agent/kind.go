@@ -12,6 +12,7 @@ const (
 	KindOpenCode   Kind = 0
 	KindClaudeCode Kind = 1
 	KindChat       Kind = 2
+	KindGateway    Kind = 3
 )
 
 // String returns the SQLite-compatible string representation.
@@ -23,6 +24,8 @@ func (k Kind) String() string {
 		return "claudecode"
 	case KindChat:
 		return "chat"
+	case KindGateway:
+		return "gateway"
 	default:
 		return fmt.Sprintf("unknown(%d)", int(k))
 	}
@@ -38,6 +41,8 @@ func KindFromString(s string) (Kind, error) {
 		return KindClaudeCode, nil
 	case "chat":
 		return KindChat, nil
+	case "gateway":
+		return KindGateway, nil
 	default:
 		return KindUnknown, fmt.Errorf("agent: unknown kind %q", s)
 	}
