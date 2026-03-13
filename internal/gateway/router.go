@@ -11,7 +11,15 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/canhta/gistclaw/internal/channel"
+	"github.com/canhta/gistclaw/internal/providers"
 )
+
+const helpFallback = "Tèo đây! Tao có thể làm:\n" +
+	"/oc <task>  — chạy OpenCode\n" +
+	"/cc <task>  — chạy Claude Code\n" +
+	"/status     — xem trạng thái\n" +
+	"/stop       — dừng agent\n" +
+	"Chat thường: hỏi gì cũng được, tao có web search, memory, scheduler."
 
 // handle processes a single inbound message.
 func (s *Service) handle(ctx context.Context, msg channel.InboundMessage) {
@@ -46,6 +54,8 @@ func (s *Service) handle(ctx context.Context, msg channel.InboundMessage) {
 			log.Error().Err(err).Msg("gateway: claudecode.SubmitTask")
 			_ = s.ch.SendMessage(ctx, msg.ChatID, "⚠️ ClaudeCode error: "+err.Error())
 		}
+	case text == "/start", text == "/help":
+		s.handleHelp(ctx, msg.ChatID)
 	case text == "/stop":
 		_ = s.opencode.Stop(ctx)
 		_ = s.claudecode.Stop(ctx)
@@ -176,4 +186,53 @@ func formatDuration(d time.Duration) string {
 		return fmt.Sprintf("%dh %dm", h, m)
 	}
 	return fmt.Sprintf("%dm", m)
+}
+
+// handleHelp generates (or returns cached) LLM capability summary for /start and /help.
+// Uses sync.Once to call the LLM at most once per process lifetime.
+// Falls back to helpFallback if s.llm is nil or the LLM call fails.
+func (s *Service) handleHelp(ctx context.Context, chatID int64) {
+	if s.llm == nil {
+		_ = s.ch.SendMessage(ctx, chatID, helpFallback)
+		return
+	}
+
+	s.helpOnce.Do(func() {
+		var msgs []providers.Message
+
+		// System context from SOUL.md + memory (same as plain chat).
+		if s.memory != nil {
+			if sysContent := s.memory.LoadContext(); sysContent != "" {
+				msgs = append(msgs, providers.Message{Role: "system", Content: sysContent})
+			}
+		}
+
+		// Inject tool/command list and ask the LLM to describe capabilities.
+		const toolList = "Available commands and tools:\n" +
+			"- /oc <task>: submit a coding task to OpenCode agent\n" +
+			"- /cc <task>: submit a coding task to Claude Code agent\n" +
+			"- /stop: stop the currently running agent\n" +
+			"- /status: show bot uptime, agent status, cost, scheduled jobs\n" +
+			"- web_search: search the web (Brave Search) — Tèo calls this automatically when needed\n" +
+			"- web_fetch: fetch and read a URL — Tèo calls this automatically when needed\n" +
+			"- remember / note: Tèo saves facts and notes to memory automatically during conversations\n" +
+			"- schedule_job / list_jobs / delete_job: manage cron-based scheduled tasks\n" +
+			"- spawn_agent / run_parallel / chain_agents: orchestrate multiple AI agents\n\n" +
+			"Describe what you can do for the user. Use your own voice and personality. Be concise."
+
+		msgs = append(msgs, providers.Message{Role: "user", Content: toolList})
+
+		resp, err := s.llm.Chat(ctx, msgs, nil)
+		if err != nil {
+			log.Warn().Err(err).Msg("gateway: handleHelp LLM error; using fallback")
+			return
+		}
+		s.cachedHelp = resp.Content
+	})
+
+	if s.cachedHelp == "" {
+		_ = s.ch.SendMessage(ctx, chatID, helpFallback)
+		return
+	}
+	_ = s.ch.SendMessage(ctx, chatID, s.cachedHelp)
 }

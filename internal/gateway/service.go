@@ -4,6 +4,7 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -68,6 +69,8 @@ type Service struct {
 	startTime   time.Time        // set in NewService; used by buildStatus for Uptime line
 	cfg         config.Config
 	lifetimeCtx context.Context //nolint:containedctx
+	helpOnce    sync.Once
+	cachedHelp  string
 }
 
 // NewService creates a new gateway Service.

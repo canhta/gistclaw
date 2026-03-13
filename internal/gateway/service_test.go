@@ -1176,6 +1176,94 @@ func TestGateway_UpdateMemory(t *testing.T) {
 	TestGateway_Remember(t)
 }
 
+// TestHandleHelpLLMSuccess verifies /start triggers an LLM call and caches the response,
+// and /help returns the cached response without calling the LLM again.
+func TestHandleHelpLLMSuccess(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		responses: []*providers.LLMResponse{
+			{Content: "mocked help text"},
+		},
+	}
+	svc := newService(t, ch, llm)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	// First call: /start — should trigger LLM and send cached response.
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "/start"}
+	time.Sleep(150 * time.Millisecond)
+
+	msgs := ch.sentMessages()
+	if len(msgs) == 0 {
+		t.Fatal("expected a message after /start, got none")
+	}
+	if msgs[len(msgs)-1] != "mocked help text" {
+		t.Errorf("/start reply = %q, want %q", msgs[len(msgs)-1], "mocked help text")
+	}
+
+	// Second call: /help — should use cache, not call LLM again.
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "/help"}
+	time.Sleep(150 * time.Millisecond)
+
+	msgs = ch.sentMessages()
+	if msgs[len(msgs)-1] != "mocked help text" {
+		t.Errorf("/help reply = %q, want %q", msgs[len(msgs)-1], "mocked help text")
+	}
+	if llm.calls() != 1 {
+		t.Errorf("LLM called %d times, want 1 (cache hit on /help)", llm.calls())
+	}
+}
+
+// TestHandleHelpLLMFailure verifies that when the LLM errors, the hardcoded fallback is sent.
+func TestHandleHelpLLMFailure(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		errs: []error{errors.New("llm down")},
+	}
+	svc := newService(t, ch, llm)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "/help"}
+	time.Sleep(150 * time.Millisecond)
+
+	msgs := ch.sentMessages()
+	if len(msgs) == 0 {
+		t.Fatal("expected a fallback message, got none")
+	}
+	if !strings.Contains(msgs[len(msgs)-1], "/oc") {
+		t.Errorf("fallback message = %q, want it to contain /oc", msgs[len(msgs)-1])
+	}
+	if llm.calls() != 1 {
+		t.Errorf("LLM called %d times, want exactly 1", llm.calls())
+	}
+}
+
+// TestHandleHelpNilLLM verifies that a nil LLM sends the fallback without panicking.
+func TestHandleHelpNilLLM(t *testing.T) {
+	ch := newMockChannel()
+	svc := newService(t, ch, nil) // nil LLM
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "/help"}
+	time.Sleep(150 * time.Millisecond)
+
+	msgs := ch.sentMessages()
+	if len(msgs) == 0 {
+		t.Fatal("expected a fallback message, got none")
+	}
+	if !strings.Contains(msgs[len(msgs)-1], "/oc") {
+		t.Errorf("fallback message = %q, want it to contain /oc", msgs[len(msgs)-1])
+	}
+}
+
 // TestGateway_ClearMemory verifies the curate_memory tool can rewrite MEMORY.md.
 // The old clear_memory tool is gone; curate_memory now manages memory curation.
 // This test uses the remember tool to write content and then curate_memory to rewrite it.
