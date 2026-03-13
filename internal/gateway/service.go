@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -454,8 +455,11 @@ func (s *Service) buildStatus(ctx context.Context) string {
 	}
 	fmt.Fprintf(&sb, "ClaudeCode: %s\n", ccStatus)
 
-	// HITL pending count
-	hitlCount := 0 // would query store in full impl
+	// HITL pending count (query live from store)
+	hitlCount := 0
+	if pending, err := s.store.ListPendingHITL(); err == nil {
+		hitlCount = len(pending)
+	}
 	fmt.Fprintf(&sb, "HITL pending: %d\n", hitlCount)
 
 	// Scheduled jobs
@@ -488,12 +492,17 @@ func (s *Service) buildStatus(ctx context.Context) string {
 		fmt.Fprintf(&sb, "Daily cost: $%.2f / $%.2f (%.0f%%)\n", currentUSD, limitUSD, pct)
 	}
 
-	// MCP servers
+	// MCP servers — sorted for deterministic output
 	servers := s.mcp.ServerStatus()
 	if len(servers) > 0 {
+		names := make([]string, 0, len(servers))
+		for name := range servers {
+			names = append(names, name)
+		}
+		sort.Strings(names)
 		sb.WriteString("MCP servers:")
-		for name, ok := range servers {
-			if ok {
+		for _, name := range names {
+			if servers[name] {
 				fmt.Fprintf(&sb, " %s ✓", name)
 			} else {
 				fmt.Fprintf(&sb, " %s ✗ (failed)", name)

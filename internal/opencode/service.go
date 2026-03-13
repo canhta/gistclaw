@@ -150,9 +150,16 @@ func (s *serviceImpl) SubmitTask(ctx context.Context, chatID int64, prompt strin
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusConflict {
+		// HTTP 409: OpenCode session is already processing a request.
+		_, _ = io.ReadAll(resp.Body) // drain
+		_ = s.ch.SendMessage(ctx, chatID, "⚠️ OpenCode is busy. Wait for current task to finish.")
+		return nil
+	}
 	if resp.StatusCode == http.StatusInternalServerError {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		if strings.Contains(string(bodyBytes), "is busy") {
+		// Fallback: older OpenCode versions return 500 with "is busy" in the body.
+		if strings.Contains(strings.ToLower(string(bodyBytes)), "is busy") {
 			_ = s.ch.SendMessage(ctx, chatID, "⚠️ OpenCode is busy. Wait for current task to finish.")
 			return nil
 		}

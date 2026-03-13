@@ -53,9 +53,11 @@ func NewApp(cfg config.Config) (*App, error) {
 	}
 
 	// Purge stale records on startup (non-fatal).
+	// hitl_pending records are purged after 24h regardless of HITL timeout.
+	const hitlPurgeTTL = 24 * time.Hour
 	if err := s.PurgeStartup(
 		cfg.Tuning.SessionTTL,
-		cfg.Tuning.HITLTimeout*2,
+		hitlPurgeTTL,
 		cfg.Tuning.CostHistoryTTL,
 	); err != nil {
 		log.Warn().Err(err).Msg("app: PurgeStartup failed (non-fatal)")
@@ -123,6 +125,9 @@ func (a *App) Run(ctx context.Context) error {
 	// --- Build tools ---
 	fetcher := tools.NewWebFetcher()
 	search := tools.NewSearchProvider(cfg) // nil if no search key configured
+	if search == nil {
+		log.Warn().Msg("app: no search API key configured; web_search tool will be unavailable")
+	}
 
 	// --- Build HITL service ---
 	hitlSvc := hitl.NewService(ch, s, cfg.Tuning, nil)
@@ -145,7 +150,8 @@ func (a *App) Run(ctx context.Context) error {
 	ccSvc := claudecode.New(ccCfg, "claude", ch, hitlSvc, ccAdapter, a.soul)
 
 	// --- Build heartbeat ---
-	heartbeat := infra.NewHeartbeat(ch, []infra.AgentHealthChecker{ocSvc, ccSvc}, cfg.OperatorChatID())
+	heartbeat := infra.NewHeartbeat(ch, []infra.AgentHealthChecker{ocSvc, ccSvc}, cfg.OperatorChatID()).
+		WithPinger(tgCh) // Tier 1: Telegram GetMe liveness
 
 	// --- Build scheduler ---
 	jobTarget := &appJobTarget{oc: ocSvc, cc: ccSvc, ch: ch, cfg: cfg}
@@ -180,16 +186,16 @@ func (a *App) Run(ctx context.Context) error {
 		return func() error {
 			err := WithRestart(logger, name, maxAttempts, window, svcFn)(egCtx) // ← egCtx, not ctx
 			if err != nil {
-				// PermanentFailure — log and notify operator; keep running.
+				// PermanentFailure — drain HITL first (unblocks in-flight handlers),
+				// then notify operator.
+				if name == "hitl" {
+					hitlSvc.DrainPending()
+				}
 				log.Error().Str("service", name).Err(err).Msg("app: non-critical service permanently failed")
 				msg := FormatDegradedMsg(name)
 				notifyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
 				_ = ch.SendMessage(notifyCtx, cfg.OperatorChatID(), msg)
-				// Drain HITL if hitl service died.
-				if name == "hitl" {
-					hitlSvc.DrainPending()
-				}
 				return nil // absorb — do not cancel errgroup
 			}
 			return nil
@@ -216,7 +222,23 @@ func (a *App) Run(ctx context.Context) error {
 		return schedSvc.Run(ctx)
 	}))
 
-	// Heartbeat ticker loop — runs until context cancelled.
+	// Tier 1 heartbeat: ping Telegram GetMe every HeartbeatTier1Every.
+	// After 3 consecutive failures, CheckTelegram notifies the operator.
+	eg.Go(func() error {
+		ticker := time.NewTicker(cfg.Tuning.HeartbeatTier1Every)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-egCtx.Done():
+				return nil
+			case <-ticker.C:
+				heartbeat.CheckTelegram(egCtx)
+			}
+		}
+	})
+
+	// Tier 2 heartbeat: check agent health every HeartbeatTier2Every.
+	// Dead agents are logged and the operator is notified.
 	eg.Go(func() error {
 		ticker := time.NewTicker(cfg.Tuning.HeartbeatTier2Every)
 		defer ticker.Stop()
@@ -225,7 +247,16 @@ func (a *App) Run(ctx context.Context) error {
 			case <-egCtx.Done():
 				return nil
 			case <-ticker.C:
-				heartbeat.CheckAgents(egCtx)
+				results := heartbeat.CheckAgents(egCtx)
+				for _, r := range results {
+					if !r.Alive {
+						log.Warn().Str("agent", r.Name).Msg("app: agent health check failed")
+						notifyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+						_ = ch.SendMessage(notifyCtx, cfg.OperatorChatID(),
+							"⚠️ Agent "+r.Name+" is not responding.")
+						cancel()
+					}
+				}
 			}
 		}
 	})
@@ -237,7 +268,13 @@ func (a *App) Run(ctx context.Context) error {
 		})(egCtx)
 	})
 
-	return eg.Wait()
+	err = eg.Wait()
+
+	// Graceful shutdown: drain any in-flight HITL permission requests so that
+	// blocked hooksrv handlers unblock immediately instead of waiting for timeout.
+	hitlSvc.DrainPending()
+
+	return err
 }
 
 // FormatDegradedMsg returns the operator notification message for the named
