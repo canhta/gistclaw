@@ -167,7 +167,7 @@ func (s *Service) buildStatus(ctx context.Context) string {
 			when = "disabled"
 		} else {
 			diff := time.Until(j.NextRunAt).Round(time.Minute)
-			if diff < 0 {
+			if diff <= 0 {
 				when = "overdue"
 			} else {
 				when = "next in " + formatDuration(diff)
