@@ -185,6 +185,11 @@ func (a *App) Run(ctx context.Context) error {
 		cfg,
 	)
 
+	// Wire gateway runner into jobTarget after both services are constructed.
+	// This deferred wire-up avoids a construction-time cycle:
+	// gateway imports scheduler, scheduler imports neither, app imports both.
+	jobTarget.setGatewayRunner(gatewaySvc.RunScheduledChat)
+
 	logger := log.Logger
 
 	eg, egCtx := errgroup.WithContext(ctx)
@@ -323,10 +328,19 @@ func (a *costTrackerAdapter) Track(usd float64) {
 // appJobTarget implements scheduler.JobTarget by routing to the appropriate
 // agent service or chat channel.
 type appJobTarget struct {
-	oc  opencode.Service
-	cc  claudecode.Service
-	ch  channel.Channel
-	cfg config.Config
+	oc    opencode.Service
+	cc    claudecode.Service
+	ch    channel.Channel
+	cfg   config.Config
+	gwRun func(ctx context.Context, chatID int64, prompt string) error
+}
+
+// setGatewayRunner wires the gateway's RunScheduledChat into appJobTarget.
+// Called after both schedSvc and gatewaySvc are constructed in Run to avoid
+// a construction-time cycle (gateway imports scheduler, scheduler imports neither,
+// app imports both).
+func (t *appJobTarget) setGatewayRunner(fn func(ctx context.Context, chatID int64, prompt string) error) {
+	t.gwRun = fn
 }
 
 func (t *appJobTarget) RunAgentTask(ctx context.Context, kind agent.Kind, prompt string) error {
@@ -336,6 +350,11 @@ func (t *appJobTarget) RunAgentTask(ctx context.Context, kind agent.Kind, prompt
 		return t.oc.SubmitTask(ctx, operatorChatID, prompt)
 	case agent.KindClaudeCode:
 		return t.cc.SubmitTask(ctx, operatorChatID, prompt)
+	case agent.KindGateway:
+		if t.gwRun == nil {
+			return fmt.Errorf("app: gateway runner not configured")
+		}
+		return t.gwRun(ctx, operatorChatID, prompt)
 	default:
 		return fmt.Errorf("app: unknown agent kind %v", kind)
 	}

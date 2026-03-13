@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/canhta/gistclaw/internal/agent"
 	"github.com/canhta/gistclaw/internal/app"
 	"github.com/canhta/gistclaw/internal/config"
 )
@@ -191,5 +192,52 @@ func TestApp_PermanentFailure_SentinelType(t *testing.T) {
 	}
 	if got.Name != "test-svc" {
 		t.Errorf("PermanentFailure.Name = %q, want %q", got.Name, "test-svc")
+	}
+}
+
+// TestAppJobTarget_GatewayRunner verifies that appJobTarget.RunAgentTask with KindGateway
+// calls the registered gwRun function, and returns an error when no runner is set.
+//
+// appJobTarget is unexported; we test it via the exported RunAgentTask method exposed through
+// the scheduler.JobTarget interface. To exercise the new code paths we use the
+// NewTestJobTarget helper exported from export_test.go.
+func TestAppJobTarget_GatewayRunner(t *testing.T) {
+	var called bool
+	var calledChatID int64
+	var calledPrompt string
+
+	runner := func(_ context.Context, chatID int64, prompt string) error {
+		called = true
+		calledChatID = chatID
+		calledPrompt = prompt
+		return nil
+	}
+
+	target := app.NewTestJobTarget(runner)
+
+	ctx := context.Background()
+	if err := target.RunAgentTask(ctx, agent.KindGateway, "check gold price"); err != nil {
+		t.Fatalf("RunAgentTask(KindGateway) with runner: %v", err)
+	}
+	if !called {
+		t.Error("expected gwRun to be called; it was not")
+	}
+	if calledChatID != app.TestOperatorChatID {
+		t.Errorf("calledChatID = %d, want %d", calledChatID, app.TestOperatorChatID)
+	}
+	if calledPrompt != "check gold price" {
+		t.Errorf("calledPrompt = %q, want %q", calledPrompt, "check gold price")
+	}
+}
+
+// TestAppJobTarget_GatewayRunner_NilRunner verifies that RunAgentTask returns an error
+// when KindGateway is requested but no runner has been registered.
+func TestAppJobTarget_GatewayRunner_NilRunner(t *testing.T) {
+	target := app.NewTestJobTarget(nil) // no runner
+
+	ctx := context.Background()
+	err := target.RunAgentTask(ctx, agent.KindGateway, "any prompt")
+	if err == nil {
+		t.Error("expected error when gwRun is nil; got nil")
 	}
 }
