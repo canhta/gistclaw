@@ -343,9 +343,16 @@ func (s *Store) UpdateJobField(id string, field string, value any) error {
 	if !allowed[field] {
 		return fmt.Errorf("store: UpdateJobField: field %q not allowed", field)
 	}
-	_, err := s.db.Exec(fmt.Sprintf(`UPDATE jobs SET %s = ? WHERE id = ?`, field), value, id)
+	result, err := s.db.Exec(fmt.Sprintf(`UPDATE jobs SET %s = ? WHERE id = ?`, field), value, id)
 	if err != nil {
 		return fmt.Errorf("store: update job field %q on %q: %w", field, id, err)
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("store: UpdateJobField: rows affected: %w", err)
+	}
+	if n == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
