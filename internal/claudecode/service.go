@@ -71,10 +71,11 @@ type claudecodeServiceImpl struct {
 	guard     claudecodeCostTracker
 	soul      claudecodeSoulLoader
 
-	state   fsmState // accessed via atomic
-	mu      sync.Mutex
-	cmd     *exec.Cmd   // current subprocess; nil when Idle
-	hookSrv *HookServer // long-lived hook server; started in Run()
+	state     fsmState    // accessed via atomic
+	runExited atomic.Bool // set to true when Run() returns; used by IsAlive
+	mu        sync.Mutex
+	cmd       *exec.Cmd   // current subprocess; nil when Idle
+	hookSrv   *HookServer // long-lived hook server; started in Run()
 }
 
 // New constructs a claudecode.Service. All dependencies are injected as interfaces.
@@ -101,7 +102,9 @@ func (s *claudecodeServiceImpl) Name() string { return "claudecode" }
 // Run starts the long-lived hook HTTP server and blocks until ctx is cancelled.
 // The hook server is started once here (not per-task) so Claude Code can call
 // gistclaw-hook at any point after Run() begins without a race condition.
+// Sets runExited=true on return so IsAlive() can detect that Run has crashed.
 func (s *claudecodeServiceImpl) Run(ctx context.Context) error {
+	defer s.runExited.Store(true)
 	srv := NewHookServer(s.cfg.HookServerAddr, 0, s.approver, s.ch)
 	s.mu.Lock()
 	s.hookSrv = srv
@@ -118,11 +121,12 @@ func (s *claudecodeServiceImpl) Run(ctx context.Context) error {
 	}
 }
 
-// IsAlive returns true if the FSM is in any active state (Idle, Running, or WaitingInput).
-// The service is considered alive as long as it has not crashed. A nil subprocess in
-// Idle state means the service is alive and ready to accept work.
+// IsAlive returns true as long as Run() has not exited. The service is
+// considered alive in Idle state (ready to accept work) and in Running state
+// (subprocess active). It is only "dead" after Run() returns, which means the
+// hook server has crashed and the supervisor has not yet restarted it.
 func (s *claudecodeServiceImpl) IsAlive(_ context.Context) bool {
-	return true // FSM is always "alive" — not crashed; subprocess may or may not be running
+	return !s.runExited.Load()
 }
 
 // SubmitTask starts a `claude -p` subprocess and streams output to Telegram.

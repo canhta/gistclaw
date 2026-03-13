@@ -206,6 +206,16 @@ func (t *TelegramChannel) SendKeyboard(ctx context.Context, chatID int64, payloa
 	})
 }
 
+// Ping calls GetMe to verify that the Telegram API is reachable.
+// Implements infra.Pinger.
+func (t *TelegramChannel) Ping(ctx context.Context) error {
+	_, err := t.bot.GetMe(ctx)
+	if err != nil {
+		return fmt.Errorf("telegram: ping (getMe): %w", err)
+	}
+	return nil
+}
+
 // SendTyping sends a "typing" chat action to chatID.
 func (t *TelegramChannel) SendTyping(ctx context.Context, chatID int64) error {
 	return t.sendWithRetry(ctx, func() error {

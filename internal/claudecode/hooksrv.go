@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
 
 	"github.com/canhta/gistclaw/internal/hitl"
@@ -110,7 +111,7 @@ func (s *HookServer) handlePreTool(w http.ResponseWriter, r *http.Request) {
 	_ = json.Unmarshal(body, &hookEvent)
 
 	decisionCh := make(chan hitl.HITLDecision, 1)
-	permID := fmt.Sprintf("permission_%d", time.Now().UnixNano())
+	permID := "permission_" + uuid.New().String()
 	req := hitl.PermissionRequest{
 		ChatID:     s.getChatID(),
 		ID:         permID,
