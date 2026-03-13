@@ -758,6 +758,9 @@ func TestGateway_SOUL_InjectsSystemPrompt(t *testing.T) {
 	if msgs[0].Content != soulContent {
 		t.Errorf("expected first system message content %q (soul); got %q", soulContent, msgs[0].Content)
 	}
+	if msgs[1].Role != "system" || !strings.Contains(msgs[1].Content, "Current UTC time:") {
+		t.Errorf("expected second message to be UTC time system message; got Role=%q Content=%q", msgs[1].Role, msgs[1].Content)
+	}
 	foundUser := false
 	for _, m := range msgs {
 		if m.Role == "user" {
