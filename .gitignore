@@ -2,3 +2,10 @@
 .env
 bin/
 .DS_Store
+
+# build output at repo root (e.g. go build -o gistclaw)
+gistclaw
+gistclaw-hook
+
+# SQLite database
+*.db
