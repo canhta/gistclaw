@@ -57,6 +57,9 @@ const (
 type Service interface {
 	Run(ctx context.Context) error
 	SubmitTask(ctx context.Context, chatID int64, prompt string) error
+	// SubmitTaskWithResult submits a prompt and blocks until the agent finishes,
+	// returning the full concatenated text output. Streams output to Telegram normally.
+	SubmitTaskWithResult(ctx context.Context, chatID int64, prompt string) (string, error)
 	Stop(ctx context.Context) error
 	IsAlive(ctx context.Context) bool
 	Name() string // returns "claudecode"
@@ -131,6 +134,22 @@ func (s *claudecodeServiceImpl) IsAlive(_ context.Context) bool {
 
 // SubmitTask starts a `claude -p` subprocess and streams output to Telegram.
 func (s *claudecodeServiceImpl) SubmitTask(ctx context.Context, chatID int64, prompt string) error {
+	return s.submitAndStream(ctx, chatID, prompt, nil)
+}
+
+// SubmitTaskWithResult submits a prompt and blocks until the agent finishes,
+// returning the full concatenated text output. Streams output to Telegram normally.
+func (s *claudecodeServiceImpl) SubmitTaskWithResult(ctx context.Context, chatID int64, prompt string) (string, error) {
+	var acc strings.Builder
+	if err := s.submitAndStream(ctx, chatID, prompt, &acc); err != nil {
+		return "", err
+	}
+	return acc.String(), nil
+}
+
+// submitAndStream is the shared implementation for SubmitTask and SubmitTaskWithResult.
+// If acc is non-nil, all text event content is appended to it.
+func (s *claudecodeServiceImpl) submitAndStream(ctx context.Context, chatID int64, prompt string, acc *strings.Builder) error {
 	// Check FSM: reject if already running.
 	if !atomic.CompareAndSwapInt32((*int32)(&s.state), int32(fsmIdle), int32(fsmRunning)) {
 		_ = s.ch.SendMessage(ctx, chatID, "⚠️ Claude Code is busy. Wait for the current task to finish.")
@@ -203,6 +222,9 @@ func (s *claudecodeServiceImpl) SubmitTask(ctx context.Context, chatID int64, pr
 		case "text":
 			hadOutput = true
 			buf.WriteString(ev.Text)
+			if acc != nil {
+				acc.WriteString(ev.Text)
+			}
 			// Flush at 4096-char boundary; step back to a valid UTF-8 boundary.
 			for buf.Len() >= 4096 {
 				str := buf.String()
@@ -240,7 +262,7 @@ func (s *claudecodeServiceImpl) SubmitTask(ctx context.Context, chatID int64, pr
 		}
 	}
 
-	// Subprocess finished — SubmitTask owns Wait().
+	// Subprocess finished — submitAndStream owns Wait().
 	_ = cmd.Wait()
 
 	if !gotResult {

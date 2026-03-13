@@ -221,3 +221,46 @@ func TestClaudeCodeService_IsAlive_IdleIsAlive(t *testing.T) {
 		t.Error("IsAlive: expected true in Idle state")
 	}
 }
+
+func TestSubmitTaskWithResult_ReturnsAccumulatedText(t *testing.T) {
+	checkFakeClaudeAvailable(t)
+
+	lines := []string{
+		`{"type":"text","text":"Hello "}`,
+		`{"type":"text","text":"world!"}`,
+		`{"type":"result","total_cost_usd":0.002,"is_error":false,"result":"done"}`,
+	}
+	fakeClaude := newEchoScript(t, lines)
+
+	ch := &fakeChannelForHook{}
+	guard := &claudecodeFakeCostGuard{}
+	soul := &claudecodeFakeSOULLoader{}
+	approver := &fakeApproverForHook{decision: hitl.HITLDecision{Allow: true}, delay: 0}
+
+	cfg := claudecode.Config{
+		Dir:            t.TempDir(),
+		HookServerAddr: "127.0.0.1:" + itoa(pickFreePort(t)),
+	}
+
+	svc := claudecode.New(cfg, fakeClaude, ch, approver, guard, soul)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	result, err := svc.SubmitTaskWithResult(ctx, 123, "build the auth module")
+	if err != nil {
+		t.Fatalf("SubmitTaskWithResult: unexpected error: %v", err)
+	}
+
+	if !strings.Contains(result, "Hello world!") {
+		t.Errorf("expected accumulated text to contain 'Hello world!', got: %q", result)
+	}
+	if guard.tracked != 0.002 {
+		t.Errorf("CostGuard.Track: got %v, want 0.002", guard.tracked)
+	}
+	// Should still stream to Telegram normally.
+	full := strings.Join(ch.messages, "")
+	if !strings.Contains(full, "Hello world!") {
+		t.Errorf("expected Telegram messages to contain streamed text, got: %v", ch.messages)
+	}
+}
