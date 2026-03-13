@@ -27,6 +27,9 @@ import (
 type Service interface {
 	Run(ctx context.Context) error
 	SubmitTask(ctx context.Context, chatID int64, prompt string) error
+	// SubmitTaskWithResult submits a prompt and blocks until the agent finishes,
+	// returning the full concatenated output text. Streams output to Telegram normally.
+	SubmitTaskWithResult(ctx context.Context, chatID int64, prompt string) (string, error)
 	Stop(ctx context.Context) error
 	IsAlive(ctx context.Context) bool
 	Name() string // returns "opencode"
@@ -123,12 +126,44 @@ func (s *serviceImpl) Run(ctx context.Context) error {
 
 // SubmitTask submits a prompt to the running OpenCode instance.
 func (s *serviceImpl) SubmitTask(ctx context.Context, chatID int64, prompt string) error {
-	// Ensure (or reuse) a session.
 	sessionID, err := s.ensureSession(ctx)
 	if err != nil {
 		return fmt.Errorf("opencode: ensure session: %w", err)
 	}
+	busy, err := s.submitPrompt(ctx, chatID, sessionID, prompt)
+	if err != nil {
+		return err
+	}
+	if busy {
+		return nil
+	}
+	return s.consumeSSE(ctx, chatID, sessionID, nil)
+}
 
+// SubmitTaskWithResult submits a prompt and blocks until the agent finishes,
+// returning the full concatenated output text. Streams output to Telegram normally.
+func (s *serviceImpl) SubmitTaskWithResult(ctx context.Context, chatID int64, prompt string) (string, error) {
+	sessionID, err := s.ensureSession(ctx)
+	if err != nil {
+		return "", fmt.Errorf("opencode: ensure session: %w", err)
+	}
+	busy, err := s.submitPrompt(ctx, chatID, sessionID, prompt)
+	if err != nil {
+		return "", err
+	}
+	if busy {
+		return "", nil
+	}
+	var acc strings.Builder
+	if err := s.consumeSSE(ctx, chatID, sessionID, &acc); err != nil {
+		return "", err
+	}
+	return acc.String(), nil
+}
+
+// submitPrompt loads SOUL.md and POSTs the prompt to prompt_async.
+// Returns (true, nil) if the session is busy (caller should return nil), or (false, nil) on success.
+func (s *serviceImpl) submitPrompt(ctx context.Context, chatID int64, sessionID, prompt string) (busy bool, err error) {
 	// Load SOUL.md.
 	soul, err := s.soul.Load()
 	if err != nil {
@@ -146,7 +181,7 @@ func (s *serviceImpl) SubmitTask(ctx context.Context, chatID int64, prompt strin
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("opencode: prompt_async: %w", err)
+		return false, fmt.Errorf("opencode: prompt_async: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -154,24 +189,22 @@ func (s *serviceImpl) SubmitTask(ctx context.Context, chatID int64, prompt strin
 		// HTTP 409: OpenCode session is already processing a request.
 		_, _ = io.ReadAll(resp.Body) // drain
 		_ = s.ch.SendMessage(ctx, chatID, "⚠️ OpenCode is busy. Wait for current task to finish.")
-		return nil
+		return true, nil
 	}
 	if resp.StatusCode == http.StatusInternalServerError {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		// Fallback: older OpenCode versions return 500 with "is busy" in the body.
 		if strings.Contains(strings.ToLower(string(bodyBytes)), "is busy") {
 			_ = s.ch.SendMessage(ctx, chatID, "⚠️ OpenCode is busy. Wait for current task to finish.")
-			return nil
+			return true, nil
 		}
-		return fmt.Errorf("opencode: prompt_async returned HTTP 500: %s", bodyBytes)
+		return false, fmt.Errorf("opencode: prompt_async returned HTTP 500: %s", bodyBytes)
 	}
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("opencode: prompt_async returned HTTP %d: %s", resp.StatusCode, bodyBytes)
+		return false, fmt.Errorf("opencode: prompt_async returned HTTP %d: %s", resp.StatusCode, bodyBytes)
 	}
-
-	// Consume SSE stream.
-	return s.consumeSSE(ctx, chatID, sessionID)
+	return false, nil
 }
 
 // Stop aborts the active session and kills the subprocess.
@@ -258,7 +291,7 @@ func (s *serviceImpl) ensureSession(ctx context.Context) (string, error) {
 	return result.ID, nil
 }
 
-func (s *serviceImpl) consumeSSE(ctx context.Context, chatID int64, sessionID string) error {
+func (s *serviceImpl) consumeSSE(ctx context.Context, chatID int64, sessionID string, acc *strings.Builder) error {
 	url := fmt.Sprintf("%s/event?directory=%s", s.base(), s.cfg.Dir)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	req.Header.Set("Accept", "text/event-stream")
@@ -294,6 +327,9 @@ func (s *serviceImpl) consumeSSE(ctx context.Context, chatID int64, sessionID st
 			case "text":
 				hadOutput = true
 				buf.WriteString(ev.Part.Text)
+				if acc != nil {
+					acc.WriteString(ev.Part.Text)
+				}
 				// Flush to Telegram at 4096-char boundary, respecting UTF-8 codepoints.
 				for buf.Len() >= 4096 {
 					str := buf.String()

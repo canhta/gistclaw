@@ -311,3 +311,57 @@ func TestSubmitTask_CostTracked(t *testing.T) {
 		t.Errorf("CostGuard.Track: got %v, want 0.0042", guard.tracked)
 	}
 }
+
+func TestSubmitTaskWithResult_ReturnsAccumulatedText(t *testing.T) {
+	var promptCalled atomic.Bool
+	sseLines := []string{
+		`data: {"type":"message.part.updated","part":{"type":"text","text":"Result "}}`,
+		`data: {"type":"message.part.updated","part":{"type":"text","text":"chunk two"}}`,
+		`data: {"type":"session.status","status":{"type":"idle"}}`,
+	}
+	srv := newMockOpenCodeServer(t, sseLines, &promptCalled)
+	defer srv.Close()
+
+	parts := strings.Split(srv.URL, ":")
+	portStr := parts[len(parts)-1]
+	var port int
+	fmt.Sscanf(portStr, "%d", &port)
+
+	ch := &fakeChannel{}
+	svc := opencode.New(opencode.Config{Port: port, Dir: t.TempDir()},
+		ch, &fakeApprover{}, &fakeCostGuard{}, &fakeSOULLoader{})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	result, err := svc.SubmitTaskWithResult(ctx, 123, "summarise the project")
+	if err != nil {
+		t.Fatalf("SubmitTaskWithResult: unexpected error: %v", err)
+	}
+
+	if !promptCalled.Load() {
+		t.Error("expected POST /session/:id/prompt_async to be called")
+	}
+
+	// Returned string must contain the full concatenated text.
+	want := "Result chunk two"
+	if result != want {
+		t.Errorf("SubmitTaskWithResult: got %q, want %q", result, want)
+	}
+
+	// Should also have streamed to Telegram normally (text + ✅ Done).
+	full := strings.Join(ch.messages, "")
+	if !strings.Contains(full, "Result chunk two") {
+		t.Errorf("expected channel to contain streamed text, got: %v", ch.messages)
+	}
+	found := false
+	for _, m := range ch.messages {
+		if strings.Contains(m, "✅ Done") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected ✅ Done message, got: %v", ch.messages)
+	}
+}
