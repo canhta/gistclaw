@@ -53,6 +53,7 @@ type Tuning struct {
 	HeartbeatTier2Every time.Duration `env:"TUNING_HB_TIER2_EVERY"         envDefault:"5m"`
 	SchedulerTick       time.Duration `env:"TUNING_SCHEDULER_TICK"         envDefault:"1s"`
 	MissedJobsFireLimit int           `env:"TUNING_MISSED_JOBS_FIRE_LIMIT" envDefault:"5"`
+	MaxIterations       int           `env:"TUNING_MAX_ITERATIONS"         envDefault:"20"`
 	MCPConnectTimeout   time.Duration `env:"TUNING_MCP_CONNECT_TIMEOUT"    envDefault:"15s"`
 	MCPCallTimeout      time.Duration `env:"TUNING_MCP_CALL_TIMEOUT"       envDefault:"10s"`
 }

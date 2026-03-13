@@ -170,6 +170,7 @@ func (a *App) Run(ctx context.Context) error {
 		schedSvc,
 		s,
 		costGuard,
+		a.soul,
 		time.Now(),
 		cfg,
 	)

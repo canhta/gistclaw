@@ -58,8 +58,9 @@ type Service struct {
 	mcp        mcp.Manager // interface (not *mcp.Manager)
 	sched      *scheduler.Service
 	store      *store.Store
-	costGuard  *infra.CostGuard // tracks daily LLM spend; read by buildStatus; may be nil
-	startTime  time.Time        // set in NewService; used by buildStatus for Uptime line
+	costGuard  *infra.CostGuard  // tracks daily LLM spend; read by buildStatus; may be nil
+	soul       *infra.SOULLoader // nil-safe; injected as system prompt in plain chat
+	startTime  time.Time         // set in NewService; used by buildStatus for Uptime line
 	cfg        config.Config
 }
 
@@ -78,6 +79,7 @@ func NewService(
 	sched *scheduler.Service,
 	st *store.Store,
 	costGuard *infra.CostGuard,
+	soul *infra.SOULLoader,
 	startTime time.Time,
 	cfg config.Config,
 ) *Service {
@@ -93,6 +95,7 @@ func NewService(
 		sched:      sched,
 		store:      st,
 		costGuard:  costGuard,
+		soul:       soul,
 		startTime:  startTime,
 		cfg:        cfg,
 	}
@@ -200,16 +203,39 @@ func (s *Service) handleCallback(ctx context.Context, msg channel.InboundMessage
 func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string) {
 	_ = s.ch.SendTyping(ctx, chatID)
 
-	msgs := []providers.Message{
-		{Role: "user", Content: text},
+	var msgs []providers.Message
+	if s.soul != nil {
+		if content, err := s.soul.Load(); err != nil {
+			log.Warn().Err(err).Msg("gateway: SOUL load failed; proceeding without system prompt")
+		} else if content != "" {
+			msgs = append(msgs, providers.Message{Role: "system", Content: content})
+		}
 	}
+	msgs = append(msgs, providers.Message{Role: "user", Content: text})
+
 	toolRegistry := s.buildToolRegistry()
 
 	const doomLoopMax = 3
 	type callSig struct{ name, input string }
 	lastCalls := make([]callSig, 0, doomLoopMax)
 
-	for {
+	for iteration := 0; ; iteration++ {
+		// MaxIterations hard cap: 0 means unlimited (default for zero-value config in tests).
+		if s.cfg.Tuning.MaxIterations > 0 && iteration >= s.cfg.Tuning.MaxIterations {
+			log.Warn().Int("iterations", iteration).Msg("gateway: max iterations reached; forcing final answer")
+			msgs = append(msgs, providers.Message{
+				Role:    "system",
+				Content: "[Maximum tool iterations reached. Provide your final answer with what you know so far.]",
+			})
+			finalResp, ferr := s.llm.Chat(ctx, msgs, nil)
+			if ferr != nil {
+				_ = s.ch.SendMessage(ctx, chatID, "⚠️ LLM error after max iterations: "+ferr.Error())
+				return
+			}
+			_ = s.ch.SendMessage(ctx, chatID, finalResp.Content)
+			return
+		}
+
 		resp, err := s.llm.Chat(ctx, msgs, toolRegistry)
 		if err != nil {
 			log.Error().Err(err).Msg("gateway: LLM Chat error")

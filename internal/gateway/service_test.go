@@ -4,6 +4,7 @@ package gateway_test
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"github.com/canhta/gistclaw/internal/config"
 	"github.com/canhta/gistclaw/internal/gateway"
 	"github.com/canhta/gistclaw/internal/hitl"
+	"github.com/canhta/gistclaw/internal/infra"
 	"github.com/canhta/gistclaw/internal/mcp"
 	"github.com/canhta/gistclaw/internal/providers"
 	"github.com/canhta/gistclaw/internal/scheduler"
@@ -150,16 +152,20 @@ func (m *mockCCService) SubmitTask(_ context.Context, _ int64, prompt string) er
 // --- mock LLMProvider ---
 
 type mockLLM struct {
-	mu        sync.Mutex
-	responses []*providers.LLMResponse
-	callCount int
+	mu           sync.Mutex
+	responses    []*providers.LLMResponse
+	callCount    int
+	capturedMsgs [][]providers.Message // one entry per Chat() call
 }
 
 func (m *mockLLM) Name() string { return "mock" }
 
-func (m *mockLLM) Chat(_ context.Context, _ []providers.Message, _ []providers.Tool) (*providers.LLMResponse, error) {
+func (m *mockLLM) Chat(_ context.Context, msgs []providers.Message, _ []providers.Tool) (*providers.LLMResponse, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	cp := make([]providers.Message, len(msgs))
+	copy(cp, msgs)
+	m.capturedMsgs = append(m.capturedMsgs, cp)
 	if m.callCount < len(m.responses) {
 		resp := m.responses[m.callCount]
 		m.callCount++
@@ -172,6 +178,15 @@ func (m *mockLLM) calls() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.callCount
+}
+
+func (m *mockLLM) firstCallMsgs() []providers.Message {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if len(m.capturedMsgs) == 0 {
+		return nil
+	}
+	return m.capturedMsgs[0]
 }
 
 // --- mock SearchProvider ---
@@ -219,6 +234,11 @@ func (n *noopJobTarget) SendChat(_ context.Context, _ int64, _ string) error    
 
 func newService(t *testing.T, ch channel.Channel, llm providers.LLMProvider) *gateway.Service {
 	t.Helper()
+	return newServiceWithSoul(t, ch, llm, nil)
+}
+
+func newServiceWithSoul(t *testing.T, ch channel.Channel, llm providers.LLMProvider, soul *infra.SOULLoader) *gateway.Service {
+	t.Helper()
 	s := newTestStore(t)
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{
@@ -226,6 +246,7 @@ func newService(t *testing.T, ch channel.Channel, llm providers.LLMProvider) *ga
 		Tuning: config.Tuning{
 			SchedulerTick:       time.Second,
 			MissedJobsFireLimit: 5,
+			MaxIterations:       20,
 		},
 	}
 	return gateway.NewService(
@@ -240,6 +261,7 @@ func newService(t *testing.T, ch channel.Channel, llm providers.LLMProvider) *ga
 		sched,
 		s,
 		nil,        // costGuard: nil is safe for unit tests (buildStatus guards for nil)
+		soul,       // SOULLoader: nil = no system prompt
 		time.Now(), // startTime
 		cfg,
 	)
@@ -281,7 +303,7 @@ func TestGateway_OCCommand(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, oc, &mockCCService{}, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -307,7 +329,7 @@ func TestGateway_CCCommand(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, cc, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -334,7 +356,7 @@ func TestGateway_StopCommand(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, oc, cc, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -376,7 +398,7 @@ func TestGateway_StatusCommand(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
@@ -571,7 +593,7 @@ func TestGateway_ScheduleJobTool(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -600,7 +622,7 @@ func TestGateway_LLMError(t *testing.T) {
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{AllowedUserIDs: []int64{42}}
 	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, failLLM,
-		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, time.Now(), cfg)
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
 	_ = llm // unused; suppress warning
 
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
@@ -632,4 +654,174 @@ type failingLLM struct {
 func (f *failingLLM) Name() string { return "failing" }
 func (f *failingLLM) Chat(_ context.Context, _ []providers.Message, _ []providers.Tool) (*providers.LLMResponse, error) {
 	return nil, f.err
+}
+
+// TestGateway_SOUL_NilLoader verifies that a nil SOULLoader produces no system message.
+func TestGateway_SOUL_NilLoader(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		responses: []*providers.LLMResponse{
+			{Content: "answer", ToolCall: nil},
+		},
+	}
+	svc := newServiceWithSoul(t, ch, llm, nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "hello"}
+	time.Sleep(300 * time.Millisecond)
+
+	msgs := llm.firstCallMsgs()
+	if len(msgs) == 0 {
+		t.Fatal("expected at least one message in first LLM call")
+	}
+	if msgs[0].Role == "system" {
+		t.Errorf("expected no system message with nil SOULLoader; got Role=%q Content=%q", msgs[0].Role, msgs[0].Content)
+	}
+	if msgs[0].Role != "user" {
+		t.Errorf("expected first message to be user role; got %q", msgs[0].Role)
+	}
+}
+
+// TestGateway_SOUL_InjectsSystemPrompt verifies that a SOULLoader with content
+// prepends a system message as the first message sent to the LLM.
+func TestGateway_SOUL_InjectsSystemPrompt(t *testing.T) {
+	soulContent := "You are a helpful assistant for coding tasks."
+	soulPath := filepath.Join(t.TempDir(), "SOUL.md")
+	if err := os.WriteFile(soulPath, []byte(soulContent), 0o600); err != nil {
+		t.Fatalf("write SOUL.md: %v", err)
+	}
+
+	ch := newMockChannel()
+	llm := &mockLLM{
+		responses: []*providers.LLMResponse{
+			{Content: "answer", ToolCall: nil},
+		},
+	}
+	soul := infra.NewSOULLoader(soulPath)
+	svc := newServiceWithSoul(t, ch, llm, soul)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "hello"}
+	time.Sleep(300 * time.Millisecond)
+
+	msgs := llm.firstCallMsgs()
+	if len(msgs) < 2 {
+		t.Fatalf("expected at least 2 messages (system + user); got %d", len(msgs))
+	}
+	if msgs[0].Role != "system" {
+		t.Errorf("expected first message Role=system; got %q", msgs[0].Role)
+	}
+	if msgs[0].Content != soulContent {
+		t.Errorf("expected system message content %q; got %q", soulContent, msgs[0].Content)
+	}
+	if msgs[1].Role != "user" {
+		t.Errorf("expected second message Role=user; got %q", msgs[1].Role)
+	}
+}
+
+// TestGateway_SOUL_LoadError verifies that a SOUL load error is non-fatal:
+// the LLM is still called, no system message is prepended, no error is sent to the user.
+func TestGateway_SOUL_LoadError(t *testing.T) {
+	// Point loader at a non-existent file to trigger load error.
+	soul := infra.NewSOULLoader(filepath.Join(t.TempDir(), "missing.md"))
+
+	ch := newMockChannel()
+	llm := &mockLLM{
+		responses: []*providers.LLMResponse{
+			{Content: "answer despite no SOUL", ToolCall: nil},
+		},
+	}
+	svc := newServiceWithSoul(t, ch, llm, soul)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "hello"}
+	time.Sleep(300 * time.Millisecond)
+
+	// LLM must still be called.
+	if llm.calls() != 1 {
+		t.Errorf("expected 1 LLM call despite SOUL load error; got %d", llm.calls())
+	}
+	// No system message prepended.
+	callMsgs := llm.firstCallMsgs()
+	if len(callMsgs) > 0 && callMsgs[0].Role == "system" {
+		t.Errorf("expected no system message on SOUL load error; got one with content %q", callMsgs[0].Content)
+	}
+	// No error message sent to user (answer should be sent instead).
+	sent := ch.sentMessages()
+	for _, m := range sent {
+		if strings.Contains(m, "⚠️") {
+			t.Errorf("expected no error message to user on SOUL load failure; got %q", m)
+		}
+	}
+}
+
+// TestGateway_MaxIterations verifies that MaxIterations=2 triggers a forced final answer
+// when the LLM keeps returning tool calls. Total LLM calls must be exactly 3
+// (2 tool-calling iterations + 1 forced-final call).
+func TestGateway_MaxIterations(t *testing.T) {
+	ch := newMockChannel()
+
+	toolCall := &providers.ToolCall{
+		ID:        "call-iter",
+		Name:      "web_search",
+		InputJSON: `{"query":"something","count":5}`,
+	}
+	forcedAnswer := "Forced final answer after iteration cap."
+
+	llm := &mockLLM{
+		responses: []*providers.LLMResponse{
+			// iterations 0 and 1: keep calling tools
+			{Content: "", ToolCall: toolCall},
+			{Content: "", ToolCall: toolCall},
+			// forced-final call (iteration 2 triggers cap, calls LLM without tools)
+			{Content: forcedAnswer, ToolCall: nil},
+		},
+	}
+
+	s := newTestStore(t)
+	sched := newTestScheduler(t, s)
+	cfg := config.Config{
+		AllowedUserIDs: []int64{42},
+		Tuning: config.Tuning{
+			SchedulerTick:       time.Second,
+			MissedJobsFireLimit: 5,
+			MaxIterations:       2,
+		},
+	}
+	svc := gateway.NewService(
+		ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}),
+		sched, s, nil, nil, time.Now(), cfg,
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "search forever"}
+	time.Sleep(600 * time.Millisecond)
+
+	if calls := llm.calls(); calls != 3 {
+		t.Errorf("MaxIterations=2: expected 3 LLM calls (2 tool + 1 forced-final), got %d", calls)
+	}
+
+	sent := ch.sentMessages()
+	found := false
+	for _, m := range sent {
+		if strings.Contains(m, forcedAnswer) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected forced final answer to be sent; got: %v", sent)
+	}
 }
