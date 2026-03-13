@@ -2,12 +2,17 @@
 package memory
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
+
+// notesCapBytes is the maximum number of bytes retained from today's notes in LoadContext.
+// Newer entries are preserved (tail kept) when the cap is exceeded.
+const notesCapBytes = 8000
 
 // Engine manages the persistent memory context for the gateway.
 type Engine interface {
@@ -71,9 +76,9 @@ func (e *engine) LoadContext() string {
 		parts = append(parts, "# Memory\n\n"+strings.TrimRight(string(content), "\n"))
 	}
 
-	// 3. Today's notes, capped at 8000 bytes (tail kept — newest entries preserved).
+	// 3. Today's notes, capped at notesCapBytes (tail kept — newest entries preserved).
 	if notes, err := e.TodayNotes(); err == nil && notes != "" {
-		capped := tailBytes(notes, 8000)
+		capped := tailBytes(notes, notesCapBytes)
 		parts = append(parts, "# Today's Notes\n\n"+strings.TrimRight(capped, "\n"))
 	}
 
@@ -98,13 +103,16 @@ func (e *engine) Rewrite(content string) error {
 	if err := os.MkdirAll(filepath.Dir(e.memoryPath), 0o755); err != nil {
 		return fmt.Errorf("memory: create dir: %w", err)
 	}
-	return os.WriteFile(e.memoryPath, []byte(content), 0o644)
+	if err := os.WriteFile(e.memoryPath, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("memory: write %s: %w", e.memoryPath, err)
+	}
+	return nil
 }
 
 func (e *engine) TodayNotes() (string, error) {
 	file := filepath.Join(e.notesDir, time.Now().Format("2006-01-02")+".md")
 	content, err := os.ReadFile(file)
-	if os.IsNotExist(err) {
+	if errors.Is(err, os.ErrNotExist) {
 		return "", nil
 	}
 	if err != nil {
@@ -114,7 +122,7 @@ func (e *engine) TodayNotes() (string, error) {
 }
 
 // appendToFile appends data to path, creating the file and parent dirs if needed.
-func appendToFile(path, data string) error {
+func appendToFile(path, data string) (retErr error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return fmt.Errorf("memory: create dir for %s: %w", path, err)
 	}
@@ -122,9 +130,15 @@ func appendToFile(path, data string) error {
 	if err != nil {
 		return fmt.Errorf("memory: open %s: %w", path, err)
 	}
-	defer f.Close()
-	_, err = f.WriteString(data)
-	return err
+	defer func() {
+		if cerr := f.Close(); cerr != nil && retErr == nil {
+			retErr = fmt.Errorf("memory: close %s: %w", path, cerr)
+		}
+	}()
+	if _, err := f.WriteString(data); err != nil {
+		return fmt.Errorf("memory: write %s: %w", path, err)
+	}
+	return nil
 }
 
 // tailBytes returns the last n bytes of s, aligned to the start of a line if possible.
