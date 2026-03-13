@@ -126,14 +126,10 @@ func containsWarningEmoji(s string) bool {
 // TestAppJobTarget_RunAgentTask_OpenCode verifies that appJobTarget routes
 // KindOpenCode to opencode.SubmitTask and not to claudecode.
 func TestAppJobTarget_RunAgentTask_OpenCode(t *testing.T) {
-	// appJobTarget is an unexported type; we test it indirectly by verifying
-	// the exported behaviour of App after construction. The scheduler.JobTarget
-	// interface is implemented inline in app.go. We test via the scheduler's
-	// CreateJob → RunAgentTask path, but that requires a running scheduler.
-	//
-	// Instead, we test the appJobTarget struct by accessing it through the
-	// app.NewJobTarget constructor which app.go must export for testability.
-	// See the implementation note in Task 2: export NewJobTarget for testing.
+	// appJobTarget is an unexported type; this test verifies App construction
+	// succeeds and the composition root wires correctly. The actual routing
+	// behaviour (KindOpenCode → opencode.SubmitTask) is covered by the
+	// gateway integration tests in Plan 7.
 
 	os.Clearenv()
 	setMinimalEnv(t)
