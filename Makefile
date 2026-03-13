@@ -1,4 +1,4 @@
-.PHONY: tidy test build run lint deploy logs
+.PHONY: tidy test build run vet lint deploy logs
 
 BINARY_DIR := ./bin
 GISTCLAW   := $(BINARY_DIR)/gistclaw
@@ -18,8 +18,11 @@ build: tidy
 run: build
 	$(GISTCLAW)
 
-lint:
+vet:
 	go vet ./...
+
+lint: vet
+	golangci-lint run ./...
 
 # Deploy: rsync binaries to VPS and restart the service
 # Usage: make deploy VPS=user@your-vps-ip
