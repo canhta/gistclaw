@@ -2,13 +2,7 @@
 
 ## Supported Versions
 
-GistClaw does not yet use semantic versioning. Only the current `main` branch
-is actively maintained and receives security fixes.
-
-| Version | Supported |
-|---|---|
-| `main` | Yes |
-| Any tagged release | Only if it matches current `main` |
+Only the current `main` branch is actively maintained and receives security fixes.
 
 ---
 
@@ -34,7 +28,7 @@ Include as much of the following as possible:
 - **Initial assessment** (confirmed / not confirmed) within 7 days.
 - **Fix and disclosure** within 30 days for critical vulnerabilities; 90 days
   for non-critical.
-- Credit in the release notes if you wish to be acknowledged.
+- Credit in the CHANGELOG if you wish to be acknowledged.
 
 ---
 

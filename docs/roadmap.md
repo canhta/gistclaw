@@ -6,7 +6,7 @@ Legend: `done` · `todo`
 
 ---
 
-## Phase 1 — Core (v0.1.0) `done`
+## Phase 1 — Core `done`
 
 | Status | Item |
 |---|---|
@@ -33,7 +33,7 @@ Legend: `done` · `todo`
 | `todo` | LLM error classification (terminal / rate-limit / retryable) |
 | `todo` | Proactive context summarisation before token limit |
 | `todo` | Integration test suite against mock Telegram server |
-| `todo` | Versioned releases with pre-built binaries |
+| `todo` | Pre-built binaries via CI |
 
 ---
 

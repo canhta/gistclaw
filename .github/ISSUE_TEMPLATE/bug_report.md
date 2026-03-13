@@ -26,7 +26,7 @@ What actually happened. Include log output if relevant (`make logs VPS=...` or `
 
 ## Environment
 
-- GistClaw version / commit: <!-- git rev-parse --short HEAD -->
+- GistClaw commit: <!-- git rev-parse --short HEAD -->
 - Go version: <!-- go version -->
 - OS: <!-- e.g. Ubuntu 22.04 -->
 - LLM provider: <!-- openai-key / copilot / codex-oauth -->
