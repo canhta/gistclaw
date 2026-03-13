@@ -6,8 +6,6 @@ Legend: `done` · `todo`
 
 ---
 
-## Phase 1 — Core `done`
-
 | Status | Item |
 |---|---|
 | `done` | Telegram gateway (long-poll, SQLite dedup) |
@@ -22,35 +20,14 @@ Legend: `done` · `todo`
 | `done` | Three LLM providers: `openai-key`, `copilot`, `codex-oauth` |
 | `done` | Four search providers: Brave, Gemini, Grok, Perplexity |
 | `done` | systemd deployment unit |
-
----
-
-## Phase 2 — Reliability `todo`
-
-| Status | Item |
-|---|---|
 | `todo` | Hard iteration cap on plain chat tool loop |
 | `todo` | LLM error classification (terminal / rate-limit / retryable) |
 | `todo` | Proactive context summarisation before token limit |
 | `todo` | Integration test suite against mock Telegram server |
 | `todo` | Pre-built binaries via CI |
-
----
-
-## Phase 3 — Agent improvements `todo`
-
-| Status | Item |
-|---|---|
 | `todo` | Session history browser (`/history`, `/sessions`) |
 | `todo` | Per-project session isolation (multiple `OPENCODE_DIR` targets) |
 | `todo` | File upload to agent context via Telegram attachments |
-
----
-
-## Phase 4 — Platform `todo`
-
-| Status | Item |
-|---|---|
 | `todo` | Discord channel adapter |
 | `todo` | Slack channel adapter |
 | `todo` | Anthropic direct API provider |
