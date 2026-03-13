@@ -46,19 +46,19 @@ func (s *Service) handleHelp(ctx context.Context, chatID int64)
 ```
 
 1. If `s.llm` is nil, send the hardcoded fallback directly and return.
-2. Call `s.helpOnce.Do(func() { ... })` to generate `s.cachedHelp` exactly once:
+2. Call `s.helpOnce.Do(func() { ... })` to attempt generation exactly once:
    a. Build a prompt:
       - System message: `s.memory.LoadContext()` if `s.memory != nil` and content is non-empty
       - User message: injected tool/command list + instruction (see Prompt Design)
    b. Call `s.llm.Chat(ctx, msgs, nil)` with no tools.
    c. On success: assign response content to `s.cachedHelp`.
-   d. On LLM error: log with `log.Warn().Err(err).Msg("gateway: handleHelp LLM error; using fallback")`. **Do not** assign to `s.cachedHelp` — leave it empty so the next call retries.
-3. If `s.cachedHelp` is empty (LLM failed), send the hardcoded fallback string.
+   d. On LLM error: log with `log.Warn().Err(err).Msg("gateway: handleHelp LLM error; using fallback")`. **Do not** assign to `s.cachedHelp` — leave it empty.
+3. If `s.cachedHelp` is empty (LLM failed or first call hasn't completed yet), send the hardcoded fallback string.
 4. Otherwise send `s.cachedHelp`.
 
 **Key invariant:** `s.cachedHelp` is only written inside `helpOnce.Do`. It is read after `Do` returns (which guarantees the write happened-before the read). No additional mutex is needed.
 
-**On LLM failure:** `helpOnce` is already "spent" — subsequent calls will skip the `Do` body and go straight to step 3 (fallback). This is acceptable: a transient error means the user gets the fallback for this process lifetime, and a bot restart resets `helpOnce`. The behaviour is logged at Warn level so operators can see it.
+**On LLM failure:** `helpOnce` is spent — subsequent `/start`/`/help` calls skip the `Do` body and go straight to step 3 (fallback). This is a deliberate trade-off: the first call is the most likely to succeed (bot is freshly started, LLM is reachable). A transient failure at that moment is rare; if it happens the user gets a functional fallback until restart. The behaviour is logged at Warn so operators can act. A bot restart is the intended recovery path.
 
 ### Hardcoded fallback
 
@@ -90,10 +90,9 @@ Available commands and tools:
 - /cc <task>: submit a coding task to Claude Code agent
 - /stop: stop the currently running agent
 - /status: show bot uptime, agent status, cost, scheduled jobs
-- web_search: search the web (Brave Search)
-- web_fetch: fetch and read a URL
-- remember: save a long-term fact to memory
-- note: save a short-term note
+- web_search: search the web (Brave Search) — Tèo calls this automatically when needed
+- web_fetch: fetch and read a URL — Tèo calls this automatically when needed
+- remember / note: Tèo saves facts and notes to memory automatically during conversations
 - schedule_job / list_jobs / delete_job: manage cron-based scheduled tasks
 - spawn_agent / run_parallel / chain_agents: orchestrate multiple AI agents
 
@@ -138,29 +137,34 @@ Logged at `Warn` level (not `Error`) because the user still gets a useful respon
 
 ## Testing
 
-Tests go in `internal/gateway/service_test.go` (package `gateway_test`), alongside existing tests, to reuse the existing `mockLLM`, `mockChannel`, and `newTestService` helpers.
+Tests go in `internal/gateway/service_test.go` (package `gateway_test`), alongside existing tests, to reuse the existing `mockLLM`, `mockChannel`, and `newService` helpers.
+
+Tests follow the same pattern as all other gateway tests: start `svc.Run(ctx)` in a goroutine, inject messages via `ch.inbound <-`, and use `time.Sleep` (short, e.g. 150ms) to wait for the message loop to process them. `mockLLM` already has a `calls()` counter and supports per-call error injection via `errs []error`.
 
 ### `TestHandleHelpLLMSuccess`
 
-- Construct service with mock LLM that returns `"mocked help text"`.
-- Inject `/start` via `svc.handle(ctx, msg)` (synchronous — no goroutine needed).
-- Assert `mockChannel.lastSent == "mocked help text"`.
-- Inject `/help` via `svc.handle`.
-- Assert `mockChannel.lastSent == "mocked help text"` again.
-- Assert mock LLM was called exactly once (cache hit on second call).
+- Construct service with `mockLLM` configured to return `"mocked help text"` on first call.
+- Start `svc.Run(ctx)` in a goroutine.
+- Inject `/start` (ChatID: 42) via `ch.inbound`.
+- Sleep 150ms; assert `ch.sentMessages()` contains `"mocked help text"`.
+- Inject `/help` (ChatID: 42) via `ch.inbound`.
+- Sleep 150ms; assert `ch.sentMessages()` still contains `"mocked help text"`.
+- Assert `llm.calls() == 1` — second call was a cache hit, LLM not invoked again.
 
 ### `TestHandleHelpLLMFailure`
 
-- Construct service with mock LLM that returns an error.
-- Inject `/help`.
-- Assert `mockChannel.lastSent` contains `/oc` (hardcoded fallback).
-- Assert mock LLM was called once (not retried).
+- Construct service with `mockLLM` configured to return an error on first call (`errs: []error{errors.New("llm down")}`).
+- Start `svc.Run(ctx)` in a goroutine.
+- Inject `/help` (ChatID: 42) via `ch.inbound`.
+- Sleep 150ms; assert `ch.sentMessages()[0]` contains `/oc` (hardcoded fallback).
+- Assert `llm.calls() == 1` (not retried).
 
 ### `TestHandleHelpNilLLM`
 
-- Construct service with `llm: nil`.
-- Inject `/help`.
-- Assert `mockChannel.lastSent` contains `/oc` (hardcoded fallback; no panic).
+- Construct service with `llm: nil` (pass `nil` as the `providers.LLMProvider` argument to `newService`).
+- Start `svc.Run(ctx)` in a goroutine.
+- Inject `/help` (ChatID: 42) via `ch.inbound`.
+- Sleep 150ms; assert `ch.sentMessages()[0]` contains `/oc` (hardcoded fallback; no panic).
 
 ---
 
