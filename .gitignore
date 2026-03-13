@@ -1,5 +1,4 @@
 .worktrees/
 .env
 bin/
-gistclaw
-gistclaw-hook
+.DS_Store
