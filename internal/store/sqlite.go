@@ -233,3 +233,167 @@ func (s *Store) ResolveHITL(id, status string) error {
 	}
 	return nil
 }
+
+// JobRow mirrors the jobs table. Used by scheduler.Service to avoid a circular import.
+type JobRow struct {
+	ID             string
+	Kind           string // "at" | "every" | "cron"
+	Target         string // agent.Kind.String(): "opencode" | "claudecode" | "chat"
+	Prompt         string
+	Schedule       string
+	NextRunAt      time.Time
+	LastRunAt      *time.Time
+	Enabled        bool
+	DeleteAfterRun bool
+	CreatedAt      time.Time
+}
+
+// InsertJob inserts a new job row. Returns error on duplicate ID.
+func (s *Store) InsertJob(j JobRow) error {
+	_, err := s.db.Exec(`
+		INSERT INTO jobs (id, kind, target, prompt, schedule, next_run_at, last_run_at,
+		                  enabled, delete_after_run, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		j.ID, j.Kind, j.Target, j.Prompt, j.Schedule,
+		j.NextRunAt.UTC().Format(time.RFC3339),
+		nullableTime(j.LastRunAt),
+		boolToInt(j.Enabled),
+		boolToInt(j.DeleteAfterRun),
+		j.CreatedAt.UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		return fmt.Errorf("store: insert job %q: %w", j.ID, err)
+	}
+	return nil
+}
+
+// ListEnabledJobsDueBefore returns all enabled jobs with next_run_at <= t.
+func (s *Store) ListEnabledJobsDueBefore(t time.Time) ([]JobRow, error) {
+	rows, err := s.db.Query(`
+		SELECT id, kind, target, prompt, schedule, next_run_at, last_run_at,
+		       enabled, delete_after_run, created_at
+		FROM jobs
+		WHERE enabled = 1 AND next_run_at <= ?`,
+		t.UTC().Format(time.RFC3339),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: list enabled jobs due before: %w", err)
+	}
+	defer rows.Close()
+	result, err := scanJobRows(rows)
+	if err != nil {
+		return nil, fmt.Errorf("store: list enabled jobs due before: %w", err)
+	}
+	return result, nil
+}
+
+// ListAllJobs returns all job rows regardless of status.
+func (s *Store) ListAllJobs() ([]JobRow, error) {
+	rows, err := s.db.Query(`
+		SELECT id, kind, target, prompt, schedule, next_run_at, last_run_at,
+		       enabled, delete_after_run, created_at
+		FROM jobs ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("store: list all jobs: %w", err)
+	}
+	defer rows.Close()
+	result, err := scanJobRows(rows)
+	if err != nil {
+		return nil, fmt.Errorf("store: list all jobs: %w", err)
+	}
+	return result, nil
+}
+
+// UpdateJobAfterRun sets last_run_at and next_run_at for the given job.
+func (s *Store) UpdateJobAfterRun(id string, lastRunAt time.Time, nextRunAt time.Time) error {
+	res, err := s.db.Exec(`
+		UPDATE jobs SET last_run_at = ?, next_run_at = ? WHERE id = ?`,
+		lastRunAt.UTC().Format(time.RFC3339),
+		nextRunAt.UTC().Format(time.RFC3339),
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("store: update job after run %q: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("store: update job after run %q: %w", id, ErrNotFound)
+	}
+	return nil
+}
+
+// DeleteJob removes a job by ID.
+func (s *Store) DeleteJob(id string) error {
+	res, err := s.db.Exec(`DELETE FROM jobs WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("store: delete job %q: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("store: delete job %q: %w", id, ErrNotFound)
+	}
+	return nil
+}
+
+// UpdateJobField sets a single column value for the given job ID.
+// field must be a valid column name; value must be SQLite-compatible.
+func (s *Store) UpdateJobField(id string, field string, value any) error {
+	// Allowlist to prevent SQL injection from LLM-supplied field names.
+	allowed := map[string]bool{
+		"enabled": true, "next_run_at": true, "delete_after_run": true,
+	}
+	if !allowed[field] {
+		return fmt.Errorf("store: UpdateJobField: field %q not allowed", field)
+	}
+	_, err := s.db.Exec(fmt.Sprintf(`UPDATE jobs SET %s = ? WHERE id = ?`, field), value, id)
+	if err != nil {
+		return fmt.Errorf("store: update job field %q on %q: %w", field, id, err)
+	}
+	return nil
+}
+
+// --- helpers ---
+
+func nullableTime(t *time.Time) any {
+	if t == nil {
+		return nil
+	}
+	return t.UTC().Format(time.RFC3339)
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+func scanJobRows(rows *sql.Rows) ([]JobRow, error) {
+	var result []JobRow
+	for rows.Next() {
+		var r JobRow
+		var nextRunAt, createdAt string
+		var lastRunAt *string
+		var enabled, deleteAfterRun int
+		if err := rows.Scan(
+			&r.ID, &r.Kind, &r.Target, &r.Prompt, &r.Schedule,
+			&nextRunAt, &lastRunAt,
+			&enabled, &deleteAfterRun, &createdAt,
+		); err != nil {
+			return nil, err
+		}
+		r.Enabled = enabled == 1
+		r.DeleteAfterRun = deleteAfterRun == 1
+		if t, err := time.Parse(time.RFC3339, nextRunAt); err == nil {
+			r.NextRunAt = t
+		}
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			r.CreatedAt = t
+		}
+		if lastRunAt != nil {
+			if t, err := time.Parse(time.RFC3339, *lastRunAt); err == nil {
+				r.LastRunAt = &t
+			}
+		}
+		result = append(result, r)
+	}
+	return result, rows.Err()
+}
