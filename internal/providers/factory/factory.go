@@ -12,16 +12,28 @@ import (
 	"github.com/canhta/gistclaw/internal/store"
 )
 
-// New selects and constructs the LLMProvider implementation based on cfg.LLMProvider.
-// Values: "openai-key" (default), "copilot", "codex-oauth".
-// Returns an error if the provider value is unrecognised or required credentials
-// are missing.
-//
-// This lives in a separate package to avoid an import cycle:
-// providers ← providers/{openai,copilot,codex} ← providers (cycle).
-// factory sits above all of them and imports each direction only once.
+// New constructs an LLMProvider from cfg.
+// If cfg.LLMProviders has multiple entries, returns a ProviderRouter.
+// If only one provider is configured (legacy LLM_PROVIDER), returns it directly
+// wrapped in a single-entry router for uniform behaviour.
 func New(cfg config.Config, s *store.Store) (providers.LLMProvider, error) {
-	switch cfg.LLMProvider {
+	providerNames := cfg.EffectiveLLMProviders()
+	impls := make([]providers.LLMProvider, 0, len(providerNames))
+	for _, name := range providerNames {
+		p, err := buildOne(name, cfg, s)
+		if err != nil {
+			return nil, err
+		}
+		impls = append(impls, p)
+	}
+	if len(impls) == 1 {
+		return impls[0], nil
+	}
+	return providers.NewProviderRouter(impls, cfg.LLMCooldownWindow), nil
+}
+
+func buildOne(name string, cfg config.Config, s *store.Store) (providers.LLMProvider, error) {
+	switch name {
 	case "openai-key":
 		if cfg.OpenAIAPIKey == "" {
 			return nil, fmt.Errorf("factory: LLM_PROVIDER=openai-key requires OPENAI_API_KEY")
@@ -31,18 +43,15 @@ func New(cfg config.Config, s *store.Store) (providers.LLMProvider, error) {
 			model = "gpt-4o"
 		}
 		return oaiprovider.New(cfg.OpenAIAPIKey, model), nil
-
 	case "copilot":
 		addr := cfg.CopilotGRPCAddr
 		if addr == "" {
 			addr = "localhost:4321"
 		}
 		return copilotprovider.New(addr), nil
-
 	case "codex-oauth":
 		return codexprovider.New(s), nil
-
 	default:
-		return nil, fmt.Errorf("factory: unknown LLM_PROVIDER %q (valid: openai-key, copilot, codex-oauth)", cfg.LLMProvider)
+		return nil, fmt.Errorf("factory: unknown provider %q (valid: openai-key, copilot, codex-oauth)", name)
 	}
 }
