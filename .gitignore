@@ -1,1 +1,5 @@
 .worktrees/
+.env
+bin/
+gistclaw
+gistclaw-hook
