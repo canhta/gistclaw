@@ -21,7 +21,7 @@ import (
 // Job represents a scheduled task.
 type Job struct {
 	ID             string
-	Kind           string // "at" | "every" | "cron"
+	Kind           string // "at" | "every" | "cron" | "in"
 	Target         agent.Kind
 	Prompt         string
 	Schedule       string
@@ -349,7 +349,7 @@ func scheduleJobSchema() map[string]any {
 			},
 			"schedule": map[string]any{
 				"type":        "string",
-				"description": "RFC3339 datetime (at), seconds string e.g. '3600' (every), or cron expression e.g. '0 9 * * 1-5' (cron)",
+				"description": "RFC3339 datetime (at), seconds string e.g. '3600' (every), cron expression e.g. '0 9 * * 1-5' (cron), or seconds from now e.g. '300' (in)",
 			},
 		},
 		"required": []string{"kind", "target", "prompt", "schedule"},
