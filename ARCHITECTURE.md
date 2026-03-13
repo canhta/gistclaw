@@ -209,8 +209,11 @@ type Service interface {
 ```
 
 `claudecode.Service` additionally owns the HTTP server at `:8765` for `gistclaw-hook`
-communication. The `IsAlive` implementation always returns `true` — the service is
+communication. Its `IsAlive` implementation always returns `true` — the service is
 considered alive as long as it has not crashed; the FSM has two states: `Idle` and `Running`.
+
+`opencode.Service.IsAlive` performs a live HTTP health check against the `opencode serve`
+`/global/health` endpoint and returns `true` only if the subprocess is up and responding.
 
 ### `scheduler.JobTarget` (`internal/scheduler/service.go`)
 
