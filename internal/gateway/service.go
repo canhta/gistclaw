@@ -145,3 +145,12 @@ func (s *Service) sendFinal(ctx context.Context, chatID int64, content string) {
 	}
 	_ = s.ch.SendMessage(ctx, chatID, content)
 }
+
+// RunScheduledChat runs the full LLM+tools chat loop for a scheduled gateway job.
+// It calls handlePlainChat directly, which sends the result to chatID via s.ch.SendMessage.
+// Errors are communicated in-band (via Telegram) by handlePlainChat itself; this method
+// always returns nil so the caller does not need to handle an error from it.
+func (s *Service) RunScheduledChat(ctx context.Context, chatID int64, prompt string) error {
+	s.handlePlainChat(ctx, chatID, prompt)
+	return nil
+}

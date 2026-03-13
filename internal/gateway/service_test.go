@@ -1309,6 +1309,41 @@ func TestGateway_PlainChat_CurrentTimeInjected(t *testing.T) {
 	}
 }
 
+// TestGateway_RunScheduledChat verifies RunScheduledChat invokes the full LLM+tools
+// loop and sends the result to the provided chatID via the channel.
+func TestGateway_RunScheduledChat(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		responses: []*providers.LLMResponse{
+			{Content: "gold is $2000/oz", ToolCall: nil},
+		},
+	}
+	svc := newService(t, ch, llm)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	// Note: Run is NOT called — RunScheduledChat is called directly (no message loop needed).
+
+	err := svc.RunScheduledChat(ctx, 42, "what is the current gold price?")
+	if err != nil {
+		t.Fatalf("RunScheduledChat: unexpected error: %v", err)
+	}
+
+	msgs := ch.sentMessages()
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "gold") || strings.Contains(m, "$2000") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected gold price answer to be sent; got: %v", msgs)
+	}
+	if llm.calls() < 1 {
+		t.Errorf("expected at least 1 LLM call from RunScheduledChat; got %d", llm.calls())
+	}
+}
+
 // TestGateway_ClearMemory verifies the curate_memory tool can rewrite MEMORY.md.
 // The old clear_memory tool is gone; curate_memory now manages memory curation.
 // This test uses the remember tool to write content and then curate_memory to rewrite it.
