@@ -103,7 +103,28 @@ func convertMessages(messages []providers.Message) []openai.ChatCompletionMessag
 		case "user":
 			out = append(out, openai.UserMessage(m.Content))
 		case "assistant":
-			out = append(out, openai.AssistantMessage(m.Content))
+			if m.ToolName != "" {
+				// This assistant message represents a tool call request.
+				// OpenAI requires a tool_calls array; plain content is not accepted
+				// as a precursor to a role=tool result message.
+				out = append(out, openai.ChatCompletionMessageParamUnion{
+					OfAssistant: &openai.ChatCompletionAssistantMessageParam{
+						ToolCalls: []openai.ChatCompletionMessageToolCallUnionParam{
+							{
+								OfFunction: &openai.ChatCompletionMessageFunctionToolCallParam{
+									ID: m.ToolCallID,
+									Function: openai.ChatCompletionMessageFunctionToolCallFunctionParam{
+										Name:      m.ToolName,
+										Arguments: m.Content,
+									},
+								},
+							},
+						},
+					},
+				})
+			} else {
+				out = append(out, openai.AssistantMessage(m.Content))
+			}
 		case "system":
 			out = append(out, openai.SystemMessage(m.Content))
 		case "tool":

@@ -4,6 +4,7 @@ package openai_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -216,6 +217,84 @@ func TestOpenAIChatUnknownModelCostIsZero(t *testing.T) {
 	}
 	if resp.Usage.TotalCostUSD != 0 {
 		t.Errorf("unknown model TotalCostUSD = %v, want 0", resp.Usage.TotalCostUSD)
+	}
+}
+
+// TestOpenAIConvertMessagesToolCallAssistant verifies that an assistant message
+// with ToolName set is serialised as an OpenAI tool_calls array (not plain text).
+// Without the fix, the request body contains `"role":"assistant","content":"..."` with
+// no tool_calls array, causing a 400 from the OpenAI API.
+func TestOpenAIConvertMessagesToolCallAssistant(t *testing.T) {
+	var capturedBody []byte
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var err error
+		capturedBody, err = io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read body: %v", err)
+		}
+		// Return a minimal valid text response so the SDK doesn't error.
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(buildTextResponse("ok", 10, 5, "gpt-4o")) //nolint:errcheck
+	}))
+	defer srv.Close()
+
+	p := oaiprovider.NewWithBaseURL("test-api-key", "gpt-4o", srv.URL+"/v1")
+
+	msgs := []providers.Message{
+		{Role: "user", Content: "search for Go"},
+		// This is the assistant message that loop.go appends after a tool call.
+		{Role: "assistant", Content: `{"query":"Go"}`, ToolCallID: "call_xyz", ToolName: "web_search"},
+		{Role: "tool", Content: "Go 1.25 released", ToolCallID: "call_xyz"},
+	}
+	_, err := p.Chat(context.Background(), msgs, nil)
+	if err != nil {
+		t.Fatalf("Chat error: %v", err)
+	}
+
+	// Parse the request body to verify the assistant message has tool_calls.
+	var reqBody struct {
+		Messages []struct {
+			Role      string `json:"role"`
+			Content   string `json:"content,omitempty"`
+			ToolCalls []struct {
+				ID       string `json:"id"`
+				Type     string `json:"type"`
+				Function struct {
+					Name      string `json:"name"`
+					Arguments string `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls,omitempty"`
+			ToolCallID string `json:"tool_call_id,omitempty"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(capturedBody, &reqBody); err != nil {
+		t.Fatalf("unmarshal request body: %v", err)
+	}
+
+	// Find the assistant message (index 1).
+	if len(reqBody.Messages) < 3 {
+		t.Fatalf("expected 3 messages, got %d", len(reqBody.Messages))
+	}
+	asst := reqBody.Messages[1]
+	if asst.Role != "assistant" {
+		t.Errorf("messages[1].role = %q, want %q", asst.Role, "assistant")
+	}
+	if len(asst.ToolCalls) != 1 {
+		t.Fatalf("messages[1].tool_calls len = %d, want 1 (got: %+v)", len(asst.ToolCalls), asst)
+	}
+	tc := asst.ToolCalls[0]
+	if tc.ID != "call_xyz" {
+		t.Errorf("tool_calls[0].id = %q, want %q", tc.ID, "call_xyz")
+	}
+	if tc.Type != "function" {
+		t.Errorf("tool_calls[0].type = %q, want %q", tc.Type, "function")
+	}
+	if tc.Function.Name != "web_search" {
+		t.Errorf("tool_calls[0].function.name = %q, want %q", tc.Function.Name, "web_search")
+	}
+	if tc.Function.Arguments != `{"query":"Go"}` {
+		t.Errorf("tool_calls[0].function.arguments = %q, want %q", tc.Function.Arguments, `{"query":"Go"}`)
 	}
 }
 
