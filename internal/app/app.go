@@ -14,10 +14,12 @@ import (
 	tgchan "github.com/canhta/gistclaw/internal/channel/telegram"
 	"github.com/canhta/gistclaw/internal/claudecode"
 	"github.com/canhta/gistclaw/internal/config"
+	convpkg "github.com/canhta/gistclaw/internal/conversation"
 	"github.com/canhta/gistclaw/internal/gateway"
 	"github.com/canhta/gistclaw/internal/hitl"
 	"github.com/canhta/gistclaw/internal/infra"
 	"github.com/canhta/gistclaw/internal/mcp"
+	mempkg "github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/opencode"
 	"github.com/canhta/gistclaw/internal/providers"
 	"github.com/canhta/gistclaw/internal/providers/factory"
@@ -36,8 +38,8 @@ import (
 type App struct {
 	cfg    config.Config
 	store  *store.Store
-	soul   *infra.SOULLoader
-	memory *infra.SOULLoader
+	soul   *infra.SOULLoader // used by opencode/claudecode (Load() string)
+	mem    mempkg.Engine     // used by gateway (LoadContext, AppendFact, etc.)
 	rawLLM providers.LLMProvider
 	mcp    mcp.Manager
 }
@@ -64,11 +66,10 @@ func NewApp(cfg config.Config) (*App, error) {
 		log.Warn().Err(err).Msg("app: PurgeStartup failed (non-fatal)")
 	}
 
-	// SOULLoader — lazy file reads; does not fail if SOUL.md is missing.
+	// SOULLoader — lazy file reads for opencode/claudecode soul injection.
+	// MemoryEngine — wraps soul+memory files with structured fact/note ops for gateway.
 	soul := infra.NewSOULLoader(cfg.SoulPath)
-
-	// MemoryLoader — same pattern; does not fail if MEMORY.md is missing.
-	memory := infra.NewSOULLoader(cfg.MemoryPath)
+	mem := mempkg.NewEngine(cfg.SoulPath, cfg.MemoryPath, cfg.EffectiveMemoryNotesDir())
 
 	// Build LLM provider (validates API key format; no network call).
 	rawLLM, err := factory.New(cfg, s)
@@ -87,7 +88,7 @@ func NewApp(cfg config.Config) (*App, error) {
 		cfg:    cfg,
 		store:  s,
 		soul:   soul,
-		memory: memory,
+		mem:    mem,
 		rawLLM: rawLLM,
 		mcp:    mcpManager,
 	}, nil
@@ -163,6 +164,7 @@ func (a *App) Run(ctx context.Context) error {
 	schedSvc := scheduler.NewService(s, jobTarget, cfg.Tuning, cfg.OperatorChatID())
 
 	// --- Build gateway ---
+	conv := convpkg.NewManager(s, cfg.Tuning.ConversationWindowTurns, cfg.Tuning.SummarizeAtTurns)
 	gatewaySvc := gateway.NewService(
 		ch,
 		hitlSvc,
@@ -175,8 +177,8 @@ func (a *App) Run(ctx context.Context) error {
 		schedSvc,
 		s,
 		costGuard,
-		a.soul,
-		a.memory,
+		a.mem,
+		conv,
 		time.Now(),
 		cfg,
 	)
