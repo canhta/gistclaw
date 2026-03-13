@@ -12,19 +12,19 @@ import (
 
 // ProviderRouter implements LLMProvider with ordered fallback and per-provider cooldown.
 type ProviderRouter struct {
-	providers []LLMProvider
-	window    time.Duration
+	chain  []LLMProvider
+	window time.Duration
 
 	mu        sync.Mutex
 	cooldowns map[string]time.Time
 }
 
 // NewProviderRouter constructs a ProviderRouter.
-// providers: ordered list, tried in sequence; must be non-empty.
+// chain: ordered list of providers, tried in sequence; must be non-empty.
 // cooldownWindow: how long to pause a provider after a rate-limit error.
-func NewProviderRouter(providers []LLMProvider, cooldownWindow time.Duration) *ProviderRouter {
+func NewProviderRouter(chain []LLMProvider, cooldownWindow time.Duration) *ProviderRouter {
 	return &ProviderRouter{
-		providers: providers,
+		chain:     chain,
 		window:    cooldownWindow,
 		cooldowns: make(map[string]time.Time),
 	}
@@ -37,7 +37,7 @@ func NewProviderRouter(providers []LLMProvider, cooldownWindow time.Duration) *P
 // Returns the last error if all providers are exhausted.
 func (p *ProviderRouter) Chat(ctx context.Context, msgs []Message, tools []Tool) (*LLMResponse, error) {
 	var lastErr error
-	for _, pr := range p.providers {
+	for _, pr := range p.chain {
 		if p.isOnCooldown(pr.Name()) {
 			continue
 		}
@@ -68,8 +68,8 @@ func (p *ProviderRouter) Chat(ctx context.Context, msgs []Message, tools []Tool)
 
 // Name returns a human-readable description of the router's provider chain.
 func (p *ProviderRouter) Name() string {
-	names := make([]string, len(p.providers))
-	for i, pr := range p.providers {
+	names := make([]string, len(p.chain))
+	for i, pr := range p.chain {
 		names[i] = pr.Name()
 	}
 	return "router(" + strings.Join(names, "→") + ")"

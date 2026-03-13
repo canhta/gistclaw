@@ -13,9 +13,9 @@ import (
 )
 
 // New constructs an LLMProvider from cfg.
-// If cfg.LLMProviders has multiple entries, returns a ProviderRouter.
-// If only one provider is configured (legacy LLM_PROVIDER), returns it directly
-// wrapped in a single-entry router for uniform behaviour.
+// If cfg.LLMProviders has multiple entries, returns a ProviderRouter with ordered fallback.
+// If only one provider is configured (legacy LLM_PROVIDER or single-entry LLM_PROVIDERS),
+// returns it directly — no router overhead for the common single-provider case.
 func New(cfg config.Config, s *store.Store) (providers.LLMProvider, error) {
 	providerNames := cfg.EffectiveLLMProviders()
 	impls := make([]providers.LLMProvider, 0, len(providerNames))

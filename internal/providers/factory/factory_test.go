@@ -84,3 +84,24 @@ func TestNewOpenAIMissingKeyReturnsError(t *testing.T) {
 		t.Fatal("expected error when OPENAI_API_KEY is missing for openai-key provider")
 	}
 }
+
+func TestNewMultiProvider_ReturnsRouter(t *testing.T) {
+	cfg := config.Config{
+		LLMProviders:    []string{"copilot", "openai-key"},
+		CopilotGRPCAddr: "localhost:4321",
+		OpenAIAPIKey:    "sk-test",
+		OpenAIModel:     "gpt-4o",
+	}
+	p, err := factory.New(cfg, newFactoryStore(t))
+	if err != nil {
+		t.Fatalf("New multi-provider: %v", err)
+	}
+	name := p.Name()
+	if name == "openai" || name == "copilot" || name == "codex" {
+		t.Errorf("multi-provider should return a router, got bare provider name %q", name)
+	}
+	// Router name format: "router(copilot→openai)"
+	if len(name) < 6 || name[:6] != "router" {
+		t.Errorf("multi-provider Name() should start with 'router', got %q", name)
+	}
+}
