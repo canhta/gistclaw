@@ -254,10 +254,11 @@ func newServiceFull(t *testing.T, ch channel.Channel, llm providers.LLMProvider,
 	cfg := config.Config{
 		AllowedUserIDs: []int64{42},
 		Tuning: config.Tuning{
-			SchedulerTick:       time.Second,
-			MissedJobsFireLimit: 5,
-			MaxIterations:       20,
-			LLMRetryDelay:       retryDelay,
+			SchedulerTick:           time.Second,
+			MissedJobsFireLimit:     5,
+			MaxIterations:           20,
+			LLMRetryDelay:           retryDelay,
+			ConversationWindowTurns: 20,
 		},
 	}
 	return gateway.NewService(
@@ -925,6 +926,110 @@ func TestGateway_Retry_ExhaustsAndErrors(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected error message after retry exhaustion; got: %v", msgs)
+	}
+}
+
+// TestGateway_History_UserAndAssistantSaved verifies that after a successful plain-chat
+// turn, both the user message and assistant response are persisted to the store.
+func TestGateway_History_UserAndAssistantSaved(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		responses: []*providers.LLMResponse{
+			{Content: "assistant reply", ToolCall: nil},
+		},
+	}
+	s := newTestStore(t)
+	sched := newTestScheduler(t, s)
+	cfg := config.Config{
+		AllowedUserIDs: []int64{42},
+		Tuning: config.Tuning{
+			SchedulerTick:           time.Second,
+			MissedJobsFireLimit:     5,
+			MaxIterations:           20,
+			LLMRetryDelay:           10 * time.Millisecond,
+			ConversationWindowTurns: 20,
+		},
+	}
+	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "user question"}
+	time.Sleep(300 * time.Millisecond)
+
+	history, err := s.GetHistory(42, 40)
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("expected 2 history messages (user + assistant); got %d: %v", len(history), history)
+	}
+	if history[0].Role != "user" || history[0].Content != "user question" {
+		t.Errorf("history[0]: want {user, 'user question'}; got %+v", history[0])
+	}
+	if history[1].Role != "assistant" || history[1].Content != "assistant reply" {
+		t.Errorf("history[1]: want {assistant, 'assistant reply'}; got %+v", history[1])
+	}
+}
+
+// TestGateway_History_InjectedIntoPriorMessages verifies that existing history is injected
+// between the system prompt and the current user message on subsequent turns.
+func TestGateway_History_InjectedIntoPriorMessages(t *testing.T) {
+	ch := newMockChannel()
+	// Two turns: first produces a captured message set showing history in the second.
+	llm := &mockLLM{
+		responses: []*providers.LLMResponse{
+			{Content: "first answer", ToolCall: nil},
+			{Content: "second answer", ToolCall: nil},
+		},
+	}
+	s := newTestStore(t)
+	sched := newTestScheduler(t, s)
+	cfg := config.Config{
+		AllowedUserIDs: []int64{42},
+		Tuning: config.Tuning{
+			SchedulerTick:           time.Second,
+			MissedJobsFireLimit:     5,
+			MaxIterations:           20,
+			LLMRetryDelay:           10 * time.Millisecond,
+			ConversationWindowTurns: 20,
+		},
+	}
+	svc := gateway.NewService(ch, &mockApprover{}, &mockOCService{}, &mockCCService{}, llm,
+		&mockSearch{}, &mockFetcher{}, mcp.NewMCPManager(nil, config.Tuning{}), sched, s, nil, nil, time.Now(), cfg)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	// First turn.
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "first question"}
+	time.Sleep(300 * time.Millisecond)
+
+	// Second turn — history from turn 1 should be injected.
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "second question"}
+	time.Sleep(300 * time.Millisecond)
+
+	llm.mu.Lock()
+	secondCallMsgs := llm.capturedMsgs[1]
+	llm.mu.Unlock()
+
+	// second call should contain: [user:"first question", assistant:"first answer", user:"second question"]
+	// (no soul configured, so no leading system message)
+	if len(secondCallMsgs) < 3 {
+		t.Fatalf("second LLM call: expected ≥3 messages (history + current); got %d: %v", len(secondCallMsgs), secondCallMsgs)
+	}
+	found := false
+	for _, m := range secondCallMsgs {
+		if m.Role == "user" && m.Content == "first question" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected 'first question' in second call history; got: %v", secondCallMsgs)
 	}
 }
 

@@ -35,6 +35,16 @@ CREATE TABLE IF NOT EXISTS provider_credentials (
     updated_at  DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS messages (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    chat_id    INTEGER NOT NULL,
+    role       TEXT    NOT NULL, -- 'user' or 'assistant'
+    content    TEXT    NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_messages_chat_id ON messages (chat_id, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS jobs (
     id               TEXT PRIMARY KEY,
     kind             TEXT NOT NULL,

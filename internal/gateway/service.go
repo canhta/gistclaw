@@ -204,6 +204,8 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 	_ = s.ch.SendTyping(ctx, chatID)
 
 	var msgs []providers.Message
+
+	// 1. SOUL system prompt (mtime-cached).
 	if s.soul != nil {
 		if content, err := s.soul.Load(); err != nil {
 			log.Warn().Err(err).Msg("gateway: SOUL load failed; proceeding without system prompt")
@@ -211,7 +213,26 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 			msgs = append(msgs, providers.Message{Role: "system", Content: content})
 		}
 	}
+
+	// 2. Conversation history — oldest first, before the current user message.
+	if s.cfg.Tuning.ConversationWindowTurns > 0 {
+		history, err := s.store.GetHistory(chatID, s.cfg.Tuning.ConversationWindowTurns*2)
+		if err != nil {
+			log.Warn().Err(err).Msg("gateway: failed to load conversation history")
+		} else {
+			for _, h := range history {
+				msgs = append(msgs, providers.Message{Role: h.Role, Content: h.Content})
+			}
+		}
+	}
+
+	// 3. Current user message.
 	msgs = append(msgs, providers.Message{Role: "user", Content: text})
+
+	// Persist user message. Non-fatal — history is best-effort.
+	if err := s.store.SaveMessage(chatID, "user", text); err != nil {
+		log.Warn().Err(err).Msg("gateway: failed to save user message")
+	}
 
 	toolRegistry := s.buildToolRegistry()
 
@@ -232,7 +253,7 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 				_ = s.ch.SendMessage(ctx, chatID, "⚠️ LLM error after max iterations: "+ferr.Error())
 				return
 			}
-			_ = s.ch.SendMessage(ctx, chatID, finalResp.Content)
+			s.sendFinal(ctx, chatID, finalResp.Content)
 			return
 		}
 
@@ -245,7 +266,7 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 
 		// No tool call → send final answer and exit loop
 		if resp.ToolCall == nil {
-			_ = s.ch.SendMessage(ctx, chatID, resp.Content)
+			s.sendFinal(ctx, chatID, resp.Content)
 			return
 		}
 
@@ -279,7 +300,7 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 					_ = s.ch.SendMessage(ctx, chatID, "⚠️ LLM error after doom-loop guard: "+ferr.Error())
 					return
 				}
-				_ = s.ch.SendMessage(ctx, chatID, finalResp.Content)
+				s.sendFinal(ctx, chatID, finalResp.Content)
 				return
 			}
 		}
@@ -310,6 +331,15 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 	}
 }
 
+// sendFinal persists the assistant response to history and sends it to the user.
+// Used by all successful exit paths in handlePlainChat so saves are never missed.
+func (s *Service) sendFinal(ctx context.Context, chatID int64, content string) {
+	if err := s.store.SaveMessage(chatID, "assistant", content); err != nil {
+		log.Warn().Err(err).Msg("gateway: failed to save assistant message")
+	}
+	_ = s.ch.SendMessage(ctx, chatID, content)
+}
+
 // chatWithRetry calls the LLM with retry logic for transient errors.
 //
 // Three behaviours based on classifyError:
@@ -336,11 +366,11 @@ func (s *Service) chatWithRetry(ctx context.Context, chatID int64, msgs []provid
 			return resp, nil
 		}
 
-		switch classifyError(err) {
-		case errKindTerminal:
+		switch providers.ClassifyError(err) {
+		case providers.ErrKindTerminal:
 			return nil, err
 
-		case errKindRateLimit:
+		case providers.ErrKindRateLimit:
 			if !rateLimitNotified {
 				log.Warn().Err(err).Int("attempt", attempt+1).Msg("gateway: LLM rate limited; retrying")
 				notifyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -350,7 +380,7 @@ func (s *Service) chatWithRetry(ctx context.Context, chatID int64, msgs []provid
 			}
 			fallthrough
 
-		case errKindRetryable:
+		case providers.ErrKindRetryable:
 			log.Warn().Err(err).Int("attempt", attempt+1).Dur("backoff", delay).Msg("gateway: transient LLM error; retrying")
 			lastErr = err
 			select {

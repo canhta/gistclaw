@@ -234,6 +234,61 @@ func (s *Store) ResolveHITL(id, status string) error {
 	return nil
 }
 
+// HistoryMessage is a persisted plain-chat turn (user or assistant only).
+// Tool call/result messages are excluded — they are execution artifacts, not conversational memory.
+type HistoryMessage struct {
+	Role    string // "user" or "assistant"
+	Content string
+}
+
+// SaveMessage persists a single conversation turn for the given chatID.
+// Errors are non-fatal at the call site — history persistence is best-effort.
+func (s *Store) SaveMessage(chatID int64, role, content string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)`,
+		chatID, role, content,
+	)
+	if err != nil {
+		return fmt.Errorf("store: save message: %w", err)
+	}
+	return nil
+}
+
+// GetHistory returns up to limit messages for chatID in chronological order
+// (oldest first, ready for direct injection into a message slice).
+// The caller should pass ConversationWindowTurns*2 as limit.
+func (s *Store) GetHistory(chatID int64, limit int) ([]HistoryMessage, error) {
+	rows, err := s.db.Query(
+		`SELECT role, content FROM messages
+		 WHERE chat_id = ?
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT ?`,
+		chatID, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: get history: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var out []HistoryMessage
+	for rows.Next() {
+		var m HistoryMessage
+		if err := rows.Scan(&m.Role, &m.Content); err != nil {
+			return nil, fmt.Errorf("store: get history scan: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: get history: %w", err)
+	}
+
+	// Query returns newest-first; reverse to inject oldest-first.
+	for i, j := 0, len(out)-1; i < j; i, j = i+1, j-1 {
+		out[i], out[j] = out[j], out[i]
+	}
+	return out, nil
+}
+
 // JobRow mirrors the jobs table. Used by scheduler.Service to avoid a circular import.
 type JobRow struct {
 	ID             string

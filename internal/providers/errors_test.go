@@ -1,11 +1,13 @@
-// internal/gateway/errors_test.go
-package gateway
+// internal/providers/errors_test.go
+package providers_test
 
 import (
 	"context"
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/canhta/gistclaw/internal/providers"
 )
 
 func TestClassifyError_Terminal(t *testing.T) {
@@ -17,8 +19,8 @@ func TestClassifyError_Terminal(t *testing.T) {
 		errors.New("openai: chat completions: 400 Bad Request"),
 	}
 	for _, err := range terminal {
-		if got := classifyError(err); got != errKindTerminal {
-			t.Errorf("classifyError(%q) = %v; want errKindTerminal", err, got)
+		if got := providers.ClassifyError(err); got != providers.ErrKindTerminal {
+			t.Errorf("ClassifyError(%q) = %v; want ErrKindTerminal", err, got)
 		}
 	}
 }
@@ -32,8 +34,8 @@ func TestClassifyError_RateLimit(t *testing.T) {
 		fmt.Errorf("wrapped: %w", errors.New("too many requests")),
 	}
 	for _, err := range rateLimited {
-		if got := classifyError(err); got != errKindRateLimit {
-			t.Errorf("classifyError(%q) = %v; want errKindRateLimit", err, got)
+		if got := providers.ClassifyError(err); got != providers.ErrKindRateLimit {
+			t.Errorf("ClassifyError(%q) = %v; want ErrKindRateLimit", err, got)
 		}
 	}
 }
@@ -51,14 +53,14 @@ func TestClassifyError_Retryable(t *testing.T) {
 		context.Canceled,
 	}
 	for _, err := range retryable {
-		if got := classifyError(err); got != errKindRetryable {
-			t.Errorf("classifyError(%q) = %v; want errKindRetryable", err, got)
+		if got := providers.ClassifyError(err); got != providers.ErrKindRetryable {
+			t.Errorf("ClassifyError(%q) = %v; want ErrKindRetryable", err, got)
 		}
 	}
 }
 
 func TestClassifyError_Nil(t *testing.T) {
-	if got := classifyError(nil); got != errKindTerminal {
-		t.Errorf("classifyError(nil) = %v; want errKindTerminal", got)
+	if got := providers.ClassifyError(nil); got != providers.ErrKindTerminal {
+		t.Errorf("ClassifyError(nil) = %v; want ErrKindTerminal", got)
 	}
 }
