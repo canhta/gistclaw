@@ -21,6 +21,9 @@ import (
 	"github.com/canhta/gistclaw/internal/hitl"
 )
 
+// ErrSessionBusy is returned by SubmitTaskWithResult when the agent is already processing a request.
+var ErrSessionBusy = errors.New("claudecode: session busy")
+
 // claudecodeChannel is the narrow channel interface needed by the service.
 // The full channel.Channel interface satisfies this; tests use fakeChannelForHook.
 type claudecodeChannel interface {
@@ -153,7 +156,10 @@ func (s *claudecodeServiceImpl) submitAndStream(ctx context.Context, chatID int6
 	// Check FSM: reject if already running.
 	if !atomic.CompareAndSwapInt32((*int32)(&s.state), int32(fsmIdle), int32(fsmRunning)) {
 		_ = s.ch.SendMessage(ctx, chatID, "⚠️ Claude Code is busy. Wait for the current task to finish.")
-		return nil
+		if acc != nil {
+			return ErrSessionBusy // SubmitTaskWithResult path: signal the caller
+		}
+		return nil // SubmitTask path: existing behavior
 	}
 	defer atomic.StoreInt32((*int32)(&s.state), int32(fsmIdle))
 
@@ -278,7 +284,7 @@ func (s *claudecodeServiceImpl) submitAndStream(ctx context.Context, chatID int6
 
 // Stop sends SIGTERM to the subprocess; if it has not exited after 2s, sends SIGKILL.
 // The kill-after-delay runs in a goroutine to avoid blocking the caller.
-// SubmitTask owns cmd.Wait(); Stop only signals.
+// submitAndStream owns cmd.Wait(); Stop only signals.
 func (s *claudecodeServiceImpl) Stop(_ context.Context) error {
 	s.mu.Lock()
 	cmd := s.cmd
@@ -288,7 +294,7 @@ func (s *claudecodeServiceImpl) Stop(_ context.Context) error {
 		return nil
 	}
 
-	// Signal SIGTERM. SubmitTask owns Wait(); we just signal.
+	// Signal SIGTERM. submitAndStream owns Wait(); we just signal.
 	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		log.Warn().Err(err).Msg("claudecode: SIGTERM")
 		return nil

@@ -222,7 +222,7 @@ func TestClaudeCodeService_IsAlive_IdleIsAlive(t *testing.T) {
 	}
 }
 
-func TestSubmitTaskWithResult_ReturnsAccumulatedText(t *testing.T) {
+func TestClaudeCodeService_SubmitTaskWithResult_ReturnsAccumulatedText(t *testing.T) {
 	checkFakeClaudeAvailable(t)
 
 	lines := []string{
