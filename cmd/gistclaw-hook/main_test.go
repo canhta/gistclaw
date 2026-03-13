@@ -67,6 +67,13 @@ func TestHookBinary_Allow_ExitsZero(t *testing.T) {
 	if err := json.Unmarshal([]byte(stdout.String()), &out); err != nil {
 		t.Errorf("stdout is not valid JSON: %v\nstdout: %s", err, stdout.String())
 	}
+	if hso, ok := out["hookSpecificOutput"].(map[string]interface{}); ok {
+		if hso["permissionDecision"] != "allow" {
+			t.Errorf("stdout permissionDecision: got %v, want allow", hso["permissionDecision"])
+		}
+	} else {
+		t.Errorf("stdout missing hookSpecificOutput: %v", out)
+	}
 }
 
 func TestHookBinary_Deny_ExitsTwo(t *testing.T) {
@@ -125,5 +132,26 @@ func TestHookBinary_NetworkError_ExitsTwo(t *testing.T) {
 	}
 	if exitErr.ExitCode() != 2 {
 		t.Errorf("exit code: got %d, want 2", exitErr.ExitCode())
+	}
+}
+
+func TestHookBinary_NonPretool_ExitsZero(t *testing.T) {
+	bin := buildHook(t)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/hook/notification" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	addr := strings.TrimPrefix(srv.URL, "http://")
+	cmd := exec.Command(bin, "--type", "notification", "--addr", addr)
+	cmd.Stdin = strings.NewReader(`{"message":"task complete"}`)
+
+	err := cmd.Run()
+	if err != nil {
+		t.Fatalf("expected exit 0 for notification type, got: %v", err)
 	}
 }

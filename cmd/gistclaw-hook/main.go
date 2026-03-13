@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -63,7 +62,7 @@ func main() {
 	}
 
 	if result.HookSpecificOutput.PermissionDecision == "allow" {
-		fmt.Fprint(os.Stdout, string(body))
+		_, _ = os.Stdout.Write(body)
 		os.Exit(0)
 	}
 
