@@ -1,13 +1,33 @@
-.PHONY: tidy vet test lint
+.PHONY: tidy test build run lint deploy logs
+
+BINARY_DIR := ./bin
+GISTCLAW   := $(BINARY_DIR)/gistclaw
+HOOK       := $(BINARY_DIR)/gistclaw-hook
 
 tidy:
 	go mod tidy
 
-vet:
-	go vet ./...
+test:
+	go test ./... -timeout 120s
 
-test: vet
-	go test ./...
+build: tidy
+	mkdir -p $(BINARY_DIR)
+	go build -o $(GISTCLAW) ./cmd/gistclaw
+	go build -o $(HOOK) ./cmd/gistclaw-hook
+
+run: build
+	$(GISTCLAW)
 
 lint:
-	golangci-lint run ./...
+	go vet ./...
+
+# Deploy: rsync binaries to VPS and restart the service
+# Usage: make deploy VPS=user@your-vps-ip
+deploy: build
+	rsync -avz $(GISTCLAW) $(HOOK) $(VPS):/usr/local/bin/
+	ssh $(VPS) "systemctl restart gistclaw"
+
+# Tail logs on VPS
+# Usage: make logs VPS=user@your-vps-ip
+logs:
+	ssh $(VPS) "journalctl -u gistclaw -f"
