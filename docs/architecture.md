@@ -1,297 +1,164 @@
-# GistClaw Architecture
+# Architecture
 
-This document describes the internal structure of GistClaw: how services are arranged,
-how they communicate, and the contracts that keep them decoupled.
+GistClaw is a single Go binary. Five services run as goroutines under `errgroup`. No actor framework, no protobuf.
 
 ---
 
-## 1. Service Topology
-
-GistClaw is a single Go binary. Five services run as goroutines under `golang.org/x/sync/errgroup`.
-Everything else is plain Go called synchronously. No actor framework, no protobuf.
+## Service topology
 
 ```
-systemd (Restart=always, StartLimitBurst=5)
+systemd (Restart=always)
     └── gistclaw binary
             │
-      errgroup (root context)   ← owned by internal/app.App.Run()
+      errgroup (root context)  ← internal/app
             │
-      ┌─────┴──────────────────────────────────────────┐
-      │                                                 │
-  WithRestart("gateway", unlimited)        WithRestart("hitl", 10, 10s)
-  - channel.Channel interface              - permission + question HITL
-  - v1: Telegram long-poll impl            - per-request channel pattern
-  - update_id dedup (SQLite)               - 5-min timer + 3-min reminder
-  - /oc /cc /status /stop routing          - sequential per-question
-  - plain chat → trackedLLM               - auto-reject stale on startup
-    (web_search + web_fetch
-     + MCP tools [Agent category]
-     + scheduler tools [System category])
-        │ injected interfaces
-        │ (channel.Channel, hitl.Approver,
-        │  opencode.Service, claudecode.Service,
-        │  providers.LLMProvider [decorated])
-        └────────────────────────────────────────────────┐
-                                                         │
-                              ┌──────────────────────────┤
-                              │                          │
-               WithRestart("opencode", 5, 30s) WithRestart("claudecode", 5, 30s)
-               - start opencode serve           - start claude -p subprocess
-               - HTTP client                    - stream-json parser
-               - SSE consumer                   - FSM: Idle↔Running
-               - session lifecycle
-               - no FSM needed                  - hook helper: gistclaw-hook
-               - CostGuard.Track() on           - HTTP server :8765
-                 step-finish events             - CostGuard.Track() on
-                                                  total_cost_usd events
-                              │
-                   WithRestart("scheduler", 5, 30s)
-                  - 1s ticker
-                  - job kinds: at/every/cron
-                  - targets: agent.Kind enum
-                  - SQLite jobs table
-                  - fires via scheduler.JobTarget interface
-                              │
-               ┌──────────────┴─────────────────────┐
-           SQLiteStore                          internal/infra
-           (not a service loop)                 - CostGuard (atomic.Int64)
-           - sessions                           - SOULLoader (mtime cache)
-           - hitl_pending                       - Heartbeat (Tier 1+2)
-           - cost_daily                         internal/providers
-           - channel_state                      - LLMProvider interface
-           - jobs                               - trackingProvider decorator
-                                                - copilot / codex / openai impls
-                                                internal/tools
-                                                - SearchProvider (Brave/Gemini/
-                                                  Grok/Perplexity — auto-detect)
-                                                - WebFetcher (go-readability)
-                                                internal/mcp
-                                                - MCPManager (stdio + SSE/HTTP)
+    ┌───────┴──────────────────────────────────────────┐
+    │                                                  │
+WithRestart("gateway", unlimited)     WithRestart("hitl", 10, 10s)
+- Telegram long-poll                  - inline keyboard approvals
+- update_id dedup (SQLite)            - sequential question flows
+- /oc /cc /status /stop routing       - auto-reject on timeout
+- plain chat → LLM + tools
+        │ injects interfaces
+        └───────────────────────────────────────────────┐
+                                                        │
+                      ┌─────────────────────────────────┤
+                      │                                 │
+       WithRestart("opencode", 5/30s)   WithRestart("claudecode", 5/30s)
+       - spawns opencode serve          - runs claude -p subprocess
+       - HTTP + SSE client              - FSM: Idle ↔ Running
+       - CostGuard.Track() on           - hook server :8765
+         step-finish events             - CostGuard.Track() on
+                                          total_cost_usd events
+                      │
+           WithRestart("scheduler", 5/30s)
+           - 1s ticker, cron/at/every jobs
+           - targets agent.Kind enum
+           - SQLite jobs table
+                      │
+          ┌───────────┴─────────────────┐
+      SQLiteStore                  internal/infra
+      - sessions                   - CostGuard (atomic.Int64)
+      - hitl_pending               - SOULLoader (mtime cache)
+      - cost_daily                 - Heartbeat (Tier 1+2)
+      - channel_state              internal/providers
+      - jobs                       - LLMProvider + trackingProvider decorator
+                                   internal/tools
+                                   - web_search, web_fetch
+                                   internal/mcp
+                                   - MCPManager (stdio + SSE/HTTP)
 ```
 
----
-
-## 2. Main Flows
-
-### Flow A — `/oc build the auth module`
-
-1. Telegram update arrives at `gateway.Service`
-2. `update_id` dedup check against `channel_state` in SQLite
-3. Command prefix `/oc` → `opencode.Service.SubmitTask(ctx, chatID, prompt)`
-4. OpenCode service POSTs to `opencode serve` REST API (reuses or creates session)
-5. SSE consumer receives `message.part.updated` events → `channel.SendMessage` in chunks
-6. `CostGuard.Track()` called on each `step-finish` event
-7. `session.status {type:"idle"}` → `channel.SendMessage(chatID, "✅ Done")`
-
-### Flow B — OpenCode permission request mid-task
-
-1. SSE fires `permission.asked` event
-2. `opencode.Service` calls `hitl.Approver.RequestPermission(ctx, req)`
-3. `hitl.Service` writes `hitl_pending` to SQLite; sends inline keyboard via `channel.SendKeyboard`
-4. Timer: reminder at `HITLReminderBefore` before timeout; auto-reject at `HITLTimeout`
-5. User taps button → `gateway.Service` receives callback → calls `hitl.Service.Deliver(msg)` → HITL event loop resolves → POST reply to OpenCode
-
-### Flow C — Claude Code tool approval via hook helper
-
-1. `claude` subprocess spawns `gistclaw-hook`; hook writes `PreToolUse` JSON to its stdin
-2. `gistclaw-hook` POSTs to `http://127.0.0.1:8765/hook/pretool`
-3. `claudecode.Service` hook handler calls `hitl.Approver.RequestPermission` and blocks
-4. Same HITL flow as Flow B
-5. Handler writes allow/deny JSON; `gistclaw-hook` exits with code 0 or 2
-
-### Flow D — Zero output from agent
-
-1. OpenCode session goes idle with empty output buffer
-2. `opencode.Service` sends: `"⚠️ Agent finished but produced no output."`
-3. No auto-retry; no crash; user decides next action
-
-### Flow E — Plain chat with tool loop
-
-1. No command prefix → `gateway.Service` builds tool registry (Core + Agent + System tools)
-2. Calls `trackedLLM.Chat(ctx, messages, tools)` in a loop
-3. LLM may call `web_search` or `web_fetch` (doom-loop guard: 3 identical calls → forced final answer)
-4. Final text answer → `channel.SendMessage`; cost tracked automatically by decorator
-
-### Flow F — Plain chat without tool use
-
-1. No command prefix → `gateway.Service` builds tool registry
-2. Calls `trackedLLM.Chat(ctx, messages, tools)`
-3. LLM decides NOT to call any tool — returns final text directly
-4. `channel.SendMessage(chatID, answer)`; cost tracked automatically by decorator
-
-### Flow G — `question.asked` with multiple questions
-
-1. SSE fires `question.asked` with `questions` array (e.g. two questions)
-2. `opencode.Service` calls `hitl.Approver.RequestQuestion(ctx, QuestionRequest{ChatID, ID, Questions})`
-3. `hitl.Service` processes questions **sequentially**:
-   - Sends question[0] keyboard; waits for user reply
-   - Records answer (e.g. `["testify"]`)
-   - Sends question[1] keyboard; waits for user reply
-   - Records answer (e.g. `["yes"]`)
-4. `hitl.Service` sends a **single** POST reply: `POST /question/:id/reply {"answers":[["testify"],["yes"]]}`
-5. Agent continues with all answers at once
+All service boundaries are Go interfaces. Concrete types are unexported.
 
 ---
 
-## 3. Interface Contracts
+## Key flows
 
-### `channel.Channel` (`internal/channel/channel.go`)
+**`/oc` task:**
+1. Gateway receives Telegram update → dedup check → `opencode.SubmitTask`
+2. OpenCode POSTs to `opencode serve`, opens SSE stream → chunks forwarded to Telegram
+3. `permission.asked` SSE event → HITL inline keyboard → user taps → POST reply to OpenCode
+4. `session.status {type:"idle"}` → "Done"
 
+**`/cc` task:** Same flow but via `claude -p` subprocess + `gistclaw-hook`. The hook binary POSTs to `:8765`, blocks waiting for the same HITL flow, then exits 0 (allow) or 2 (deny).
+
+**Plain chat:** Gateway builds tool registry → `LLM.Chat` in a loop → may call `web_search`/`web_fetch` → doom-loop guard fires after 3 identical calls → final answer sent.
+
+---
+
+## Interface contracts
+
+### `channel.Channel`
 ```go
 type Channel interface {
     Receive(ctx context.Context) (<-chan InboundMessage, error)
     SendMessage(ctx context.Context, chatID int64, text string) error
     SendKeyboard(ctx context.Context, chatID int64, payload KeyboardPayload) error
     SendTyping(ctx context.Context, chatID int64) error
-    Name() string // "telegram", "whatsapp", etc.
+    Name() string
 }
 ```
+Gateway is the sole Telegram consumer — no 409 Conflict from two concurrent `getUpdates`.
 
-`gateway.Service` only imports `channel.Channel`. Platform-specific types (e.g., `telego`) are
-confined to `internal/channel/telegram`. `hitl/keyboard.go` imports only `internal/channel` —
-no Telegram dependency in HITL.
-
-### `providers.LLMProvider` (`internal/providers/llm.go`)
-
+### `providers.LLMProvider`
 ```go
 type LLMProvider interface {
     Chat(ctx context.Context, messages []Message, tools []Tool) (*LLMResponse, error)
     Name() string
 }
-
-type Usage struct {
-    PromptTokens     int
-    CompletionTokens int
-    TotalCostUSD     float64 // required; 0 if provider cannot determine cost
-}
+// Usage.TotalCostUSD: exact value, or 0 if billing is opaque
 ```
+`NewTrackingProvider` wraps any provider and calls `CostGuard.Track` on every response.
 
-All three providers (`openai-key`, `copilot`, `codex-oauth`) implement this interface.
-`NewTrackingProvider` wraps any `LLMProvider` and calls `CostGuard.Track` on every
-successful response. Gateway and scheduler only see the decorated interface.
-
-### `hitl.Approver` (`internal/hitl/service.go`)
-
+### `hitl.Approver`
 ```go
 type Approver interface {
     RequestPermission(ctx context.Context, req PermissionRequest) error
     RequestQuestion(ctx context.Context, req QuestionRequest) error
 }
 ```
+HITL internals (SQLite, timers, keyboard) hidden behind this interface.
 
-OpenCode and ClaudeCode services call this interface. HITL internals (SQLite, keyboard,
-timers) are hidden behind it.
-
-`hitl.Service` additionally depends on a `QuestionReplier` interface (implemented by `opencode.Service`) for posting collected question answers back to the agent API; this is injected at construction via `NewService`.
-
-`hitl.Service.Run` does **not** call `channel.Channel.Receive`. Instead, `gateway.Service` is
-the sole consumer of the Telegram long-poll stream. All `hitl:`-prefixed callbacks are
-forwarded by `gateway.Service` to `hitl.Service.Deliver(msg)`, which pushes them into an
-internal buffered inbox channel processed by the HITL event loop. This prevents the 409
-Conflict error that would arise from two concurrent `getUpdates` connections.
-
-### `opencode.Service` (`internal/opencode/service.go`)
-
+### `opencode.Service` / `claudecode.Service`
 ```go
 type Service interface {
     Run(ctx context.Context) error
     SubmitTask(ctx context.Context, chatID int64, prompt string) error
     Stop(ctx context.Context) error
     IsAlive(ctx context.Context) bool
-    Name() string // returns "opencode"
+    Name() string
 }
 ```
+`opencode.IsAlive` does a live HTTP health check. `claudecode.IsAlive` returns true as long as the service hasn't crashed.
 
-`Run` spawns `opencode serve --port <port> --hostname 127.0.0.1` with `cmd.Dir` set to
-`Config.Dir`. If the server is already listening on the configured port (e.g. externally
-managed), `Run` skips spawning and blocks on `ctx.Done()` instead.
-
-All HTTP requests (health check, session create, `prompt_async`, abort, SSE) include HTTP
-Basic Auth when `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` are set.
-
-### `claudecode.Service` (`internal/claudecode/service.go`)
-
-```go
-type Service interface {
-    Run(ctx context.Context) error
-    SubmitTask(ctx context.Context, chatID int64, prompt string) error
-    Stop(ctx context.Context) error
-    IsAlive(ctx context.Context) bool
-    Name() string // returns "claudecode"
-}
-```
-
-`claudecode.Service` additionally owns the HTTP server at `:8765` for `gistclaw-hook`
-communication. Its `IsAlive` implementation always returns `true` — the service is
-considered alive as long as it has not crashed; the FSM has two states: `Idle` and `Running`.
-
-`opencode.Service.IsAlive` performs a live HTTP health check against the `opencode serve`
-`/global/health` endpoint and returns `true` only if the subprocess is up and responding.
-
-### `scheduler.JobTarget` (`internal/scheduler/service.go`)
-
+### `scheduler.JobTarget`
 ```go
 type JobTarget interface {
     RunAgentTask(ctx context.Context, kind agent.Kind, prompt string) error
     SendChat(ctx context.Context, chatID int64, text string) error
 }
 ```
-
-`JobTarget` is wired in `app.NewApp` — `scheduler.Service` does not import `gateway` or
-any concrete agent service. `agent.Kind` is a typed enum; no stringly-typed agent identifiers.
-
-### `AgentHealthChecker` (`internal/infra/heartbeat.go`)
-
-```go
-type AgentHealthChecker interface {
-    Name() string
-    IsAlive(ctx context.Context) bool
-}
-```
-
-Both `opencode.Service` and `claudecode.Service` implement this. `infra.Heartbeat` Tier 2
-calls it every 5 minutes and triggers a restart if the agent is dead.
+Scheduler dispatches via this interface — no direct dependency on any agent service.
 
 ---
 
-## 4. Supervision Model
+## Supervision
 
-`WithRestart` (`internal/app/supervisor.go`) wraps any `func(context.Context) error` in a
-restart loop. `PermanentFailure` is returned when the service exhausts its restart budget.
-`app.Run` owns the policy: which services are critical (cancel the root context on failure)
-and which are non-critical (log + notify operator, keep running).
+`WithRestart` wraps a `func(context.Context) error` with a restart loop. Only gateway is critical (unlimited retries; failure cancels root context → systemd restart). All other services are non-critical: permanent failure is logged and the operator is notified, but the rest of the system keeps running.
 
-### Supervision strategies
+| Service | Max attempts | Window |
+|---|---|---|
+| gateway | unlimited | — |
+| opencode | 5 | 30s |
+| claudecode | 5 | 30s |
+| hitl | 10 | 10s |
+| scheduler | 5 | 30s |
 
-| Service | Max attempts | Window | On permanent stop |
-|---|---|---|---|
-| `gateway.Service` | unlimited | — | Returns `PermanentFailure` → errgroup cancels root context → systemd restarts all |
-| `opencode.Service` | 5 | 30s | Log + notify operator; other services continue |
-| `claudecode.Service` | 5 | 30s | Log + notify operator; other services continue |
-| `hitl.Service` | 10 | 10s | `DrainPending()` first (unblocks hook handlers); then log + notify |
-| `scheduler.Service` | 5 | 30s | Log + notify; SQLite jobs resume on next restart |
+---
 
-### Critical vs non-critical
+## Extending
 
-Only `gateway.Service` is critical. If it permanently fails (impossible in practice — unlimited
-retries), the root context is cancelled and systemd restarts the whole process.
+### New channel (e.g. Discord)
 
-All other services are non-critical: a permanently failed `opencode.Service` leaves
-`claudecode`, `hitl`, `scheduler`, and `gateway` fully operational. Users are notified via
-Telegram and can continue using other features.
+1. Create `internal/channel/<name>/<name>.go` implementing `channel.Channel` (5 methods).
+2. Add env vars to `internal/config/config.go` and `sample.env`.
+3. Add a case to the channel factory in `internal/app/app.go`.
 
-### `WithRestart` signature
+Nothing else changes — gateway and HITL only use the `channel.Channel` interface.
 
-```go
-// maxAttempts=0 means unlimited restarts.
-func WithRestart(
-    logger      zerolog.Logger,
-    name        string,
-    maxAttempts int,
-    window      time.Duration,
-    fn          func(context.Context) error,
-) func(context.Context) error
-```
+### New LLM provider
 
-Returns `nil` on clean shutdown (ctx cancelled) or clean service exit. Returns
-`PermanentFailure` when the restart budget is exhausted within `window`.
+1. Create `internal/providers/<name>/<name>.go` implementing `providers.LLMProvider`.
+   Set `Usage.TotalCostUSD` to the exact cost, or `0` if billing is opaque.
+2. Add a case to the factory in `internal/providers/llm.go`.
+3. Document `LLM_PROVIDER=<name>` in `sample.env`.
+
+`NewTrackingProvider` wraps it automatically — no cost wiring needed.
+
+### New agent kind
+
+1. Add a constant to `internal/agent/kind.go` and cases to `String()` / `KindFromString()`.
+2. Add a case to `appJobTarget.RunAgentTask` in `internal/app/app.go`.
+
+Scheduler dispatches via `JobTarget` — no scheduler changes needed.

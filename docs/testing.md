@@ -1,132 +1,59 @@
-# Testing Guide
-
-This guide covers both the automated test suite and the manual credential setup
-needed to run GistClaw against real services.
-
----
+# Testing
 
 ## Automated tests
 
-Run the full test suite:
-
 ```bash
-make test
-# equivalent to: go test ./... -timeout 120s
-```
-
-Run with the race detector (required before opening a PR):
-
-```bash
-go test -race ./...
-```
-
-Run a single package:
-
-```bash
-go test ./internal/app/...
-```
-
-Run a single test by name (regex-matched):
-
-```bash
-go test ./internal/app/... -run TestWithRestartPermanentFailure
-```
-
-Run verbosely:
-
-```bash
-go test -v ./internal/config/...
+make test              # go test ./... -timeout 120s
+go test -race ./...    # run before opening a PR
+go test ./internal/app/...                                    # single package
+go test ./internal/app/... -run TestWithRestartPermanentFailure  # single test
 ```
 
 ---
 
-## Credential setup for manual / integration testing
+## Credential setup
 
-The steps below walk you through obtaining the credentials needed to run
-GistClaw end-to-end against real services.
+### Telegram bot token
 
-### Step 1 — Create a Telegram bot and get the token
+1. Message [@BotFather](https://t.me/BotFather) → `/newbot` → follow prompts
+2. Copy the token and set `TELEGRAM_TOKEN=<token>` in `.env`
 
-1. Open Telegram and search for **@BotFather** (official — blue checkmark).
-2. Send `/newbot`.
-3. BotFather asks for a **name** — display name, e.g. `GistClaw Dev`.
-4. BotFather asks for a **username** — must end in `bot`, e.g. `gistclaw_dev_bot`.
-5. BotFather responds with your token:
-   ```
-   7412345678:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   ```
-6. Set it in `.env`:
-   ```sh
-   TELEGRAM_TOKEN=7412345678:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   ```
+Keep the token secret — it grants full control of your bot.
 
-> Keep this token secret — it grants full control of your bot.
+### Your Telegram user ID
 
----
+1. Message [@userinfobot](https://t.me/userinfobot) → it replies with your numeric **Id**
+2. Set `ALLOWED_USER_IDS=<id>` in `.env`
 
-### Step 2 — Get your numeric Telegram user ID
+This is a permanent numeric ID, not your username.
 
-1. Open Telegram and search for **@userinfobot**.
-2. Send any message (e.g. `/start`).
-3. The bot replies with your **Id** (numeric, e.g. `123456789`).
-4. Set it in `.env`:
-   ```sh
-   ALLOWED_USER_IDS=123456789
-   ```
+### Brave Search API key (optional, for `web_search`)
 
-> This is not your username — it is a permanent numeric identifier. Only IDs
-> in this list will receive responses from the bot.
+1. Go to [api.search.brave.com/app/keys](https://api.search.brave.com/app/keys) → create a free key
+2. Set `GISTCLAW_BRAVE_API_KEY=<key>` in `.env`
 
----
+Free tier: 2,000 queries/month.
 
-### Step 3 — Get a Brave Search API key (optional, for `web_search`)
+### LLM provider
 
-1. Go to [https://api.search.brave.com/app/keys](https://api.search.brave.com/app/keys).
-2. Create a free account and click **Create API key**.
-3. Set it in `.env`:
-   ```sh
-   GISTCLAW_BRAVE_API_KEY=BSAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-   ```
-
-> The free tier provides 2,000 queries/month.
-
----
-
-### Step 4 — Configure an LLM provider
-
-The default provider is `openai-key`. Set your key in `.env`:
-
+Default is `openai-key`:
 ```sh
 LLM_PROVIDER=openai-key
 OPENAI_API_KEY=sk-...
 ```
 
-If using the `copilot` provider, verify the local gRPC bridge is reachable:
-
+For `copilot`, verify the local gRPC bridge is up:
 ```bash
-nc -z localhost 4321 && echo "bridge is up" || echo "bridge not reachable"
+nc -z localhost 4321 && echo "up" || echo "not reachable"
 ```
 
----
-
-### Step 5 — Final checklist before starting
-
-Confirm all required values are filled in `.env`:
+### Final checklist
 
 ```bash
-grep -E '^\w+=your_|PLACEHOLDER' .env
-```
-
-Expected: no output.
-
-Set secure permissions, build, and start:
-
-```bash
+grep -E '^\w+=your_|PLACEHOLDER' .env  # expect no output
 chmod 600 .env
 export $(grep -v '^#' .env | xargs)
-make build
-./bin/gistclaw
+make build && ./bin/gistclaw
 ```
 
-With `LOG_LEVEL=debug`, confirm startup logs contain `gateway started` and
-service initialisation lines for opencode and claudecode.
+With `LOG_LEVEL=debug`, confirm `gateway started` appears in the logs.

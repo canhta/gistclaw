@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+export PATH="$HOME/.local/bin:$(go env GOPATH)/bin:$PATH"
+
 echo ">>> go vet"
 go vet ./...
 
