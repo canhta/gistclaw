@@ -217,3 +217,103 @@ func TestResolveHITLNotFound(t *testing.T) {
 		t.Errorf("ResolveHITL missing ID: got %v, want ErrNotFound", err)
 	}
 }
+
+func TestCountMessages_Empty(t *testing.T) {
+	s := newTestStore(t)
+	count, err := s.CountMessages(42)
+	if err != nil {
+		t.Fatalf("CountMessages: %v", err)
+	}
+	if count != 0 {
+		t.Errorf("CountMessages empty: got %d, want 0", count)
+	}
+}
+
+func TestCountMessages_WithRows(t *testing.T) {
+	s := newTestStore(t)
+	for i := 0; i < 3; i++ {
+		if err := s.SaveMessage(42, "user", "hello"); err != nil {
+			t.Fatalf("SaveMessage: %v", err)
+		}
+	}
+	count, err := s.CountMessages(42)
+	if err != nil {
+		t.Fatalf("CountMessages: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("CountMessages: got %d, want 3", count)
+	}
+	// Different chatID must return 0.
+	count2, err := s.CountMessages(99)
+	if err != nil {
+		t.Fatalf("CountMessages other chatID: %v", err)
+	}
+	if count2 != 0 {
+		t.Errorf("CountMessages other chatID: got %d, want 0", count2)
+	}
+}
+
+func TestReplaceHistory_ReplacesAllRows(t *testing.T) {
+	s := newTestStore(t)
+	// Seed some old rows.
+	for i := 0; i < 5; i++ {
+		if err := s.SaveMessage(1, "user", "old"); err != nil {
+			t.Fatalf("SaveMessage seed: %v", err)
+		}
+	}
+	// Replace with 2 new rows.
+	rows := []store.HistoryMessage{
+		{Role: "assistant", Content: "[Summary]: old stuff"},
+		{Role: "user", Content: "new message"},
+	}
+	if err := s.ReplaceHistory(1, rows); err != nil {
+		t.Fatalf("ReplaceHistory: %v", err)
+	}
+	got, err := s.GetHistory(1, 100)
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("GetHistory len: got %d, want 2", len(got))
+	}
+	if got[0].Content != "[Summary]: old stuff" {
+		t.Errorf("row 0 content: got %q, want summary", got[0].Content)
+	}
+	if got[1].Content != "new message" {
+		t.Errorf("row 1 content: got %q, want new message", got[1].Content)
+	}
+}
+
+func TestReplaceHistory_OtherChatIDUnaffected(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.SaveMessage(1, "user", "chat1"); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+	if err := s.SaveMessage(2, "user", "chat2"); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+	if err := s.ReplaceHistory(1, []store.HistoryMessage{{Role: "assistant", Content: "new"}}); err != nil {
+		t.Fatalf("ReplaceHistory: %v", err)
+	}
+	got, err := s.GetHistory(2, 100)
+	if err != nil {
+		t.Fatalf("GetHistory: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("chat2 should be unaffected: got %d rows, want 1", len(got))
+	}
+}
+
+func TestReplaceHistory_EmptyRows_DeletesAll(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.SaveMessage(1, "user", "old"); err != nil {
+		t.Fatalf("SaveMessage: %v", err)
+	}
+	if err := s.ReplaceHistory(1, nil); err != nil {
+		t.Fatalf("ReplaceHistory nil: %v", err)
+	}
+	count, _ := s.CountMessages(1)
+	if count != 0 {
+		t.Errorf("after ReplaceHistory nil: got %d rows, want 0", count)
+	}
+}

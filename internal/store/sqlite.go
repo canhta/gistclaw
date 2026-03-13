@@ -412,6 +412,42 @@ func (s *Store) UpdateJobField(id string, field string, value any) error {
 	return nil
 }
 
+// CountMessages returns the number of message rows for chatID.
+func (s *Store) CountMessages(chatID int64) (int, error) {
+	var count int
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE chat_id = ?`, chatID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("store: count messages: %w", err)
+	}
+	return count, nil
+}
+
+// ReplaceHistory deletes all message rows for chatID and inserts rows in a single
+// transaction. rows is ordered oldest-first. Passing nil or empty rows deletes all.
+func (s *Store) ReplaceHistory(chatID int64, rows []HistoryMessage) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("store: replace history: begin: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck — no-op after Commit
+
+	if _, err := tx.Exec(`DELETE FROM messages WHERE chat_id = ?`, chatID); err != nil {
+		return fmt.Errorf("store: replace history: delete: %w", err)
+	}
+	for _, row := range rows {
+		if _, err := tx.Exec(
+			`INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)`,
+			chatID, row.Role, row.Content,
+		); err != nil {
+			return fmt.Errorf("store: replace history: insert: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: replace history: commit: %w", err)
+	}
+	return nil
+}
+
 // --- helpers ---
 
 func nullableTime(t *time.Time) any {
