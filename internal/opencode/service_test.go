@@ -4,6 +4,7 @@ package opencode_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -363,5 +364,42 @@ func TestSubmitTaskWithResult_ReturnsAccumulatedText(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected ✅ Done message, got: %v", ch.messages)
+	}
+}
+
+func TestSubmitTaskWithResult_BusyReturnsError(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/global/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/session", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "sess_busy_02"})
+	})
+	mux.HandleFunc("/session/sess_busy_02/prompt_async", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"session is busy"}`, http.StatusConflict)
+	})
+	mux.HandleFunc("/event", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		// emit nothing — should not be reached
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	parts := strings.Split(srv.URL, ":")
+	portStr := parts[len(parts)-1]
+	var port int
+	fmt.Sscanf(portStr, "%d", &port)
+
+	ch := &fakeChannel{}
+	svc := opencode.New(opencode.Config{Port: port, Dir: t.TempDir()},
+		ch, &fakeApprover{}, &fakeCostGuard{}, &fakeSOULLoader{})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	_, err := svc.SubmitTaskWithResult(ctx, 123, "another task while busy")
+	if !errors.Is(err, opencode.ErrSessionBusy) {
+		t.Errorf("SubmitTaskWithResult busy: got %v, want opencode.ErrSessionBusy", err)
 	}
 }

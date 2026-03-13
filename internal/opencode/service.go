@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +22,9 @@ import (
 	"github.com/canhta/gistclaw/internal/channel"
 	"github.com/canhta/gistclaw/internal/hitl"
 )
+
+// ErrSessionBusy is returned by SubmitTaskWithResult when the agent is already processing a request.
+var ErrSessionBusy = errors.New("opencode: session busy")
 
 // Service is the interface satisfied by *serviceImpl.
 // It also satisfies infra.AgentHealthChecker via Name() + IsAlive().
@@ -140,8 +144,6 @@ func (s *serviceImpl) SubmitTask(ctx context.Context, chatID int64, prompt strin
 	return s.consumeSSE(ctx, chatID, sessionID, nil)
 }
 
-// SubmitTaskWithResult submits a prompt and blocks until the agent finishes,
-// returning the full concatenated output text. Streams output to Telegram normally.
 func (s *serviceImpl) SubmitTaskWithResult(ctx context.Context, chatID int64, prompt string) (string, error) {
 	sessionID, err := s.ensureSession(ctx)
 	if err != nil {
@@ -152,7 +154,7 @@ func (s *serviceImpl) SubmitTaskWithResult(ctx context.Context, chatID int64, pr
 		return "", err
 	}
 	if busy {
-		return "", nil
+		return "", ErrSessionBusy
 	}
 	var acc strings.Builder
 	if err := s.consumeSSE(ctx, chatID, sessionID, &acc); err != nil {
