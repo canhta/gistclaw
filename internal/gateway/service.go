@@ -227,7 +227,7 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 				Role:    "system",
 				Content: "[Maximum tool iterations reached. Provide your final answer with what you know so far.]",
 			})
-			finalResp, ferr := s.llm.Chat(ctx, msgs, nil)
+			finalResp, ferr := s.chatWithRetry(ctx, chatID, msgs, nil)
 			if ferr != nil {
 				_ = s.ch.SendMessage(ctx, chatID, "⚠️ LLM error after max iterations: "+ferr.Error())
 				return
@@ -236,7 +236,7 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 			return
 		}
 
-		resp, err := s.llm.Chat(ctx, msgs, toolRegistry)
+		resp, err := s.chatWithRetry(ctx, chatID, msgs, toolRegistry)
 		if err != nil {
 			log.Error().Err(err).Msg("gateway: LLM Chat error")
 			_ = s.ch.SendMessage(ctx, chatID, "⚠️ LLM error: "+err.Error())
@@ -274,7 +274,7 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 					Content:    "[Tool call loop detected. Provide your best answer now.]",
 					ToolCallID: tc.ID,
 				})
-				finalResp, ferr := s.llm.Chat(ctx, msgs, nil)
+				finalResp, ferr := s.chatWithRetry(ctx, chatID, msgs, nil)
 				if ferr != nil {
 					_ = s.ch.SendMessage(ctx, chatID, "⚠️ LLM error after doom-loop guard: "+ferr.Error())
 					return
@@ -308,6 +308,61 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 			},
 		)
 	}
+}
+
+// chatWithRetry calls the LLM with retry logic for transient errors.
+//
+// Three behaviours based on classifyError:
+//   - errKindRetryable (5xx, timeout): up to 2 retries with exponential backoff.
+//   - errKindRateLimit (429): same backoff, plus a one-time user notification.
+//   - errKindTerminal (4xx, format errors): fail immediately, no retry.
+//
+// The initial backoff delay is cfg.Tuning.LLMRetryDelay (default 1s); it
+// doubles on each subsequent attempt. The retry loop honours ctx cancellation.
+func (s *Service) chatWithRetry(ctx context.Context, chatID int64, msgs []providers.Message, tools []providers.Tool) (*providers.LLMResponse, error) {
+	const maxAttempts = 3
+
+	delay := s.cfg.Tuning.LLMRetryDelay
+	if delay <= 0 {
+		delay = time.Second
+	}
+
+	rateLimitNotified := false
+	var lastErr error
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		resp, err := s.llm.Chat(ctx, msgs, tools)
+		if err == nil {
+			return resp, nil
+		}
+
+		switch classifyError(err) {
+		case errKindTerminal:
+			return nil, err
+
+		case errKindRateLimit:
+			if !rateLimitNotified {
+				log.Warn().Err(err).Int("attempt", attempt+1).Msg("gateway: LLM rate limited; retrying")
+				notifyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_ = s.ch.SendMessage(notifyCtx, chatID, "⚠️ LLM rate limited; retrying…")
+				cancel()
+				rateLimitNotified = true
+			}
+			fallthrough
+
+		case errKindRetryable:
+			log.Warn().Err(err).Int("attempt", attempt+1).Dur("backoff", delay).Msg("gateway: transient LLM error; retrying")
+			lastErr = err
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
+			delay *= 2
+		}
+	}
+
+	return nil, lastErr
 }
 
 // executeToolWithInput dispatches a tool call given already-unmarshaled input.

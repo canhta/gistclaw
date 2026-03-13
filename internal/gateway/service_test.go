@@ -154,6 +154,7 @@ func (m *mockCCService) SubmitTask(_ context.Context, _ int64, prompt string) er
 type mockLLM struct {
 	mu           sync.Mutex
 	responses    []*providers.LLMResponse
+	errs         []error // parallel to responses; non-nil entry returns that error instead
 	callCount    int
 	capturedMsgs [][]providers.Message // one entry per Chat() call
 }
@@ -166,10 +167,13 @@ func (m *mockLLM) Chat(_ context.Context, msgs []providers.Message, _ []provider
 	cp := make([]providers.Message, len(msgs))
 	copy(cp, msgs)
 	m.capturedMsgs = append(m.capturedMsgs, cp)
-	if m.callCount < len(m.responses) {
-		resp := m.responses[m.callCount]
-		m.callCount++
-		return resp, nil
+	idx := m.callCount
+	m.callCount++
+	if idx < len(m.errs) && m.errs[idx] != nil {
+		return nil, m.errs[idx]
+	}
+	if idx < len(m.responses) && m.responses[idx] != nil {
+		return m.responses[idx], nil
 	}
 	return &providers.LLMResponse{Content: "fallback answer"}, nil
 }
@@ -239,6 +243,12 @@ func newService(t *testing.T, ch channel.Channel, llm providers.LLMProvider) *ga
 
 func newServiceWithSoul(t *testing.T, ch channel.Channel, llm providers.LLMProvider, soul *infra.SOULLoader) *gateway.Service {
 	t.Helper()
+	return newServiceFull(t, ch, llm, soul, 10*time.Millisecond)
+}
+
+// newServiceFull is the base constructor used by all test helpers.
+func newServiceFull(t *testing.T, ch channel.Channel, llm providers.LLMProvider, soul *infra.SOULLoader, retryDelay time.Duration) *gateway.Service {
+	t.Helper()
 	s := newTestStore(t)
 	sched := newTestScheduler(t, s)
 	cfg := config.Config{
@@ -247,6 +257,7 @@ func newServiceWithSoul(t *testing.T, ch channel.Channel, llm providers.LLMProvi
 			SchedulerTick:       time.Second,
 			MissedJobsFireLimit: 5,
 			MaxIterations:       20,
+			LLMRetryDelay:       retryDelay,
 		},
 	}
 	return gateway.NewService(
@@ -761,6 +772,159 @@ func TestGateway_SOUL_LoadError(t *testing.T) {
 		if strings.Contains(m, "⚠️") {
 			t.Errorf("expected no error message to user on SOUL load failure; got %q", m)
 		}
+	}
+}
+
+// TestGateway_Retry_TransientSucceeds verifies that a 5xx error on the first attempt
+// is retried and succeeds on the second attempt. Total LLM calls must be 2.
+func TestGateway_Retry_TransientSucceeds(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		errs: []error{
+			errors.New("503 Service Unavailable"), // attempt 1: retryable
+			nil,                                   // attempt 2: success
+		},
+		responses: []*providers.LLMResponse{
+			nil, // slot 0 unused (error returned instead)
+			{Content: "recovered answer", ToolCall: nil},
+		},
+	}
+	svc := newServiceFull(t, ch, llm, nil, 10*time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "hello"}
+	time.Sleep(300 * time.Millisecond)
+
+	if calls := llm.calls(); calls != 2 {
+		t.Errorf("expected 2 LLM calls (1 fail + 1 retry success); got %d", calls)
+	}
+	msgs := ch.sentMessages()
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "recovered answer") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected 'recovered answer' after retry; got: %v", msgs)
+	}
+}
+
+// TestGateway_Retry_TerminalFailsFast verifies that a 4xx error (non-429) is not retried.
+// Total LLM calls must be exactly 1.
+func TestGateway_Retry_TerminalFailsFast(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		errs: []error{
+			errors.New("400 Bad Request: invalid model"), // terminal
+		},
+	}
+	svc := newServiceFull(t, ch, llm, nil, 10*time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "hello"}
+	time.Sleep(200 * time.Millisecond)
+
+	if calls := llm.calls(); calls != 1 {
+		t.Errorf("terminal error: expected exactly 1 LLM call (no retry); got %d", calls)
+	}
+	msgs := ch.sentMessages()
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "⚠️") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error message sent to user; got: %v", msgs)
+	}
+}
+
+// TestGateway_Retry_RateLimitNotifiesUser verifies that a 429 error sends a
+// rate-limit notification to the user and retries. The notification must appear
+// exactly once even if multiple retries are needed.
+func TestGateway_Retry_RateLimitNotifiesUser(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		errs: []error{
+			errors.New("429 Too Many Requests"), // rate limit
+			nil,                                 // success on retry
+		},
+		responses: []*providers.LLMResponse{
+			nil,
+			{Content: "answer after rate limit", ToolCall: nil},
+		},
+	}
+	svc := newServiceFull(t, ch, llm, nil, 10*time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "hello"}
+	time.Sleep(300 * time.Millisecond)
+
+	if calls := llm.calls(); calls != 2 {
+		t.Errorf("rate limit: expected 2 LLM calls; got %d", calls)
+	}
+
+	msgs := ch.sentMessages()
+	rateLimitNotices := 0
+	for _, m := range msgs {
+		if strings.Contains(m, "rate limited") || strings.Contains(m, "Rate limited") {
+			rateLimitNotices++
+		}
+	}
+	if rateLimitNotices != 1 {
+		t.Errorf("expected exactly 1 rate-limit notification; got %d in: %v", rateLimitNotices, msgs)
+	}
+
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "answer after rate limit") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected final answer after rate-limit retry; got: %v", msgs)
+	}
+}
+
+// TestGateway_Retry_ExhaustsAndErrors verifies that after 3 failed attempts
+// (all retryable 5xx), the user receives an error message. Total LLM calls = 3.
+func TestGateway_Retry_ExhaustsAndErrors(t *testing.T) {
+	ch := newMockChannel()
+	serverErr := errors.New("503 Service Unavailable")
+	llm := &mockLLM{
+		errs: []error{serverErr, serverErr, serverErr},
+	}
+	svc := newServiceFull(t, ch, llm, nil, 10*time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "hello"}
+	time.Sleep(300 * time.Millisecond)
+
+	if calls := llm.calls(); calls != 3 {
+		t.Errorf("expected 3 LLM calls (all exhausted); got %d", calls)
+	}
+	msgs := ch.sentMessages()
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "⚠️") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error message after retry exhaustion; got: %v", msgs)
 	}
 }
 
