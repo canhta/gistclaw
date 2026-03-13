@@ -387,3 +387,131 @@ func TestScheduler_CreateJob_InvalidCronExpr(t *testing.T) {
 		t.Error("expected error for invalid cron expression, got nil")
 	}
 }
+
+// TestSchedulerKindIn_NextRunAt verifies kind="in" computes next_run_at as now+schedule seconds,
+// sets delete_after_run=true, and that CreateJob accepts it.
+func TestSchedulerKindIn_NextRunAt(t *testing.T) {
+	s := newTestStore(t)
+	svc := scheduler.NewService(s, &mockTarget{}, defaultTuning(), testOperatorChatID)
+
+	before := time.Now().UTC()
+	j := scheduler.Job{
+		Kind:     "in",
+		Target:   agent.KindGateway,
+		Prompt:   "search for gold price",
+		Schedule: "300", // 5 minutes
+	}
+	if err := svc.CreateJob(j); err != nil {
+		t.Fatalf("CreateJob kind=in: %v", err)
+	}
+	after := time.Now().UTC()
+
+	jobs, err := svc.ListJobs()
+	if err != nil {
+		t.Fatalf("ListJobs: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	got := jobs[0]
+
+	// next_run_at must be within [before+300s, after+300s] (±2s slack)
+	wantLow := before.Add(300 * time.Second).Add(-2 * time.Second)
+	wantHigh := after.Add(300 * time.Second).Add(2 * time.Second)
+	if got.NextRunAt.Before(wantLow) || got.NextRunAt.After(wantHigh) {
+		t.Errorf("kind=in NextRunAt=%v; want between %v and %v", got.NextRunAt, wantLow, wantHigh)
+	}
+
+	// delete_after_run must be true (one-shot)
+	if !got.DeleteAfterRun {
+		t.Errorf("kind=in: expected DeleteAfterRun=true, got false")
+	}
+}
+
+// TestSchedulerKindIn_Fires verifies a kind="in" job fires exactly once and is deleted.
+func TestSchedulerKindIn_Fires(t *testing.T) {
+	s := newTestStore(t)
+	target := &mockTarget{}
+	svc := scheduler.NewService(s, target, defaultTuning(), testOperatorChatID)
+
+	now := time.Now().UTC()
+	row := store.JobRow{
+		ID:             "in-001",
+		Kind:           "in",
+		Target:         "gateway",
+		Prompt:         "check prices",
+		Schedule:       "300",
+		NextRunAt:      now.Add(-time.Second), // already due
+		Enabled:        true,
+		DeleteAfterRun: true,
+		CreatedAt:      now,
+	}
+	if err := s.InsertJob(row); err != nil {
+		t.Fatalf("InsertJob: %v", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	time.Sleep(300 * time.Millisecond)
+
+	// RunAgentTask must be called exactly once
+	if count := target.callCount(); count != 1 {
+		t.Errorf("kind=in: expected exactly 1 RunAgentTask call, got %d", count)
+	}
+
+	// Job must be deleted from store
+	rows, err := s.ListAllJobs()
+	if err != nil {
+		t.Fatalf("ListAllJobs: %v", err)
+	}
+	for _, r := range rows {
+		if r.ID == "in-001" {
+			t.Errorf("kind=in job should be deleted after firing; still present")
+		}
+	}
+}
+
+// TestSchedulerKindIn_InvalidSchedule verifies a non-integer schedule string is rejected.
+func TestSchedulerKindIn_InvalidSchedule(t *testing.T) {
+	s := newTestStore(t)
+	svc := scheduler.NewService(s, &mockTarget{}, defaultTuning(), testOperatorChatID)
+	j := scheduler.Job{
+		Kind:     "in",
+		Target:   agent.KindGateway,
+		Prompt:   "x",
+		Schedule: "not-a-number",
+	}
+	if err := svc.CreateJob(j); err == nil {
+		t.Error("expected error for non-integer kind=in schedule, got nil")
+	}
+}
+
+// TestScheduleJob_GatewayTargetValidation verifies that CreateJob accepts target=KindGateway
+// and that the stored job has target="gateway".
+func TestScheduleJob_GatewayTargetValidation(t *testing.T) {
+	s := newTestStore(t)
+	svc := scheduler.NewService(s, &mockTarget{}, defaultTuning(), testOperatorChatID)
+
+	j := scheduler.Job{
+		Kind:     "in",
+		Target:   agent.KindGateway,
+		Prompt:   "get gold prices",
+		Schedule: "300",
+	}
+	if err := svc.CreateJob(j); err != nil {
+		t.Fatalf("CreateJob with KindGateway: %v", err)
+	}
+
+	jobs, err := svc.ListJobs()
+	if err != nil {
+		t.Fatalf("ListJobs: %v", err)
+	}
+	if len(jobs) != 1 {
+		t.Fatalf("expected 1 job, got %d", len(jobs))
+	}
+	if jobs[0].Target != agent.KindGateway {
+		t.Errorf("stored job Target = %v, want KindGateway (%v)", jobs[0].Target, agent.KindGateway)
+	}
+}

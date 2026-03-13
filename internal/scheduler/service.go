@@ -184,7 +184,7 @@ func (s *Service) CreateJob(j Job) error {
 	}
 	j.ID = uuid.New().String()
 	j.CreatedAt = time.Now().UTC()
-	if j.Kind == "at" {
+	if j.Kind == "at" || j.Kind == "in" {
 		j.DeleteAfterRun = true
 	}
 
@@ -263,6 +263,15 @@ func (s *Service) computeInitialNextRun(j Job) (time.Time, error) {
 			return time.Time{}, fmt.Errorf("invalid cron expression %q: %w", j.Schedule, err)
 		}
 		return next, nil
+	case "in":
+		secs, err := strconv.ParseInt(j.Schedule, 10, 64)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("'in' schedule must be integer seconds: %w", err)
+		}
+		if secs < 0 {
+			return time.Time{}, fmt.Errorf("'in' schedule must be non-negative, got %d", secs)
+		}
+		return now.Add(time.Duration(secs) * time.Second), nil
 	default:
 		return time.Time{}, fmt.Errorf("unknown job kind %q", j.Kind)
 	}
@@ -270,15 +279,15 @@ func (s *Service) computeInitialNextRun(j Job) (time.Time, error) {
 
 func validateJob(j Job) error {
 	switch j.Kind {
-	case "at", "every", "cron":
+	case "at", "every", "cron", "in":
 	default:
-		return fmt.Errorf("invalid job kind %q; must be 'at', 'every', or 'cron'", j.Kind)
+		return fmt.Errorf("invalid job kind %q; must be 'at', 'every', 'cron', or 'in'", j.Kind)
 	}
 	switch j.Target {
-	case agent.KindOpenCode, agent.KindClaudeCode, agent.KindChat:
+	case agent.KindOpenCode, agent.KindClaudeCode, agent.KindChat, agent.KindGateway:
 		// valid
 	default:
-		return fmt.Errorf("invalid target %v; must be opencode, claudecode, or chat", j.Target)
+		return fmt.Errorf("invalid target %v; must be opencode, claudecode, chat, or gateway", j.Target)
 	}
 	if j.Prompt == "" {
 		return fmt.Errorf("job prompt must not be empty")
@@ -299,7 +308,7 @@ func (s *Service) Tools() []providers.Tool {
 	return []providers.Tool{
 		{
 			Name:        "schedule_job",
-			Description: "Create a scheduled job. kind: 'at' (one-time, RFC3339 schedule), 'every' (recurring, schedule in seconds), or 'cron' (cron expression). target: 'opencode', 'claudecode', or 'chat'.",
+			Description: "Create a scheduled job. kind: 'at' (one-time, RFC3339 schedule), 'every' (recurring, schedule in seconds), 'cron' (cron expression), or 'in' (one-shot delay, schedule = seconds from now e.g. '300'). target: 'opencode', 'claudecode', 'chat', or 'gateway' (runs the full LLM+tools loop).",
 			InputSchema: scheduleJobSchema(),
 		},
 		{
@@ -326,13 +335,13 @@ func scheduleJobSchema() map[string]any {
 		"properties": map[string]any{
 			"kind": map[string]any{
 				"type":        "string",
-				"enum":        []string{"at", "every", "cron"},
-				"description": "'at' = one-time (RFC3339 schedule), 'every' = recurring (seconds), 'cron' = cron expression",
+				"enum":        []string{"at", "every", "cron", "in"},
+				"description": "'at' = one-time (RFC3339 schedule), 'every' = recurring (seconds), 'cron' = cron expression, 'in' = one-shot delay (schedule = seconds from now, e.g. '300' = 5 minutes)",
 			},
 			"target": map[string]any{
 				"type":        "string",
-				"enum":        []string{"opencode", "claudecode", "chat"},
-				"description": "Which agent (or chat channel) to target",
+				"enum":        []string{"opencode", "claudecode", "chat", "gateway"},
+				"description": "Which agent or channel to target: 'gateway' runs the full LLM+tools chat loop",
 			},
 			"prompt": map[string]any{
 				"type":        "string",
