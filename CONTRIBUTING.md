@@ -29,6 +29,19 @@ Use short, descriptive branch names: `feat/discord-channel`, `fix/hitl-timeout`,
 
 ---
 
+## Install git hooks
+
+Run once after cloning to install the pre-commit and pre-push hooks:
+
+```bash
+make install-hooks
+```
+
+The pre-commit hook runs `go vet` and `golangci-lint`. The pre-push hook runs
+the full test suite. Both must pass before the operation proceeds.
+
+---
+
 ## Build and test
 
 ```bash

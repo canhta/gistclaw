@@ -1,4 +1,4 @@
-.PHONY: tidy test build run vet lint deploy logs
+.PHONY: tidy test build run vet lint install-hooks deploy logs
 
 BINARY_DIR := ./bin
 GISTCLAW   := $(BINARY_DIR)/gistclaw
@@ -23,6 +23,12 @@ vet:
 
 lint: vet
 	golangci-lint run ./...
+
+install-hooks:
+	cp scripts/hooks/pre-commit .git/hooks/pre-commit
+	cp scripts/hooks/pre-push .git/hooks/pre-push
+	chmod +x .git/hooks/pre-commit .git/hooks/pre-push
+	@echo "Git hooks installed."
 
 # Deploy: rsync binaries to VPS and restart the service
 # Usage: make deploy VPS=user@your-vps-ip
