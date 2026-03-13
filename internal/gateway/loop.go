@@ -28,6 +28,13 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 		}
 	}
 
+	// 1b. Current UTC time — injected so the LLM can compute correct timestamps
+	//     for scheduled jobs and any other time-aware reasoning.
+	msgs = append(msgs, providers.Message{
+		Role:    "system",
+		Content: "Current UTC time: " + time.Now().UTC().Format(time.RFC3339),
+	})
+
 	// 2. Conversation history — run optional summarization, then load history.
 	if s.conv != nil {
 		if err := s.conv.MaybeSummarize(ctx, chatID, s.llm); err != nil {

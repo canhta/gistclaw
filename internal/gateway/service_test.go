@@ -714,11 +714,10 @@ func TestGateway_SOUL_NilLoader(t *testing.T) {
 	if len(msgs) == 0 {
 		t.Fatal("expected at least one message in first LLM call")
 	}
-	if msgs[0].Role == "system" {
-		t.Errorf("expected no system message with nil memory.Engine; got Role=%q Content=%q", msgs[0].Role, msgs[0].Content)
-	}
-	if msgs[0].Role != "user" {
-		t.Errorf("expected first message to be user role; got %q", msgs[0].Role)
+	for _, m := range msgs {
+		if m.Role == "system" && !strings.Contains(m.Content, "Current UTC time:") {
+			t.Errorf("expected no soul system message with nil memory.Engine; got Role=%q Content=%q", m.Role, m.Content)
+		}
 	}
 }
 
@@ -750,17 +749,23 @@ func TestGateway_SOUL_InjectsSystemPrompt(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	msgs := llm.firstCallMsgs()
-	if len(msgs) < 2 {
-		t.Fatalf("expected at least 2 messages (system + user); got %d", len(msgs))
+	if len(msgs) < 3 {
+		t.Fatalf("expected at least 3 messages (soul system + time system + user); got %d", len(msgs))
 	}
 	if msgs[0].Role != "system" {
-		t.Errorf("expected first message Role=system; got %q", msgs[0].Role)
+		t.Errorf("expected first message Role=system (soul); got %q", msgs[0].Role)
 	}
 	if msgs[0].Content != soulContent {
-		t.Errorf("expected system message content %q; got %q", soulContent, msgs[0].Content)
+		t.Errorf("expected first system message content %q (soul); got %q", soulContent, msgs[0].Content)
 	}
-	if msgs[1].Role != "user" {
-		t.Errorf("expected second message Role=user; got %q", msgs[1].Role)
+	foundUser := false
+	for _, m := range msgs {
+		if m.Role == "user" {
+			foundUser = true
+		}
+	}
+	if !foundUser {
+		t.Errorf("expected a user message in LLM call; got: %v", msgs)
 	}
 }
 
@@ -794,10 +799,13 @@ func TestGateway_SOUL_LoadError(t *testing.T) {
 	if llm.calls() < 1 {
 		t.Errorf("expected at least 1 LLM call despite missing soul file; got %d", llm.calls())
 	}
-	// No system message prepended (soul file missing, memory file missing, no notes).
+	// No soul system message prepended (soul file missing, memory file missing, no notes).
+	// UTC time system message is always present; only reject non-UTC-time system messages.
 	callMsgs := llm.firstCallMsgs()
-	if len(callMsgs) > 0 && callMsgs[0].Role == "system" {
-		t.Errorf("expected no system message on missing soul file; got one with content %q", callMsgs[0].Content)
+	for _, m := range callMsgs {
+		if m.Role == "system" && !strings.Contains(m.Content, "Current UTC time:") {
+			t.Errorf("expected no soul system message on missing soul file; got Role=%q Content=%q", m.Role, m.Content)
+		}
 	}
 	// No error message sent to user (answer should be sent instead).
 	sent := ch.sentMessages()
@@ -1261,6 +1269,40 @@ func TestHandleHelpNilLLM(t *testing.T) {
 	}
 	if !strings.Contains(msgs[len(msgs)-1], "/oc") {
 		t.Errorf("fallback message = %q, want it to contain /oc", msgs[len(msgs)-1])
+	}
+}
+
+// TestGateway_PlainChat_CurrentTimeInjected verifies that handlePlainChat injects
+// a "Current UTC time:" system message into every LLM call.
+func TestGateway_PlainChat_CurrentTimeInjected(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		responses: []*providers.LLMResponse{
+			{Content: "answer", ToolCall: nil},
+		},
+	}
+	svc := newService(t, ch, llm)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "what time is it?"}
+	time.Sleep(300 * time.Millisecond)
+
+	msgs := llm.firstCallMsgs()
+	if len(msgs) == 0 {
+		t.Fatal("expected messages in first LLM call")
+	}
+
+	found := false
+	for _, m := range msgs {
+		if m.Role == "system" && strings.Contains(m.Content, "Current UTC time:") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected a system message containing 'Current UTC time:' in LLM call; got: %v", msgs)
 	}
 }
 
