@@ -94,6 +94,8 @@ func (m *mockApprover) Resolve(_ string, _ string) error {
 	return nil
 }
 
+func (m *mockApprover) Deliver(_ channel.InboundMessage) {}
+
 // --- mock opencode.Service ---
 
 type mockOCService struct {

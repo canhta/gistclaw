@@ -62,18 +62,22 @@ type Service struct {
 	// questionWaiters is a sync.Map[string, questionWaiterItem] keyed by question request ID.
 	// Each entry is written by RequestQuestion and consumed by the event loop callback.
 	questionWaiters sync.Map
+
+	// inbox receives callback messages forwarded by gateway.Service via Deliver.
+	// Buffered to avoid blocking the gateway's hot path.
+	inbox chan channel.InboundMessage
 }
 
 // NewService creates a new HITL service.
 // replier is called by RequestQuestion to POST answers to the agent API after all
 // questions are answered. Pass nil only in tests that do not exercise RequestQuestion.
 func NewService(ch channel.Channel, s *store.Store, tuning config.Tuning, replier QuestionReplier) *Service {
-	return &Service{ch: ch, store: s, tuning: tuning, replier: replier}
+	return &Service{ch: ch, store: s, tuning: tuning, replier: replier, inbox: make(chan channel.InboundMessage, 64)}
 }
 
 // Run is the main event loop. It:
 //  1. Auto-rejects all hitl_pending records with status "pending" (from a previous run).
-//  2. Calls ch.Receive to get the inbound message stream.
+//  2. Reads callback messages forwarded by gateway.Service via Deliver.
 //  3. Dispatches callback messages to the appropriate registered handler.
 //
 // Blocks until ctx is cancelled.
@@ -83,16 +87,11 @@ func (s *Service) Run(ctx context.Context) error {
 		log.Warn().Err(err).Msg("hitl: startup auto-reject failed")
 	}
 
-	msgs, err := s.ch.Receive(ctx)
-	if err != nil {
-		return fmt.Errorf("hitl: channel.Receive: %w", err)
-	}
-
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case msg, ok := <-msgs:
+		case msg, ok := <-s.inbox:
 			if !ok {
 				return nil
 			}
@@ -100,6 +99,17 @@ func (s *Service) Run(ctx context.Context) error {
 				s.dispatchCallback(ctx, msg)
 			}
 		}
+	}
+}
+
+// Deliver forwards an inbound message from gateway into the HITL event loop.
+// It is non-blocking: if the inbox is full the message is dropped with a warning.
+// Called by gateway.Service for every inbound callback message.
+func (s *Service) Deliver(msg channel.InboundMessage) {
+	select {
+	case s.inbox <- msg:
+	default:
+		log.Warn().Str("callback_data", msg.CallbackData).Msg("hitl: inbox full; dropping callback")
 	}
 }
 

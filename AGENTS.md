@@ -2,7 +2,8 @@
 
 GistClaw is a pure-Go single binary that acts as a Telegram-driven controller for AI
 coding agents (OpenCode, Claude Code). It is implemented in ten incremental plans
-located in `docs/plans/`. Only Plan 1 (foundation packages) is complete as of writing.
+located in `docs/plans/`. Plans 1–9 are complete and the binary is running in
+production. Plan 10 (smoke tests) is the remaining work.
 
 ---
 
@@ -48,15 +49,29 @@ make tidy          # alias
 
 ```
 internal/
-  agent/      # Kind enum (KindOpenCode, KindClaudeCode, KindChat)
-  app/        # WithRestart supervisor + PermanentFailure error type
-  config/     # Config + Tuning structs, env parsing, validation
-  (planned)   # gateway, channel/telegram, opencode, claudecode,
-              # hitl, scheduler, providers, infra, tools, mcp, store
+  agent/           # Kind enum (KindOpenCode, KindClaudeCode, KindChat)
+  app/             # WithRestart supervisor + PermanentFailure error type
+  channel/         # Channel interface + Telegram implementation
+  channel/telegram/
+  claudecode/      # ClaudeCode service (runs claude -p subprocess)
+  config/          # Config + Tuning structs, env parsing, validation
+  conversation/    # Conversation history manager
+  gateway/         # Telegram message router + LLM chat loop
+  hitl/            # Human-in-the-loop permission + question flows
+  infra/           # CostGuard, Heartbeat, SOULLoader
+  mcp/             # MCP server manager
+  memory/          # Memory engine (soul + MEMORY.md + notes)
+  opencode/        # OpenCode service (HTTP client for opencode serve)
+  providers/       # LLM provider interface + OpenAI/Copilot/Codex impls
+  scheduler/       # Cron-based job scheduler
+  store/           # SQLite store (sessions, hitl_pending, cost history)
+  tools/           # Web search + web fetch tools
 cmd/
-  gistclaw/        # main binary (planned)
-  gistclaw-hook/   # webhook helper (planned)
+  gistclaw/        # main binary
+  gistclaw-hook/   # webhook helper binary
 docs/plans/        # implementation blueprints (Plans 1-10)
+SOUL.md            # bot personality / system prompt (loaded at runtime)
+sample.env         # reference env file — copy to .env and fill in values
 ```
 
 ---
@@ -184,6 +199,9 @@ Key optional vars:
 - `LOG_LEVEL` — `debug` | `info` | `warn` | `error` (default: `info`)
 - `SQLITE_PATH` — default `./gistclaw.db`
 - `SOUL_PATH` — system-prompt markdown file (default `./SOUL.md`)
+- `OPENCODE_PORT` — TCP port for opencode serve (default `8766`)
+- `OPENCODE_SERVER_USERNAME` — Basic Auth username for opencode serve (empty = no auth)
+- `OPENCODE_SERVER_PASSWORD` — Basic Auth password for opencode serve (empty = no auth)
 
 ---
 

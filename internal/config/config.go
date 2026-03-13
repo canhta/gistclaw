@@ -32,13 +32,15 @@ type Config struct {
 	CopilotGRPCAddr string `env:"COPILOT_GRPC_ADDR" envDefault:"localhost:4321"`
 
 	// Infrastructure
-	OpenCodePort   int    `env:"OPENCODE_PORT"    envDefault:"8766"`
-	HookServerAddr string `env:"HOOK_SERVER_ADDR" envDefault:"127.0.0.1:8765"`
-	SoulPath       string `env:"SOUL_PATH"        envDefault:"./SOUL.md"`
-	MemoryPath     string `env:"MEMORY_PATH"      envDefault:"./MEMORY.md"`
-	SQLitePath     string `env:"SQLITE_PATH"      envDefault:"./gistclaw.db"`
-	LogLevel       string `env:"LOG_LEVEL"        envDefault:"info"`
-	MCPConfigPath  string `env:"MCP_CONFIG_PATH"  envDefault:"./gistclaw.yaml"`
+	OpenCodePort           int    `env:"OPENCODE_PORT"            envDefault:"8766"`
+	OpenCodeServerUsername string `env:"OPENCODE_SERVER_USERNAME"`
+	OpenCodeServerPassword string `env:"OPENCODE_SERVER_PASSWORD"`
+	HookServerAddr         string `env:"HOOK_SERVER_ADDR"         envDefault:"127.0.0.1:8765"`
+	SoulPath               string `env:"SOUL_PATH"        envDefault:"./SOUL.md"`
+	MemoryPath             string `env:"MEMORY_PATH"      envDefault:"./MEMORY.md"`
+	SQLitePath             string `env:"SQLITE_PATH"      envDefault:"./gistclaw.db"`
+	LogLevel               string `env:"LOG_LEVEL"        envDefault:"info"`
+	MCPConfigPath          string `env:"MCP_CONFIG_PATH"  envDefault:"./gistclaw.yaml"`
 
 	// Search provider API keys (at least one needed for web_search tool)
 	BraveAPIKey      string `env:"GISTCLAW_BRAVE_API_KEY"`

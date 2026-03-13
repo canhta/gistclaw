@@ -89,7 +89,7 @@ systemd (Restart=always, StartLimitBurst=5)
 2. `opencode.Service` calls `hitl.Approver.RequestPermission(ctx, req)`
 3. `hitl.Service` writes `hitl_pending` to SQLite; sends inline keyboard via `channel.SendKeyboard`
 4. Timer: reminder at `HITLReminderBefore` before timeout; auto-reject at `HITLTimeout`
-5. User taps button → gateway routes callback → `hitl.Service` resolves → POST reply to OpenCode
+5. User taps button → `gateway.Service` receives callback → calls `hitl.Service.Deliver(msg)` → HITL event loop resolves → POST reply to OpenCode
 
 ### Flow C — Claude Code tool approval via hook helper
 
@@ -184,6 +184,12 @@ timers) are hidden behind it.
 
 `hitl.Service` additionally depends on a `QuestionReplier` interface (implemented by `opencode.Service`) for posting collected question answers back to the agent API; this is injected at construction via `NewService`.
 
+`hitl.Service.Run` does **not** call `channel.Channel.Receive`. Instead, `gateway.Service` is
+the sole consumer of the Telegram long-poll stream. All `hitl:`-prefixed callbacks are
+forwarded by `gateway.Service` to `hitl.Service.Deliver(msg)`, which pushes them into an
+internal buffered inbox channel processed by the HITL event loop. This prevents the 409
+Conflict error that would arise from two concurrent `getUpdates` connections.
+
 ### `opencode.Service` (`internal/opencode/service.go`)
 
 ```go
@@ -195,6 +201,13 @@ type Service interface {
     Name() string // returns "opencode"
 }
 ```
+
+`Run` spawns `opencode serve --port <port> --hostname 127.0.0.1` with `cmd.Dir` set to
+`Config.Dir`. If the server is already listening on the configured port (e.g. externally
+managed), `Run` skips spawning and blocks on `ctx.Done()` instead.
+
+All HTTP requests (health check, session create, `prompt_async`, abort, SSE) include HTTP
+Basic Auth when `OPENCODE_SERVER_USERNAME` / `OPENCODE_SERVER_PASSWORD` are set.
 
 ### `claudecode.Service` (`internal/claudecode/service.go`)
 

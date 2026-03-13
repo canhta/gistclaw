@@ -85,16 +85,35 @@ func New(cfg Config, ch channel.Channel, approver hitlApprover, guard costTracke
 func (s *serviceImpl) Name() string { return "opencode" }
 
 // Run starts opencode serve and blocks until ctx is cancelled or the subprocess exits.
+// If the server is already listening on the configured port, Run skips spawning and
+// blocks until ctx is cancelled (acting as a pass-through for an externally managed instance).
 func (s *serviceImpl) Run(ctx context.Context) error {
+	// If opencode is already running (e.g. externally managed), skip spawning.
+	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	alreadyUp := s.isAliveURL(checkCtx)
+	cancel()
+	if alreadyUp {
+		log.Info().Int("port", s.cfg.Port).Msg("opencode: server already running, skipping spawn")
+		<-ctx.Done()
+		return nil
+	}
+
 	args := []string{
 		"serve",
 		"--port", fmt.Sprintf("%d", s.cfg.Port),
 		"--hostname", "127.0.0.1",
-		"--dir", s.cfg.Dir,
 	}
 	cmd := exec.CommandContext(ctx, "opencode", args...)
+	cmd.Dir = s.cfg.Dir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	// Forward auth env vars so opencode serve enforces the same credentials.
+	if s.cfg.Username != "" || s.cfg.Password != "" {
+		cmd.Env = append(os.Environ(),
+			"OPENCODE_SERVER_USERNAME="+s.cfg.Username,
+			"OPENCODE_SERVER_PASSWORD="+s.cfg.Password,
+		)
+	}
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("opencode: start subprocess: %w", err)
@@ -181,6 +200,7 @@ func (s *serviceImpl) submitPrompt(ctx context.Context, chatID int64, sessionID,
 	url := s.base() + "/session/" + sessionID + "/prompt_async"
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
+	s.setAuth(req)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return false, fmt.Errorf("opencode: prompt_async: %w", err)
@@ -219,6 +239,7 @@ func (s *serviceImpl) Stop(ctx context.Context) error {
 	if sessionID != "" {
 		abortURL := s.base() + "/session/" + sessionID + "/abort"
 		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, abortURL, nil)
+		s.setAuth(req)
 		resp, err := s.client.Do(req)
 		if err != nil {
 			log.Warn().Err(err).Msg("opencode: abort session")
@@ -249,11 +270,19 @@ func (s *serviceImpl) base() string {
 	return fmt.Sprintf("http://127.0.0.1:%d", s.cfg.Port)
 }
 
+// setAuth adds HTTP Basic Auth to req when credentials are configured.
+func (s *serviceImpl) setAuth(req *http.Request) {
+	if s.cfg.Password != "" {
+		req.SetBasicAuth(s.cfg.Username, s.cfg.Password)
+	}
+}
+
 func (s *serviceImpl) isAliveURL(ctx context.Context) bool {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.base()+"/global/health", nil)
 	if err != nil {
 		return false
 	}
+	s.setAuth(req)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return false
@@ -271,6 +300,7 @@ func (s *serviceImpl) ensureSession(ctx context.Context) (string, error) {
 	}
 
 	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, s.base()+"/session", nil)
+	s.setAuth(req)
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return "", err
@@ -297,6 +327,7 @@ func (s *serviceImpl) consumeSSE(ctx context.Context, chatID int64, sessionID st
 	url := fmt.Sprintf("%s/event?directory=%s", s.base(), s.cfg.Dir)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	req.Header.Set("Accept", "text/event-stream")
+	s.setAuth(req)
 
 	// Use a client without timeout for the long-running SSE stream.
 	streamClient := &http.Client{}

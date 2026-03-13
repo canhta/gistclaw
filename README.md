@@ -49,6 +49,13 @@ OPENAI_API_KEY=sk-...
 
 All other variables have sensible defaults. See `sample.env` for the full annotated list.
 
+If your `opencode serve` instance requires HTTP Basic Auth, also set:
+
+```sh
+OPENCODE_SERVER_USERNAME=your_username
+OPENCODE_SERVER_PASSWORD=your_password
+```
+
 ---
 
 ## Run

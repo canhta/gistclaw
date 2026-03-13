@@ -196,7 +196,7 @@ func TestRequestPermissionSendsKeyboard(t *testing.T) {
 // TestCallbackAllowOnce verifies that a "hitl:<id>:once" callback resolves the
 // PermissionRequest with Allow=true, Always=false and updates SQLite.
 func TestCallbackAllowOnce(t *testing.T) {
-	svc, ch, s, _ := newTestService(t, defaultTuning())
+	svc, _, s, _ := newTestService(t, defaultTuning())
 
 	decisionCh := make(chan hitl.HITLDecision, 1)
 	req := hitl.PermissionRequest{
@@ -220,7 +220,7 @@ func TestCallbackAllowOnce(t *testing.T) {
 	time.Sleep(20 * time.Millisecond) // let keyboard be sent
 
 	// Inject the callback.
-	ch.inject(channel.InboundMessage{
+	svc.Deliver(channel.InboundMessage{
 		ChatID:       100,
 		CallbackData: "hitl:permission_once01:once",
 	})
@@ -252,7 +252,7 @@ func TestCallbackAllowOnce(t *testing.T) {
 
 // TestCallbackReject verifies that "hitl:<id>:reject" resolves with Allow=false.
 func TestCallbackReject(t *testing.T) {
-	svc, ch, _, _ := newTestService(t, defaultTuning())
+	svc, _, _, _ := newTestService(t, defaultTuning())
 
 	decisionCh := make(chan hitl.HITLDecision, 1)
 	req := hitl.PermissionRequest{
@@ -275,7 +275,7 @@ func TestCallbackReject(t *testing.T) {
 	}
 	time.Sleep(20 * time.Millisecond)
 
-	ch.inject(channel.InboundMessage{
+	svc.Deliver(channel.InboundMessage{
 		ChatID:       100,
 		CallbackData: "hitl:permission_rej01:reject",
 	})
@@ -384,7 +384,7 @@ func TestStartupAutoRejectUpdatesSQLite(t *testing.T) {
 // in order, resolves option indices to labels, and calls QuestionReplier.ReplyQuestion
 // with the correct label strings (not raw indices).
 func TestRequestQuestionSequential(t *testing.T) {
-	svc, ch, _, rep := newTestService(t, defaultTuning())
+	svc, _, _, rep := newTestService(t, defaultTuning())
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -417,14 +417,14 @@ func TestRequestQuestionSequential(t *testing.T) {
 
 	// Wait for first question keyboard, then answer it.
 	time.Sleep(50 * time.Millisecond)
-	ch.inject(channel.InboundMessage{
+	svc.Deliver(channel.InboundMessage{
 		ChatID:       100,
 		CallbackData: "hitl:question_seq01:opt:0", // choose "testify" (index 0)
 	})
 
 	// Wait for second question keyboard, then answer it.
 	time.Sleep(50 * time.Millisecond)
-	ch.inject(channel.InboundMessage{
+	svc.Deliver(channel.InboundMessage{
 		ChatID:       100,
 		CallbackData: "hitl:question_seq01:opt:0", // choose "yes" (index 0)
 	})

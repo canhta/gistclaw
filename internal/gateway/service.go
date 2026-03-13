@@ -38,12 +38,16 @@ type ccService interface {
 }
 
 // hitlService is the subset of hitl.Service used by gateway.
-// It extends hitl.Approver with Resolve, which handles keyboard callback replies.
+// It extends hitl.Approver with Resolve (keyboard button callbacks) and
+// Deliver (forwarding inbound messages to the HITL event loop).
 type hitlService interface {
 	hitl.Approver
-	// Resolve delivers a keyboard button press to the waiting HITL handler.
+	// Resolve delivers a permission keyboard button press to the waiting HITL handler.
 	// id is the permission/question ID; action is one of "once", "always", "reject", "stop".
 	Resolve(id string, action string) error
+	// Deliver forwards an inbound callback message into the HITL event loop.
+	// Non-blocking: drops with a warning if the inbox is full.
+	Deliver(msg channel.InboundMessage)
 }
 
 // Service is the channel-agnostic gateway controller.

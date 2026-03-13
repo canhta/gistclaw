@@ -69,24 +69,18 @@ func (s *Service) isAllowed(chatID int64) bool {
 }
 
 // handleCallback dispatches HITL callback queries.
-// Expected format: "hitl:<id>:<action>"
+// All "hitl:" prefixed callbacks are forwarded to hitl.Service via Deliver,
+// which routes them to either the permission or question handler inside the
+// HITL event loop. This avoids a second ch.Receive() call in hitl.Service
+// (which would open a duplicate Telegram long-poll and cause 409 errors).
 func (s *Service) handleCallback(ctx context.Context, msg channel.InboundMessage) {
 	data := msg.CallbackData
 	if !strings.HasPrefix(data, "hitl:") {
 		log.Warn().Str("callback_data", data).Msg("gateway: unknown callback prefix; ignored")
 		return
 	}
-	// Parse: hitl:<id>:<action>
-	parts := strings.SplitN(strings.TrimPrefix(data, "hitl:"), ":", 2)
-	if len(parts) != 2 {
-		log.Warn().Str("callback_data", data).Msg("gateway: malformed hitl callback; ignored")
-		return
-	}
-	id, action := parts[0], parts[1]
-	log.Debug().Str("hitl_id", id).Str("action", action).Msg("gateway: HITL callback received")
-	if err := s.hitl.Resolve(id, action); err != nil {
-		log.Warn().Str("hitl_id", id).Err(err).Msg("gateway: HITL Resolve failed")
-	}
+	log.Debug().Str("callback_data", data).Msg("gateway: delivering HITL callback")
+	s.hitl.Deliver(msg)
 	// suppress unused ctx warning
 	_ = ctx
 }

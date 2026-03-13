@@ -143,6 +143,8 @@ func (a *App) Run(ctx context.Context) error {
 		Port:           cfg.OpenCodePort,
 		Dir:            cfg.OpenCodeDir,
 		StartupTimeout: opencode.DefaultStartupTimeout,
+		Username:       cfg.OpenCodeServerUsername,
+		Password:       cfg.OpenCodeServerPassword,
 	}
 	ocAdapter := &costTrackerAdapter{g: costGuard}
 	ocSvc := opencode.New(ocCfg, ch, hitlSvc, ocAdapter, a.soul)
