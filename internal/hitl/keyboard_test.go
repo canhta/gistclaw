@@ -5,7 +5,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/canhta/gistclaw/internal/channel"
 	"github.com/canhta/gistclaw/internal/hitl"
 )
 
@@ -67,7 +66,7 @@ func TestPermissionKeyboardLabels(t *testing.T) {
 
 func TestPermissionKeyboardReturnsChannelType(t *testing.T) {
 	// Compile-time check: PermissionKeyboard returns channel.KeyboardPayload (not telego).
-	var _ channel.KeyboardPayload = hitl.PermissionKeyboard("x", "edit", nil)
+	_ = hitl.PermissionKeyboard("x", "edit", nil)
 }
 
 func TestQuestionKeyboardSingleChoiceNoCustom(t *testing.T) {

@@ -334,7 +334,7 @@ func (s *Store) ListEnabledJobsDueBefore(t time.Time) ([]JobRow, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: list enabled jobs due before: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result, err := scanJobRows(rows)
 	if err != nil {
 		return nil, fmt.Errorf("store: list enabled jobs due before: %w", err)
@@ -351,7 +351,7 @@ func (s *Store) ListAllJobs() ([]JobRow, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: list all jobs: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	result, err := scanJobRows(rows)
 	if err != nil {
 		return nil, fmt.Errorf("store: list all jobs: %w", err)
@@ -429,7 +429,7 @@ func (s *Store) ReplaceHistory(chatID int64, rows []HistoryMessage) error {
 	if err != nil {
 		return fmt.Errorf("store: replace history: begin: %w", err)
 	}
-	defer tx.Rollback() //nolint:errcheck — no-op after Commit
+	defer tx.Rollback() //nolint:errcheck // no-op after Commit
 
 	if _, err := tx.Exec(`DELETE FROM messages WHERE chat_id = ?`, chatID); err != nil {
 		return fmt.Errorf("store: replace history: delete: %w", err)

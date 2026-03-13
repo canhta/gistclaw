@@ -28,7 +28,7 @@ func newTestStore(t *testing.T) *store.Store {
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 
@@ -50,7 +50,7 @@ func newFakeTelegramServer(t *testing.T) *fakeTelegramServer {
 		path := r.URL.Path
 		if strings.Contains(path, "getMe") {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok":     true,
 				"result": map[string]any{"id": 1, "is_bot": true, "first_name": "TestBot", "username": "testbot"},
 			})
@@ -58,18 +58,18 @@ func newFakeTelegramServer(t *testing.T) *fakeTelegramServer {
 		}
 		if strings.Contains(path, "getUpdates") {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": []any{}})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": []any{}})
 			return
 		}
 		if strings.Contains(path, "sendMessage") {
 			fake.callCount.Add(1)
 			var body map[string]any
-			json.NewDecoder(r.Body).Decode(&body)
+			_ = json.NewDecoder(r.Body).Decode(&body)
 			if text, ok := body["text"].(string); ok {
 				fake.sentMessages = append(fake.sentMessages, text)
 			}
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok":     true,
 				"result": map[string]any{"message_id": 1, "date": 1, "chat": map[string]any{"id": 123}},
 			})
@@ -77,7 +77,7 @@ func newFakeTelegramServer(t *testing.T) *fakeTelegramServer {
 		}
 		if strings.Contains(path, "sendChatAction") {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": true})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": true})
 			return
 		}
 		// Default: 404
@@ -164,16 +164,16 @@ func TestSendKeyboardTranslatesPayload(t *testing.T) {
 		path := r.URL.Path
 		if strings.Contains(path, "getMe") {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok":     true,
 				"result": map[string]any{"id": 1, "is_bot": true, "first_name": "TestBot", "username": "testbot"},
 			})
 			return
 		}
 		if strings.Contains(path, "sendMessage") {
-			json.NewDecoder(r.Body).Decode(&capturedBody)
+			_ = json.NewDecoder(r.Body).Decode(&capturedBody)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok":     true,
 				"result": map[string]any{"message_id": 1, "date": 1, "chat": map[string]any{"id": 123}},
 			})
@@ -238,7 +238,7 @@ func TestSendTyping(t *testing.T) {
 		path := r.URL.Path
 		if strings.Contains(path, "getMe") {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok":     true,
 				"result": map[string]any{"id": 1, "is_bot": true, "first_name": "TestBot", "username": "testbot"},
 			})
@@ -247,9 +247,9 @@ func TestSendTyping(t *testing.T) {
 		if strings.Contains(path, "sendChatAction") {
 			typingCalled.Store(true)
 			var body map[string]any
-			json.NewDecoder(r.Body).Decode(&body)
+			_ = json.NewDecoder(r.Body).Decode(&body)
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": true})
+			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": true})
 			return
 		}
 		http.NotFound(w, r)
@@ -343,7 +343,7 @@ func TestSendMessageRetriesNetworkError(t *testing.T) {
 		path := r.URL.Path
 		if strings.Contains(path, "getMe") {
 			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{
+			_ = json.NewEncoder(w).Encode(map[string]any{
 				"ok":     true,
 				"result": map[string]any{"id": 1, "is_bot": true, "first_name": "TestBot", "username": "testbot"},
 			})
@@ -358,7 +358,7 @@ func TestSendMessageRetriesNetworkError(t *testing.T) {
 				return
 			}
 			conn, _, _ := hj.Hijack()
-			conn.Close() // causes EOF on the client side
+			_ = conn.Close() // causes EOF on the client side
 			return
 		}
 		http.NotFound(w, r)

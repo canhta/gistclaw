@@ -48,7 +48,7 @@ func pickFreePort(t *testing.T) int {
 		t.Fatalf("pickFreePort: %v", err)
 	}
 	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
+	_ = l.Close()
 	return port
 }
 
@@ -81,7 +81,7 @@ func TestHookSrv_PreTool_Allow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /hook/pretool: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		t.Errorf("status: got %d, want 200", resp.StatusCode)
@@ -114,7 +114,7 @@ func TestHookSrv_PreTool_Deny(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	go srv.ListenAndServe(ctx, listenAddr)
+	go func() { _ = srv.ListenAndServe(ctx, listenAddr) }()
 	time.Sleep(50 * time.Millisecond)
 
 	body, _ := json.Marshal(map[string]string{"tool_name": "Bash"})
@@ -122,7 +122,7 @@ func TestHookSrv_PreTool_Deny(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /hook/pretool: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result map[string]interface{}
 	_ = json.NewDecoder(resp.Body).Decode(&result)
@@ -152,7 +152,7 @@ func TestHookSrv_PreTool_Timeout_AutoDeny(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	go srv.ListenAndServe(ctx, listenAddr)
+	go func() { _ = srv.ListenAndServe(ctx, listenAddr) }()
 	time.Sleep(50 * time.Millisecond)
 
 	body, _ := json.Marshal(map[string]string{"tool_name": "Bash"})
@@ -162,7 +162,7 @@ func TestHookSrv_PreTool_Timeout_AutoDeny(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /hook/pretool: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if elapsed < 150*time.Millisecond {
 		t.Errorf("expected to wait for timeout (~200ms), returned in %v", elapsed)
@@ -188,7 +188,7 @@ func TestHookSrv_Notification_ForwardsToChannel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	go srv.ListenAndServe(ctx, listenAddr)
+	go func() { _ = srv.ListenAndServe(ctx, listenAddr) }()
 	time.Sleep(50 * time.Millisecond)
 
 	body, _ := json.Marshal(map[string]string{"message": "tool finished"})
@@ -196,7 +196,7 @@ func TestHookSrv_Notification_ForwardsToChannel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST /hook/notification: %v", err)
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	time.Sleep(20 * time.Millisecond)
 	if len(ch.messages) == 0 {

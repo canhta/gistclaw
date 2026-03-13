@@ -57,10 +57,6 @@ func (m *mockChannel) lastKeyboard() (channel.KeyboardPayload, bool) {
 	return m.keyboards[len(m.keyboards)-1], true
 }
 
-func (m *mockChannel) inject(msg channel.InboundMessage) {
-	m.inbound <- msg
-}
-
 // mockReplier captures ReplyQuestion calls for test assertions.
 type mockReplier struct {
 	mu    sync.Mutex
@@ -95,7 +91,7 @@ func newTestService(t *testing.T, tuning config.Tuning) (*hitl.Service, *mockCha
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	ch := newMockChannel()
 	rep := &mockReplier{}
 	svc := hitl.NewService(ch, s, tuning, rep)
@@ -348,7 +344,7 @@ func TestStartupAutoRejectUpdatesSQLite(t *testing.T) {
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Pre-populate two stale pending records (as if from a previous run).
 	if err := s.InsertHITLPending("stale_001", "opencode", "write_file"); err != nil {

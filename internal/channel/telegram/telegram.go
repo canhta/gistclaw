@@ -312,4 +312,3 @@ func (t *TelegramChannel) sendWithRetry(ctx context.Context, fn func() error) er
 		}
 	}
 }
-

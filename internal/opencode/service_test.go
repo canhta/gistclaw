@@ -103,7 +103,7 @@ func newMockOpenCodeServer(t *testing.T, sseLines []string, promptCalled *atomic
 		}
 		for _, line := range sseLines {
 			time.Sleep(10 * time.Millisecond)
-			fmt.Fprintln(w, line)
+			_, _ = fmt.Fprintln(w, line)
 			flusher.Flush()
 		}
 	})
@@ -121,7 +121,7 @@ func TestIsAlive_HealthEndpointReturns200(t *testing.T) {
 	parts := strings.Split(srv.URL, ":")
 	portStr := parts[len(parts)-1]
 	var port int
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
 	svc := opencode.New(opencode.Config{Port: port, Dir: t.TempDir()},
 		&fakeChannel{}, &fakeApprover{}, &fakeCostGuard{}, &fakeSOULLoader{})
@@ -167,7 +167,7 @@ func TestSubmitTask_StreamsTextToChannel(t *testing.T) {
 	parts := strings.Split(srv.URL, ":")
 	portStr := parts[len(parts)-1]
 	var port int
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
 	ch := &fakeChannel{}
 	svc := opencode.New(opencode.Config{Port: port, Dir: t.TempDir()},
@@ -211,7 +211,7 @@ func TestSubmitTask_ZeroOutput_SendsWarning(t *testing.T) {
 	parts := strings.Split(srv.URL, ":")
 	portStr := parts[len(parts)-1]
 	var port int
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
 	ch := &fakeChannel{}
 	svc := opencode.New(opencode.Config{Port: port, Dir: t.TempDir()},
@@ -259,7 +259,7 @@ func TestSubmitTask_BusyCheck_ReturnsWarning(t *testing.T) {
 	parts := strings.Split(srv.URL, ":")
 	portStr := parts[len(parts)-1]
 	var port int
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
 	ch := &fakeChannel{}
 	svc := opencode.New(opencode.Config{Port: port, Dir: t.TempDir()},
@@ -296,7 +296,7 @@ func TestSubmitTask_CostTracked(t *testing.T) {
 	parts := strings.Split(srv.URL, ":")
 	portStr := parts[len(parts)-1]
 	var port int
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
 	guard := &fakeCostGuard{}
 	svc := opencode.New(opencode.Config{Port: port, Dir: t.TempDir()},
@@ -326,7 +326,7 @@ func TestSubmitTaskWithResult_ReturnsAccumulatedText(t *testing.T) {
 	parts := strings.Split(srv.URL, ":")
 	portStr := parts[len(parts)-1]
 	var port int
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
 	ch := &fakeChannel{}
 	svc := opencode.New(opencode.Config{Port: port, Dir: t.TempDir()},
@@ -389,7 +389,7 @@ func TestSubmitTaskWithResult_BusyReturnsError(t *testing.T) {
 	parts := strings.Split(srv.URL, ":")
 	portStr := parts[len(parts)-1]
 	var port int
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
 	ch := &fakeChannel{}
 	svc := opencode.New(opencode.Config{Port: port, Dir: t.TempDir()},

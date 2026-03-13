@@ -182,7 +182,7 @@ func TestClaudeCodeService_Busy_RejectsSecondTask(t *testing.T) {
 	defer cancel()
 
 	// Start first task in background.
-	go svc.SubmitTask(ctx, 123, "first")
+	go func() { _ = svc.SubmitTask(ctx, 123, "first") }()
 	time.Sleep(100 * time.Millisecond) // give first task time to start
 
 	// Second task while first is running.

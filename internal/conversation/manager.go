@@ -117,9 +117,7 @@ func (m *manager) MaybeSummarize(ctx context.Context, chatID int64, llm provider
 	summary := fmt.Sprintf("[Summary as of %s]: %s", time.Now().Format("2006-01-02"), resp.Content)
 	newRows := make([]store.HistoryMessage, 0, 1+len(recentRows))
 	newRows = append(newRows, store.HistoryMessage{Role: "assistant", Content: summary})
-	for _, r := range recentRows {
-		newRows = append(newRows, r)
-	}
+	newRows = append(newRows, recentRows...)
 
 	if err := m.store.ReplaceHistory(chatID, newRows); err != nil {
 		return fmt.Errorf("conversation: replace history: %w", err)

@@ -49,7 +49,7 @@ func (w *webSearchTool) Execute(ctx context.Context, input map[string]any) ToolR
 	}
 	var sb strings.Builder
 	for i, r := range results {
-		sb.WriteString(fmt.Sprintf("%d. %s\n   %s\n   %s\n", i+1, r.Title, r.URL, r.Snippet))
+		fmt.Fprintf(&sb, "%d. %s\n   %s\n   %s\n", i+1, r.Title, r.URL, r.Snippet)
 	}
 	if sb.Len() == 0 {
 		return ToolResult{ForLLM: "web_search: no results found"}

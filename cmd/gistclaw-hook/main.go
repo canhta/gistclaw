@@ -37,7 +37,7 @@ func main() {
 		writeStderr(denyResponse("hook server unreachable: " + err.Error()))
 		os.Exit(2)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		writeStderr(denyResponse(fmt.Sprintf("hook server returned HTTP %d", resp.StatusCode)))

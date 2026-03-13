@@ -166,7 +166,7 @@ func buildEnv(cfg MCPServerConfig) ([]string, error) {
 		}
 		return nil, fmt.Errorf("mcp: open env_file %q: %w", cfg.EnvFile, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {

@@ -205,7 +205,7 @@ func (s *serviceImpl) submitPrompt(ctx context.Context, chatID int64, sessionID,
 	if err != nil {
 		return false, fmt.Errorf("opencode: prompt_async: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusConflict {
 		// HTTP 409: OpenCode session is already processing a request.
@@ -244,7 +244,7 @@ func (s *serviceImpl) Stop(ctx context.Context) error {
 		if err != nil {
 			log.Warn().Err(err).Msg("opencode: abort session")
 		} else {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		s.mu.Lock()
 		s.sessionID = ""
@@ -287,7 +287,7 @@ func (s *serviceImpl) isAliveURL(ctx context.Context) bool {
 	if err != nil {
 		return false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	return resp.StatusCode == http.StatusOK
 }
 
@@ -305,7 +305,7 @@ func (s *serviceImpl) ensureSession(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var result struct {
 		ID string `json:"id"`
@@ -335,7 +335,7 @@ func (s *serviceImpl) consumeSSE(ctx context.Context, chatID int64, sessionID st
 	if err != nil {
 		return fmt.Errorf("opencode: SSE connect: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var buf strings.Builder // accumulates text output
 	var hadOutput bool      // true once any text part has been received
