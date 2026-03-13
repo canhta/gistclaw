@@ -1,0 +1,19 @@
+[Unit]
+Description=GistClaw — Telegram-controlled AI coding agent
+After=network.target
+
+[Service]
+Type=simple
+User=gistclaw
+WorkingDirectory=/home/gistclaw
+EnvironmentFile=/home/gistclaw/.env
+ExecStart=/usr/local/bin/gistclaw
+Restart=always
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=60
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
