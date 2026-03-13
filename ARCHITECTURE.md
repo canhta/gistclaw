@@ -18,7 +18,7 @@ systemd (Restart=always, StartLimitBurst=5)
             │
       ┌─────┴──────────────────────────────────────────┐
       │                                                 │
-  withRestart("gateway", unlimited)        withRestart("hitl", 10, 10s)
+  WithRestart("gateway", unlimited)        WithRestart("hitl", 10, 10s)
   - channel.Channel interface              - permission + question HITL
   - v1: Telegram long-poll impl            - per-request channel pattern
   - update_id dedup (SQLite)               - 5-min timer + 3-min reminder
@@ -35,17 +35,17 @@ systemd (Restart=always, StartLimitBurst=5)
                                                          │
                               ┌──────────────────────────┤
                               │                          │
-               withRestart("opencode", 5, 30s) withRestart("claudecode", 5, 30s)
+               WithRestart("opencode", 5, 30s) WithRestart("claudecode", 5, 30s)
                - start opencode serve           - start claude -p subprocess
                - HTTP client                    - stream-json parser
-               - SSE consumer                   - FSM: Idle→Running
-               - session lifecycle                →WaitingInput→Idle
+               - SSE consumer                   - FSM: Idle↔Running
+               - session lifecycle
                - no FSM needed                  - hook helper: gistclaw-hook
                - CostGuard.Track() on           - HTTP server :8765
                  step-finish events             - CostGuard.Track() on
                                                   total_cost_usd events
                               │
-                  withRestart("scheduler", 5, 30s)
+                   WithRestart("scheduler", 5, 30s)
                   - 1s ticker
                   - job kinds: at/every/cron
                   - targets: agent.Kind enum
@@ -102,7 +102,7 @@ systemd (Restart=always, StartLimitBurst=5)
 ### Flow D — Zero output from agent
 
 1. OpenCode session goes idle with empty output buffer
-2. `opencode.Service` sends: `"⚠️ Agent finished but produced no output. Check the session or resend your prompt."`
+2. `opencode.Service` sends: `"⚠️ Agent finished but produced no output."`
 3. No auto-retry; no crash; user decides next action
 
 ### Flow E — Plain chat with tool loop
@@ -182,6 +182,8 @@ type Approver interface {
 OpenCode and ClaudeCode services call this interface. HITL internals (SQLite, keyboard,
 timers) are hidden behind it.
 
+`hitl.Service` additionally depends on a `QuestionReplier` interface (implemented by `opencode.Service`) for posting collected question answers back to the agent API; this is injected at construction via `NewService`.
+
 ### `opencode.Service` (`internal/opencode/service.go`)
 
 ```go
@@ -190,6 +192,7 @@ type Service interface {
     SubmitTask(ctx context.Context, chatID int64, prompt string) error
     Stop(ctx context.Context) error
     IsAlive(ctx context.Context) bool
+    Name() string // returns "opencode"
 }
 ```
 
@@ -201,12 +204,13 @@ type Service interface {
     SubmitTask(ctx context.Context, chatID int64, prompt string) error
     Stop(ctx context.Context) error
     IsAlive(ctx context.Context) bool
+    Name() string // returns "claudecode"
 }
 ```
 
 `claudecode.Service` additionally owns the HTTP server at `:8765` for `gistclaw-hook`
-communication. The `IsAlive` implementation checks FSM state (`Idle`, `Running`, or
-`WaitingInput`) — not `os.FindProcess`.
+communication. The `IsAlive` implementation always returns `true` — the service is
+considered alive as long as it has not crashed; the FSM has two states: `Idle` and `Running`.
 
 ### `scheduler.JobTarget` (`internal/scheduler/service.go`)
 
@@ -236,7 +240,7 @@ calls it every 5 minutes and triggers a restart if the agent is dead.
 
 ## 4. Supervision Model
 
-`withRestart` (`internal/app/supervisor.go`) wraps any `func(context.Context) error` in a
+`WithRestart` (`internal/app/supervisor.go`) wraps any `func(context.Context) error` in a
 restart loop. `PermanentFailure` is returned when the service exhausts its restart budget.
 `app.Run` owns the policy: which services are critical (cancel the root context on failure)
 and which are non-critical (log + notify operator, keep running).
@@ -260,11 +264,12 @@ All other services are non-critical: a permanently failed `opencode.Service` lea
 `claudecode`, `hitl`, `scheduler`, and `gateway` fully operational. Users are notified via
 Telegram and can continue using other features.
 
-### `withRestart` signature
+### `WithRestart` signature
 
 ```go
 // maxAttempts=0 means unlimited restarts.
-func withRestart(
+func WithRestart(
+    logger      zerolog.Logger,
     name        string,
     maxAttempts int,
     window      time.Duration,
