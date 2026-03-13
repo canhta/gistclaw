@@ -3,9 +3,11 @@ module github.com/canhta/gistclaw
 go 1.25.7
 
 require (
+	github.com/adhocore/gronx v1.19.6
 	github.com/caarlos0/env/v11 v11.4.0
 	github.com/github/copilot-sdk/go v0.1.32
 	github.com/go-shiori/go-readability v0.0.0-20251205110129-5db1dc9836f0
+	github.com/google/uuid v1.6.0
 	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/mymmrac/telego v1.7.0
 	github.com/openai/openai-go/v3 v3.26.0
@@ -27,7 +29,6 @@ require (
 	github.com/go-shiori/dom v0.0.0-20230515143342-73569d674e1c // indirect
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f // indirect
 	github.com/google/jsonschema-go v0.4.2 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grbit/go-json v0.11.0 // indirect
 	github.com/klauspost/compress v1.18.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.9 // indirect
