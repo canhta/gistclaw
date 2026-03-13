@@ -109,3 +109,83 @@ func TestHasSearchProviderTrueForEachKey(t *testing.T) {
 		}
 	}
 }
+
+func TestLLMProviders_OverridesLLMProvider(t *testing.T) {
+	os.Clearenv()
+	t.Setenv("TELEGRAM_TOKEN", "tok")
+	t.Setenv("ALLOWED_USER_IDS", "1")
+	t.Setenv("OPENCODE_DIR", "/tmp/oc")
+	t.Setenv("CLAUDE_DIR", "/tmp/cc")
+	t.Setenv("LLM_PROVIDERS", "copilot,openai-key")
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.LLMProviders) != 2 {
+		t.Errorf("LLMProviders: got %d entries, want 2", len(cfg.LLMProviders))
+	}
+	if cfg.LLMProviders[0] != "copilot" {
+		t.Errorf("LLMProviders[0]: got %q, want %q", cfg.LLMProviders[0], "copilot")
+	}
+}
+
+func TestLLMProviders_LegacySingleProvider_StillWorks(t *testing.T) {
+	os.Clearenv()
+	t.Setenv("TELEGRAM_TOKEN", "tok")
+	t.Setenv("ALLOWED_USER_IDS", "1")
+	t.Setenv("OPENCODE_DIR", "/tmp/oc")
+	t.Setenv("CLAUDE_DIR", "/tmp/cc")
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	// LLM_PROVIDERS not set; LLM_PROVIDER defaults to "openai-key"
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.LLMProvider != "openai-key" {
+		t.Errorf("LLMProvider: got %q, want openai-key", cfg.LLMProvider)
+	}
+}
+
+func TestLLMProviders_UnknownProvider_ReturnsError(t *testing.T) {
+	os.Clearenv()
+	t.Setenv("TELEGRAM_TOKEN", "tok")
+	t.Setenv("ALLOWED_USER_IDS", "1")
+	t.Setenv("OPENCODE_DIR", "/tmp/oc")
+	t.Setenv("CLAUDE_DIR", "/tmp/cc")
+	t.Setenv("LLM_PROVIDERS", "copilot,unknown-provider")
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error for unknown provider in LLM_PROVIDERS")
+	}
+}
+
+func TestLLMProviders_MissingOpenAIKey_ReturnsError(t *testing.T) {
+	os.Clearenv()
+	t.Setenv("TELEGRAM_TOKEN", "tok")
+	t.Setenv("ALLOWED_USER_IDS", "1")
+	t.Setenv("OPENCODE_DIR", "/tmp/oc")
+	t.Setenv("CLAUDE_DIR", "/tmp/cc")
+	t.Setenv("LLM_PROVIDERS", "copilot,openai-key")
+	// OPENAI_API_KEY not set
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("expected error when openai-key in LLM_PROVIDERS but OPENAI_API_KEY missing")
+	}
+}
+
+func TestSummarizeAtTurns_Default(t *testing.T) {
+	os.Clearenv()
+	t.Setenv("TELEGRAM_TOKEN", "tok")
+	t.Setenv("ALLOWED_USER_IDS", "1")
+	t.Setenv("OPENCODE_DIR", "/tmp/oc")
+	t.Setenv("CLAUDE_DIR", "/tmp/cc")
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Tuning.SummarizeAtTurns != 0 {
+		t.Errorf("SummarizeAtTurns default: got %d, want 0", cfg.Tuning.SummarizeAtTurns)
+	}
+}

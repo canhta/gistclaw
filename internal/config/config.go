@@ -3,6 +3,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -17,6 +18,13 @@ type Config struct {
 	ClaudeDir      string  `env:"CLAUDE_DIR"`
 	DailyLimitUSD  float64 `env:"DAILY_LIMIT_USD"  envDefault:"5.0"`
 	LLMProvider    string  `env:"LLM_PROVIDER"    envDefault:"openai-key"`
+	// LLMProviders is an ordered fallback list (e.g. "copilot,openai-key").
+	// If non-empty, takes priority over LLMProvider.
+	LLMProviders      []string      `env:"LLM_PROVIDERS"       envSeparator:","`
+	LLMCooldownWindow time.Duration `env:"LLM_COOLDOWN_WINDOW" envDefault:"5m"`
+	// MemoryNotesDir is the directory for date-partitioned notes files.
+	// Defaults to filepath.Join(filepath.Dir(MemoryPath), "notes") at runtime if empty.
+	MemoryNotesDir string `env:"MEMORY_NOTES_DIR"`
 
 	// LLM provider credentials
 	OpenAIAPIKey    string `env:"OPENAI_API_KEY"`
@@ -44,21 +52,22 @@ type Config struct {
 
 // Tuning holds all timeouts and TTLs in one place. No magic constants elsewhere.
 type Tuning struct {
-	HITLTimeout         time.Duration `env:"TUNING_HITL_TIMEOUT"           envDefault:"5m"`
-	HITLReminderBefore  time.Duration `env:"TUNING_HITL_REMINDER_BEFORE"   envDefault:"2m"`
-	WebSearchTimeout    time.Duration `env:"TUNING_WEB_SEARCH_TIMEOUT"     envDefault:"10s"`
-	WebFetchTimeout     time.Duration `env:"TUNING_WEB_FETCH_TIMEOUT"      envDefault:"30s"`
-	SessionTTL          time.Duration `env:"TUNING_SESSION_TTL"            envDefault:"24h"`
-	CostHistoryTTL      time.Duration `env:"TUNING_COST_HISTORY_TTL"       envDefault:"720h"` // 30d
-	HeartbeatTier1Every time.Duration `env:"TUNING_HB_TIER1_EVERY"         envDefault:"30s"`
-	HeartbeatTier2Every time.Duration `env:"TUNING_HB_TIER2_EVERY"         envDefault:"5m"`
-	SchedulerTick       time.Duration `env:"TUNING_SCHEDULER_TICK"         envDefault:"1s"`
-	MissedJobsFireLimit int           `env:"TUNING_MISSED_JOBS_FIRE_LIMIT" envDefault:"5"`
+	HITLTimeout             time.Duration `env:"TUNING_HITL_TIMEOUT"           envDefault:"5m"`
+	HITLReminderBefore      time.Duration `env:"TUNING_HITL_REMINDER_BEFORE"   envDefault:"2m"`
+	WebSearchTimeout        time.Duration `env:"TUNING_WEB_SEARCH_TIMEOUT"     envDefault:"10s"`
+	WebFetchTimeout         time.Duration `env:"TUNING_WEB_FETCH_TIMEOUT"      envDefault:"30s"`
+	SessionTTL              time.Duration `env:"TUNING_SESSION_TTL"            envDefault:"24h"`
+	CostHistoryTTL          time.Duration `env:"TUNING_COST_HISTORY_TTL"       envDefault:"720h"` // 30d
+	HeartbeatTier1Every     time.Duration `env:"TUNING_HB_TIER1_EVERY"         envDefault:"30s"`
+	HeartbeatTier2Every     time.Duration `env:"TUNING_HB_TIER2_EVERY"         envDefault:"5m"`
+	SchedulerTick           time.Duration `env:"TUNING_SCHEDULER_TICK"         envDefault:"1s"`
+	MissedJobsFireLimit     int           `env:"TUNING_MISSED_JOBS_FIRE_LIMIT" envDefault:"5"`
 	MaxIterations           int           `env:"TUNING_MAX_ITERATIONS"              envDefault:"20"`
 	LLMRetryDelay           time.Duration `env:"TUNING_LLM_RETRY_DELAY"             envDefault:"1s"`
 	ConversationWindowTurns int           `env:"TUNING_CONVERSATION_WINDOW_TURNS"   envDefault:"20"`
-	MCPConnectTimeout   time.Duration `env:"TUNING_MCP_CONNECT_TIMEOUT"    envDefault:"15s"`
-	MCPCallTimeout      time.Duration `env:"TUNING_MCP_CALL_TIMEOUT"       envDefault:"10s"`
+	SummarizeAtTurns        int           `env:"TUNING_SUMMARIZE_AT_TURNS"          envDefault:"0"`
+	MCPConnectTimeout       time.Duration `env:"TUNING_MCP_CONNECT_TIMEOUT"    envDefault:"15s"`
+	MCPCallTimeout          time.Duration `env:"TUNING_MCP_CALL_TIMEOUT"       envDefault:"10s"`
 }
 
 // Load parses all environment variables and validates required fields.
@@ -87,6 +96,25 @@ func (c Config) HasSearchProvider() bool {
 		c.XAIAPIKey != "" || c.PerplexityAPIKey != "" || c.OpenRouterAPIKey != ""
 }
 
+// EffectiveLLMProviders returns the ordered provider list.
+// If LLMProviders is set, it is returned directly.
+// Otherwise, LLMProvider is returned as a single-element slice.
+func (c Config) EffectiveLLMProviders() []string {
+	if len(c.LLMProviders) > 0 {
+		return append([]string(nil), c.LLMProviders...)
+	}
+	return []string{c.LLMProvider}
+}
+
+// EffectiveMemoryNotesDir returns the notes directory, deriving it from
+// MemoryPath if MemoryNotesDir is empty.
+func (c Config) EffectiveMemoryNotesDir() string {
+	if c.MemoryNotesDir != "" {
+		return c.MemoryNotesDir
+	}
+	return filepath.Join(filepath.Dir(c.MemoryPath), "notes")
+}
+
 func validate(cfg Config) error {
 	var errs []string
 	if cfg.TelegramToken == "" {
@@ -102,11 +130,27 @@ func validate(cfg Config) error {
 		errs = append(errs, "CLAUDE_DIR is required")
 	}
 	validProviders := map[string]bool{"openai-key": true, "copilot": true, "codex-oauth": true}
-	if !validProviders[cfg.LLMProvider] {
-		errs = append(errs, fmt.Sprintf("LLM_PROVIDER must be one of: openai-key, copilot, codex-oauth (got %q)", cfg.LLMProvider))
-	}
-	if cfg.LLMProvider == "openai-key" && cfg.OpenAIAPIKey == "" {
-		errs = append(errs, "OPENAI_API_KEY is required when LLM_PROVIDER=openai-key")
+	if len(cfg.LLMProviders) == 0 {
+		// Legacy single-provider mode.
+		if !validProviders[cfg.LLMProvider] {
+			errs = append(errs, fmt.Sprintf("LLM_PROVIDER must be one of: openai-key, copilot, codex-oauth (got %q)", cfg.LLMProvider))
+		}
+		if cfg.LLMProvider == "openai-key" && cfg.OpenAIAPIKey == "" {
+			errs = append(errs, "OPENAI_API_KEY is required when LLM_PROVIDER=openai-key")
+		}
+	} else {
+		// Multi-provider mode: validate each entry.
+		for _, p := range cfg.LLMProviders {
+			if !validProviders[p] {
+				errs = append(errs, fmt.Sprintf("LLM_PROVIDERS: unknown provider %q (valid: openai-key, copilot, codex-oauth)", p))
+			}
+		}
+		for _, p := range cfg.LLMProviders {
+			if p == "openai-key" && cfg.OpenAIAPIKey == "" {
+				errs = append(errs, "OPENAI_API_KEY is required when openai-key is in LLM_PROVIDERS")
+				break
+			}
+		}
 	}
 	if len(errs) > 0 {
 		return fmt.Errorf("config validation failed:\n  - %s", strings.Join(errs, "\n  - "))
