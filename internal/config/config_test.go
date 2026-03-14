@@ -189,3 +189,38 @@ func TestSummarizeAtTurns_Default(t *testing.T) {
 		t.Errorf("SummarizeAtTurns default: got %d, want 0", cfg.Tuning.SummarizeAtTurns)
 	}
 }
+
+func TestLLMRetryAttempts_DefaultZeroWhenUnset(t *testing.T) {
+	os.Clearenv()
+	t.Setenv("TELEGRAM_TOKEN", "tok")
+	t.Setenv("ALLOWED_USER_IDS", "1")
+	t.Setenv("OPENCODE_DIR", "/tmp/oc")
+	t.Setenv("CLAUDE_DIR", "/tmp/cc")
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Tuning.LLMRetryAttempts != 0 {
+		t.Errorf("LLMRetryAttempts default: got %d, want 0", cfg.Tuning.LLMRetryAttempts)
+	}
+}
+
+func TestLLMRetryAttempts_ParseFromEnv(t *testing.T) {
+	os.Clearenv()
+	t.Setenv("TELEGRAM_TOKEN", "tok")
+	t.Setenv("ALLOWED_USER_IDS", "1")
+	t.Setenv("OPENCODE_DIR", "/tmp/oc")
+	t.Setenv("CLAUDE_DIR", "/tmp/cc")
+	t.Setenv("OPENAI_API_KEY", "sk-test")
+	t.Setenv("TUNING_LLM_RETRY_ATTEMPTS", "7")
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Tuning.LLMRetryAttempts != 7 {
+		t.Errorf("LLMRetryAttempts: got %d, want 7", cfg.Tuning.LLMRetryAttempts)
+	}
+}

@@ -59,6 +59,30 @@ func TestClassifyError_Retryable(t *testing.T) {
 	}
 }
 
+func TestClassifyError_ContextWindow(t *testing.T) {
+	ctxWindow := []error{
+		errors.New("context_length_exceeded"),
+		errors.New("openai: 400 context_length_exceeded"),
+		errors.New("maximum context length is 128000 tokens"),
+		errors.New("too many tokens in your prompt"),
+		errors.New("reduce the length of your messages"),
+		errors.New("tokens in your prompt: 130000"),
+		errors.New("500 context_length_exceeded"),
+	}
+	for _, err := range ctxWindow {
+		if got := providers.ClassifyError(err); got != providers.ErrKindContextWindow {
+			t.Errorf("ClassifyError(%q) = %v; want ErrKindContextWindow", err, got)
+		}
+	}
+}
+
+func TestClassifyError_ContextWindow_NoOverlapRateLimit(t *testing.T) {
+	rl := errors.New("429 too many requests")
+	if got := providers.ClassifyError(rl); got != providers.ErrKindRateLimit {
+		t.Errorf("ClassifyError(%q) = %v; want ErrKindRateLimit", rl, got)
+	}
+}
+
 func TestClassifyError_Nil(t *testing.T) {
 	if got := providers.ClassifyError(nil); got != providers.ErrKindTerminal {
 		t.Errorf("ClassifyError(nil) = %v; want ErrKindTerminal", got)

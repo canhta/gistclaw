@@ -66,6 +66,7 @@ type Tuning struct {
 	MissedJobsFireLimit     int           `env:"TUNING_MISSED_JOBS_FIRE_LIMIT" envDefault:"5"`
 	MaxIterations           int           `env:"TUNING_MAX_ITERATIONS"              envDefault:"20"`
 	LLMRetryDelay           time.Duration `env:"TUNING_LLM_RETRY_DELAY"             envDefault:"1s"`
+	LLMRetryAttempts        int           `env:"TUNING_LLM_RETRY_ATTEMPTS"`
 	ConversationWindowTurns int           `env:"TUNING_CONVERSATION_WINDOW_TURNS"   envDefault:"20"`
 	SummarizeAtTurns        int           `env:"TUNING_SUMMARIZE_AT_TURNS"          envDefault:"0"`
 	MCPConnectTimeout       time.Duration `env:"TUNING_MCP_CONNECT_TIMEOUT"    envDefault:"15s"`

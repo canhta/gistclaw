@@ -17,6 +17,9 @@ const (
 	ErrKindRetryable
 	// ErrKindRateLimit means retry with backoff and notify the user (429).
 	ErrKindRateLimit
+	// ErrKindContextWindow means the context limit was exceeded — compress history and retry once.
+	// Appended last so existing iota values are unchanged.
+	ErrKindContextWindow
 )
 
 // ClassifyError maps an LLM provider error to a retry strategy.
@@ -34,6 +37,16 @@ func ClassifyError(err error) ErrKind {
 
 	msg := err.Error()
 	lower := strings.ToLower(msg)
+
+	// Context window exceeded — checked BEFORE the 5xx block so that error strings
+	// like "500 context_length_exceeded" are classified as context-window, not retryable.
+	if strings.Contains(lower, "context_length_exceeded") ||
+		strings.Contains(lower, "maximum context length") ||
+		strings.Contains(lower, "too many tokens") ||
+		strings.Contains(lower, "reduce the length") ||
+		strings.Contains(lower, "tokens in your prompt") {
+		return ErrKindContextWindow
+	}
 
 	// 429 rate limit
 	if strings.Contains(msg, "429") ||

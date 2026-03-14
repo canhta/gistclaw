@@ -1001,8 +1001,9 @@ Replace the existing comment with:
 // chatWithRetry calls the LLM with retry logic for transient errors.
 //
 // Four behaviours based on ClassifyError:
-//   - ErrKindContextWindow: compress history (drop oldest floor(N/2) dyads),
-//     then retry exactly once. Orthogonal to the maxAttempts loop.
+//   - ErrKindContextWindow: compress history (drop oldest floor(N/2) dyads, or
+//     fall back to dropping oldest plain conversation turns), then retry
+//     exactly once. Orthogonal to the maxAttempts loop.
 //   - ErrKindRetryable (5xx, timeout): up to maxAttempts retries with exponential backoff.
 //   - ErrKindRateLimit (429): same backoff, plus a one-time user notification.
 //   - ErrKindTerminal (4xx, format errors): fail immediately, no retry.

@@ -4,6 +4,7 @@ package gateway_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -258,11 +259,11 @@ func newService(t *testing.T, ch channel.Channel, llm providers.LLMProvider) *ga
 
 func newServiceWithMemoryEngine(t *testing.T, ch channel.Channel, llm providers.LLMProvider, mem mempkg.Engine) *gateway.Service {
 	t.Helper()
-	return newServiceFull(t, ch, llm, mem, 10*time.Millisecond)
+	return newServiceFull(t, ch, llm, mem, 10*time.Millisecond, 0)
 }
 
 // newServiceFull is the base constructor used by all test helpers.
-func newServiceFull(t *testing.T, ch channel.Channel, llm providers.LLMProvider, mem mempkg.Engine, retryDelay time.Duration) *gateway.Service {
+func newServiceFull(t *testing.T, ch channel.Channel, llm providers.LLMProvider, mem mempkg.Engine, retryDelay time.Duration, retryAttempts int) *gateway.Service {
 	t.Helper()
 	s := newTestStore(t)
 	sched := newTestScheduler(t, s)
@@ -273,6 +274,7 @@ func newServiceFull(t *testing.T, ch channel.Channel, llm providers.LLMProvider,
 			MissedJobsFireLimit:     5,
 			MaxIterations:           20,
 			LLMRetryDelay:           retryDelay,
+			LLMRetryAttempts:        retryAttempts,
 			ConversationWindowTurns: 20,
 		},
 	}
@@ -292,6 +294,53 @@ func newServiceFull(t *testing.T, ch channel.Channel, llm providers.LLMProvider,
 		mem,        // memory.Engine: nil = no system prompt / memory tools
 		conv,       // conversation.Manager
 		time.Now(), // startTime
+		cfg,
+	)
+}
+
+// newServiceWithSeededHistory creates a service with realistic persisted
+// conversation history for chatID 42.
+// It saves `pairs` user+assistant exchanges so handlePlainChat loads the same
+// shape the real conversation manager persists.
+func newServiceWithSeededHistory(t *testing.T, ch channel.Channel, llm providers.LLMProvider, pairs int) *gateway.Service {
+	t.Helper()
+	s := newTestStore(t)
+	for i := 0; i < pairs; i++ {
+		if err := s.SaveMessage(42, "user", fmt.Sprintf("seed-user-%d", i)); err != nil {
+			t.Fatalf("seed SaveMessage user: %v", err)
+		}
+		if err := s.SaveMessage(42, "assistant", fmt.Sprintf("seed-assistant-%d", i)); err != nil {
+			t.Fatalf("seed SaveMessage assistant: %v", err)
+		}
+	}
+	sched := newTestScheduler(t, s)
+	cfg := config.Config{
+		AllowedUserIDs: []int64{42},
+		Tuning: config.Tuning{
+			SchedulerTick:           time.Second,
+			MissedJobsFireLimit:     5,
+			MaxIterations:           20,
+			LLMRetryDelay:           10 * time.Millisecond,
+			ConversationWindowTurns: 20,
+			LLMRetryAttempts:        0,
+		},
+	}
+	conv := conversation.NewManager(s, cfg.Tuning.ConversationWindowTurns, 0)
+	return gateway.NewService(
+		ch,
+		&mockApprover{},
+		&mockOCService{isAlive: false},
+		&mockCCService{isAlive: false},
+		llm,
+		&mockSearch{},
+		&mockFetcher{},
+		mcp.NewMCPManager(nil, config.Tuning{}),
+		sched,
+		s,
+		nil,
+		nil,
+		conv,
+		time.Now(),
 		cfg,
 	)
 }
@@ -833,7 +882,7 @@ func TestGateway_Retry_TransientSucceeds(t *testing.T) {
 			{Content: "recovered answer", ToolCall: nil},
 		},
 	}
-	svc := newServiceFull(t, ch, llm, nil, 10*time.Millisecond)
+	svc := newServiceFull(t, ch, llm, nil, 10*time.Millisecond, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -857,6 +906,248 @@ func TestGateway_Retry_TransientSucceeds(t *testing.T) {
 	}
 }
 
+// TestGateway_Retry_ConfigurableAttempts verifies that LLMRetryAttempts=2 limits
+// total calls to 2 (not the default 3) on repeated retryable errors.
+func TestGateway_Retry_ConfigurableAttempts(t *testing.T) {
+	ch := newMockChannel()
+	serverErr := errors.New("503 Service Unavailable")
+	llm := &mockLLM{
+		errs: []error{serverErr, serverErr, serverErr},
+	}
+	svc := newServiceFull(t, ch, llm, nil, 10*time.Millisecond, 2)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "hello"}
+	time.Sleep(300 * time.Millisecond)
+
+	if calls := llm.calls(); calls != 2 {
+		t.Errorf("expected exactly 2 LLM calls with LLMRetryAttempts=2; got %d", calls)
+	}
+}
+
+// TestGateway_ContextWindow_CompressesAndRetries verifies that a context-window
+// error triggers history compression and a single retry that succeeds for
+// realistic persisted user/assistant history.
+func TestGateway_ContextWindow_CompressesAndRetries(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		errs: []error{
+			errors.New("context_length_exceeded"),
+			nil,
+		},
+		responses: []*providers.LLMResponse{
+			nil,
+			{Content: "compressed answer"},
+		},
+	}
+	svc := newServiceWithSeededHistory(t, ch, llm, 4)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "hello"}
+	time.Sleep(300 * time.Millisecond)
+
+	if calls := llm.calls(); calls != 2 {
+		t.Errorf("expected 2 LLM calls (context error + retry); got %d", calls)
+	}
+
+	llm.mu.Lock()
+	if len(llm.capturedMsgs) != 2 {
+		llm.mu.Unlock()
+		t.Fatalf("expected 2 captured message sets; got %d", len(llm.capturedMsgs))
+	}
+	firstCallMsgs := llm.capturedMsgs[0]
+	secondCallMsgs := llm.capturedMsgs[1]
+	llm.mu.Unlock()
+
+	if len(secondCallMsgs) >= len(firstCallMsgs) {
+		t.Fatalf("expected retry message window to shrink after compression; before=%d after=%d", len(firstCallMsgs), len(secondCallMsgs))
+	}
+
+	for _, m := range secondCallMsgs {
+		if m.Role == "user" && m.Content == "seed-user-0" {
+			t.Fatalf("expected oldest persisted user turn to be dropped on retry; retry msgs=%v", secondCallMsgs)
+		}
+	}
+
+	if got := secondCallMsgs[len(secondCallMsgs)-1]; got.Role != "user" || got.Content != "hello" {
+		t.Fatalf("expected retry to keep current user turn last; got %+v", got)
+	}
+
+	msgs := ch.sentMessages()
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "compressed answer") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected 'compressed answer' after retry; got: %v", msgs)
+	}
+}
+
+// TestGateway_ContextWindow_NoOpPropagates verifies that when compression is a
+// no-op (<=4 turns), the error propagates without retry.
+func TestGateway_ContextWindow_NoOpPropagates(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		errs: []error{errors.New("context_length_exceeded")},
+	}
+	svc := newService(t, ch, llm)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "hello"}
+	time.Sleep(200 * time.Millisecond)
+
+	if calls := llm.calls(); calls != 1 {
+		t.Errorf("expected exactly 1 LLM call when compression is no-op; got %d", calls)
+	}
+	msgs := ch.sentMessages()
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "⚠️") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error message to user; got: %v", msgs)
+	}
+}
+
+// TestGateway_ContextWindow_RetryAlsoFails verifies that if both the call and
+// the retry fail with context errors, the user gets an error message.
+func TestGateway_ContextWindow_RetryAlsoFails(t *testing.T) {
+	ch := newMockChannel()
+	ctxErr := errors.New("context_length_exceeded")
+	llm := &mockLLM{
+		errs: []error{ctxErr, ctxErr},
+	}
+	svc := newServiceWithSeededHistory(t, ch, llm, 4)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "hello"}
+	time.Sleep(300 * time.Millisecond)
+
+	if calls := llm.calls(); calls != 2 {
+		t.Errorf("expected 2 LLM calls (compress + retry fails); got %d", calls)
+	}
+	msgs := ch.sentMessages()
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "⚠️") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected error message to user after retry failure; got: %v", msgs)
+	}
+}
+
+// TestGateway_ContextWindow_CompressesThenRetriesRetryable verifies that after
+// one compression retry, a retryable error still uses the standard retry loop.
+func TestGateway_ContextWindow_CompressesThenRetriesRetryable(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		errs: []error{
+			errors.New("context_length_exceeded"),
+			errors.New("503 Service Unavailable"),
+			nil,
+		},
+		responses: []*providers.LLMResponse{
+			nil,
+			nil,
+			{Content: "answer after compressed retryable"},
+		},
+	}
+	svc := newServiceWithSeededHistory(t, ch, llm, 4)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "hello"}
+	time.Sleep(400 * time.Millisecond)
+
+	if calls := llm.calls(); calls != 3 {
+		t.Errorf("expected 3 LLM calls (context + retryable + retry success); got %d", calls)
+	}
+	msgs := ch.sentMessages()
+	for _, m := range msgs {
+		if strings.Contains(m, "⚠️ LLM error") {
+			t.Errorf("expected retryable error to stay in retry loop after compression; got premature error: %v", msgs)
+		}
+	}
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "answer after compressed retryable") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected final answer after retryable retry; got: %v", msgs)
+	}
+}
+
+// TestGateway_ContextWindow_CompressesThenRateLimitNotifies verifies that after
+// one compression retry, a rate-limit error still uses standard notification and retry.
+func TestGateway_ContextWindow_CompressesThenRateLimitNotifies(t *testing.T) {
+	ch := newMockChannel()
+	llm := &mockLLM{
+		errs: []error{
+			errors.New("context_length_exceeded"),
+			errors.New("429 Too Many Requests"),
+			nil,
+		},
+		responses: []*providers.LLMResponse{
+			nil,
+			nil,
+			{Content: "answer after compressed rate limit"},
+		},
+	}
+	svc := newServiceWithSeededHistory(t, ch, llm, 4)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 700*time.Millisecond)
+	defer cancel()
+	go svc.Run(ctx) //nolint:errcheck
+
+	ch.inbound <- channel.InboundMessage{ChatID: 42, UserID: 42, Text: "hello"}
+	time.Sleep(400 * time.Millisecond)
+
+	if calls := llm.calls(); calls != 3 {
+		t.Errorf("expected 3 LLM calls (context + rate limit + retry success); got %d", calls)
+	}
+	msgs := ch.sentMessages()
+	rateLimitNotices := 0
+	for _, m := range msgs {
+		if strings.Contains(m, "rate limited") || strings.Contains(m, "Rate limited") {
+			rateLimitNotices++
+		}
+	}
+	if rateLimitNotices != 1 {
+		t.Errorf("expected exactly 1 rate-limit notification after compression; got %d in: %v", rateLimitNotices, msgs)
+	}
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "answer after compressed rate limit") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected final answer after compressed rate-limit retry; got: %v", msgs)
+	}
+}
+
 // TestGateway_Retry_TerminalFailsFast verifies that a 4xx error (non-429) is not retried.
 // Total LLM calls must be exactly 1.
 func TestGateway_Retry_TerminalFailsFast(t *testing.T) {
@@ -866,7 +1157,7 @@ func TestGateway_Retry_TerminalFailsFast(t *testing.T) {
 			errors.New("400 Bad Request: invalid model"), // terminal
 		},
 	}
-	svc := newServiceFull(t, ch, llm, nil, 10*time.Millisecond)
+	svc := newServiceFull(t, ch, llm, nil, 10*time.Millisecond, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -905,7 +1196,7 @@ func TestGateway_Retry_RateLimitNotifiesUser(t *testing.T) {
 			{Content: "answer after rate limit", ToolCall: nil},
 		},
 	}
-	svc := newServiceFull(t, ch, llm, nil, 10*time.Millisecond)
+	svc := newServiceFull(t, ch, llm, nil, 10*time.Millisecond, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -948,7 +1239,7 @@ func TestGateway_Retry_ExhaustsAndErrors(t *testing.T) {
 	llm := &mockLLM{
 		errs: []error{serverErr, serverErr, serverErr},
 	}
-	svc := newServiceFull(t, ch, llm, nil, 10*time.Millisecond)
+	svc := newServiceFull(t, ch, llm, nil, 10*time.Millisecond, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()

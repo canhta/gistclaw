@@ -75,7 +75,7 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 				Role:    "system",
 				Content: "[Maximum tool iterations reached. Provide your final answer with what you know so far.]",
 			})
-			finalResp, ferr := s.chatWithRetry(ctx, chatID, msgs, nil)
+			finalResp, ferr := s.chatWithRetry(ctx, chatID, &msgs, nil)
 			if ferr != nil {
 				_ = s.ch.SendMessage(ctx, chatID, "⚠️ LLM error after max iterations: "+ferr.Error())
 				return
@@ -86,7 +86,7 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 			return
 		}
 
-		resp, err := s.chatWithRetry(ctx, chatID, msgs, toolRegistry)
+		resp, err := s.chatWithRetry(ctx, chatID, &msgs, toolRegistry)
 		if err != nil {
 			log.Error().Err(err).Msg("gateway: LLM Chat error")
 			_ = s.ch.SendMessage(ctx, chatID, "⚠️ LLM error: "+err.Error())
@@ -126,7 +126,7 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 					Content:    "[Tool call loop detected. Provide your best answer now.]",
 					ToolCallID: tc.ID,
 				})
-				finalResp, ferr := s.chatWithRetry(ctx, chatID, msgs, nil)
+				finalResp, ferr := s.chatWithRetry(ctx, chatID, &msgs, nil)
 				if ferr != nil {
 					_ = s.ch.SendMessage(ctx, chatID, "⚠️ LLM error after doom-loop guard: "+ferr.Error())
 					return
@@ -166,15 +166,21 @@ func (s *Service) handlePlainChat(ctx context.Context, chatID int64, text string
 
 // chatWithRetry calls the LLM with retry logic for transient errors.
 //
-// Three behaviours based on classifyError:
-//   - errKindRetryable (5xx, timeout): up to 2 retries with exponential backoff.
-//   - errKindRateLimit (429): same backoff, plus a one-time user notification.
-//   - errKindTerminal (4xx, format errors): fail immediately, no retry.
+// Four behaviours based on ClassifyError:
+//   - ErrKindContextWindow: compress history (drop oldest floor(N/2) dyads, or
+//     fall back to dropping oldest plain conversation turns), then retry
+//     exactly once. Orthogonal to the maxAttempts loop.
+//   - ErrKindRetryable (5xx, timeout): up to maxAttempts retries with exponential backoff.
+//   - ErrKindRateLimit (429): same backoff, plus a one-time user notification.
+//   - ErrKindTerminal (4xx, format errors): fail immediately, no retry.
 //
-// The initial backoff delay is cfg.Tuning.LLMRetryDelay (default 1s); it
-// doubles on each subsequent attempt. The retry loop honours ctx cancellation.
-func (s *Service) chatWithRetry(ctx context.Context, chatID int64, msgs []providers.Message, tools []providers.Tool) (*providers.LLMResponse, error) {
-	const maxAttempts = 3
+// msgs is a pointer so compressMessages can modify the slice in-place; all three
+// call sites in handlePlainChat pass &msgs.
+func (s *Service) chatWithRetry(ctx context.Context, chatID int64, msgs *[]providers.Message, tools []providers.Tool) (*providers.LLMResponse, error) {
+	maxAttempts := s.cfg.Tuning.LLMRetryAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 3
+	}
 
 	delay := s.cfg.Tuning.LLMRetryDelay
 	if delay <= 0 {
@@ -182,15 +188,60 @@ func (s *Service) chatWithRetry(ctx context.Context, chatID int64, msgs []provid
 	}
 
 	rateLimitNotified := false
+	compressedOnce := false
 	var lastErr error
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
-		resp, err := s.llm.Chat(ctx, msgs, tools)
+		resp, err := s.llm.Chat(ctx, *msgs, tools)
 		if err == nil {
 			return resp, nil
 		}
 
 		switch providers.ClassifyError(err) {
+		case providers.ErrKindContextWindow:
+			if compressedOnce {
+				return nil, err
+			}
+			before := len(*msgs)
+			if !compressMessages(msgs) {
+				return nil, err
+			}
+			compressedOnce = true
+			after := len(*msgs)
+			log.Warn().
+				Int("before", before).
+				Int("after", after).
+				Msg("gateway: context window exceeded; compressed history, retrying once")
+			resp2, err2 := s.llm.Chat(ctx, *msgs, tools)
+			if err2 == nil {
+				return resp2, nil
+			}
+			err = err2
+			switch providers.ClassifyError(err) {
+			case providers.ErrKindContextWindow:
+				return nil, err
+			case providers.ErrKindTerminal:
+				return nil, err
+			case providers.ErrKindRateLimit:
+				if !rateLimitNotified {
+					log.Warn().Err(err).Int("attempt", attempt+1).Msg("gateway: LLM rate limited; retrying")
+					notifyCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					_ = s.ch.SendMessage(notifyCtx, chatID, "⚠️ LLM rate limited; retrying…")
+					cancel()
+					rateLimitNotified = true
+				}
+				fallthrough
+			case providers.ErrKindRetryable:
+				log.Warn().Err(err).Int("attempt", attempt+1).Dur("backoff", delay).Msg("gateway: transient LLM error; retrying")
+				lastErr = err
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(delay):
+				}
+				delay *= 2
+			}
+
 		case providers.ErrKindTerminal:
 			return nil, err
 
