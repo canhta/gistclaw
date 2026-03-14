@@ -29,6 +29,10 @@ const (
 	codexAudience = "https://api.openai.com/v1"
 )
 
+// tokenRefreshBuffer is how early we treat a token as expired.
+// 5 minutes provides a safety margin for slow VPS networks.
+const tokenRefreshBuffer = 5 * time.Minute
+
 // StoredToken is the JSON structure persisted in store.provider_credentials for "codex".
 // Exported so tests can construct and inspect it.
 type StoredToken struct {
@@ -114,7 +118,7 @@ func (p *Provider) ensureToken(ctx context.Context) (*StoredToken, error) {
 	defer p.mu.Unlock()
 
 	// Try in-memory first.
-	if p.token != nil && time.Now().Before(p.token.ExpiresAt.Add(-30*time.Second)) {
+	if p.token != nil && time.Now().Before(p.token.ExpiresAt.Add(-tokenRefreshBuffer)) {
 		return p.token, nil
 	}
 
@@ -128,7 +132,7 @@ func (p *Provider) ensureToken(ctx context.Context) (*StoredToken, error) {
 	if stored != "" {
 		if err := json.Unmarshal([]byte(stored), &tok); err != nil {
 			log.Warn().Err(err).Msg("codex: failed to parse stored token; will re-authenticate")
-		} else if time.Now().Before(tok.ExpiresAt.Add(-30 * time.Second)) {
+		} else if time.Now().Before(tok.ExpiresAt.Add(-tokenRefreshBuffer)) {
 			// Token still valid.
 			p.token = &tok
 			return p.token, nil
