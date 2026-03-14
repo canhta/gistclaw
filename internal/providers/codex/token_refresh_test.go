@@ -32,7 +32,9 @@ func TestEnsureToken_RefreshesWithinBuffer(t *testing.T) {
 		refreshCalled = true
 		w.Header().Set("Content-Type", "application/json")
 		expiry := time.Now().Add(1 * time.Hour).Unix()
-		fmt.Fprintf(w, `{"access_token":"new-token","token_type":"Bearer","expires_in":3600,"expiry":%d}`, expiry)
+		if _, err := fmt.Fprintf(w, `{"access_token":"new-token","token_type":"Bearer","expires_in":3600,"expiry":%d}`, expiry); err != nil {
+			t.Fatalf("write token response: %v", err)
+		}
 	}))
 	defer srv.Close()
 
