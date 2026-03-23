@@ -1,0 +1,14 @@
+pre-commit:
+  jobs:
+    - name: go-fast-checks
+      glob:
+        - "*.go"
+        - "go.mod"
+        - "go.sum"
+      run: make precommit FILES="{staged_files}"
+      stage_fixed: true
+
+pre-push:
+  jobs:
+    - name: coverage
+      run: make coverage

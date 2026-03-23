@@ -1,0 +1,228 @@
+package tools
+
+import (
+	"context"
+	"crypto/sha256"
+	"fmt"
+	"testing"
+
+	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/store"
+)
+
+func setupToolsDB(t *testing.T) *store.DB {
+	t.Helper()
+	db, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+func TestRegistry_RegisterAndGet(t *testing.T) {
+	reg := NewRegistry()
+	tool := &stubTool{name: "file_read"}
+	reg.Register(tool)
+
+	got, ok := reg.Get("file_read")
+	if !ok {
+		t.Fatal("expected to find tool 'file_read'")
+	}
+	if got.Name() != "file_read" {
+		t.Fatalf("expected %q, got %q", "file_read", got.Name())
+	}
+}
+
+func TestRegistry_ListReturnsAll(t *testing.T) {
+	reg := NewRegistry()
+	reg.Register(&stubTool{name: "file_read"})
+	reg.Register(&stubTool{name: "shell_exec"})
+
+	specs := reg.List()
+	if len(specs) != 2 {
+		t.Fatalf("expected 2 tools, got %d", len(specs))
+	}
+}
+
+func TestPolicy_ReadOnlyProfileDeniesWrite(t *testing.T) {
+	p := &Policy{Profile: "read_heavy"}
+	agent := model.AgentProfile{
+		Capabilities: []model.AgentCapability{model.CapReadHeavy},
+		ToolProfile:  "read_heavy",
+	}
+	spec := model.ToolSpec{Name: "file_write", Risk: model.RiskMedium}
+
+	decision := p.Decide(agent, model.RunProfile{}, spec)
+	if decision.Mode != model.DecisionDeny {
+		t.Fatalf("expected deny for write tool with read_heavy profile, got %s", decision.Mode)
+	}
+}
+
+func TestPolicy_WorkspaceWriteProfileAsksForShellExec(t *testing.T) {
+	p := &Policy{Profile: "workspace_write"}
+	agent := model.AgentProfile{
+		Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
+		ToolProfile:  "workspace_write",
+	}
+	spec := model.ToolSpec{Name: "shell_exec", Risk: model.RiskHigh}
+
+	decision := p.Decide(agent, model.RunProfile{}, spec)
+	if decision.Mode != model.DecisionAsk {
+		t.Fatalf("expected ask for shell_exec with workspace_write profile, got %s", decision.Mode)
+	}
+}
+
+func TestPolicy_ReadToolAlwaysAllowed(t *testing.T) {
+	p := &Policy{Profile: "read_heavy"}
+	agent := model.AgentProfile{
+		Capabilities: []model.AgentCapability{model.CapReadHeavy},
+		ToolProfile:  "read_heavy",
+	}
+	spec := model.ToolSpec{Name: "file_read", Risk: model.RiskLow}
+
+	decision := p.Decide(agent, model.RunProfile{}, spec)
+	if decision.Mode != model.DecisionAllow {
+		t.Fatalf("expected allow for read tool, got %s", decision.Mode)
+	}
+}
+
+func TestApproval_FingerprintChangeCausesExpiry(t *testing.T) {
+	db := setupToolsDB(t)
+	ctx := context.Background()
+
+	ticket, err := CreateTicket(ctx, db, model.ApprovalRequest{
+		RunID:      "run-1",
+		ToolName:   "file_write",
+		ArgsJSON:   []byte(`{"path":"a.txt"}`),
+		TargetPath: "/workspace/a.txt",
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket failed: %v", err)
+	}
+
+	newFingerprint := fmt.Sprintf("%x", sha256.Sum256(
+		[]byte("file_write:"+`{"path":"b.txt"}`+":/workspace/b.txt"),
+	))
+
+	err = VerifyTicket(ctx, db, ticket.ID, newFingerprint)
+	if err == nil {
+		t.Fatal("expected ErrTicketExpired for changed fingerprint")
+	}
+}
+
+func TestApproval_SingleUse(t *testing.T) {
+	db := setupToolsDB(t)
+	ctx := context.Background()
+
+	ticket, err := CreateTicket(ctx, db, model.ApprovalRequest{
+		RunID:      "run-2",
+		ToolName:   "file_write",
+		ArgsJSON:   []byte(`{"path":"a.txt"}`),
+		TargetPath: "/workspace/a.txt",
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket failed: %v", err)
+	}
+
+	err = ResolveTicket(ctx, db, ticket.ID, "approved")
+	if err != nil {
+		t.Fatalf("first resolve failed: %v", err)
+	}
+
+	err = ResolveTicket(ctx, db, ticket.ID, "approved")
+	if err == nil {
+		t.Fatal("expected ErrTicketExpired on second resolve")
+	}
+}
+
+func TestWorkspaceApplier_RejectsEscapeAttempt(t *testing.T) {
+	wsRoot := t.TempDir()
+	applier := NewWorkspaceApplier(wsRoot)
+	ctx := context.Background()
+
+	changes := []model.FileChange{
+		{Path: "../../etc/passwd", Content: []byte("hacked"), Op: "create"},
+	}
+
+	_, err := applier.Preview(ctx, "run-1", changes)
+	if err == nil {
+		t.Fatal("expected ErrEscapeAttempt for path traversal")
+	}
+}
+
+func TestWorkspaceApplier_AllowsValidPath(t *testing.T) {
+	wsRoot := t.TempDir()
+	applier := NewWorkspaceApplier(wsRoot)
+	ctx := context.Background()
+
+	changes := []model.FileChange{
+		{Path: "src/main.go", Content: []byte("package main"), Op: "create"},
+	}
+
+	preview, err := applier.Preview(ctx, "run-1", changes)
+	if err != nil {
+		t.Fatalf("Preview failed for valid path: %v", err)
+	}
+	if len(preview.Changes) != 1 {
+		t.Fatalf("expected 1 change, got %d", len(preview.Changes))
+	}
+}
+
+func TestShellExec_RejectsSemicolon(t *testing.T) {
+	err := validateShellArgs("ls; rm -rf /")
+	if err == nil {
+		t.Fatal("expected rejection for semicolon")
+	}
+}
+
+func TestShellExec_RejectsPipe(t *testing.T) {
+	err := validateShellArgs("cat file | grep secret")
+	if err == nil {
+		t.Fatal("expected rejection for pipe")
+	}
+}
+
+func TestShellExec_RejectsPathTraversal(t *testing.T) {
+	err := validateShellArgs("cat ../../etc/passwd")
+	if err == nil {
+		t.Fatal("expected rejection for path traversal")
+	}
+}
+
+func TestShellExec_RejectsNullByte(t *testing.T) {
+	err := validateShellArgs("cat file\x00.txt")
+	if err == nil {
+		t.Fatal("expected rejection for null byte")
+	}
+}
+
+func TestShellExec_AllowsSafeCommand(t *testing.T) {
+	err := validateShellArgs("go test ./...")
+	if err != nil {
+		t.Fatalf("expected safe command to pass, got: %v", err)
+	}
+}
+
+type stubTool struct {
+	name string
+}
+
+func (s *stubTool) Name() string { return s.name }
+
+func (s *stubTool) Spec() model.ToolSpec {
+	risk := model.RiskLow
+	if s.name == "file_write" || s.name == "shell_exec" {
+		risk = model.RiskMedium
+	}
+	return model.ToolSpec{Name: s.name, Risk: risk}
+}
+
+func (s *stubTool) Invoke(_ context.Context, _ model.ToolCall) (model.ToolResult, error) {
+	return model.ToolResult{Output: "ok"}, nil
+}
+
+var _ Tool = (*stubTool)(nil)
