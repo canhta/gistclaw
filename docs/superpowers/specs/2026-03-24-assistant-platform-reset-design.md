@@ -76,6 +76,33 @@ Instead, it should support:
 
 The communication model should feel closer to OpenClaw's session-based subagent model than to a fixed delegation graph.
 
+Operationally, the next runtime should use these collaboration primitives:
+
+- `spawn`: the front agent or another authorized agent creates a new worker session/run
+- `announce`: a worker emits a completion or status message back to its parent or controlling session
+- `steer`: a controlling session sends corrective or follow-up instructions to an active worker session
+- `agent-send`: one authorized agent session sends a runtime-tagged message to another authorized agent session
+- `follow-up binding`: the runtime may route later user follow-ups to an existing active session when a surface supports it, but this is optional and not required for the first refactor phase
+
+The next planning pass should treat these as runtime events and message types, not as vague metaphors.
+
+Minimum lifecycle for the first refactor:
+
+1. A user message enters the front agent session.
+2. The front agent may continue directly or spawn one or more worker sessions.
+3. Worker sessions perform work under their own run/session identity.
+4. Worker sessions may announce progress or completion back to the controlling session.
+5. The controlling session may steer a worker session while it is active.
+6. The front agent synthesizes the final outward response unless another agent has explicit outbound authority.
+
+Authority rules for these primitives:
+
+- `spawn`: allowed only to agent sessions granted spawn capability by runtime policy
+- `announce`: allowed only as a runtime-controlled delivery from a worker to its controller or parent
+- `steer`: allowed only from a controlling session to one of its active descendants or otherwise authorized agent targets
+- `agent-send`: allowed only for runtime-authorized session pairs and always tagged as inter-agent input
+- `follow-up binding`: runtime-owned routing behavior, never model-chosen routing
+
 ### Authority Boundaries
 
 Free collaboration does not mean free authority.
@@ -168,6 +195,8 @@ Tools, providers, connectors, and plugins should be defined as a deliberate exte
 
 The next design should not keep adding concrete packages for these surfaces without a clean contract.
 
+For the immediate next phase, this means defining the seam and the ownership rules, not rebuilding the full plugin platform.
+
 ### 5. Keep authority strict while making collaboration looser
 
 Collaboration expands.
@@ -194,6 +223,49 @@ Recommended replacement set:
 - `docs/extensions.md`: providers, connectors, plugins, and what is deferred
 
 All old architecture docs should be deletable once the new set exists.
+
+## Immediate Scope
+
+The next implementation planning pass should cover only the work needed to establish the reset.
+
+In scope now:
+
+- delete the old docs and replace them with the new minimal doc set
+- redesign the runtime around front agent plus spawned sessions
+- replace rigid delegation edges with explicit spawn, announce, steer, and agent-send primitives
+- define session identity and routing as first-class kernel concepts
+- decide which current packages survive, which are replaced, and which are deferred
+- preserve strict authority boundaries for tools, writes, approvals, and outbound delivery
+
+Explicitly out of scope for the next implementation plan:
+
+- rebuilding the full OpenClaw channel matrix
+- restoring full OpenClaw gateway/control-plane complexity
+- implementing a broad plugin marketplace or third-party plugin ecosystem
+- adding large automation surfaces beyond what the new kernel immediately needs
+- polishing every starter workflow on top of the new runtime
+
+The immediate goal is the runtime reset and the doc reset, not platform breadth.
+
+## Extension Boundary
+
+Plugins, providers, and connectors are part of the long-term product direction, but they are not all immediate implementation requirements.
+
+Required now:
+
+- a clean architectural seam for tools
+- a clean architectural seam for providers
+- a clean architectural seam for connectors
+- an explicit statement that future plugins belong outside the kernel
+
+Deferred until after the runtime reset:
+
+- broad plugin runtime
+- compatibility layer for existing extension shapes
+- large connector expansion
+- extension marketplace or installation UX
+
+The next plan should reserve the extension layer cleanly without letting it dominate the first rewrite.
 
 ## Rewrite Posture
 
@@ -241,3 +313,4 @@ The next implementation plan should focus on:
 - writing the new minimal doc set
 - redesigning runtime/session/collaboration around front agent plus spawned agents
 - identifying which current packages survive, which are replaced, and which are deferred
+- defining immediate versus deferred work so the rewrite does not sprawl on the first pass
