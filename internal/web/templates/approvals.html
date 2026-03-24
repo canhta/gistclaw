@@ -1,0 +1,23 @@
+{{define "approvals_body"}}
+<section class="panel">
+  <h1>Approvals</h1>
+  {{if .Error}}
+    <p class="error">{{.Error}}</p>
+  {{end}}
+  {{if .Approvals}}
+    {{range .Approvals}}
+      <article class="run-row">
+        <div class="mono">{{.ID}}</div>
+        <div><strong>{{.ToolName}}</strong>{{if .TargetPath}} &mdash; {{.TargetPath}}{{end}}</div>
+        <div class="muted mono">run: {{.RunID}}</div>
+        <form method="POST" action="/approvals/{{.ID}}/resolve" style="display:inline">
+          <button type="submit" name="decision" value="approved">Approve</button>
+          <button type="submit" name="decision" value="denied">Deny</button>
+        </form>
+      </article>
+    {{end}}
+  {{else}}
+    <p class="muted">No pending approvals.</p>
+  {{end}}
+</section>
+{{end}}

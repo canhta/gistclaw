@@ -407,6 +407,53 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 	return run, nil
 }
 
+// SubmitTask starts a new root run via the web interface, resolving the
+// web conversation key internally. This is the canonical entry point for
+// write-path web handlers.
+func (r *Runtime) SubmitTask(ctx context.Context, objective, workspaceRoot string) (model.Run, error) {
+	conv, err := r.convStore.Resolve(ctx, conversations.ConversationKey{
+		ConnectorID: "web",
+		AccountID:   "local",
+		ExternalID:  "default",
+		ThreadID:    "main",
+	})
+	if err != nil {
+		return model.Run{}, fmt.Errorf("resolve web conversation: %w", err)
+	}
+	return r.Start(ctx, StartRun{
+		ConversationID: conv.ID,
+		AgentID:        "web-operator",
+		Objective:      objective,
+		WorkspaceRoot:  workspaceRoot,
+		AccountID:      "local",
+	})
+}
+
+// ResolveApproval approves or denies a pending approval ticket by its ID.
+// decision must be "approved" or "denied".
+func (r *Runtime) ResolveApproval(ctx context.Context, ticketID, decision string) error {
+	return tools.ResolveTicket(ctx, r.store, ticketID, decision)
+}
+
+// UpdateSettings persists operator-editable settings to the database.
+// The admin_token key is explicitly rejected to prevent accidental exposure.
+func (r *Runtime) UpdateSettings(ctx context.Context, updates map[string]string) error {
+	for key, value := range updates {
+		if key == "admin_token" {
+			return fmt.Errorf("runtime: admin_token cannot be updated via settings")
+		}
+		_, err := r.store.RawDB().ExecContext(ctx,
+			`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+			 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+			key, value,
+		)
+		if err != nil {
+			return fmt.Errorf("runtime: update setting %q: %w", key, err)
+		}
+	}
+	return nil
+}
+
 func generateID() string {
 	buf := make([]byte, 16)
 	_, _ = rand.Read(buf)

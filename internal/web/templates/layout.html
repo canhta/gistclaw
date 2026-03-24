@@ -1,0 +1,80 @@
+{{define "layout"}}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{.Title}}</title>
+  <style>
+    :root {
+      --bg: #f8f7f5;
+      --surface: #ffffff;
+      --border-hard: #1c1917;
+      --border-soft: #e4e2de;
+      --text-1: #1c1917;
+      --text-2: #78716c;
+      --brand: #2563eb;
+      --active: #0284c7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text-1);
+      font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    header {
+      border-bottom: 1.5px solid var(--border-hard);
+      background: var(--surface);
+      padding: 12px 24px;
+      font-weight: 700;
+    }
+    nav {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+    nav a {
+      color: var(--text-1);
+      text-decoration: none;
+    }
+    main {
+      max-width: 1200px;
+      padding: 24px;
+    }
+    .panel {
+      border: 1.5px solid var(--border-hard);
+      background: var(--surface);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .run-row {
+      border: 1.5px solid var(--border-hard);
+      border-left: 4px solid var(--active);
+      padding: 12px;
+      margin-top: 12px;
+      background: var(--surface);
+    }
+    .mono {
+      font-family: "JetBrains Mono", "Fira Code", monospace;
+    }
+    .muted {
+      color: var(--text-2);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <span>gistclaw</span>
+      <a href="/runs">Runs</a>
+      <a href="/approvals">Approvals</a>
+      <a href="/settings">Settings</a>
+    </nav>
+  </header>
+  <main>
+    {{.Body}}
+  </main>
+</body>
+</html>
+{{end}}

@@ -1,0 +1,26 @@
+{{define "settings_body"}}
+<section class="panel">
+  <h1>Settings</h1>
+  {{if .Error}}
+    <p class="error">{{.Error}}</p>
+  {{end}}
+  <form method="POST" action="/settings">
+    <div class="field">
+      <label for="team_name">Team Name</label>
+      <input type="text" id="team_name" name="team_name" value="{{.TeamName}}">
+    </div>
+    <div class="field">
+      <label for="workspace_root">Workspace Root</label>
+      <input type="text" id="workspace_root" name="workspace_root" value="{{.WorkspaceRoot}}">
+    </div>
+    <div class="field">
+      <button type="submit">Save</button>
+    </div>
+  </form>
+  <div class="panel" style="margin-top:16px">
+    <label>Admin Token</label>
+    <div class="mono">{{.AdminToken}}</div>
+    <p class="muted">Use <code>gistclaw inspect token</code> to retrieve the full token.</p>
+  </div>
+</section>
+{{end}}

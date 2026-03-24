@@ -6,6 +6,10 @@ import (
 )
 
 func (a *App) Prepare(ctx context.Context) error {
+	if err := ensureAdminToken(a.db); err != nil {
+		return err
+	}
+
 	if a.runtime != nil {
 		if _, err := a.runtime.ReconcileInterrupted(ctx); err != nil {
 			return fmt.Errorf("reconcile interrupted: %w", err)
@@ -30,3 +34,4 @@ func (a *App) Stop() error {
 	}
 	return nil
 }
+

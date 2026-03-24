@@ -1,0 +1,16 @@
+{{define "runs_body"}}
+<section class="panel">
+  <h1>Runs</h1>
+  {{if .Runs}}
+    {{range .Runs}}
+      <article class="run-row">
+        <div class="mono">{{.ID}}</div>
+        <div>{{.Objective}}</div>
+        <div class="muted">{{.Status}}</div>
+      </article>
+    {{end}}
+  {{else}}
+    <p>You haven't run any tasks yet.</p>
+  {{end}}
+</section>
+{{end}}

@@ -31,7 +31,7 @@ func TestRun_HelpAndUnknownCommand(t *testing.T) {
 }
 
 func TestRun_RunAndInspectCommands(t *testing.T) {
-	cfgPath, dbPath := writeCLIConfig(t)
+	cfgPath, _ := writeCLIConfig(t)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -68,28 +68,19 @@ func TestRun_RunAndInspectCommands(t *testing.T) {
 		t.Fatalf("inspect replay missing lifecycle events:\n%s", stdout.String())
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatalf("open sqlite db: %v", err)
-	}
-	defer db.Close()
-
-	_, err = db.Exec(
-		`INSERT INTO settings (key, value, updated_at)
-		 VALUES ('admin_token', 'unit-token', datetime('now'))
-		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-	)
-	if err != nil {
-		t.Fatalf("insert admin token: %v", err)
-	}
-
 	stdout.Reset()
 	stderr.Reset()
 	if code := run([]string{"inspect", "--config", cfgPath, "token"}, &stdout, &stderr); code != 0 {
 		t.Fatalf("inspect token failed with code %d:\n%s", code, stderr.String())
 	}
-	if strings.TrimSpace(stdout.String()) != "unit-token" {
-		t.Fatalf("unexpected token output: %q", stdout.String())
+	token := strings.TrimSpace(stdout.String())
+	if len(token) != 64 {
+		t.Fatalf("expected generated 64-char token, got %q", token)
+	}
+	for _, r := range token {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			t.Fatalf("expected generated hex token, got %q", token)
+		}
 	}
 }
 

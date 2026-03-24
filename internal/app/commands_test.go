@@ -68,11 +68,24 @@ func TestApp_RunTaskRejectsEmptyObjective(t *testing.T) {
 	}
 }
 
-func TestApp_AdminTokenMissing(t *testing.T) {
+func TestApp_PrepareGeneratesAdminToken(t *testing.T) {
 	application := setupCommandApp(t)
 
-	if _, err := application.AdminToken(context.Background()); err == nil {
-		t.Fatal("expected AdminToken to fail when token is missing")
+	if err := application.Prepare(context.Background()); err != nil {
+		t.Fatalf("Prepare failed: %v", err)
+	}
+
+	token, err := application.AdminToken(context.Background())
+	if err != nil {
+		t.Fatalf("AdminToken failed: %v", err)
+	}
+	if len(token) != 64 {
+		t.Fatalf("expected 64-char hex token, got %q", token)
+	}
+	for _, r := range token {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			t.Fatalf("expected hex token, got %q", token)
+		}
 	}
 }
 

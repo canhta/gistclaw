@@ -1,0 +1,16 @@
+{{define "run_detail_body"}}
+<section class="panel">
+  <h1>Run Detail</h1>
+  <div class="mono">{{.RunID}}</div>
+  <div class="muted">{{.Status}}</div>
+  {{if .Events}}
+    {{range .Events}}
+      <article class="run-row">
+        <div>{{.Kind}}</div>
+      </article>
+    {{end}}
+  {{else}}
+    <p class="muted">No events recorded yet.</p>
+  {{end}}
+</section>
+{{end}}
