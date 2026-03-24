@@ -84,6 +84,7 @@ func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) 
 		runID:          runID,
 		conversationID: conv.ID,
 		agentID:        cmd.FrontAgentID,
+		sessionID:      sessionID,
 		objective:      cmd.InitialPrompt,
 	})
 }
@@ -135,6 +136,7 @@ func (r *Runtime) Spawn(ctx context.Context, cmd SpawnCommand) (model.Run, error
 		runID:          runID,
 		conversationID: controller.ConversationID,
 		agentID:        cmd.AgentID,
+		sessionID:      workerSessionID,
 		objective:      cmd.Prompt,
 	})
 }

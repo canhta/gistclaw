@@ -147,6 +147,7 @@ func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
 		runID:             runID,
 		conversationID:    cmd.ConversationID,
 		agentID:           cmd.AgentID,
+		sessionID:         cmd.SessionID,
 		objective:         cmd.Objective,
 		previewOnly:       cmd.PreviewOnly,
 		verificationAgent: cmd.VerificationAgent,
@@ -207,6 +208,7 @@ type runLoopOpts struct {
 	runID             string
 	conversationID    string
 	agentID           string
+	sessionID         string
 	objective         string
 	previewOnly       bool
 	verificationAgent bool
@@ -216,6 +218,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 	runID := opts.runID
 	conversationID := opts.conversationID
 	agentID := opts.agentID
+	sessionID := opts.sessionID
 	objective := opts.objective
 	var cumulativeInput int
 	var cumulativeOutput int
@@ -323,6 +326,19 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			PayloadJSON:    payload,
 		}); err != nil {
 			return model.Run{}, fmt.Errorf("journal turn_completed: %w", err)
+		}
+		if sessionID != "" && result.Content != "" {
+			if err := r.appendSessionMessage(
+				ctx,
+				conversationID,
+				runID,
+				sessionID,
+				sessionID,
+				model.MessageAssistant,
+				result.Content,
+			); err != nil {
+				return model.Run{}, err
+			}
 		}
 
 		if r.eventSink != nil {

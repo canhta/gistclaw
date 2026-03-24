@@ -10,6 +10,7 @@ import (
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/replay"
+	"github.com/canhta/gistclaw/internal/sessions"
 	"github.com/canhta/gistclaw/internal/store"
 	"github.com/canhta/gistclaw/internal/tools"
 )
@@ -264,5 +265,114 @@ func TestAcceptance_FrontSessionCanSpawnAndReceiveAnnounce(t *testing.T) {
 	}
 	if announceCount != 1 {
 		t.Fatalf("expected 1 announce message on front session, got %d", announceCount)
+	}
+}
+
+func TestAcceptance_FrontMailboxSpansMultipleRuns(t *testing.T) {
+	db, cs, mem, reg := setupMilestoneTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "First reply.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+			{Content: "Second reply.", InputTokens: 11, OutputTokens: 13, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	ctx := context.Background()
+
+	first, err := rt.StartFrontSession(ctx, StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "First prompt",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("first StartFrontSession failed: %v", err)
+	}
+
+	second, err := rt.StartFrontSession(ctx, StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Second prompt",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("second StartFrontSession failed: %v", err)
+	}
+
+	svc := sessions.NewService(db, cs)
+	session, mailbox, err := svc.LoadThreadMailbox(ctx, first.ConversationID, "main", 10)
+	if err != nil {
+		t.Fatalf("LoadThreadMailbox failed: %v", err)
+	}
+	if session.ID != first.SessionID || session.ID != second.SessionID {
+		t.Fatalf("expected mailbox session %q to match durable front session %q/%q", session.ID, first.SessionID, second.SessionID)
+	}
+	if len(mailbox) != 4 {
+		t.Fatalf("expected 4 mailbox messages, got %d", len(mailbox))
+	}
+	if mailbox[0].Body != "First prompt" || mailbox[1].Body != "First reply." || mailbox[2].Body != "Second prompt" || mailbox[3].Body != "Second reply." {
+		t.Fatalf(
+			"expected cross-run prompt/reply mailbox history, got %q / %q / %q / %q",
+			mailbox[0].Body,
+			mailbox[1].Body,
+			mailbox[2].Body,
+			mailbox[3].Body,
+		)
+	}
+}
+
+func TestAcceptance_FrontMailboxIncludesAssistantReplies(t *testing.T) {
+	db, cs, mem, reg := setupMilestoneTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "Assistant reply.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	ctx := context.Background()
+
+	run, err := rt.StartFrontSession(ctx, StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "User prompt.",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+
+	svc := sessions.NewService(db, cs)
+	session, mailbox, err := svc.LoadThreadMailbox(ctx, run.ConversationID, "main", 10)
+	if err != nil {
+		t.Fatalf("LoadThreadMailbox failed: %v", err)
+	}
+	if session.ID != run.SessionID {
+		t.Fatalf("expected mailbox session %q, got %q", run.SessionID, session.ID)
+	}
+	if len(mailbox) != 2 {
+		t.Fatalf("expected 2 mailbox messages, got %d", len(mailbox))
+	}
+	if mailbox[0].Kind != model.MessageUser || mailbox[0].Body != "User prompt." {
+		t.Fatalf("expected first mailbox message to be the user prompt, got kind=%q body=%q", mailbox[0].Kind, mailbox[0].Body)
+	}
+	if mailbox[1].Kind != model.MessageAssistant || mailbox[1].Body != "Assistant reply." {
+		t.Fatalf("expected second mailbox message to be assistant reply, got kind=%q body=%q", mailbox[1].Kind, mailbox[1].Body)
 	}
 }

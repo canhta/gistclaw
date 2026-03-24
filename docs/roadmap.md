@@ -34,7 +34,7 @@ The reset kernel is in place, but the product still does not fully behave like O
 
 Remaining gaps:
 
-- durable front-session reuse and thread binding are in place, but the runtime still lacks a fuller mailbox and routing model
+- durable front-session reuse, thread binding, and mailbox reads are in place, but the runtime still lacks a fuller delivery and routing model
 - channels and connectors are no longer core to the active build
 - plugins and extension seams are documented, not operational
 - teams are still mostly designed ahead of time, not created dynamically by the user
@@ -43,6 +43,6 @@ Remaining gaps:
 
 The next implementation slice should make the session runtime feel more like OpenClaw without reopening platform sprawl:
 
-1. add a fuller mailbox/read model on top of the durable front session
+1. promote mailbox state from a read model into a fuller runtime-owned delivery surface
 2. route collaboration through explicit runtime-owned message targets instead of mostly direct append helpers
 3. prepare that routing layer for later channel and gateway recovery

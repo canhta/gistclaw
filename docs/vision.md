@@ -44,7 +44,7 @@ The current reset is closer to OpenClaw in kernel direction than in product brea
 
 What is still not earned yet:
 
-- fuller runtime-owned mailbox behavior on top of the durable assistant session and thread binding now in place
+- fuller runtime-owned delivery and mailbox-update behavior on top of the durable assistant session, thread binding, and mailbox read model now in place
 - broader runtime-owned routing across surfaces instead of mostly local run-scoped coordination
 - dynamic user-created teams at runtime instead of config-defined team shape only
 - restored channel/gateway surfaces on top of the new kernel
