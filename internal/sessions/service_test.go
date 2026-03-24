@@ -402,6 +402,68 @@ func TestService_ListConnectorDeliveryHealth(t *testing.T) {
 	}
 }
 
+func TestService_ListDeliveryQueue(t *testing.T) {
+	svc := newTestSessionService(t)
+	ctx := context.Background()
+
+	frontTelegram := openFrontSession(t, svc)
+	frontWhatsApp, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-whatsapp",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession whatsapp failed: %v", err)
+	}
+
+	if _, err := svc.db.RawDB().ExecContext(
+		ctx,
+		`INSERT INTO runs
+		 (id, conversation_id, agent_id, session_id, objective, workspace_root, status, created_at, updated_at)
+		 VALUES
+		 ('run-telegram', ?, 'assistant', ?, 'Inspect Telegram', ?, 'completed', datetime('now', '-5 minutes'), datetime('now', '-5 minutes')),
+		 ('run-whatsapp', ?, 'assistant', ?, 'Inspect WhatsApp', ?, 'completed', datetime('now', '-4 minutes'), datetime('now', '-4 minutes'))`,
+		frontTelegram.ConversationID,
+		frontTelegram.ID,
+		t.TempDir(),
+		frontWhatsApp.ConversationID,
+		frontWhatsApp.ID,
+		t.TempDir(),
+	); err != nil {
+		t.Fatalf("insert runs: %v", err)
+	}
+
+	if _, err := svc.db.RawDB().ExecContext(
+		ctx,
+		`INSERT INTO outbound_intents
+		 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at, last_attempt_at)
+		 VALUES
+		 ('intent-telegram-terminal', 'run-telegram', 'telegram', 'chat-1', 'reply one', 'dedupe-1', 'terminal', 5, datetime('now', '-3 minutes'), datetime('now', '-2 minutes')),
+		 ('intent-telegram-retrying', 'run-telegram', 'telegram', 'chat-1', 'reply two', 'dedupe-2', 'retrying', 2, datetime('now', '-2 minutes'), datetime('now', '-1 minutes')),
+		 ('intent-whatsapp-pending', 'run-whatsapp', 'whatsapp', 'chat-2', 'reply three', 'dedupe-3', 'pending', 0, datetime('now', '-90 seconds'), NULL)`,
+	); err != nil {
+		t.Fatalf("insert outbound intents: %v", err)
+	}
+
+	items, err := svc.ListDeliveryQueue(ctx, DeliveryQueueFilter{
+		ConnectorID: "telegram",
+		Status:      "terminal",
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("ListDeliveryQueue failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 delivery queue item, got %d", len(items))
+	}
+	if items[0].ID != "intent-telegram-terminal" || items[0].SessionID != frontTelegram.ID {
+		t.Fatalf("unexpected delivery queue identity: %+v", items[0])
+	}
+	if items[0].ConversationID != frontTelegram.ConversationID || items[0].Status != "terminal" {
+		t.Fatalf("unexpected delivery queue status: %+v", items[0])
+	}
+}
+
 func TestService_ListConversationSessionsOrdersByLatestActivity(t *testing.T) {
 	svc := newTestSessionService(t)
 	ctx := context.Background()

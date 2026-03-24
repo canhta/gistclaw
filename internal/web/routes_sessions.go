@@ -20,6 +20,10 @@ type connectorDeliveryHealthResponse struct {
 	Connectors []model.ConnectorDeliveryHealth `json:"connectors"`
 }
 
+type deliveryQueueResponse struct {
+	Deliveries []model.DeliveryQueueItem `json:"deliveries"`
+}
+
 type sessionMailboxResponse struct {
 	Session          model.Session           `json:"session"`
 	Messages         []model.SessionMessage  `json:"messages"`
@@ -69,6 +73,26 @@ func (s *Server) handleDeliveryHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, connectorDeliveryHealthResponse{Connectors: list})
+}
+
+func (s *Server) handleDeliveryIndex(w http.ResponseWriter, r *http.Request) {
+	if s.rt == nil {
+		http.Error(w, "runtime not configured", http.StatusInternalServerError)
+		return
+	}
+
+	list, err := s.rt.ListDeliveries(
+		r.Context(),
+		r.URL.Query().Get("connector_id"),
+		r.URL.Query().Get("status"),
+		requestLimit(r, 50),
+	)
+	if err != nil {
+		http.Error(w, "failed to load deliveries", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, deliveryQueueResponse{Deliveries: list})
 }
 
 func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
@@ -162,6 +186,32 @@ func (s *Server) handleSessionRetryDelivery(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		switch {
 		case errors.Is(err, sessions.ErrSessionNotFound), errors.Is(err, runtime.ErrDeliveryNotFound):
+			http.NotFound(w, r)
+			return
+		case errors.Is(err, runtime.ErrDeliveryNotRetryable):
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"message": "Only terminal deliveries can be retried.",
+			})
+			return
+		default:
+			http.Error(w, "failed to retry delivery", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, sessionRetryDeliveryResponse{Delivery: delivery})
+}
+
+func (s *Server) handleDeliveryRetry(w http.ResponseWriter, r *http.Request) {
+	if s.rt == nil {
+		http.Error(w, "runtime not configured", http.StatusInternalServerError)
+		return
+	}
+
+	delivery, err := s.rt.RetryDelivery(r.Context(), r.PathValue("id"))
+	if err != nil {
+		switch {
+		case errors.Is(err, runtime.ErrDeliveryNotFound):
 			http.NotFound(w, r)
 			return
 		case errors.Is(err, runtime.ErrDeliveryNotRetryable):

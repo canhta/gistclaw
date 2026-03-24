@@ -233,6 +233,12 @@ type ConnectorDeliveryHealth struct {
 	OldestRetryingAt *time.Time
 }
 
+type DeliveryQueueItem struct {
+	OutboundIntent
+	SessionID      string
+	ConversationID string
+}
+
 type RunRef struct {
 	ID     string
 	Status RunStatus

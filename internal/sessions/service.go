@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/canhta/gistclaw/internal/conversations"
@@ -45,6 +46,12 @@ type BindFollowUp struct {
 	ConnectorID    string
 	AccountID      string
 	ExternalID     string
+}
+
+type DeliveryQueueFilter struct {
+	ConnectorID string
+	Status      string
+	Limit       int
 }
 
 func NewService(db *store.DB, conv *conversations.ConversationStore) *Service {
@@ -386,6 +393,67 @@ func (s *Service) ListSessionOutboundIntents(ctx context.Context, sessionID stri
 	return intents, nil
 }
 
+func (s *Service) ListDeliveryQueue(ctx context.Context, filter DeliveryQueueFilter) ([]model.DeliveryQueueItem, error) {
+	query := strings.Builder{}
+	query.WriteString(
+		`SELECT oi.id, COALESCE(oi.run_id, ''), r.session_id, r.conversation_id,
+		        oi.connector_id, oi.chat_id, oi.message_text, COALESCE(oi.dedupe_key, ''),
+		        oi.status, oi.attempts, oi.created_at, oi.last_attempt_at
+		 FROM outbound_intents oi
+		 JOIN runs r ON r.id = oi.run_id`,
+	)
+
+	args := make([]any, 0, 3)
+	conditions := make([]string, 0, 2)
+	if filter.ConnectorID != "" {
+		conditions = append(conditions, "oi.connector_id = ?")
+		args = append(args, filter.ConnectorID)
+	}
+	if filter.Status != "" {
+		conditions = append(conditions, "oi.status = ?")
+		args = append(args, filter.Status)
+	} else {
+		conditions = append(conditions, "oi.status IN ('pending', 'retrying', 'terminal')")
+	}
+	if len(conditions) > 0 {
+		query.WriteString(" WHERE ")
+		query.WriteString(strings.Join(conditions, " AND "))
+	}
+	query.WriteString(`
+		 ORDER BY
+		     CASE oi.status
+		         WHEN 'retrying' THEN 0
+		         WHEN 'pending' THEN 1
+		         WHEN 'terminal' THEN 2
+		         ELSE 3
+		     END,
+		     oi.created_at ASC, oi.id ASC`)
+	if filter.Limit > 0 {
+		query.WriteString(" LIMIT ?")
+		args = append(args, filter.Limit)
+	}
+
+	rows, err := s.db.RawDB().QueryContext(ctx, query.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("list delivery queue: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]model.DeliveryQueueItem, 0)
+	for rows.Next() {
+		item, err := scanDeliveryQueueItem(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate delivery queue: %w", err)
+	}
+
+	return items, nil
+}
+
 func (s *Service) ListSessionDeliveryFailures(ctx context.Context, sessionID string, limit int) ([]model.DeliveryFailure, error) {
 	var (
 		rows *sql.Rows
@@ -531,6 +599,36 @@ func (s *Service) ListConnectorDeliveryHealth(ctx context.Context) ([]model.Conn
 	return summaries, nil
 }
 
+func (s *Service) LoadDeliveryQueueItem(ctx context.Context, intentID string) (model.DeliveryQueueItem, error) {
+	rows, err := s.db.RawDB().QueryContext(ctx,
+		`SELECT oi.id, COALESCE(oi.run_id, ''), r.session_id, r.conversation_id,
+		        oi.connector_id, oi.chat_id, oi.message_text, COALESCE(oi.dedupe_key, ''),
+		        oi.status, oi.attempts, oi.created_at, oi.last_attempt_at
+		 FROM outbound_intents oi
+		 JOIN runs r ON r.id = oi.run_id
+		 WHERE oi.id = ?
+		 LIMIT 1`,
+		intentID,
+	)
+	if err != nil {
+		return model.DeliveryQueueItem{}, fmt.Errorf("load delivery queue item: %w", err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return model.DeliveryQueueItem{}, fmt.Errorf("iterate delivery queue item: %w", err)
+		}
+		return model.DeliveryQueueItem{}, ErrOutboundIntentNotFound
+	}
+
+	item, err := scanDeliveryQueueItem(rows)
+	if err != nil {
+		return model.DeliveryQueueItem{}, err
+	}
+	return item, nil
+}
+
 func (s *Service) loadOutboundIntentStatus(ctx context.Context, intentID string) (string, error) {
 	var status string
 	err := s.db.RawDB().QueryRowContext(ctx,
@@ -544,6 +642,37 @@ func (s *Service) loadOutboundIntentStatus(ctx context.Context, intentID string)
 		return "", fmt.Errorf("load outbound intent status: %w", err)
 	}
 	return status, nil
+}
+
+func scanDeliveryQueueItem(scanner interface {
+	Scan(dest ...any) error
+}) (model.DeliveryQueueItem, error) {
+	var item model.DeliveryQueueItem
+	var lastAttempt sql.NullString
+	if err := scanner.Scan(
+		&item.ID,
+		&item.RunID,
+		&item.SessionID,
+		&item.ConversationID,
+		&item.ConnectorID,
+		&item.ChatID,
+		&item.MessageText,
+		&item.DedupeKey,
+		&item.Status,
+		&item.Attempts,
+		&item.CreatedAt,
+		&lastAttempt,
+	); err != nil {
+		return model.DeliveryQueueItem{}, fmt.Errorf("scan delivery queue item: %w", err)
+	}
+	if lastAttempt.Valid && lastAttempt.String != "" {
+		parsed, err := parseActivityTime(lastAttempt.String)
+		if err != nil {
+			return model.DeliveryQueueItem{}, fmt.Errorf("parse delivery queue last_attempt_at: %w", err)
+		}
+		item.LastAttemptAt = &parsed
+	}
+	return item, nil
 }
 
 func parseActivityTime(value string) (time.Time, error) {

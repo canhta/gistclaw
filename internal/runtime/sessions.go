@@ -30,6 +30,14 @@ func (r *Runtime) ConnectorDeliveryHealth(ctx context.Context) ([]model.Connecto
 	return sessions.NewService(r.store, r.convStore).ListConnectorDeliveryHealth(ctx)
 }
 
+func (r *Runtime) ListDeliveries(ctx context.Context, connectorID, status string, limit int) ([]model.DeliveryQueueItem, error) {
+	return sessions.NewService(r.store, r.convStore).ListDeliveryQueue(ctx, sessions.DeliveryQueueFilter{
+		ConnectorID: connectorID,
+		Status:      status,
+		Limit:       limit,
+	})
+}
+
 func (r *Runtime) SessionDeliveryState(ctx context.Context, sessionID string, limit int) ([]model.OutboundIntent, []model.DeliveryFailure, error) {
 	svc := sessions.NewService(r.store, r.convStore)
 
@@ -58,6 +66,22 @@ func (r *Runtime) RetrySessionDelivery(ctx context.Context, sessionID string, in
 		}
 		return model.OutboundIntent{}, err
 	}
+	return r.retryDelivery(ctx, session.ConversationID, sessionID, intent)
+}
+
+func (r *Runtime) RetryDelivery(ctx context.Context, intentID string) (model.OutboundIntent, error) {
+	svc := sessions.NewService(r.store, r.convStore)
+	item, err := svc.LoadDeliveryQueueItem(ctx, intentID)
+	if err != nil {
+		if errors.Is(err, sessions.ErrOutboundIntentNotFound) {
+			return model.OutboundIntent{}, ErrDeliveryNotFound
+		}
+		return model.OutboundIntent{}, err
+	}
+	return r.retryDelivery(ctx, item.ConversationID, item.SessionID, item.OutboundIntent)
+}
+
+func (r *Runtime) retryDelivery(ctx context.Context, conversationID, sessionID string, intent model.OutboundIntent) (model.OutboundIntent, error) {
 	if intent.Status != "terminal" {
 		return model.OutboundIntent{}, ErrDeliveryNotRetryable
 	}
@@ -74,7 +98,7 @@ func (r *Runtime) RetrySessionDelivery(ctx context.Context, sessionID string, in
 
 	if err := r.convStore.AppendEvent(ctx, model.Event{
 		ID:             generateID(),
-		ConversationID: session.ConversationID,
+		ConversationID: conversationID,
 		RunID:          intent.RunID,
 		Kind:           "delivery_redrive_requested",
 		PayloadJSON:    payload,
@@ -85,7 +109,8 @@ func (r *Runtime) RetrySessionDelivery(ctx context.Context, sessionID string, in
 		return model.OutboundIntent{}, fmt.Errorf("journal delivery_redrive_requested: %w", err)
 	}
 
-	intent, err = svc.LoadSessionOutboundIntent(ctx, sessionID, intentID)
+	svc := sessions.NewService(r.store, r.convStore)
+	intent, err = svc.LoadSessionOutboundIntent(ctx, sessionID, intent.ID)
 	if err != nil {
 		if errors.Is(err, sessions.ErrOutboundIntentNotFound) {
 			return model.OutboundIntent{}, ErrDeliveryNotFound

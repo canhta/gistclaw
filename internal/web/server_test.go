@@ -559,6 +559,82 @@ func TestSessionAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("delivery index filters queue and top-level retry requeues by delivery id", func(t *testing.T) {
+		h := newServerHarness(t)
+		run, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-1",
+				ExternalID:  "chat-1",
+				ThreadID:    "thread-1",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Inspect the repo.",
+			WorkspaceRoot: h.workspaceRoot,
+		})
+		if err != nil {
+			t.Fatalf("StartFrontSession failed: %v", err)
+		}
+
+		var intentID string
+		if err := h.db.RawDB().QueryRow(
+			`SELECT id
+			 FROM outbound_intents
+			 WHERE run_id = ?
+			 ORDER BY created_at DESC, id DESC
+			 LIMIT 1`,
+			run.ID,
+		).Scan(&intentID); err != nil {
+			t.Fatalf("load outbound intent: %v", err)
+		}
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE outbound_intents
+			 SET status='terminal', attempts=5, last_attempt_at=datetime('now')
+			 WHERE id = ?`,
+			intentID,
+		); err != nil {
+			t.Fatalf("mark terminal intent: %v", err)
+		}
+
+		listRR := httptest.NewRecorder()
+		listReq := httptest.NewRequest(http.MethodGet, "/api/deliveries?connector_id=telegram&status=terminal", nil)
+		h.server.ServeHTTP(listRR, listReq)
+		if listRR.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", listRR.Code, listRR.Body.String())
+		}
+
+		var listResp struct {
+			Deliveries []model.DeliveryQueueItem `json:"deliveries"`
+		}
+		if err := json.Unmarshal(listRR.Body.Bytes(), &listResp); err != nil {
+			t.Fatalf("decode list response: %v", err)
+		}
+		if len(listResp.Deliveries) != 1 {
+			t.Fatalf("expected 1 filtered delivery, got %d", len(listResp.Deliveries))
+		}
+		if listResp.Deliveries[0].ID != intentID || listResp.Deliveries[0].SessionID != run.SessionID {
+			t.Fatalf("unexpected delivery queue item: %+v", listResp.Deliveries[0])
+		}
+
+		retryRR := httptest.NewRecorder()
+		retryReq := httptest.NewRequest(http.MethodPost, "/api/deliveries/"+intentID+"/retry", nil)
+		retryReq.Header.Set("Authorization", "Bearer "+h.adminToken)
+		h.server.ServeHTTP(retryRR, retryReq)
+		if retryRR.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", retryRR.Code, retryRR.Body.String())
+		}
+
+		var retryResp struct {
+			Delivery model.OutboundIntent `json:"delivery"`
+		}
+		if err := json.Unmarshal(retryRR.Body.Bytes(), &retryResp); err != nil {
+			t.Fatalf("decode retry response: %v", err)
+		}
+		if retryResp.Delivery.ID != intentID || retryResp.Delivery.Status != "pending" {
+			t.Fatalf("unexpected retried delivery: %+v", retryResp.Delivery)
+		}
+	})
+
 	t.Run("list returns recent sessions as JSON", func(t *testing.T) {
 		h := newServerHarness(t)
 		front := h.startFrontSession(t, "Inspect the repo.")
