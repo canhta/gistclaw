@@ -96,3 +96,24 @@ func TestBootstrap_AdminTokenNotRegeneratedIfExists(t *testing.T) {
 		t.Fatalf("expected token to remain %q, got %q", preset, token2)
 	}
 }
+
+func TestBootstrap_DoesNotWireDeferredConnectorsOrScheduler(t *testing.T) {
+	cfg := Config{
+		DatabasePath:  ":memory:",
+		StateDir:      t.TempDir(),
+		WorkspaceRoot: t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "anthropic",
+			APIKey: "sk-test",
+		},
+	}
+
+	app, err := Bootstrap(cfg)
+	if err != nil {
+		t.Fatalf("Bootstrap failed: %v", err)
+	}
+
+	if len(app.connectors) != 0 {
+		t.Fatalf("expected deferred connectors to be unwired, got %d", len(app.connectors))
+	}
+}

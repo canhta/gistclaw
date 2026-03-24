@@ -3,6 +3,9 @@ package web
 import (
 	"net/http"
 	"strings"
+
+	"github.com/canhta/gistclaw/internal/conversations"
+	"github.com/canhta/gistclaw/internal/runtime"
 )
 
 type runSubmitPageData struct {
@@ -34,7 +37,17 @@ func (s *Server) handleRunSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	workspaceRoot := lookupSetting(s.db, "workspace_root")
-	run, err := s.rt.SubmitTask(r.Context(), task, workspaceRoot)
+	run, err := s.rt.StartFrontSession(r.Context(), runtime.StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: task,
+		WorkspaceRoot: workspaceRoot,
+	})
 	if err != nil {
 		http.Error(w, "failed to start run: "+err.Error(), http.StatusInternalServerError)
 		return

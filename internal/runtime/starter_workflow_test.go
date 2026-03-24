@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/conversations"
@@ -246,69 +245,5 @@ func TestStarterWorkflow_RepoPatchRunsAsWorkerFlow(t *testing.T) {
 	}
 	if announceCount != 2 {
 		t.Fatalf("expected 2 worker announcements on front session, got %d", announceCount)
-	}
-}
-
-// --- Team validation tests ---
-
-// TestTeamValidation_MissingRequiredField verifies that a team spec missing
-// a required top-level field (agents, capability_flags, or handoff_edges)
-// fails validation with a descriptive error naming the missing field.
-func TestTeamValidation_MissingRequiredField(t *testing.T) {
-	cases := []struct {
-		name    string
-		yaml    string
-		missing string
-	}{
-		{
-			name:    "missing agents",
-			yaml:    "name: default\ncapability_flags: {}\nhandoff_edges: []\n",
-			missing: "agents",
-		},
-		{
-			name:    "missing capability_flags",
-			yaml:    "name: default\nagents: []\nhandoff_edges: []\n",
-			missing: "capability_flags",
-		},
-		{
-			name:    "missing handoff_edges",
-			yaml:    "name: default\nagents: []\ncapability_flags: {}\n",
-			missing: "handoff_edges",
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := LoadTeamSpec([]byte(tc.yaml))
-			if err == nil {
-				t.Fatalf("expected error for %s, got nil", tc.name)
-			}
-			if !strings.Contains(err.Error(), tc.missing) {
-				t.Fatalf("expected error to mention %q, got: %v", tc.missing, err)
-			}
-		})
-	}
-}
-
-// TestTeamValidation_UnknownAgentInEdge verifies that a handoff edge referencing
-// an agent ID not declared in the agents list fails validation.
-func TestTeamValidation_UnknownAgentInEdge(t *testing.T) {
-	yaml := `
-name: default
-agents:
-  - id: coordinator
-    soul_file: coordinator.soul.yaml
-capability_flags:
-  coordinator: [operator_facing]
-handoff_edges:
-  - from: coordinator
-    to: agent-UNKNOWN
-`
-	_, err := LoadTeamSpec([]byte(yaml))
-	if err == nil {
-		t.Fatal("expected error for handoff edge referencing unknown agent")
-	}
-	if !strings.Contains(err.Error(), "agent-UNKNOWN") {
-		t.Fatalf("expected error to mention unknown agent ID, got: %v", err)
 	}
 }

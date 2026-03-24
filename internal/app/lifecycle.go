@@ -81,17 +81,6 @@ func (a *App) Start(ctx context.Context) error {
 		return err
 	}
 
-	// Start the cron scheduler in a background goroutine. It exits when ctx
-	// is cancelled; any errors are non-fatal (individual schedule failures are
-	// logged inline by the dispatcher).
-	if a.scheduler != nil {
-		go func() {
-			if err := a.scheduler.Run(ctx); err != nil && ctx.Err() == nil {
-				fmt.Printf("scheduler: exited unexpectedly: %v\n", err)
-			}
-		}()
-	}
-
 	<-ctx.Done()
 	return ctx.Err()
 }

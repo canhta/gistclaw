@@ -6,9 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	"github.com/canhta/gistclaw/internal/connectors/email"
-	"github.com/canhta/gistclaw/internal/connectors/telegram"
-	"github.com/canhta/gistclaw/internal/connectors/whatsapp"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -16,7 +13,6 @@ import (
 	openaiprov "github.com/canhta/gistclaw/internal/providers/openai"
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
-	"github.com/canhta/gistclaw/internal/scheduler"
 	"github.com/canhta/gistclaw/internal/store"
 	"github.com/canhta/gistclaw/internal/tools"
 	"github.com/canhta/gistclaw/internal/web"
@@ -30,7 +26,6 @@ type App struct {
 	replay     *replay.Service
 	webServer  *web.Server
 	connectors []model.Connector
-	scheduler  *scheduler.Dispatcher
 }
 
 func Bootstrap(cfg Config) (*App, error) {
@@ -68,35 +63,13 @@ func Bootstrap(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("bootstrap: web server: %w", err)
 	}
 
-	// Wire connectors declared in settings.
-	var connectors []model.Connector
-	if tgToken := lookupDBSetting(db, "telegram_bot_token"); tgToken != "" {
-		connectors = append(connectors, telegram.NewOutboundDispatcher(tgToken, db, convStore))
-	}
-	if phoneID := lookupDBSetting(db, "whatsapp_phone_number_id"); phoneID != "" {
-		token := lookupDBSetting(db, "whatsapp_access_token")
-		connectors = append(connectors, whatsapp.NewOutboundDispatcher(phoneID, token, db, convStore))
-	}
-	if smtpAddr := lookupDBSetting(db, "email_smtp_addr"); smtpAddr != "" {
-		connectors = append(connectors, email.NewOutboundDispatcher(email.SMTPConfig{
-			Addr:     smtpAddr,
-			From:     lookupDBSetting(db, "email_from"),
-			Username: lookupDBSetting(db, "email_smtp_username"),
-			Password: lookupDBSetting(db, "email_smtp_password"),
-		}, db, convStore))
-	}
-
-	sched := scheduler.NewDispatcher(db, convStore, rt, cfg.WorkspaceRoot)
-
 	return &App{
-		cfg:        cfg,
-		db:         db,
-		convStore:  convStore,
-		runtime:    rt,
-		replay:     rp,
-		webServer:  webSrv,
-		connectors: connectors,
-		scheduler:  sched,
+		cfg:       cfg,
+		db:        db,
+		convStore: convStore,
+		runtime:   rt,
+		replay:    rp,
+		webServer: webSrv,
 	}, nil
 }
 
