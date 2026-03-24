@@ -39,6 +39,7 @@ Remaining gaps:
 - `gistclaw serve` now hosts the local web control plane instead of only preparing state
 - the local web host now exposes read-only session directory and mailbox APIs on top of the session kernel
 - the local web host can now send a message into a session and wake it through the runtime instead of only reading mailbox state
+- session detail on the local host now exposes the active bound route so operators can see which surface/thread a session is attached to
 - plugins and extension seams are documented, not operational
 - teams are still mostly designed ahead of time, not created dynamically by the user
 

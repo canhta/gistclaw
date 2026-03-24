@@ -536,6 +536,51 @@ func TestSessionAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("detail includes active route when session is externally bound", func(t *testing.T) {
+		h := newServerHarness(t)
+		run, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-1",
+				ExternalID:  "chat-1",
+				ThreadID:    "thread-1",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Inspect the repo.",
+			WorkspaceRoot: h.workspaceRoot,
+		})
+		if err != nil {
+			t.Fatalf("StartFrontSession failed: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+run.SessionID, nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			Route *model.SessionRoute `json:"route"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if resp.Route == nil {
+			t.Fatal("expected active route in session detail response")
+		}
+		if resp.Route.ConnectorID != "telegram" || resp.Route.ThreadID != "thread-1" || resp.Route.ExternalID != "chat-1" {
+			t.Fatalf(
+				"unexpected route payload: connector_id=%q thread_id=%q external_id=%q",
+				resp.Route.ConnectorID,
+				resp.Route.ThreadID,
+				resp.Route.ExternalID,
+			)
+		}
+	})
+
 	t.Run("detail missing session returns not found", func(t *testing.T) {
 		h := newServerHarness(t)
 

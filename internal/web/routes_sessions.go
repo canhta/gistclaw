@@ -19,6 +19,7 @@ type sessionListResponse struct {
 type sessionMailboxResponse struct {
 	Session  model.Session          `json:"session"`
 	Messages []model.SessionMessage `json:"messages"`
+	Route    *model.SessionRoute    `json:"route,omitempty"`
 }
 
 type sessionSendRequest struct {
@@ -62,9 +63,19 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var route *model.SessionRoute
+	loadedRoute, err := sessions.NewService(s.db, nil).LoadRouteBySession(r.Context(), sessionID)
+	if err == nil {
+		route = &loadedRoute
+	} else if !errors.Is(err, sessions.ErrSessionRouteNotFound) {
+		http.Error(w, "failed to load session route", http.StatusInternalServerError)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, sessionMailboxResponse{
 		Session:  session,
 		Messages: messages,
+		Route:    route,
 	})
 }
 
