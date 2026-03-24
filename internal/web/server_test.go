@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -1313,6 +1314,128 @@ func TestSessionAPI(t *testing.T) {
 	})
 }
 
+func TestControlPlanePage(t *testing.T) {
+	t.Run("GET /control renders health routes and deliveries", func(t *testing.T) {
+		h := newServerHarness(t)
+		run, route, intentID := h.seedControlPlaneRoute(t)
+		h.markOutboundIntentTerminal(t, intentID)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/control", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		for _, want := range []string{"Control", "Connector Health", "Route Directory", "Delivery Queue", route.ID, run.SessionID, "telegram", "terminal"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected control page to contain %q:\n%s", want, body)
+			}
+		}
+	})
+
+	t.Run("POST /control/routes/{id}/messages wakes the bound session", func(t *testing.T) {
+		h := newServerHarness(t)
+		run, route, _ := h.seedControlPlaneRoute(t)
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/control")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"http://localhost/control/routes/"+route.ID+"/messages",
+			strings.NewReader("body=What+changed%3F"),
+		)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://localhost")
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if !strings.HasPrefix(rr.Header().Get("Location"), "/runs/") {
+			t.Fatalf("expected redirect to /runs/{id}, got %q", rr.Header().Get("Location"))
+		}
+
+		runs, err := h.db.RawDB().Query(
+			`SELECT id, session_id FROM runs WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+			run.SessionID,
+		)
+		if err != nil {
+			t.Fatalf("query latest run: %v", err)
+		}
+		defer runs.Close()
+
+		if !runs.Next() {
+			t.Fatal("expected follow-up run for bound session")
+		}
+		var latestRunID, sessionID string
+		if err := runs.Scan(&latestRunID, &sessionID); err != nil {
+			t.Fatalf("scan latest run: %v", err)
+		}
+		if latestRunID == run.ID || sessionID != run.SessionID {
+			t.Fatalf("expected new run on same session, got run=%s session=%s", latestRunID, sessionID)
+		}
+	})
+
+	t.Run("POST /control/routes/{id}/deactivate redirects and clears the active route", func(t *testing.T) {
+		h := newServerHarness(t)
+		_, route, _ := h.seedControlPlaneRoute(t)
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/control")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/control/routes/"+route.ID+"/deactivate", nil)
+		req.Header.Set("Origin", "http://localhost")
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if rr.Header().Get("Location") != "/control" {
+			t.Fatalf("expected redirect to /control, got %q", rr.Header().Get("Location"))
+		}
+
+		routes, err := h.rt.ListRoutes(context.Background(), "telegram", "active", 10)
+		if err != nil {
+			t.Fatalf("list active routes: %v", err)
+		}
+		if len(routes) != 0 {
+			t.Fatalf("expected no active telegram routes after deactivate, got %+v", routes)
+		}
+	})
+
+	t.Run("POST /control/deliveries/{id}/retry redirects and requeues terminal delivery", func(t *testing.T) {
+		h := newServerHarness(t)
+		_, _, intentID := h.seedControlPlaneRoute(t)
+		h.markOutboundIntentTerminal(t, intentID)
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/control")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/control/deliveries/"+intentID+"/retry", nil)
+		req.Header.Set("Origin", "http://localhost")
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if rr.Header().Get("Location") != "/control" {
+			t.Fatalf("expected redirect to /control, got %q", rr.Header().Get("Location"))
+		}
+
+		delivery, err := h.rt.RetryDelivery(context.Background(), intentID)
+		if !errors.Is(err, runtime.ErrDeliveryNotRetryable) {
+			t.Fatalf("expected delivery to already be requeued, got delivery=%+v err=%v", delivery, err)
+		}
+	})
+}
+
 type serverHarness struct {
 	db            *store.DB
 	server        *Server
@@ -1429,6 +1552,60 @@ func (h *serverHarness) insertRun(t *testing.T, runID, conversationID, objective
 	)
 	if err != nil {
 		t.Fatalf("insert run: %v", err)
+	}
+}
+
+func (h *serverHarness) seedControlPlaneRoute(t *testing.T) (model.Run, model.RouteDirectoryItem, string) {
+	t.Helper()
+
+	run, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Inspect Telegram.",
+		WorkspaceRoot: h.workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession telegram failed: %v", err)
+	}
+
+	routes, err := h.rt.ListRoutes(context.Background(), "telegram", "active", 10)
+	if err != nil {
+		t.Fatalf("list routes: %v", err)
+	}
+	if len(routes) != 1 {
+		t.Fatalf("expected 1 active telegram route, got %d", len(routes))
+	}
+
+	var intentID string
+	if err := h.db.RawDB().QueryRow(
+		`SELECT id
+		 FROM outbound_intents
+		 WHERE run_id = ?
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		run.ID,
+	).Scan(&intentID); err != nil {
+		t.Fatalf("load outbound intent: %v", err)
+	}
+
+	return run, routes[0], intentID
+}
+
+func (h *serverHarness) markOutboundIntentTerminal(t *testing.T, intentID string) {
+	t.Helper()
+
+	if _, err := h.db.RawDB().Exec(
+		`UPDATE outbound_intents
+		 SET status='terminal', attempts=3, last_attempt_at=datetime('now')
+		 WHERE id = ?`,
+		intentID,
+	); err != nil {
+		t.Fatalf("mark outbound intent terminal: %v", err)
 	}
 }
 

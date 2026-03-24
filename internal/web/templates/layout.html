@@ -38,6 +38,10 @@
       color: var(--text-1);
       text-decoration: none;
     }
+    nav a:hover {
+      text-decoration: underline;
+      text-underline-offset: 4px;
+    }
     main {
       max-width: 1200px;
       padding: 24px;
@@ -61,6 +65,60 @@
     .muted {
       color: var(--text-2);
     }
+    .error {
+      border: 1.5px solid #dc2626;
+      color: #dc2626;
+      padding: 12px;
+      margin-bottom: 16px;
+      background: var(--surface);
+    }
+    .grid-two {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .table th,
+    .table td {
+      border-top: 1px solid var(--border-soft);
+      padding: 8px;
+      vertical-align: top;
+      text-align: left;
+    }
+    .table th {
+      border-top: none;
+      border-bottom: 1.5px solid var(--border-hard);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .inline-form {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .inline-form input[type="text"] {
+      min-width: 220px;
+    }
+    input, textarea, select, button {
+      border: 1.5px solid var(--border-hard);
+      background: var(--surface);
+      color: var(--text-1);
+      padding: 6px 10px;
+      font: inherit;
+    }
+    button {
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .section-title {
+      margin: 0 0 12px 0;
+      font-size: 16px;
+      font-weight: 700;
+    }
   </style>
 </head>
 <body>
@@ -68,6 +126,7 @@
     <nav>
       <span>gistclaw</span>
       <a href="/runs">Runs</a>
+      <a href="/control">Control</a>
       <a href="/approvals">Approvals</a>
       <a href="/settings">Settings</a>
     </nav>

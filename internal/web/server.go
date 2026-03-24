@@ -91,6 +91,10 @@ func (s *Server) registerRoutes() {
 	}
 	s.mux.HandleFunc("GET /api/sessions", s.handleSessionsIndex)
 	s.mux.HandleFunc("GET /api/sessions/{id}", s.handleSessionDetail)
+	s.mux.HandleFunc("GET /control", s.handleControlPage)
+	s.mux.Handle("POST /control/routes/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleControlRouteSend)))
+	s.mux.Handle("POST /control/routes/{id}/deactivate", s.adminAuth(http.HandlerFunc(s.handleControlRouteDeactivate)))
+	s.mux.Handle("POST /control/deliveries/{id}/retry", s.adminAuth(http.HandlerFunc(s.handleControlDeliveryRetry)))
 	s.mux.Handle("POST /api/routes", s.adminAuth(http.HandlerFunc(s.handleRouteCreate)))
 	s.mux.HandleFunc("GET /api/routes", s.handleRoutesIndex)
 	s.mux.Handle("POST /api/routes/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleRouteSend)))
@@ -122,12 +126,17 @@ func (s *Server) registerRoutes() {
 }
 
 func (s *Server) renderTemplate(w http.ResponseWriter, title, bodyTemplate string, data any) {
+	s.renderTemplateStatus(w, http.StatusOK, title, bodyTemplate, data)
+}
+
+func (s *Server) renderTemplateStatus(w http.ResponseWriter, status int, title, bodyTemplate string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	var body bytes.Buffer
 	if err := s.templates.ExecuteTemplate(&body, bodyTemplate, data); err != nil {
 		http.Error(w, fmt.Sprintf("template render failed: %v", err), http.StatusInternalServerError)
 		return
 	}
+	w.WriteHeader(status)
 	if err := s.templates.ExecuteTemplate(w, "layout", layoutData{
 		Title: title,
 		Body:  template.HTML(body.String()),
@@ -278,6 +287,7 @@ func loadTemplates() (*template.Template, error) {
 		filepath.Join(templateDir, "settings.html"),
 		filepath.Join(templateDir, "onboarding.html"),
 		filepath.Join(templateDir, "memory.html"),
+		filepath.Join(templateDir, "control.html"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("web: parse templates: %w", err)

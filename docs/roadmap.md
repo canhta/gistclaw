@@ -50,6 +50,7 @@ Remaining gaps:
 - the local web host can now expose inactive route history with deactivation timestamps, so route replacement and cleanup remain auditable in the control plane
 - inactive route history now also records whether a binding was replaced or explicitly deactivated, so operators can tell why a route left the active set
 - the local web host now mints an HttpOnly operator session for server-rendered pages and accepts same-origin form writes through that session, so local control-plane actions no longer require a manually supplied bearer header
+- the local web host now also has a server-rendered control page for connector health, route bindings, route history, and delivery retry/deactivate/send actions, so the host is starting to catch up to the APIs it already exposed
 - web submit and Telegram ingress now share the same runtime inbound-message path, so follow-up user turns reuse the bound session instead of depending on surface-specific startup logic
 - Telegram and WhatsApp ingress now carry source message identity through the runtime, so retries are idempotent and provenance stays explicit in the session mailbox
 - WhatsApp webhook ingress and outbound draining now use that same session/runtime contract, giving the platform a second real external surface
