@@ -111,12 +111,15 @@ func TestMemoryInspector(t *testing.T) {
 	t.Run("POST /memory/{id}/forget with confirm=yes forgets and redirects", func(t *testing.T) {
 		h := newServerHarness(t)
 		id := seedMemoryFact(t, h, "coordinator", "local", "to be forgotten", "model")
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/memory")
 
 		form := url.Values{"confirm": {"yes"}}
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/memory/"+id+"/forget",
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/memory/"+id+"/forget",
 			strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://localhost")
+		req.AddCookie(cookie)
 		h.server.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusSeeOther {
@@ -138,11 +141,14 @@ func TestMemoryInspector(t *testing.T) {
 	t.Run("POST /memory/{id}/forget without confirm shows confirmation prompt", func(t *testing.T) {
 		h := newServerHarness(t)
 		id := seedMemoryFact(t, h, "coordinator", "local", "pending forget", "model")
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/memory")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/memory/"+id+"/forget",
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/memory/"+id+"/forget",
 			strings.NewReader(""))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://localhost")
+		req.AddCookie(cookie)
 		h.server.ServeHTTP(rr, req)
 
 		// Must NOT redirect; must show confirmation.
@@ -175,12 +181,15 @@ func TestMemoryInspector(t *testing.T) {
 	t.Run("POST /memory/{id}/edit updates value and redirects", func(t *testing.T) {
 		h := newServerHarness(t)
 		id := seedMemoryFact(t, h, "coordinator", "local", "old value", "model")
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/memory")
 
 		form := url.Values{"value": {"new human value"}}
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/memory/"+id+"/edit",
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/memory/"+id+"/edit",
 			strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://localhost")
+		req.AddCookie(cookie)
 		h.server.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusSeeOther {
@@ -200,5 +209,22 @@ func TestMemoryInspector(t *testing.T) {
 			}
 		}
 		t.Fatal("edited fact not found")
+	})
+
+	t.Run("POST /memory/{id}/forget rejects anonymous writes", func(t *testing.T) {
+		h := newServerHarness(t)
+		id := seedMemoryFact(t, h, "coordinator", "local", "anonymous forget", "model")
+
+		form := url.Values{"confirm": {"yes"}}
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/memory/"+id+"/forget",
+			strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnauthorized {
+			t.Fatalf("expected 401, got %d: %s", rr.Code, rr.Body.String())
+		}
 	})
 }

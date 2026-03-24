@@ -428,6 +428,70 @@ func TestAdminToken(t *testing.T) {
 			t.Fatalf("expected current token to be accepted, got 401")
 		}
 	})
+
+	t.Run("html pages mint a host admin session cookie", func(t *testing.T) {
+		h := newServerHarness(t)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/run", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+
+		cookie := findCookie(rr.Result().Cookies(), hostAdminCookieName)
+		if cookie == nil {
+			t.Fatalf("expected %s cookie to be set", hostAdminCookieName)
+		}
+		if !cookie.HttpOnly {
+			t.Fatal("expected host admin cookie to be HttpOnly")
+		}
+		if cookie.SameSite != http.SameSiteStrictMode {
+			t.Fatalf("expected SameSite=Strict, got %v", cookie.SameSite)
+		}
+	})
+
+	t.Run("same-origin host admin cookie can submit run form", func(t *testing.T) {
+		h := newServerHarness(t)
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/run")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/run", strings.NewReader("task=review"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://localhost")
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
+		}
+		if !strings.HasPrefix(rr.Header().Get("Location"), "/runs/") {
+			t.Fatalf("expected redirect to /runs/{id}, got %q", rr.Header().Get("Location"))
+		}
+	})
+
+	t.Run("cross-origin host admin cookie is rejected", func(t *testing.T) {
+		h := newServerHarness(t)
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/run")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/run", strings.NewReader("task=review"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://evil.test")
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusForbidden {
+			t.Fatalf("expected 403, got %d", rr.Code)
+		}
+		if strings.TrimSpace(rr.Body.String()) != "forbidden" {
+			t.Fatalf("expected plain-text forbidden, got %q", rr.Body.String())
+		}
+	})
 }
 
 func TestSSE(t *testing.T) {
@@ -1324,6 +1388,34 @@ func seedSettings(t *testing.T, db *store.DB, values map[string]string) {
 func (h *serverHarness) setAdminToken(t *testing.T, token string) {
 	t.Helper()
 	seedSettings(t, h.db, map[string]string{"admin_token": token})
+}
+
+func hostAdminSessionCookie(t *testing.T, h *serverHarness, pageURL string) *http.Cookie {
+	t.Helper()
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, pageURL, nil)
+
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected GET %s to succeed, got %d", pageURL, rr.Code)
+	}
+
+	cookie := findCookie(rr.Result().Cookies(), hostAdminCookieName)
+	if cookie == nil {
+		t.Fatalf("expected %s cookie after GET %s", hostAdminCookieName, pageURL)
+	}
+	return cookie
+}
+
+func findCookie(cookies []*http.Cookie, name string) *http.Cookie {
+	for _, cookie := range cookies {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+	return nil
 }
 
 func (h *serverHarness) insertRun(t *testing.T, runID, conversationID, objective, status string) {

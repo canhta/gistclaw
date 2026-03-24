@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
@@ -16,6 +17,8 @@ import (
 	"github.com/canhta/gistclaw/internal/runtime"
 	"github.com/canhta/gistclaw/internal/store"
 )
+
+const hostAdminCookieName = "gistclaw_admin"
 
 type Options struct {
 	DB              *store.DB
@@ -71,7 +74,7 @@ func NewServer(opts Options) (*Server, error) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	handler := s.recoverMiddleware(s.requestLogger(s.onboardingMiddleware(s.mux)))
+	handler := s.recoverMiddleware(s.requestLogger(s.onboardingMiddleware(s.adminSessionMiddleware(s.mux))))
 	handler.ServeHTTP(w, r)
 }
 
@@ -114,8 +117,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /onboarding/step/3", s.handleOnboardingStep3Submit)
 	s.mux.HandleFunc("GET /onboarding/step/4/{id}", s.handleOnboardingStep4)
 	s.mux.HandleFunc("GET /memory", s.handleMemoryList)
-	s.mux.HandleFunc("POST /memory/{id}/forget", s.handleMemoryForget)
-	s.mux.HandleFunc("POST /memory/{id}/edit", s.handleMemoryEdit)
+	s.mux.Handle("POST /memory/{id}/forget", s.adminAuth(http.HandlerFunc(s.handleMemoryForget)))
+	s.mux.Handle("POST /memory/{id}/edit", s.adminAuth(http.HandlerFunc(s.handleMemoryEdit)))
 }
 
 func (s *Server) renderTemplate(w http.ResponseWriter, title, bodyTemplate string, data any) {
@@ -159,18 +162,98 @@ func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
 
 func (s *Server) adminAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+		adminToken := lookupSetting(s.db, "admin_token")
+		if adminToken == "" {
 			s.writeUnauthorized(w)
 			return
 		}
 
-		adminToken := lookupSetting(s.db, "admin_token")
-		if adminToken == "" || r.Header.Get("Authorization") != "Bearer "+adminToken {
-			s.writeUnauthorized(w)
+		if s.authorizedByBearer(r, adminToken) {
+			next.ServeHTTP(w, r)
 			return
+		}
+
+		ok, trustedOrigin := s.authorizedByHostSession(r, adminToken)
+		if ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !trustedOrigin {
+			s.writeForbidden(w)
+			return
+		}
+
+		s.writeUnauthorized(w)
+	})
+}
+
+func (s *Server) adminSessionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if shouldIssueHostAdminCookie(r) {
+			if adminToken := lookupSetting(s.db, "admin_token"); adminToken != "" {
+				http.SetCookie(w, &http.Cookie{
+					Name:     hostAdminCookieName,
+					Value:    adminToken,
+					Path:     "/",
+					HttpOnly: true,
+					SameSite: http.SameSiteStrictMode,
+				})
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func shouldIssueHostAdminCookie(r *http.Request) bool {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		return false
+	}
+	if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/webhooks/") {
+		return false
+	}
+	if strings.HasSuffix(r.URL.Path, "/events") {
+		return false
+	}
+	return true
+}
+
+func (s *Server) authorizedByBearer(r *http.Request, adminToken string) bool {
+	return r.Header.Get("Authorization") == "Bearer "+adminToken
+}
+
+func (s *Server) authorizedByHostSession(r *http.Request, adminToken string) (ok bool, trustedOrigin bool) {
+	cookie, err := r.Cookie(hostAdminCookieName)
+	if err != nil || cookie.Value != adminToken {
+		return false, true
+	}
+	if !sameOriginRequest(r) {
+		return false, false
+	}
+	return true, true
+}
+
+func sameOriginRequest(r *http.Request) bool {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		return sameRequestHost(origin, r.Host)
+	}
+	if referer := r.Header.Get("Referer"); referer != "" {
+		return sameRequestHost(referer, r.Host)
+	}
+	return false
+}
+
+func sameRequestHost(rawURL, wantHost string) bool {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(parsed.Host, wantHost)
+}
+
+func (s *Server) writeForbidden(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusForbidden)
+	_, _ = w.Write([]byte("forbidden"))
 }
 
 func (s *Server) writeUnauthorized(w http.ResponseWriter) {
