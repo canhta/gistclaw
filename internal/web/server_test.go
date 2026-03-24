@@ -787,6 +787,26 @@ func TestSessionAPI(t *testing.T) {
 		if len(afterResp.Routes) != 0 {
 			t.Fatalf("expected route directory to be empty after deactivation, got %d", len(afterResp.Routes))
 		}
+
+		historyRR := httptest.NewRecorder()
+		historyReq := httptest.NewRequest(http.MethodGet, "/api/routes?connector_id=telegram&status=all", nil)
+		h.server.ServeHTTP(historyRR, historyReq)
+		if historyRR.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", historyRR.Code, historyRR.Body.String())
+		}
+
+		var historyResp struct {
+			Routes []model.RouteDirectoryItem `json:"routes"`
+		}
+		if err := json.Unmarshal(historyRR.Body.Bytes(), &historyResp); err != nil {
+			t.Fatalf("decode route history response: %v", err)
+		}
+		if len(historyResp.Routes) != 1 {
+			t.Fatalf("expected 1 historical route, got %d", len(historyResp.Routes))
+		}
+		if historyResp.Routes[0].Status != "inactive" || historyResp.Routes[0].DeactivatedAt == nil {
+			t.Fatalf("expected inactive historical route with deactivated_at, got %+v", historyResp.Routes[0])
+		}
 	})
 
 	t.Run("route send wakes the bound session", func(t *testing.T) {

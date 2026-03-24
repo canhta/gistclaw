@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/store"
@@ -491,6 +492,96 @@ func TestConversationStore_AppendEventProjectsSessionBinding(t *testing.T) {
 	}
 }
 
+func TestConversationStore_AppendEventProjectsSessionBindingReplacementHistory(t *testing.T) {
+	db := setupTestStore(t)
+	cs := NewConversationStore(db)
+	ctx := context.Background()
+
+	firstPayload, err := json.Marshal(map[string]any{
+		"thread_id":    "main",
+		"session_id":   "sess-front-1",
+		"connector_id": "telegram",
+		"account_id":   "acct-1",
+		"external_id":  "chat-1",
+		"status":       "active",
+	})
+	if err != nil {
+		t.Fatalf("marshal first binding payload: %v", err)
+	}
+	firstAt := time.Now().UTC().Add(-time.Minute)
+	if err := cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-session-bound-1",
+		ConversationID: "conv-binding",
+		RunID:          "run-front-1",
+		Kind:           "session_bound",
+		PayloadJSON:    firstPayload,
+		CreatedAt:      firstAt,
+	}); err != nil {
+		t.Fatalf("AppendEvent first session_bound failed: %v", err)
+	}
+
+	secondPayload, err := json.Marshal(map[string]any{
+		"thread_id":    "main",
+		"session_id":   "sess-front-2",
+		"connector_id": "telegram",
+		"account_id":   "acct-1",
+		"external_id":  "chat-1",
+		"status":       "active",
+	})
+	if err != nil {
+		t.Fatalf("marshal second binding payload: %v", err)
+	}
+	secondAt := time.Now().UTC()
+	if err := cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-session-bound-2",
+		ConversationID: "conv-binding",
+		RunID:          "run-front-2",
+		Kind:           "session_bound",
+		PayloadJSON:    secondPayload,
+		CreatedAt:      secondAt,
+	}); err != nil {
+		t.Fatalf("AppendEvent second session_bound failed: %v", err)
+	}
+
+	rows, err := db.RawDB().QueryContext(ctx,
+		`SELECT id, session_id, status, deactivated_at
+		 FROM session_bindings
+		 WHERE conversation_id = 'conv-binding'
+		 ORDER BY created_at ASC, id ASC`,
+	)
+	if err != nil {
+		t.Fatalf("query session binding history: %v", err)
+	}
+	defer rows.Close()
+
+	type bindingRow struct {
+		id            string
+		sessionID     string
+		status        string
+		deactivatedAt sql.NullString
+	}
+	var bindings []bindingRow
+	for rows.Next() {
+		var row bindingRow
+		if err := rows.Scan(&row.id, &row.sessionID, &row.status, &row.deactivatedAt); err != nil {
+			t.Fatalf("scan session binding history: %v", err)
+		}
+		bindings = append(bindings, row)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate session binding history: %v", err)
+	}
+	if len(bindings) != 2 {
+		t.Fatalf("expected 2 session bindings, got %d", len(bindings))
+	}
+	if bindings[0].id != "evt-session-bound-1" || bindings[0].status != "inactive" || !bindings[0].deactivatedAt.Valid {
+		t.Fatalf("unexpected first binding history row: %+v", bindings[0])
+	}
+	if bindings[1].id != "evt-session-bound-2" || bindings[1].status != "active" || bindings[1].deactivatedAt.Valid {
+		t.Fatalf("unexpected second binding history row: %+v", bindings[1])
+	}
+}
+
 func TestConversationStore_AppendEventProjectsSessionUnbound(t *testing.T) {
 	db := setupTestStore(t)
 	cs := NewConversationStore(db)
@@ -516,16 +607,17 @@ func TestConversationStore_AppendEventProjectsSessionUnbound(t *testing.T) {
 	}
 
 	var status string
+	var deactivatedAt sql.NullString
 	err = db.RawDB().QueryRowContext(ctx,
-		`SELECT status
+		`SELECT status, deactivated_at
 		 FROM session_bindings
 		 WHERE id = 'bind-1'`,
-	).Scan(&status)
+	).Scan(&status, &deactivatedAt)
 	if err != nil {
 		t.Fatalf("query session binding projection: %v", err)
 	}
-	if status != "inactive" {
-		t.Fatalf("expected inactive binding status, got %q", status)
+	if status != "inactive" || !deactivatedAt.Valid {
+		t.Fatalf("expected inactive binding with deactivated_at, got status=%q deactivated_valid=%v", status, deactivatedAt.Valid)
 	}
 }
 

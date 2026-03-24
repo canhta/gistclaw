@@ -293,9 +293,10 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 		}
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE session_bindings
-			 SET status = 'inactive'
+			 SET status = 'inactive',
+			     deactivated_at = ?
 			 WHERE conversation_id = ? AND thread_id = ? AND status = 'active'`,
-			evt.ConversationID, payload.ThreadID,
+			evt.CreatedAt, evt.ConversationID, payload.ThreadID,
 		); err != nil {
 			return err
 		}
@@ -305,8 +306,8 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 		}
 		_, err := tx.ExecContext(ctx,
 			`INSERT INTO session_bindings
-			 (id, conversation_id, thread_id, session_id, connector_id, account_id, external_id, status, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 (id, conversation_id, thread_id, session_id, connector_id, account_id, external_id, status, created_at, deactivated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
 			evt.ID,
 			evt.ConversationID,
 			payload.ThreadID,
@@ -325,9 +326,10 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 		}
 		_, err := tx.ExecContext(ctx,
 			`UPDATE session_bindings
-			 SET status = 'inactive'
+			 SET status = 'inactive',
+			     deactivated_at = ?
 			 WHERE id = ? AND status = 'active'`,
-			payload.RouteID,
+			evt.CreatedAt, payload.RouteID,
 		)
 		return err
 	case "inbound_message_recorded":

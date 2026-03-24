@@ -54,6 +54,12 @@ type DeliveryQueueFilter struct {
 	Limit       int
 }
 
+type RouteListFilter struct {
+	ConnectorID string
+	Status      string
+	Limit       int
+}
+
 func NewService(db *store.DB, conv *conversations.ConversationStore) *Service {
 	return &Service{db: db, conv: conv}
 }
@@ -259,8 +265,9 @@ func (s *Service) listSessions(ctx context.Context, conversationID string, limit
 
 func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (model.SessionRoute, error) {
 	var route model.SessionRoute
+	var deactivatedAt sql.NullString
 	err := s.db.RawDB().QueryRowContext(ctx,
-		`SELECT id, session_id, thread_id, connector_id, account_id, external_id, status, created_at
+		`SELECT id, session_id, thread_id, connector_id, account_id, external_id, status, created_at, deactivated_at
 		 FROM session_bindings
 		 WHERE session_id = ? AND status = 'active'
 		 ORDER BY created_at DESC, id DESC
@@ -275,6 +282,7 @@ func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (mod
 		&route.ExternalID,
 		&route.Status,
 		&route.CreatedAt,
+		&deactivatedAt,
 	)
 	if err == sql.ErrNoRows {
 		return model.SessionRoute{}, ErrSessionRouteNotFound
@@ -282,63 +290,76 @@ func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (mod
 	if err != nil {
 		return model.SessionRoute{}, fmt.Errorf("load route by session: %w", err)
 	}
+	if deactivatedAt.Valid && deactivatedAt.String != "" {
+		parsed, err := parseActivityTime(deactivatedAt.String)
+		if err != nil {
+			return model.SessionRoute{}, fmt.Errorf("parse route deactivated_at: %w", err)
+		}
+		route.DeactivatedAt = &parsed
+	}
 	return route, nil
 }
 
 func (s *Service) LoadRoute(ctx context.Context, routeID string) (model.RouteDirectoryItem, error) {
-	var route model.RouteDirectoryItem
-	var role string
-	err := s.db.RawDB().QueryRowContext(ctx,
+	rows, err := s.db.RawDB().QueryContext(ctx,
 		`SELECT bind.id, bind.session_id, bind.thread_id, bind.connector_id, bind.account_id, bind.external_id,
-		        bind.status, bind.created_at, bind.conversation_id, sess.agent_id, sess.role
+		        bind.status, bind.created_at, bind.deactivated_at, bind.conversation_id, sess.agent_id, sess.role
 		 FROM session_bindings bind
 		 JOIN sessions sess ON sess.id = bind.session_id
 		 WHERE bind.id = ?
 		 LIMIT 1`,
 		routeID,
-	).Scan(
-		&route.ID,
-		&route.SessionID,
-		&route.ThreadID,
-		&route.ConnectorID,
-		&route.AccountID,
-		&route.ExternalID,
-		&route.Status,
-		&route.CreatedAt,
-		&route.ConversationID,
-		&route.AgentID,
-		&role,
 	)
+	if err != nil {
+		return model.RouteDirectoryItem{}, fmt.Errorf("load route: %w", err)
+	}
+	defer rows.Close()
+
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return model.RouteDirectoryItem{}, fmt.Errorf("iterate route: %w", err)
+		}
+		return model.RouteDirectoryItem{}, ErrSessionRouteNotFound
+	}
+
+	route, err := scanRouteDirectoryItem(rows)
 	if err == sql.ErrNoRows {
 		return model.RouteDirectoryItem{}, ErrSessionRouteNotFound
 	}
 	if err != nil {
-		return model.RouteDirectoryItem{}, fmt.Errorf("load route: %w", err)
+		return model.RouteDirectoryItem{}, err
 	}
-	route.Role = model.SessionRole(role)
 	return route, nil
 }
 
-func (s *Service) ListRoutes(ctx context.Context, connectorID string, limit int) ([]model.RouteDirectoryItem, error) {
+func (s *Service) ListRoutes(ctx context.Context, filter RouteListFilter) ([]model.RouteDirectoryItem, error) {
 	query := strings.Builder{}
 	query.WriteString(
 		`SELECT bind.id, bind.session_id, bind.thread_id, bind.connector_id, bind.account_id, bind.external_id,
-		        bind.status, bind.created_at, bind.conversation_id, sess.agent_id, sess.role
+		        bind.status, bind.created_at, bind.deactivated_at, bind.conversation_id, sess.agent_id, sess.role
 		 FROM session_bindings bind
 		 JOIN sessions sess ON sess.id = bind.session_id
-		 WHERE bind.status = 'active'`,
+		 WHERE 1 = 1`,
 	)
 
 	args := make([]any, 0, 2)
-	if connectorID != "" {
+	if filter.ConnectorID != "" {
 		query.WriteString(" AND bind.connector_id = ?")
-		args = append(args, connectorID)
+		args = append(args, filter.ConnectorID)
+	}
+	status := filter.Status
+	if status == "" {
+		status = "active"
+	}
+	if status != "all" {
+		query.WriteString(" AND bind.status = ?")
+		args = append(args, status)
 	}
 	query.WriteString(`
 		 ORDER BY bind.created_at DESC, bind.id DESC`)
-	if limit > 0 {
+	if filter.Limit > 0 {
 		query.WriteString(" LIMIT ?")
-		args = append(args, limit)
+		args = append(args, filter.Limit)
 	}
 
 	rows, err := s.db.RawDB().QueryContext(ctx, query.String(), args...)
@@ -349,24 +370,10 @@ func (s *Service) ListRoutes(ctx context.Context, connectorID string, limit int)
 
 	routes := make([]model.RouteDirectoryItem, 0)
 	for rows.Next() {
-		var route model.RouteDirectoryItem
-		var role string
-		if err := rows.Scan(
-			&route.ID,
-			&route.SessionID,
-			&route.ThreadID,
-			&route.ConnectorID,
-			&route.AccountID,
-			&route.ExternalID,
-			&route.Status,
-			&route.CreatedAt,
-			&route.ConversationID,
-			&route.AgentID,
-			&role,
-		); err != nil {
-			return nil, fmt.Errorf("scan route directory item: %w", err)
+		route, err := scanRouteDirectoryItem(rows)
+		if err != nil {
+			return nil, err
 		}
-		route.Role = model.SessionRole(role)
 		routes = append(routes, route)
 	}
 	if err := rows.Err(); err != nil {
@@ -719,6 +726,39 @@ func (s *Service) LoadDeliveryQueueItem(ctx context.Context, intentID string) (m
 		return model.DeliveryQueueItem{}, err
 	}
 	return item, nil
+}
+
+func scanRouteDirectoryItem(scanner interface {
+	Scan(dest ...any) error
+}) (model.RouteDirectoryItem, error) {
+	var route model.RouteDirectoryItem
+	var role string
+	var deactivatedAt sql.NullString
+	if err := scanner.Scan(
+		&route.ID,
+		&route.SessionID,
+		&route.ThreadID,
+		&route.ConnectorID,
+		&route.AccountID,
+		&route.ExternalID,
+		&route.Status,
+		&route.CreatedAt,
+		&deactivatedAt,
+		&route.ConversationID,
+		&route.AgentID,
+		&role,
+	); err != nil {
+		return model.RouteDirectoryItem{}, fmt.Errorf("scan route directory item: %w", err)
+	}
+	route.Role = model.SessionRole(role)
+	if deactivatedAt.Valid && deactivatedAt.String != "" {
+		parsed, err := parseActivityTime(deactivatedAt.String)
+		if err != nil {
+			return model.RouteDirectoryItem{}, fmt.Errorf("parse route deactivated_at: %w", err)
+		}
+		route.DeactivatedAt = &parsed
+	}
+	return route, nil
 }
 
 func (s *Service) loadOutboundIntentStatus(ctx context.Context, intentID string) (string, error) {

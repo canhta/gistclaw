@@ -101,7 +101,12 @@ func (s *Server) handleRoutesIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	routes, err := s.rt.ListRoutes(r.Context(), r.URL.Query().Get("connector_id"), requestLimit(r, 50))
+	routes, err := s.rt.ListRoutes(
+		r.Context(),
+		r.URL.Query().Get("connector_id"),
+		r.URL.Query().Get("status"),
+		requestLimit(r, 50),
+	)
 	if err != nil {
 		http.Error(w, "failed to load routes", http.StatusInternalServerError)
 		return

@@ -33,8 +33,12 @@ func (r *Runtime) ListAllSessions(ctx context.Context, limit int) ([]model.Sessi
 	return sessions.NewService(r.store, r.convStore).ListSessions(ctx, limit)
 }
 
-func (r *Runtime) ListRoutes(ctx context.Context, connectorID string, limit int) ([]model.RouteDirectoryItem, error) {
-	return sessions.NewService(r.store, r.convStore).ListRoutes(ctx, connectorID, limit)
+func (r *Runtime) ListRoutes(ctx context.Context, connectorID, status string, limit int) ([]model.RouteDirectoryItem, error) {
+	return sessions.NewService(r.store, r.convStore).ListRoutes(ctx, sessions.RouteListFilter{
+		ConnectorID: connectorID,
+		Status:      status,
+		Limit:       limit,
+	})
 }
 
 func (r *Runtime) SessionHistory(ctx context.Context, sessionID string, limit int) (model.Session, []model.SessionMessage, error) {
@@ -125,8 +129,7 @@ func (r *Runtime) DeactivateRoute(ctx context.Context, routeID string) (model.Ro
 		return model.RouteDirectoryItem{}, fmt.Errorf("journal session_unbound: %w", err)
 	}
 
-	route.Status = "inactive"
-	return route, nil
+	return svc.LoadRoute(ctx, route.ID)
 }
 
 func (r *Runtime) BindRoute(ctx context.Context, cmd BindRouteCommand) (model.RouteDirectoryItem, error) {

@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS session_bindings (
     account_id TEXT NOT NULL DEFAULT '',
     external_id TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'active',
-    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    deactivated_at DATETIME
 );
 
 CREATE TABLE IF NOT EXISTS inbound_receipts (

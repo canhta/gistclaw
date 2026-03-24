@@ -499,7 +499,10 @@ func TestService_ListRoutes(t *testing.T) {
 		t.Fatalf("BindFollowUp whatsapp failed: %v", err)
 	}
 
-	routes, err := svc.ListRoutes(ctx, "telegram", 10)
+	routes, err := svc.ListRoutes(ctx, RouteListFilter{
+		ConnectorID: "telegram",
+		Limit:       10,
+	})
 	if err != nil {
 		t.Fatalf("ListRoutes failed: %v", err)
 	}
@@ -511,6 +514,59 @@ func TestService_ListRoutes(t *testing.T) {
 	}
 	if routes[0].ConnectorID != "telegram" || routes[0].ThreadID != "thread-1" {
 		t.Fatalf("unexpected route target: %+v", routes[0])
+	}
+}
+
+func TestService_ListRoutesIncludesInactiveHistory(t *testing.T) {
+	svc := newTestSessionService(t)
+	ctx := context.Background()
+
+	front := openFrontSession(t, svc)
+	if err := svc.BindFollowUp(ctx, BindFollowUp{
+		ConversationID: front.ConversationID,
+		ThreadID:       "thread-1",
+		SessionID:      front.ID,
+		ConnectorID:    "telegram",
+		AccountID:      "acct-1",
+		ExternalID:     "chat-1",
+	}); err != nil {
+		t.Fatalf("BindFollowUp failed: %v", err)
+	}
+
+	activeRoutes, err := svc.ListRoutes(ctx, RouteListFilter{
+		ConnectorID: "telegram",
+		Status:      "active",
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("ListRoutes active failed: %v", err)
+	}
+	if len(activeRoutes) != 1 {
+		t.Fatalf("expected 1 active route, got %d", len(activeRoutes))
+	}
+
+	if err := svc.conv.AppendEvent(ctx, model.Event{
+		ID:             "evt-route-unbound",
+		ConversationID: front.ConversationID,
+		Kind:           "session_unbound",
+		PayloadJSON:    []byte(`{"route_id":"` + activeRoutes[0].ID + `"}`),
+	}); err != nil {
+		t.Fatalf("AppendEvent session_unbound failed: %v", err)
+	}
+
+	allRoutes, err := svc.ListRoutes(ctx, RouteListFilter{
+		ConnectorID: "telegram",
+		Status:      "all",
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("ListRoutes all failed: %v", err)
+	}
+	if len(allRoutes) != 1 {
+		t.Fatalf("expected 1 historical route, got %d", len(allRoutes))
+	}
+	if allRoutes[0].Status != "inactive" || allRoutes[0].DeactivatedAt == nil {
+		t.Fatalf("expected inactive historical route with deactivated_at, got %+v", allRoutes[0])
 	}
 }
 
