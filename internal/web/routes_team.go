@@ -9,6 +9,7 @@ import (
 
 	"go.yaml.in/yaml/v4"
 
+	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime"
 )
 
@@ -63,23 +64,24 @@ type composerAgent struct {
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
 func (s *Server) handleTeamsList(w http.ResponseWriter, r *http.Request) {
-	if s.teamDir == "" {
+	if len(s.teamDirs) == 0 {
 		http.Error(w, "team directory not configured", http.StatusServiceUnavailable)
 		return
 	}
-	spec, err := loadTeamSpec(s.teamDir)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("load team: %v", err), http.StatusInternalServerError)
-		return
-	}
-	data := teamsListPageData{
-		Teams: []teamSummary{{
-			ID:         "default",
+	teams := make([]teamSummary, 0, len(s.teamDirs))
+	for id, dir := range s.teamDirs {
+		spec, err := s.cachedTeamSpec(dir)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("load team %s: %v", id, err), http.StatusInternalServerError)
+			return
+		}
+		teams = append(teams, teamSummary{
+			ID:         id,
 			Name:       spec.Name,
 			AgentCount: len(spec.Agents),
-		}},
+		})
 	}
-	s.renderTemplate(w, "Teams", "teams_list_body", data)
+	s.renderTemplate(w, "Teams", "teams_list_body", teamsListPageData{Teams: teams})
 }
 
 func (s *Server) handleSoulEditor(w http.ResponseWriter, r *http.Request) {
@@ -134,6 +136,7 @@ func (s *Server) handleSoulUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Load soul outside the lock: cachedTeamSpec acquires teamMu internally.
 	soul, soulPath, err := s.loadSoul(teamID, agentID)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -174,8 +177,14 @@ func (s *Server) handleSoulUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("marshal soul: %v", err), http.StatusInternalServerError)
 		return
 	}
-	if err := os.WriteFile(soulPath, out, 0644); err != nil {
-		http.Error(w, fmt.Sprintf("write soul: %v", err), http.StatusInternalServerError)
+
+	// Lock only for the file write to serialise concurrent soul updates.
+	s.teamMu.Lock()
+	writeErr := os.WriteFile(soulPath, out, 0644)
+	s.teamMu.Unlock()
+
+	if writeErr != nil {
+		http.Error(w, fmt.Sprintf("write soul: %v", writeErr), http.StatusInternalServerError)
 		return
 	}
 
@@ -221,6 +230,7 @@ func (s *Server) handleComposerMutate(w http.ResponseWriter, r *http.Request) {
 
 	action := r.FormValue("action")
 
+	// Load team spec outside the lock: cachedTeamSpec acquires teamMu internally.
 	spec, err := s.loadTeamSpecForID(teamID)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("load team: %v", err), http.StatusInternalServerError)
@@ -291,9 +301,16 @@ func (s *Server) handleComposerMutate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	teamPath := filepath.Join(s.teamDir, "team.yaml")
-	if err := os.WriteFile(teamPath, raw, 0644); err != nil {
-		http.Error(w, fmt.Sprintf("write team: %v", err), http.StatusInternalServerError)
+	teamDir := s.teamDirs[teamID]
+	teamPath := filepath.Join(teamDir, "team.yaml")
+
+	// Lock only for the file write to serialise concurrent team mutations.
+	s.teamMu.Lock()
+	writeErr := os.WriteFile(teamPath, raw, 0644)
+	s.teamMu.Unlock()
+
+	if writeErr != nil {
+		http.Error(w, fmt.Sprintf("write team: %v", writeErr), http.StatusInternalServerError)
 		return
 	}
 
@@ -302,15 +319,8 @@ func (s *Server) handleComposerMutate(w http.ResponseWriter, r *http.Request) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-var allowedCapabilityFlags = map[string]bool{
-	"operator_facing": true,
-	"workspace_write": true,
-	"read_heavy":      true,
-	"propose_only":    true,
-}
-
 func isAllowedCapabilityFlag(flag string) bool {
-	return allowedCapabilityFlags[flag]
+	return model.IsValidCapability(flag)
 }
 
 // reachable returns true if target is reachable from start via the given edges.
@@ -355,7 +365,7 @@ func (s *Server) loadSoul(teamID, agentID string) (*soulSpec, string, error) {
 		return nil, "", os.ErrNotExist
 	}
 
-	soulPath := filepath.Join(s.teamDir, soulFile)
+	soulPath := filepath.Join(s.teamDirs[teamID], soulFile)
 	data, err := os.ReadFile(soulPath)
 	if err != nil {
 		return nil, "", err
@@ -369,15 +379,52 @@ func (s *Server) loadSoul(teamID, agentID string) (*soulSpec, string, error) {
 }
 
 // loadTeamSpecForID loads and validates the team.yaml for the given team ID.
-// Currently only the "default" team is supported (single-team mode).
-func (s *Server) loadTeamSpecForID(_ string) (*runtime.TeamSpec, error) {
-	if s.teamDir == "" {
-		return nil, fmt.Errorf("team directory not configured")
+func (s *Server) loadTeamSpecForID(teamID string) (*runtime.TeamSpec, error) {
+	dir, ok := s.teamDirs[teamID]
+	if !ok {
+		return nil, fmt.Errorf("team %q not found", teamID)
 	}
-	return loadTeamSpec(s.teamDir)
+	return s.cachedTeamSpec(dir)
 }
 
-// loadTeamSpec reads and validates team.yaml from teamDir.
+// cachedTeamSpec returns the parsed TeamSpec for teamDir, re-reading only if
+// team.yaml has been modified since the last parse.
+// Caller must NOT hold teamMu — this method acquires it internally.
+func (s *Server) cachedTeamSpec(teamDir string) (*runtime.TeamSpec, error) {
+	path := filepath.Join(teamDir, "team.yaml")
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, fmt.Errorf("stat team.yaml: %w", err)
+	}
+	mtime := info.ModTime()
+
+	s.teamMu.Lock()
+	entry, hit := s.teamCache[teamDir]
+	s.teamMu.Unlock()
+
+	if hit && !entry.mtime.Before(mtime) {
+		return entry.spec, nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read team.yaml: %w", err)
+	}
+	spec, err := runtime.LoadTeamSpec(data)
+	if err != nil {
+		return nil, err
+	}
+
+	s.teamMu.Lock()
+	s.teamCache[teamDir] = teamSpecCacheEntry{spec: spec, mtime: mtime}
+	s.teamMu.Unlock()
+
+	return spec, nil
+}
+
+// loadTeamSpec reads and validates team.yaml from teamDir (no cache).
+// Used during write operations where stale cache must not be returned.
 func loadTeamSpec(teamDir string) (*runtime.TeamSpec, error) {
 	data, err := os.ReadFile(filepath.Join(teamDir, "team.yaml"))
 	if err != nil {

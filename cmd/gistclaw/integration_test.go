@@ -3,7 +3,10 @@ package main
 import (
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +19,7 @@ import (
 )
 
 func TestMain_RunAndInspectFlow(t *testing.T) {
+	startMockAnthropicServer(t)
 	bin := buildBinary(t)
 	cfgPath, _ := writeCLIConfig(t)
 
@@ -51,6 +55,7 @@ func TestMain_RunAndInspectFlow(t *testing.T) {
 }
 
 func TestMain_InspectTokenReadsSettings(t *testing.T) {
+	startMockAnthropicServer(t)
 	bin := buildBinary(t)
 	cfgPath, dbPath := writeCLIConfig(t)
 
@@ -109,6 +114,29 @@ func TestMain_ServeStartsAndStopsOnInterrupt(t *testing.T) {
 	if err := cmd.Wait(); err != nil && !strings.Contains(err.Error(), "signal: interrupt") {
 		t.Fatalf("serve command exited with error: %v\n%s", err, output.String())
 	}
+}
+
+// startMockAnthropicServer starts an httptest.Server that returns minimal valid
+// Anthropic Messages API responses, sets ANTHROPIC_BASE_URL so the provider
+// uses it, and registers cleanup. Must be called before Bootstrap / loadApp.
+func startMockAnthropicServer(t *testing.T) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"id":   "msg_test",
+			"type": "message",
+			"role": "assistant",
+			"content": []map[string]any{
+				{"type": "text", "text": "mock response"},
+			},
+			"stop_reason": "end_turn",
+			"usage":       map[string]any{"input_tokens": 10, "output_tokens": 5},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("ANTHROPIC_BASE_URL", srv.URL)
 }
 
 func buildBinary(t *testing.T) string {

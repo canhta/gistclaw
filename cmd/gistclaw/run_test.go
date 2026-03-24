@@ -31,6 +31,7 @@ func TestRun_HelpAndUnknownCommand(t *testing.T) {
 }
 
 func TestRun_RunAndInspectCommands(t *testing.T) {
+	startMockAnthropicServer(t)
 	cfgPath, _ := writeCLIConfig(t)
 
 	var stdout bytes.Buffer

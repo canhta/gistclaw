@@ -2,6 +2,9 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"testing"
 )
@@ -116,8 +119,32 @@ func TestApp_PrepareReconcilesInterruptedRuns(t *testing.T) {
 	}
 }
 
+// startMockAnthropicServer starts a local httptest.Server that returns minimal
+// valid Anthropic Messages API responses, and points the provider at it via
+// ANTHROPIC_BASE_URL. Must be called before Bootstrap.
+func startMockAnthropicServer(t *testing.T) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp := map[string]any{
+			"id":   "msg_test",
+			"type": "message",
+			"role": "assistant",
+			"content": []map[string]any{
+				{"type": "text", "text": "mock response"},
+			},
+			"stop_reason": "end_turn",
+			"usage":       map[string]any{"input_tokens": 10, "output_tokens": 5},
+		}
+		_ = json.NewEncoder(w).Encode(resp)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("ANTHROPIC_BASE_URL", srv.URL)
+}
+
 func setupCommandApp(t *testing.T) *App {
 	t.Helper()
+	startMockAnthropicServer(t)
 
 	cfg := Config{
 		DatabasePath:  filepath.Join(t.TempDir(), "state", "runtime.db"),

@@ -120,6 +120,27 @@ type MemoryFilter struct {
 	AgentID string
 }
 
+// GetByID returns a single non-forgotten memory item by its ID.
+// Returns sql.ErrNoRows if the item does not exist or has been forgotten.
+func (s *Store) GetByID(ctx context.Context, id string) (model.MemoryItem, error) {
+	var item model.MemoryItem
+	err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT id, agent_id, scope, content, source, COALESCE(provenance, ''),
+		 COALESCE(confidence, 0), COALESCE(dedupe_key, ''), created_at, updated_at
+		 FROM memory_items
+		 WHERE id = ? AND forgotten_at IS NULL`,
+		id,
+	).Scan(
+		&item.ID, &item.AgentID, &item.Scope, &item.Content, &item.Source,
+		&item.Provenance, &item.Confidence, &item.DedupeKey,
+		&item.CreatedAt, &item.UpdatedAt,
+	)
+	if err != nil {
+		return model.MemoryItem{}, fmt.Errorf("memory: get by id: %w", err)
+	}
+	return item, nil
+}
+
 // Filter returns all non-forgotten facts matching the given filter.
 func (s *Store) Filter(ctx context.Context, f MemoryFilter) ([]model.MemoryItem, error) {
 	q := `SELECT id, agent_id, scope, content, source, COALESCE(provenance, ''),

@@ -64,20 +64,13 @@ func (s *Server) handleMemoryForget(w http.ResponseWriter, r *http.Request) {
 	confirm := r.FormValue("confirm")
 
 	if confirm != "yes" {
-		// Show confirmation view.
-		facts, err := s.rt.Memory().Filter(r.Context(), memory.MemoryFilter{})
+		// Show confirmation view — use targeted GetByID instead of a full scan.
+		item, err := s.rt.Memory().GetByID(r.Context(), factID)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("load memory: %v", err), http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("load memory item: %v", err), http.StatusInternalServerError)
 			return
 		}
-		var target *model.MemoryItem
-		for i := range facts {
-			if facts[i].ID == factID {
-				target = &facts[i]
-				break
-			}
-		}
-		data := memoryPageData{Confirm: target}
+		data := memoryPageData{Confirm: &item}
 		s.renderTemplate(w, "Memory", "memory_body", data)
 		return
 	}

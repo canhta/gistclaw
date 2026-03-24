@@ -16,11 +16,11 @@ func (a *App) Prepare(ctx context.Context) error {
 		}
 	}
 
-	// Drain any pending Telegram intents from a previous session.
-	if a.tgDispatch != nil {
-		if err := a.tgDispatch.Drain(ctx); err != nil {
+	// Drain any pending outbound intents from a previous session for all connectors.
+	for _, c := range a.connectors {
+		if err := c.Drain(ctx); err != nil {
 			// Drain failure is non-fatal — log and continue.
-			fmt.Printf("telegram: drain warning: %v\n", err)
+			fmt.Printf("connector %s: drain warning: %v\n", c.ID(), err)
 		}
 	}
 
@@ -30,6 +30,17 @@ func (a *App) Prepare(ctx context.Context) error {
 func (a *App) Start(ctx context.Context) error {
 	if err := a.Prepare(ctx); err != nil {
 		return err
+	}
+
+	// Start the cron scheduler in a background goroutine. It exits when ctx
+	// is cancelled; any errors are non-fatal (individual schedule failures are
+	// logged inline by the dispatcher).
+	if a.scheduler != nil {
+		go func() {
+			if err := a.scheduler.Run(ctx); err != nil && ctx.Err() == nil {
+				fmt.Printf("scheduler: exited unexpectedly: %v\n", err)
+			}
+		}()
 	}
 
 	<-ctx.Done()
@@ -42,4 +53,3 @@ func (a *App) Stop() error {
 	}
 	return nil
 }
-

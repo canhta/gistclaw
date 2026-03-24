@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
@@ -18,11 +20,21 @@ import (
 )
 
 type Options struct {
-	DB          *store.DB
-	Replay      *replay.Service
+	DB       *store.DB
+	Replay   *replay.Service
 	Broadcaster *SSEBroadcaster
-	Runtime     *runtime.Runtime
-	TeamDir     string
+	Runtime  *runtime.Runtime
+	// TeamDir is a convenience field for single-team mode; maps to teamDirs["default"].
+	TeamDir string
+	// TeamDirs maps teamID → directory path for multi-team mode.
+	// If set, TeamDir is ignored.
+	TeamDirs map[string]string
+}
+
+// teamSpecCacheEntry holds a parsed TeamSpec with its file modification time.
+type teamSpecCacheEntry struct {
+	spec  *runtime.TeamSpec
+	mtime time.Time
 }
 
 type Server struct {
@@ -30,7 +42,9 @@ type Server struct {
 	replay      *replay.Service
 	broadcaster *SSEBroadcaster
 	rt          *runtime.Runtime
-	teamDir     string
+	teamDirs    map[string]string // teamID → directory path
+	teamMu      sync.Mutex        // guards team.yaml/soul file read-mutate-write + cache
+	teamCache   map[string]teamSpecCacheEntry // keyed by directory path
 	templates   *template.Template
 	mux         *http.ServeMux
 }
@@ -56,12 +70,21 @@ func NewServer(opts Options) (*Server, error) {
 		return nil, err
 	}
 
+	teamDirs := opts.TeamDirs
+	if teamDirs == nil && opts.TeamDir != "" {
+		teamDirs = map[string]string{"default": opts.TeamDir}
+	}
+	if teamDirs == nil {
+		teamDirs = map[string]string{}
+	}
+
 	s := &Server{
 		db:          opts.DB,
 		replay:      opts.Replay,
 		broadcaster: opts.Broadcaster,
 		rt:          opts.Runtime,
-		teamDir:     opts.TeamDir,
+		teamDirs:    teamDirs,
+		teamCache:   make(map[string]teamSpecCacheEntry),
 		templates:   tpls,
 		mux:         http.NewServeMux(),
 	}

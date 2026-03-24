@@ -36,19 +36,18 @@ func LoadTeamSpec(data []byte) (*TeamSpec, error) {
 		return nil, fmt.Errorf("team: parse yaml: %w", err)
 	}
 
-	// Validate required fields are present (non-nil after unmarshal).
-	// We check by re-parsing into a raw map so we can distinguish "missing
-	// key" from "present but empty".
-	var raw map[string]any
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("team: parse yaml for validation: %w", err)
+	// Validate required fields after unmarshal by checking struct zero values.
+	// A missing YAML key leaves the field at its zero value (nil slice/map).
+	// We distinguish "present but empty" from "absent" by checking whether
+	// the key existed at all in the raw document via a targeted nil check.
+	if spec.Agents == nil {
+		return nil, fmt.Errorf("team: required field %q is missing", "agents")
 	}
-
-	required := []string{"agents", "capability_flags", "handoff_edges"}
-	for _, field := range required {
-		if _, ok := raw[field]; !ok {
-			return nil, fmt.Errorf("team: required field %q is missing", field)
-		}
+	if spec.CapabilityFlags == nil {
+		return nil, fmt.Errorf("team: required field %q is missing", "capability_flags")
+	}
+	if spec.HandoffEdges == nil {
+		return nil, fmt.Errorf("team: required field %q is missing", "handoff_edges")
 	}
 
 	// Build a set of declared agent IDs for edge validation.

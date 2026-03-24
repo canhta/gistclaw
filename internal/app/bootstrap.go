@@ -6,13 +6,18 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	"github.com/canhta/gistclaw/internal/connectors/email"
+	"github.com/canhta/gistclaw/internal/connectors/telegram"
+	"github.com/canhta/gistclaw/internal/connectors/whatsapp"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
+	anthropicprov "github.com/canhta/gistclaw/internal/providers/anthropic"
+	openaiprov "github.com/canhta/gistclaw/internal/providers/openai"
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
+	"github.com/canhta/gistclaw/internal/scheduler"
 	"github.com/canhta/gistclaw/internal/store"
-	"github.com/canhta/gistclaw/internal/telegram"
 	"github.com/canhta/gistclaw/internal/tools"
 	"github.com/canhta/gistclaw/internal/web"
 )
@@ -24,7 +29,8 @@ type App struct {
 	runtime    *runtime.Runtime
 	replay     *replay.Service
 	webServer  *web.Server
-	tgDispatch *telegram.OutboundDispatcher
+	connectors []model.Connector
+	scheduler  *scheduler.Dispatcher
 }
 
 func Bootstrap(cfg Config) (*App, error) {
@@ -62,11 +68,25 @@ func Bootstrap(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("bootstrap: web server: %w", err)
 	}
 
-	// Wire Telegram connector if a bot token is present in settings.
-	var tgDispatch *telegram.OutboundDispatcher
+	// Wire connectors declared in settings.
+	var connectors []model.Connector
 	if tgToken := lookupDBSetting(db, "telegram_bot_token"); tgToken != "" {
-		tgDispatch = telegram.NewOutboundDispatcher(tgToken, db, convStore)
+		connectors = append(connectors, telegram.NewOutboundDispatcher(tgToken, db, convStore))
 	}
+	if phoneID := lookupDBSetting(db, "whatsapp_phone_number_id"); phoneID != "" {
+		token := lookupDBSetting(db, "whatsapp_access_token")
+		connectors = append(connectors, whatsapp.NewOutboundDispatcher(phoneID, token, db, convStore))
+	}
+	if smtpAddr := lookupDBSetting(db, "email_smtp_addr"); smtpAddr != "" {
+		connectors = append(connectors, email.NewOutboundDispatcher(email.SMTPConfig{
+			Addr:     smtpAddr,
+			From:     lookupDBSetting(db, "email_from"),
+			Username: lookupDBSetting(db, "email_smtp_username"),
+			Password: lookupDBSetting(db, "email_smtp_password"),
+		}, db, convStore))
+	}
+
+	sched := scheduler.NewDispatcher(db, convStore, rt, cfg.WorkspaceRoot)
 
 	return &App{
 		cfg:        cfg,
@@ -75,7 +95,8 @@ func Bootstrap(cfg Config) (*App, error) {
 		runtime:    rt,
 		replay:     rp,
 		webServer:  webSrv,
-		tgDispatch: tgDispatch,
+		connectors: connectors,
+		scheduler:  sched,
 	}, nil
 }
 
@@ -129,15 +150,35 @@ func storeWiring(cfg Config) (*store.DB, error) {
 }
 
 func runtimeWiring(
-	_ Config,
+	cfg Config,
 	db *store.DB,
 	cs *conversations.ConversationStore,
 	reg *tools.Registry,
 	mem *memory.Store,
 	sink model.RunEventSink,
 ) *runtime.Runtime {
-	prov := runtime.NewMockProvider(nil, nil)
+	prov := buildProvider(cfg.Provider)
 	return runtime.New(db, cs, reg, mem, prov, sink)
+}
+
+// buildProvider instantiates the correct runtime.Provider from the config.
+// Supports "anthropic" (default) and any OpenAI-compatible provider ("openai").
+// The base_url field allows pointing at alternative endpoints (Ollama, Groq,
+// Azure OpenAI, LM Studio, Together AI, etc.).
+func buildProvider(cfg ProviderConfig) runtime.Provider {
+	modelID := cfg.Models.Strong
+	switch cfg.Name {
+	case "openai":
+		if modelID == "" {
+			modelID = "gpt-4o"
+		}
+		return openaiprov.New(cfg.APIKey, modelID, cfg.BaseURL)
+	default: // "anthropic" and anything unrecognised falls back to Anthropic
+		if modelID == "" {
+			modelID = "claude-3-5-sonnet-20241022"
+		}
+		return anthropicprov.New(cfg.APIKey, modelID)
+	}
 }
 
 func replayWiring(db *store.DB) *replay.Service {

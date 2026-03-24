@@ -90,6 +90,19 @@ const (
 	CapProposeOnly    AgentCapability = "propose_only"
 )
 
+// validCapabilities is the canonical set of allowed agent capability flag strings.
+var validCapabilities = map[AgentCapability]bool{
+	CapWorkspaceWrite: true,
+	CapOperatorFacing: true,
+	CapReadHeavy:      true,
+	CapProposeOnly:    true,
+}
+
+// IsValidCapability reports whether s names a known AgentCapability flag.
+func IsValidCapability(s string) bool {
+	return validCapabilities[AgentCapability(s)]
+}
+
 type ToolRisk string
 
 const (

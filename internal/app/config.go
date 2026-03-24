@@ -18,9 +18,10 @@ type Config struct {
 }
 
 type ProviderConfig struct {
-	Name   string     `yaml:"name"`
-	APIKey string     `yaml:"api_key"`
-	Models ModelLanes `yaml:"models"`
+	Name    string     `yaml:"name"`
+	APIKey  string     `yaml:"api_key"`
+	BaseURL string     `yaml:"base_url"` // optional; overrides the default endpoint (e.g. for Ollama, Groq, Azure)
+	Models  ModelLanes `yaml:"models"`
 }
 
 type ModelLanes struct {

@@ -27,7 +27,9 @@ var outboundAllowedKinds = map[string]bool{
 }
 
 // OutboundDispatcher writes outbound_intents and delivers them via sendMessage.
+// It implements model.Connector for the Telegram channel.
 type OutboundDispatcher struct {
+	connectorID string
 	bot         *Bot
 	db          *store.DB
 	cs          *conversations.ConversationStore
@@ -35,9 +37,16 @@ type OutboundDispatcher struct {
 	retryDelay  time.Duration
 }
 
+// ID returns the connector identifier stored in outbound_intents.connector_id.
+func (d *OutboundDispatcher) ID() string { return d.connectorID }
+
+// Start runs the bot's long-poll loop until ctx is cancelled.
+func (d *OutboundDispatcher) Start(ctx context.Context) error { return d.bot.Start(ctx) }
+
 // NewOutboundDispatcher creates a dispatcher. token is the Telegram bot token.
 func NewOutboundDispatcher(token string, db *store.DB, cs *conversations.ConversationStore) *OutboundDispatcher {
 	return &OutboundDispatcher{
+		connectorID: "telegram",
 		bot:         NewBot(token, nil),
 		db:          db,
 		cs:          cs,
@@ -69,8 +78,8 @@ func (d *OutboundDispatcher) Notify(ctx context.Context, chatID string, delta mo
 	_, err := d.db.RawDB().ExecContext(ctx,
 		`INSERT INTO outbound_intents
 		 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at)
-		 VALUES (?, ?, 'telegram', ?, ?, ?, 'pending', 0, datetime('now'))`,
-		intentID, delta.RunID, chatID, text, dedupeKey,
+		 VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, datetime('now'))`,
+		intentID, delta.RunID, d.connectorID, chatID, text, dedupeKey,
 	)
 	if err != nil {
 		return fmt.Errorf("telegram: write intent: %w", err)
@@ -83,7 +92,8 @@ func (d *OutboundDispatcher) Notify(ctx context.Context, chatID string, delta mo
 func (d *OutboundDispatcher) Drain(ctx context.Context) error {
 	rows, err := d.db.RawDB().QueryContext(ctx,
 		`SELECT id, chat_id, message_text, run_id FROM outbound_intents
-		 WHERE status IN ('pending', 'retrying') AND connector_id = 'telegram'`)
+		 WHERE status IN ('pending', 'retrying') AND connector_id = ?`,
+		d.connectorID)
 	if err != nil {
 		return fmt.Errorf("telegram: drain query: %w", err)
 	}
