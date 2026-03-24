@@ -31,13 +31,33 @@ CREATE TABLE IF NOT EXISTS runs (
     updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE TABLE IF NOT EXISTS delegations (
+CREATE TABLE IF NOT EXISTS sessions (
     id TEXT PRIMARY KEY,
-    root_run_id TEXT NOT NULL,
-    parent_run_id TEXT NOT NULL,
-    child_run_id TEXT,
-    target_agent_id TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'queued',
+    conversation_id TEXT NOT NULL,
+    key TEXT NOT NULL UNIQUE,
+    agent_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    parent_session_id TEXT,
+    controller_session_id TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS session_messages (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    sender_session_id TEXT,
+    kind TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS session_bindings (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'active',
     created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -132,7 +152,9 @@ CREATE TABLE IF NOT EXISTS run_summaries (
 
 CREATE INDEX IF NOT EXISTS idx_events_run_id_created_at ON events(run_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_runs_conversation_id_status ON runs(conversation_id, status);
-CREATE INDEX IF NOT EXISTS idx_delegations_parent_run_id_status ON delegations(parent_run_id, status);
+CREATE INDEX IF NOT EXISTS idx_sessions_conversation_id_status ON sessions(conversation_id, status);
+CREATE INDEX IF NOT EXISTS idx_session_messages_session_id_created_at ON session_messages(session_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_session_bindings_conversation_id_thread_id_status ON session_bindings(conversation_id, thread_id, status);
 CREATE INDEX IF NOT EXISTS idx_approvals_run_id_status ON approvals(run_id, status);
 CREATE INDEX IF NOT EXISTS idx_memory_items_agent_id_scope ON memory_items(agent_id, scope);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_one_active_root_per_conversation

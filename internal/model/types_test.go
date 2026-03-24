@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"reflect"
 	"testing"
 )
 
@@ -70,4 +71,26 @@ func TestRunStatus_AllDefined(t *testing.T) {
 
 func TestNoopEventSink_ImplementsInterface(t *testing.T) {
 	var _ RunEventSink = &NoopEventSink{}
+}
+
+func TestSessionMessageKindsRemainStable(t *testing.T) {
+	got := []SessionMessageKind{
+		MessageUser,
+		MessageAssistant,
+		MessageSpawn,
+		MessageAnnounce,
+		MessageSteer,
+		MessageAgentSend,
+	}
+	want := []SessionMessageKind{
+		"user",
+		"assistant",
+		"spawn",
+		"announce",
+		"steer",
+		"agent_send",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected message kinds: %#v", got)
+	}
 }

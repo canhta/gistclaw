@@ -67,9 +67,9 @@ func TestMigrate_FreshDB(t *testing.T) {
 	}
 
 	tables := []string{
-		"conversations", "events", "runs", "delegations", "tool_calls",
-		"approvals", "receipts", "memory_items", "outbound_intents",
-		"settings", "run_summaries",
+		"conversations", "events", "runs", "sessions", "session_messages",
+		"session_bindings", "tool_calls", "approvals", "receipts",
+		"memory_items", "outbound_intents", "settings", "run_summaries",
 	}
 	for _, table := range tables {
 		var name string
@@ -85,7 +85,9 @@ func TestMigrate_FreshDB(t *testing.T) {
 	indexes := []string{
 		"idx_events_run_id_created_at",
 		"idx_runs_conversation_id_status",
-		"idx_delegations_parent_run_id_status",
+		"idx_sessions_conversation_id_status",
+		"idx_session_messages_session_id_created_at",
+		"idx_session_bindings_conversation_id_thread_id_status",
 		"idx_approvals_run_id_status",
 		"idx_memory_items_agent_id_scope",
 	}
@@ -173,5 +175,46 @@ func TestMigrate_EnforcesSingleActiveRootRunPerConversation(t *testing.T) {
 	)
 	if err == nil {
 		t.Fatal("expected unique constraint for second active root run, got nil")
+	}
+}
+
+func TestMigrateCreatesSessionRuntimeTables(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer db.Close()
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+
+	for _, table := range []string{
+		"conversations",
+		"events",
+		"runs",
+		"sessions",
+		"session_messages",
+		"session_bindings",
+		"tool_calls",
+		"approvals",
+		"receipts",
+	} {
+		var name string
+		err := db.db.QueryRow(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+			table,
+		).Scan(&name)
+		if err != nil {
+			t.Fatalf("expected table %q to exist: %v", table, err)
+		}
+	}
+
+	var name string
+	err = db.db.QueryRow(
+		"SELECT name FROM sqlite_master WHERE type='table' AND name='delegations'",
+	).Scan(&name)
+	if err == nil {
+		t.Fatal("expected delegations table to be absent")
 	}
 }

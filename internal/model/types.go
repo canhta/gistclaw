@@ -72,6 +72,24 @@ const (
 	RunStatusFailed        RunStatus = "failed"
 )
 
+type SessionRole string
+
+const (
+	SessionRoleFront  SessionRole = "front"
+	SessionRoleWorker SessionRole = "worker"
+)
+
+type SessionMessageKind string
+
+const (
+	MessageUser      SessionMessageKind = "user"
+	MessageAssistant SessionMessageKind = "assistant"
+	MessageSpawn     SessionMessageKind = "spawn"
+	MessageAnnounce  SessionMessageKind = "announce"
+	MessageSteer     SessionMessageKind = "steer"
+	MessageAgentSend SessionMessageKind = "agent_send"
+)
+
 type RunPhase string
 
 const (
@@ -127,6 +145,28 @@ type Event struct {
 	Kind           string
 	PayloadJSON    []byte
 	CreatedAt      time.Time
+}
+
+type Session struct {
+	ID                  string
+	ConversationID      string
+	Key                 string
+	AgentID             string
+	Role                SessionRole
+	ParentSessionID     string
+	ControllerSessionID string
+	Status              string
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
+type SessionMessage struct {
+	ID              string
+	SessionID       string
+	SenderSessionID string
+	Kind            SessionMessageKind
+	Body            string
+	CreatedAt       time.Time
 }
 
 type RunRef struct {
