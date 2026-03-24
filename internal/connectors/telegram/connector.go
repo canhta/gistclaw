@@ -20,7 +20,7 @@ func NewConnector(
 	token string,
 	db *store.DB,
 	cs *conversations.ConversationStore,
-	rt FrontSessionStarter,
+	rt InboundMessageReceiver,
 	defaultAgentID string,
 	workspaceRoot string,
 ) *Connector {

@@ -19,6 +19,13 @@ type StartFrontSession struct {
 	WorkspaceRoot   string
 }
 
+type InboundMessageCommand struct {
+	ConversationKey conversations.ConversationKey
+	FrontAgentID    string
+	Body            string
+	WorkspaceRoot   string
+}
+
 type SpawnCommand struct {
 	ControllerSessionID string
 	AgentID             string
@@ -109,6 +116,38 @@ func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) 
 	})
 }
 
+func (r *Runtime) ReceiveInboundMessage(ctx context.Context, cmd InboundMessageCommand) (model.Run, error) {
+	conv, err := r.convStore.Resolve(ctx, cmd.ConversationKey)
+	if err != nil {
+		return model.Run{}, fmt.Errorf("resolve conversation: %w", err)
+	}
+
+	threadID := normalizeThreadID(cmd.ConversationKey.ThreadID)
+	sessionID, createSession, createBinding, err := r.resolveFrontSession(ctx, conv.ID, threadID)
+	if err != nil {
+		return model.Run{}, err
+	}
+	if createSession || createBinding {
+		return r.StartFrontSession(ctx, StartFrontSession{
+			ConversationKey: cmd.ConversationKey,
+			FrontAgentID:    cmd.FrontAgentID,
+			InitialPrompt:   cmd.Body,
+			WorkspaceRoot:   cmd.WorkspaceRoot,
+		})
+	}
+
+	return r.sendSession(ctx, sendSessionOptions{
+		toSessionID: sessionID,
+		body:        cmd.Body,
+		kind:        model.MessageUser,
+		provenance: model.SessionMessageProvenance{
+			Kind:              model.MessageProvenanceInbound,
+			SourceConnectorID: cmd.ConversationKey.ConnectorID,
+			SourceThreadID:    threadID,
+		},
+	})
+}
+
 func (r *Runtime) Spawn(ctx context.Context, cmd SpawnCommand) (model.Run, error) {
 	controllerSession, controllerRun, err := r.loadSessionRun(ctx, cmd.ControllerSessionID)
 	if err != nil {
@@ -179,39 +218,64 @@ func (r *Runtime) AgentSend(ctx context.Context, cmd AgentSendCommand) error {
 }
 
 func (r *Runtime) SendSession(ctx context.Context, cmd SendSessionCommand) (model.Run, error) {
-	if strings.TrimSpace(cmd.Body) == "" {
+	opts := sendSessionOptions{
+		fromSessionID: cmd.FromSessionID,
+		toSessionID:   cmd.ToSessionID,
+		body:          cmd.Body,
+	}
+	if cmd.FromSessionID == "" {
+		opts.kind = model.MessageUser
+		opts.provenance = model.SessionMessageProvenance{
+			Kind:              model.MessageProvenanceInbound,
+			SourceConnectorID: "web",
+		}
+	}
+	return r.sendSession(ctx, opts)
+}
+
+type sendSessionOptions struct {
+	fromSessionID string
+	toSessionID   string
+	body          string
+	kind          model.SessionMessageKind
+	provenance    model.SessionMessageProvenance
+}
+
+func (r *Runtime) sendSession(ctx context.Context, opts sendSessionOptions) (model.Run, error) {
+	if strings.TrimSpace(opts.body) == "" {
 		return model.Run{}, fmt.Errorf("runtime: session message body is required")
 	}
 
-	targetSession, targetRun, err := r.loadSessionRun(ctx, cmd.ToSessionID)
+	targetSession, targetRun, err := r.loadSessionRun(ctx, opts.toSessionID)
 	if err != nil {
 		return model.Run{}, err
 	}
 
-	kind := model.MessageUser
-	senderSessionID := ""
-	provenance := model.SessionMessageProvenance{
-		Kind:              model.MessageProvenanceInbound,
-		SourceConnectorID: "web",
+	kind := opts.kind
+	if kind == "" {
+		kind = model.MessageAgentSend
 	}
-	if cmd.FromSessionID != "" {
-		sourceSession, sourceRun, err := r.loadSessionRun(ctx, cmd.FromSessionID)
+	senderSessionID := ""
+	provenance := opts.provenance
+	if opts.fromSessionID != "" {
+		sourceSession, sourceRun, err := r.loadSessionRun(ctx, opts.fromSessionID)
 		if err != nil {
 			return model.Run{}, err
 		}
 		if sourceSession.ConversationID != targetSession.ConversationID {
 			return model.Run{}, fmt.Errorf(
 				"runtime: session %s cannot message session %s across conversations",
-				cmd.FromSessionID,
-				cmd.ToSessionID,
+				opts.fromSessionID,
+				opts.toSessionID,
 			)
 		}
-		kind = model.MessageAgentSend
 		senderSessionID = sourceSession.ID
-		provenance = model.SessionMessageProvenance{
-			Kind:            model.MessageProvenanceInterSession,
-			SourceSessionID: sourceSession.ID,
-			SourceRunID:     sourceRun.ID,
+		if provenance == (model.SessionMessageProvenance{}) {
+			provenance = model.SessionMessageProvenance{
+				Kind:            model.MessageProvenanceInterSession,
+				SourceSessionID: sourceSession.ID,
+				SourceRunID:     sourceRun.ID,
+			}
 		}
 	}
 
@@ -228,7 +292,7 @@ func (r *Runtime) SendSession(ctx context.Context, cmd SendSessionCommand) (mode
 		ConversationID: targetSession.ConversationID,
 		AgentID:        targetSession.AgentID,
 		SessionID:      targetSession.ID,
-		Objective:      cmd.Body,
+		Objective:      opts.body,
 		WorkspaceRoot:  targetRun.WorkspaceRoot,
 	}
 	if err := r.createRun(ctx, runID, parentRunID, start); err != nil {
@@ -241,7 +305,7 @@ func (r *Runtime) SendSession(ctx context.Context, cmd SendSessionCommand) (mode
 		targetSession.ID,
 		senderSessionID,
 		kind,
-		cmd.Body,
+		opts.body,
 		provenance,
 	); err != nil {
 		return model.Run{}, err
@@ -252,7 +316,7 @@ func (r *Runtime) SendSession(ctx context.Context, cmd SendSessionCommand) (mode
 		conversationID: targetSession.ConversationID,
 		agentID:        targetSession.AgentID,
 		sessionID:      targetSession.ID,
-		objective:      cmd.Body,
+		objective:      opts.body,
 	})
 }
 

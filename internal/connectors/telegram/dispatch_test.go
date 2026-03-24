@@ -10,12 +10,12 @@ import (
 	"github.com/canhta/gistclaw/internal/store"
 )
 
-// stubStarter records the StartFrontSession calls made to it.
-type stubStarter struct {
-	calls []runtime.StartFrontSession
+// stubIngress records the ReceiveInboundMessage calls made to it.
+type stubIngress struct {
+	calls []runtime.InboundMessageCommand
 }
 
-func (s *stubStarter) StartFrontSession(_ context.Context, req runtime.StartFrontSession) (model.Run, error) {
+func (s *stubIngress) ReceiveInboundMessage(_ context.Context, req runtime.InboundMessageCommand) (model.Run, error) {
 	s.calls = append(s.calls, req)
 	return model.Run{ID: "test-run"}, nil
 }
@@ -35,8 +35,8 @@ func setupDispatchDB(t *testing.T) (*store.DB, *conversations.ConversationStore)
 }
 
 func TestInboundDispatcher_DispatchesEnvelopeToRuntime(t *testing.T) {
-	starter := &stubStarter{}
-	dispatcher := NewInboundDispatcher(starter, "assistant", "")
+	ingress := &stubIngress{}
+	dispatcher := NewInboundDispatcher(ingress, "assistant", "")
 
 	env := model.Envelope{
 		ConnectorID:    "telegram",
@@ -52,12 +52,12 @@ func TestInboundDispatcher_DispatchesEnvelopeToRuntime(t *testing.T) {
 		t.Fatalf("Dispatch: %v", err)
 	}
 
-	if len(starter.calls) != 1 {
-		t.Fatalf("expected 1 StartFrontSession call, got %d", len(starter.calls))
+	if len(ingress.calls) != 1 {
+		t.Fatalf("expected 1 ReceiveInboundMessage call, got %d", len(ingress.calls))
 	}
-	call := starter.calls[0]
-	if call.InitialPrompt != env.Text {
-		t.Errorf("InitialPrompt: expected %q, got %q", env.Text, call.InitialPrompt)
+	call := ingress.calls[0]
+	if call.Body != env.Text {
+		t.Errorf("Body: expected %q, got %q", env.Text, call.Body)
 	}
 	if call.FrontAgentID != "assistant" {
 		t.Errorf("FrontAgentID: expected %q, got %q", "assistant", call.FrontAgentID)
@@ -77,8 +77,8 @@ func TestInboundDispatcher_DispatchesEnvelopeToRuntime(t *testing.T) {
 }
 
 func TestInboundDispatcher_EmptyTextIsRejected(t *testing.T) {
-	starter := &stubStarter{}
-	dispatcher := NewInboundDispatcher(starter, "assistant", "")
+	ingress := &stubIngress{}
+	dispatcher := NewInboundDispatcher(ingress, "assistant", "")
 
 	env := model.Envelope{
 		ConnectorID: "telegram",
@@ -90,7 +90,7 @@ func TestInboundDispatcher_EmptyTextIsRejected(t *testing.T) {
 	if err := dispatcher.Dispatch(context.Background(), env); err == nil {
 		t.Fatal("expected error for empty text, got nil")
 	}
-	if len(starter.calls) != 0 {
-		t.Fatalf("expected no StartFrontSession calls for empty text, got %d", len(starter.calls))
+	if len(ingress.calls) != 0 {
+		t.Fatalf("expected no ReceiveInboundMessage calls for empty text, got %d", len(ingress.calls))
 	}
 }

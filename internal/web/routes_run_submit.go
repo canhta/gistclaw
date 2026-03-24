@@ -37,7 +37,7 @@ func (s *Server) handleRunSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	workspaceRoot := lookupSetting(s.db, "workspace_root")
-	run, err := s.rt.StartFrontSession(r.Context(), runtime.StartFrontSession{
+	run, err := s.rt.ReceiveInboundMessage(r.Context(), runtime.InboundMessageCommand{
 		ConversationKey: conversations.ConversationKey{
 			ConnectorID: "web",
 			AccountID:   "local",
@@ -45,7 +45,7 @@ func (s *Server) handleRunSubmit(w http.ResponseWriter, r *http.Request) {
 			ThreadID:    "main",
 		},
 		FrontAgentID:  "assistant",
-		InitialPrompt: task,
+		Body:          task,
 		WorkspaceRoot: workspaceRoot,
 	})
 	if err != nil {

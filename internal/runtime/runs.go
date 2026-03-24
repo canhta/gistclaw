@@ -635,7 +635,7 @@ func (r *Runtime) queueOutboundIntent(
 // web conversation key internally. This is the canonical entry point for
 // write-path web handlers.
 func (r *Runtime) SubmitTask(ctx context.Context, objective, workspaceRoot string) (model.Run, error) {
-	return r.StartFrontSession(ctx, StartFrontSession{
+	return r.ReceiveInboundMessage(ctx, InboundMessageCommand{
 		ConversationKey: conversations.ConversationKey{
 			ConnectorID: "web",
 			AccountID:   "local",
@@ -643,7 +643,7 @@ func (r *Runtime) SubmitTask(ctx context.Context, objective, workspaceRoot strin
 			ThreadID:    "main",
 		},
 		FrontAgentID:  "assistant",
-		InitialPrompt: objective,
+		Body:          objective,
 		WorkspaceRoot: workspaceRoot,
 	})
 }

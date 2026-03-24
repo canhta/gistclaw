@@ -372,3 +372,64 @@ func TestRuntime_SendSessionWakesWorkerSessionWithSiblingChildRun(t *testing.T) 
 		t.Fatalf("expected worker follow-up reply, got kind=%q body=%q", history[3].Kind, history[3].Body)
 	}
 }
+
+func TestRuntime_ReceiveInboundMessageReusesBoundFrontSessionWithConnectorProvenance(t *testing.T) {
+	rt, db := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "Front ready.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+		{Content: "Telegram follow-up.", InputTokens: 11, OutputTokens: 13, StopReason: "end_turn"},
+	})
+
+	first, err := rt.ReceiveInboundMessage(context.Background(), InboundMessageCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		FrontAgentID:  "assistant",
+		Body:          "Inspect the repo.",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("first ReceiveInboundMessage failed: %v", err)
+	}
+
+	second, err := rt.ReceiveInboundMessage(context.Background(), InboundMessageCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		FrontAgentID:  "assistant",
+		Body:          "What changed?",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("second ReceiveInboundMessage failed: %v", err)
+	}
+	if second.SessionID != first.SessionID {
+		t.Fatalf("expected bound front session reuse, got %q then %q", first.SessionID, second.SessionID)
+	}
+	if second.ID == first.ID {
+		t.Fatalf("expected new run for inbound follow-up, got original %q", second.ID)
+	}
+
+	svc := sessions.NewService(db, conversations.NewConversationStore(db))
+	_, history, err := svc.LoadSessionMailbox(context.Background(), first.SessionID, 10)
+	if err != nil {
+		t.Fatalf("LoadSessionMailbox failed: %v", err)
+	}
+	if len(history) != 4 {
+		t.Fatalf("expected 4 mailbox messages, got %d", len(history))
+	}
+	if history[2].Kind != model.MessageUser || history[2].Body != "What changed?" {
+		t.Fatalf("expected inbound follow-up user message, got kind=%q body=%q", history[2].Kind, history[2].Body)
+	}
+	if history[2].Provenance.SourceConnectorID != "telegram" || history[2].Provenance.SourceThreadID != "thread-1" {
+		t.Fatalf("expected telegram provenance on inbound follow-up, got %+v", history[2].Provenance)
+	}
+	if history[3].Kind != model.MessageAssistant || history[3].Body != "Telegram follow-up." {
+		t.Fatalf("expected assistant follow-up reply, got kind=%q body=%q", history[3].Kind, history[3].Body)
+	}
+}

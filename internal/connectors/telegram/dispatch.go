@@ -10,14 +10,14 @@ import (
 	"github.com/canhta/gistclaw/internal/runtime"
 )
 
-// FrontSessionStarter is the minimal runtime interface required by InboundDispatcher.
+// InboundMessageReceiver is the minimal runtime interface required by InboundDispatcher.
 // Defined here (consuming package) per the interfaces-in-consuming-package rule.
-type FrontSessionStarter interface {
-	StartFrontSession(ctx context.Context, req runtime.StartFrontSession) (model.Run, error)
+type InboundMessageReceiver interface {
+	ReceiveInboundMessage(ctx context.Context, req runtime.InboundMessageCommand) (model.Run, error)
 }
 
 // InboundDispatcher normalizes inbound Telegram updates and converts them
-// into rt.StartFrontSession() calls with a stable chat/thread identity.
+// into rt.ReceiveInboundMessage() calls with a stable chat/thread identity.
 //
 //	Telegram Update
 //	     │
@@ -26,17 +26,17 @@ type FrontSessionStarter interface {
 //	model.Envelope
 //	     │
 //	InboundDispatcher.Dispatch()
-//	     └── rt.StartFrontSession(StartFrontSession{ConversationKey, InitialPrompt, ...})
+//	     └── rt.ReceiveInboundMessage(InboundMessageCommand{ConversationKey, Body, ...})
 type InboundDispatcher struct {
-	rt             FrontSessionStarter
+	rt             InboundMessageReceiver
 	defaultAgentID string
 	workspaceRoot  string
 }
 
-// NewInboundDispatcher creates a dispatcher that routes inbound envelopes to rt.StartFrontSession().
+// NewInboundDispatcher creates a dispatcher that routes inbound envelopes to rt.ReceiveInboundMessage().
 // defaultAgentID is the agent assigned to new runs (e.g. "coordinator").
 // workspaceRoot is passed through to StartRun; may be empty if read from settings.
-func NewInboundDispatcher(rt FrontSessionStarter, defaultAgentID, workspaceRoot string) *InboundDispatcher {
+func NewInboundDispatcher(rt InboundMessageReceiver, defaultAgentID, workspaceRoot string) *InboundDispatcher {
 	return &InboundDispatcher{
 		rt:             rt,
 		defaultAgentID: defaultAgentID,
@@ -51,7 +51,7 @@ func (d *InboundDispatcher) Dispatch(ctx context.Context, env model.Envelope) er
 		return fmt.Errorf("telegram: inbound dispatch: text is required")
 	}
 
-	_, err := d.rt.StartFrontSession(ctx, runtime.StartFrontSession{
+	_, err := d.rt.ReceiveInboundMessage(ctx, runtime.InboundMessageCommand{
 		ConversationKey: conversations.ConversationKey{
 			ConnectorID: env.ConnectorID,
 			AccountID:   env.AccountID,
@@ -59,11 +59,11 @@ func (d *InboundDispatcher) Dispatch(ctx context.Context, env model.Envelope) er
 			ThreadID:    env.ThreadID,
 		},
 		FrontAgentID:  d.defaultAgentID,
-		InitialPrompt: env.Text,
+		Body:          env.Text,
 		WorkspaceRoot: d.workspaceRoot,
 	})
 	if err != nil {
-		return fmt.Errorf("telegram: inbound dispatch: start front session: %w", err)
+		return fmt.Errorf("telegram: inbound dispatch: receive inbound message: %w", err)
 	}
 
 	return nil

@@ -18,10 +18,10 @@ import (
 
 type stubFrontSessionStarter struct {
 	mu    sync.Mutex
-	calls []runtime.StartFrontSession
+	calls []runtime.InboundMessageCommand
 }
 
-func (s *stubFrontSessionStarter) StartFrontSession(_ context.Context, req runtime.StartFrontSession) (model.Run, error) {
+func (s *stubFrontSessionStarter) ReceiveInboundMessage(_ context.Context, req runtime.InboundMessageCommand) (model.Run, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls = append(s.calls, req)
@@ -103,7 +103,7 @@ func TestConnector_StartDispatchesInboundAndDrainsOutbound(t *testing.T) {
 	}
 
 	if starter.callCount() == 0 {
-		t.Fatal("expected inbound update to dispatch a front session start")
+		t.Fatal("expected inbound update to dispatch an inbound message")
 	}
 	if sendMessageCalls.Load() == 0 {
 		t.Fatal("expected pending outbound intent to be drained and delivered")
