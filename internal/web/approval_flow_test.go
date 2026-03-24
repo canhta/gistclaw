@@ -55,6 +55,57 @@ func TestApprovalFlow_ExpiredResolveReturns409(t *testing.T) {
 	}
 }
 
+func TestApprovalFlow_AuditTrailShowsResolvedToday(t *testing.T) {
+	h := newServerHarness(t)
+
+	_, err := h.db.RawDB().Exec(
+		`INSERT INTO approvals (id, run_id, tool_name, args_json, target_path, fingerprint, status, resolved_by, created_at, resolved_at)
+		 VALUES ('approval-audit-web', 'run-audit', 'bash', x'', '/tmp', 'fp-audit', 'approved', 'web', datetime('now', '-1 hour'), datetime('now'))`,
+	)
+	if err != nil {
+		t.Fatalf("insert resolved approval: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/approvals", nil)
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "approval-audit-web") {
+		t.Errorf("expected audit trail to contain approval ID:\n%s", body[:min(len(body), 500)])
+	}
+	if !strings.Contains(body, "web") {
+		t.Errorf("expected audit trail to show actor 'web':\n%s", body[:min(len(body), 500)])
+	}
+}
+
+func TestApprovalFlow_AuditTrailShowsTelegramActor(t *testing.T) {
+	h := newServerHarness(t)
+
+	_, err := h.db.RawDB().Exec(
+		`INSERT INTO approvals (id, run_id, tool_name, args_json, target_path, fingerprint, status, resolved_by, created_at, resolved_at)
+		 VALUES ('approval-audit-tg', 'run-audit-tg', 'bash', x'', '/tmp', 'fp-audit-tg', 'approved', 'telegram', datetime('now', '-2 hours'), datetime('now', '-1 hour'))`,
+	)
+	if err != nil {
+		t.Fatalf("insert telegram approval: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/approvals", nil)
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "telegram") {
+		t.Errorf("expected audit trail to show actor 'telegram':\n%s", body[:min(len(body), 500)])
+	}
+}
+
 func TestApprovalFlow_InterruptedRunDismiss(t *testing.T) {
 	h := newServerHarness(t)
 

@@ -27,4 +27,15 @@
     <p class="muted">No pending approvals.</p>
   {{end}}
 </section>
+{{if .Audit}}
+<section class="panel" style="margin-top:24px">
+  <h2 style="font-weight:700;margin-top:0">Resolved Today</h2>
+  {{range .Audit}}
+    <article class="run-row">
+      <div class="mono">{{.ID}}</div>
+      <div class="muted mono">actor: {{.Actor}} &mdash; {{.ResolvedAt.Format "2006-01-02T15:04:05Z"}}</div>
+    </article>
+  {{end}}
+</section>
+{{end}}
 {{end}}

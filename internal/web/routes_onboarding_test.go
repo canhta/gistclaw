@@ -206,6 +206,52 @@ func TestOnboardingStep3_NoModelCallsDuringScan(t *testing.T) {
 	}
 }
 
+// TestOnboarding_RedirectsToRunsWhenBound verifies that GET /onboarding redirects
+// to /runs when a workspace is already bound in settings.
+func TestOnboarding_RedirectsToRunsWhenBound(t *testing.T) {
+	h := newServerHarness(t) // workspace_root is seeded by default
+	req := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
+	w := httptest.NewRecorder()
+	h.server.ServeHTTP(w, req)
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect when workspace bound, got %d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if loc != "/runs" {
+		t.Fatalf("expected redirect to /runs, got %q", loc)
+	}
+}
+
+// TestOnboardingStep1_NotWritable verifies that submitting a path that exists
+// but is not writable returns a plain-English error (not a raw Go error string).
+func TestOnboardingStep1_NotWritable(t *testing.T) {
+	h := newServerHarnessNoWorkspace(t)
+	dir := t.TempDir()
+	// Create .git before making the directory read-only.
+	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatalf("mkdir .git: %v", err)
+	}
+	if err := os.Chmod(dir, 0o555); err != nil {
+		t.Skip("cannot chmod temp dir (may be root):", err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	form := url.Values{"workspace_root": {dir}}
+	req := httptest.NewRequest(http.MethodPost, "/onboarding", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.server.ServeHTTP(w, req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422 for non-writable dir, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if strings.Contains(body, "permission denied") {
+		t.Errorf("error must not expose raw Go error string, got: %s", truncate(body, 300))
+	}
+	if !strings.Contains(strings.ToLower(body), "write") && !strings.Contains(strings.ToLower(body), "permission") {
+		t.Errorf("expected error mentioning write access, got: %s", truncate(body, 300))
+	}
+}
+
 // makeGitRepo creates a temp directory with a .git subdirectory to simulate
 // a git repo (without running git init — just the directory marker is sufficient
 // for the path validator).

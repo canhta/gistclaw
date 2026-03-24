@@ -15,8 +15,15 @@ type approvalItem struct {
 	CreatedAt  time.Time
 }
 
+type auditItem struct {
+	ID         string
+	Actor      string
+	ResolvedAt time.Time
+}
+
 type approvalsPageData struct {
 	Approvals []approvalItem
+	Audit     []auditItem
 	Error     string
 }
 
@@ -46,7 +53,35 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.renderTemplate(w, "Approvals", "approvals_body", approvalsPageData{Approvals: items})
+	// Audit trail: resolved approvals from the last 24 hours.
+	aRows, err := s.db.RawDB().QueryContext(r.Context(),
+		`SELECT id, COALESCE(resolved_by, 'unknown'), resolved_at
+		 FROM approvals
+		 WHERE status IN ('approved', 'denied')
+		   AND resolved_at >= datetime('now', '-24 hours')
+		 ORDER BY resolved_at DESC`,
+	)
+	if err != nil {
+		http.Error(w, "failed to load audit trail", http.StatusInternalServerError)
+		return
+	}
+	defer aRows.Close()
+
+	audit := make([]auditItem, 0)
+	for aRows.Next() {
+		var a auditItem
+		if err := aRows.Scan(&a.ID, &a.Actor, &a.ResolvedAt); err != nil {
+			http.Error(w, "failed to load audit trail", http.StatusInternalServerError)
+			return
+		}
+		audit = append(audit, a)
+	}
+	if err := aRows.Err(); err != nil {
+		http.Error(w, "failed to load audit trail", http.StatusInternalServerError)
+		return
+	}
+
+	s.renderTemplate(w, "Approvals", "approvals_body", approvalsPageData{Approvals: items, Audit: audit})
 }
 
 func (s *Server) handleApprovalResolve(w http.ResponseWriter, r *http.Request) {

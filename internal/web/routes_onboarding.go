@@ -128,7 +128,12 @@ func fallbackTrio(workspaceRoot string) []TaskCandidate {
 }
 
 // handleOnboarding renders step 1 of the onboarding wizard (workspace bind).
+// If a workspace is already bound, redirects to /runs.
 func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
+	if lookupSetting(s.db, "workspace_root") != "" {
+		http.Redirect(w, r, "/runs", http.StatusSeeOther)
+		return
+	}
 	s.renderTemplate(w, "Bind Workspace", "onboarding_step1_body", nil)
 }
 
@@ -166,7 +171,7 @@ func (s *Server) handleOnboardingStep1Submit(w http.ResponseWriter, r *http.Requ
 	http.Redirect(w, r, "/onboarding/step/2", http.StatusSeeOther)
 }
 
-// validateWorkspacePath checks that path exists on disk and contains a .git directory.
+// validateWorkspacePath checks that path exists, is a git repo, and is writable.
 // Returns an empty string on success, or a human-readable error message.
 func validateWorkspacePath(path string) string {
 	info, err := os.Stat(path)
@@ -183,6 +188,12 @@ func validateWorkspacePath(path string) string {
 	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
 		return fmt.Sprintf("%q is not a git repository (no .git directory found)", path)
 	}
+	tmp, err := os.CreateTemp(path, ".gistclaw-write-check-*")
+	if err != nil {
+		return fmt.Sprintf("%q does not have write permission for this process", path)
+	}
+	tmp.Close()
+	os.Remove(tmp.Name())
 	return ""
 }
 
