@@ -464,6 +464,56 @@ func TestService_ListDeliveryQueue(t *testing.T) {
 	}
 }
 
+func TestService_ListRoutes(t *testing.T) {
+	svc := newTestSessionService(t)
+	ctx := context.Background()
+
+	frontTelegram := openFrontSession(t, svc)
+	frontWhatsApp, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-whatsapp",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession whatsapp failed: %v", err)
+	}
+
+	if err := svc.BindFollowUp(ctx, BindFollowUp{
+		ConversationID: frontTelegram.ConversationID,
+		ThreadID:       "thread-1",
+		SessionID:      frontTelegram.ID,
+		ConnectorID:    "telegram",
+		AccountID:      "acct-1",
+		ExternalID:     "chat-1",
+	}); err != nil {
+		t.Fatalf("BindFollowUp telegram failed: %v", err)
+	}
+	if err := svc.BindFollowUp(ctx, BindFollowUp{
+		ConversationID: frontWhatsApp.ConversationID,
+		ThreadID:       "thread-2",
+		SessionID:      frontWhatsApp.ID,
+		ConnectorID:    "whatsapp",
+		AccountID:      "acct-2",
+		ExternalID:     "chat-2",
+	}); err != nil {
+		t.Fatalf("BindFollowUp whatsapp failed: %v", err)
+	}
+
+	routes, err := svc.ListRoutes(ctx, "telegram", 10)
+	if err != nil {
+		t.Fatalf("ListRoutes failed: %v", err)
+	}
+	if len(routes) != 1 {
+		t.Fatalf("expected 1 route, got %d", len(routes))
+	}
+	if routes[0].SessionID != frontTelegram.ID || routes[0].ConversationID != frontTelegram.ConversationID {
+		t.Fatalf("unexpected route identity: %+v", routes[0])
+	}
+	if routes[0].ConnectorID != "telegram" || routes[0].ThreadID != "thread-1" {
+		t.Fatalf("unexpected route target: %+v", routes[0])
+	}
+}
+
 func TestService_ListConversationSessionsOrdersByLatestActivity(t *testing.T) {
 	svc := newTestSessionService(t)
 	ctx := context.Background()

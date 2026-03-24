@@ -22,6 +22,10 @@ func (r *Runtime) ListAllSessions(ctx context.Context, limit int) ([]model.Sessi
 	return sessions.NewService(r.store, r.convStore).ListSessions(ctx, limit)
 }
 
+func (r *Runtime) ListRoutes(ctx context.Context, connectorID string, limit int) ([]model.RouteDirectoryItem, error) {
+	return sessions.NewService(r.store, r.convStore).ListRoutes(ctx, connectorID, limit)
+}
+
 func (r *Runtime) SessionHistory(ctx context.Context, sessionID string, limit int) (model.Session, []model.SessionMessage, error) {
 	return sessions.NewService(r.store, r.convStore).LoadSessionMailbox(ctx, sessionID, limit)
 }

@@ -239,6 +239,13 @@ type DeliveryQueueItem struct {
 	ConversationID string
 }
 
+type RouteDirectoryItem struct {
+	SessionRoute
+	ConversationID string
+	AgentID        string
+	Role           SessionRole
+}
+
 type RunRef struct {
 	ID     string
 	Status RunStatus

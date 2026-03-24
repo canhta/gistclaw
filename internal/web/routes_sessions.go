@@ -20,6 +20,10 @@ type connectorDeliveryHealthResponse struct {
 	Connectors []model.ConnectorDeliveryHealth `json:"connectors"`
 }
 
+type routeDirectoryResponse struct {
+	Routes []model.RouteDirectoryItem `json:"routes"`
+}
+
 type deliveryQueueResponse struct {
 	Deliveries []model.DeliveryQueueItem `json:"deliveries"`
 }
@@ -73,6 +77,21 @@ func (s *Server) handleDeliveryHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, connectorDeliveryHealthResponse{Connectors: list})
+}
+
+func (s *Server) handleRoutesIndex(w http.ResponseWriter, r *http.Request) {
+	if s.rt == nil {
+		http.Error(w, "runtime not configured", http.StatusInternalServerError)
+		return
+	}
+
+	routes, err := s.rt.ListRoutes(r.Context(), r.URL.Query().Get("connector_id"), requestLimit(r, 50))
+	if err != nil {
+		http.Error(w, "failed to load routes", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, routeDirectoryResponse{Routes: routes})
 }
 
 func (s *Server) handleDeliveryIndex(w http.ResponseWriter, r *http.Request) {

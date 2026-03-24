@@ -67,6 +67,7 @@ That means the next implementation work favors:
 - operator-facing session visibility now also includes session-scoped delivery state on the local host, so route attachment and delivery health can be inspected together
 - the local host now also exposes connector-level delivery queue health, so operators can see backlog and terminal-pressure by surface without drilling into individual sessions first
 - the local host now also exposes a global delivery queue and top-level retry path, so connector health can flow into concrete operator action without session hunting
+- the local host now also exposes a global route directory, so operators can inspect how external surfaces are currently bound into the session kernel
 - the local host can now request a controlled retry for terminal deliveries through the same session-scoped control plane, instead of requiring direct database intervention
 - session-scoped delivery failures on the local host are now filtered down to actionable failures, so a successful redrive clears the active failure view without erasing the underlying run audit trail
 - explicit session send/wake behavior should flow through the runtime so the same session contract can back both local tools and future channel recovery

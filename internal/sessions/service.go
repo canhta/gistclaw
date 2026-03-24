@@ -284,6 +284,62 @@ func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (mod
 	return route, nil
 }
 
+func (s *Service) ListRoutes(ctx context.Context, connectorID string, limit int) ([]model.RouteDirectoryItem, error) {
+	query := strings.Builder{}
+	query.WriteString(
+		`SELECT bind.session_id, bind.thread_id, bind.connector_id, bind.account_id, bind.external_id,
+		        bind.status, bind.created_at, bind.conversation_id, sess.agent_id, sess.role
+		 FROM session_bindings bind
+		 JOIN sessions sess ON sess.id = bind.session_id
+		 WHERE bind.status = 'active'`,
+	)
+
+	args := make([]any, 0, 2)
+	if connectorID != "" {
+		query.WriteString(" AND bind.connector_id = ?")
+		args = append(args, connectorID)
+	}
+	query.WriteString(`
+		 ORDER BY bind.created_at DESC, bind.id DESC`)
+	if limit > 0 {
+		query.WriteString(" LIMIT ?")
+		args = append(args, limit)
+	}
+
+	rows, err := s.db.RawDB().QueryContext(ctx, query.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("list routes: %w", err)
+	}
+	defer rows.Close()
+
+	routes := make([]model.RouteDirectoryItem, 0)
+	for rows.Next() {
+		var route model.RouteDirectoryItem
+		var role string
+		if err := rows.Scan(
+			&route.SessionID,
+			&route.ThreadID,
+			&route.ConnectorID,
+			&route.AccountID,
+			&route.ExternalID,
+			&route.Status,
+			&route.CreatedAt,
+			&route.ConversationID,
+			&route.AgentID,
+			&role,
+		); err != nil {
+			return nil, fmt.Errorf("scan route directory item: %w", err)
+		}
+		route.Role = model.SessionRole(role)
+		routes = append(routes, route)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate routes: %w", err)
+	}
+
+	return routes, nil
+}
+
 func (s *Service) LoadSessionOutboundIntent(ctx context.Context, sessionID string, intentID string) (model.OutboundIntent, error) {
 	var intent model.OutboundIntent
 	var lastAttempt sql.NullString

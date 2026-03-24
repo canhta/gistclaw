@@ -635,6 +635,59 @@ func TestSessionAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("route index returns active bindings as JSON", func(t *testing.T) {
+		h := newServerHarness(t)
+		telegramRun, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-1",
+				ExternalID:  "chat-1",
+				ThreadID:    "thread-1",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Inspect Telegram.",
+			WorkspaceRoot: h.workspaceRoot,
+		})
+		if err != nil {
+			t.Fatalf("StartFrontSession telegram failed: %v", err)
+		}
+		if _, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "whatsapp",
+				AccountID:   "acct-2",
+				ExternalID:  "chat-2",
+				ThreadID:    "thread-2",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Inspect WhatsApp.",
+			WorkspaceRoot: h.workspaceRoot,
+		}); err != nil {
+			t.Fatalf("StartFrontSession whatsapp failed: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/routes?connector_id=telegram", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			Routes []model.RouteDirectoryItem `json:"routes"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if len(resp.Routes) != 1 {
+			t.Fatalf("expected 1 route, got %d", len(resp.Routes))
+		}
+		if resp.Routes[0].ConnectorID != "telegram" || resp.Routes[0].SessionID != telegramRun.SessionID {
+			t.Fatalf("unexpected route payload: %+v", resp.Routes[0])
+		}
+	})
+
 	t.Run("list returns recent sessions as JSON", func(t *testing.T) {
 		h := newServerHarness(t)
 		front := h.startFrontSession(t, "Inspect the repo.")
