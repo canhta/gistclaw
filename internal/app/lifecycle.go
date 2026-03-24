@@ -2,15 +2,26 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/canhta/gistclaw/internal/model"
 )
 
 func (a *App) Prepare(ctx context.Context) error {
+	a.prepareMu.Lock()
+	defer a.prepareMu.Unlock()
+
+	if a.prepared {
+		return nil
+	}
+
 	if err := ensureAdminToken(a.db); err != nil {
 		return err
 	}
@@ -48,6 +59,7 @@ func (a *App) Prepare(ctx context.Context) error {
 		}
 	}
 
+	a.prepared = true
 	return nil
 }
 
@@ -84,16 +96,42 @@ func (a *App) Start(ctx context.Context) error {
 		return err
 	}
 
-	if len(a.connectors) == 0 {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	serviceCount := len(a.connectors)
+	errCh := make(chan error, len(a.connectors)+1)
+	var wg sync.WaitGroup
+	var webHTTP *http.Server
+
+	if a.webServer != nil && a.cfg.Web.ListenAddr != "" {
+		listener, err := net.Listen("tcp", a.cfg.Web.ListenAddr)
+		if err != nil {
+			return fmt.Errorf("web listen: %w", err)
+		}
+		a.setWebAddress(listener.Addr().String())
+		webHTTP = &http.Server{Handler: a.webServer}
+		serviceCount++
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := webHTTP.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				select {
+				case errCh <- fmt.Errorf("web server: %w", err):
+				default:
+				}
+				cancel()
+			}
+		}()
+	} else {
+		a.setWebAddress("")
+	}
+
+	if serviceCount == 0 {
 		<-ctx.Done()
 		return ctx.Err()
 	}
 
-	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	errCh := make(chan error, len(a.connectors))
-	var wg sync.WaitGroup
 	for _, connector := range a.connectors {
 		wg.Add(1)
 		go func(connector model.Connector) {
@@ -108,12 +146,24 @@ func (a *App) Start(ctx context.Context) error {
 		}(connector)
 	}
 
+	shutdownWeb := func() {
+		if webHTTP == nil {
+			return
+		}
+		shutdownCtx, stop := context.WithTimeout(context.Background(), 2*time.Second)
+		defer stop()
+		_ = webHTTP.Shutdown(shutdownCtx)
+	}
+
 	select {
 	case err := <-errCh:
+		cancel()
+		shutdownWeb()
 		wg.Wait()
 		return err
 	case <-ctx.Done():
 		cancel()
+		shutdownWeb()
 		wg.Wait()
 		return ctx.Err()
 	}

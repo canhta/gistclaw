@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"sync"
 
 	telegramconnector "github.com/canhta/gistclaw/internal/connectors/telegram"
 	"github.com/canhta/gistclaw/internal/conversations"
@@ -27,6 +28,10 @@ type App struct {
 	replay     *replay.Service
 	webServer  *web.Server
 	connectors []model.Connector
+	prepareMu  sync.Mutex
+	prepared   bool
+	webAddrMu  sync.RWMutex
+	webAddress string
 }
 
 func Bootstrap(cfg Config) (*App, error) {
@@ -160,6 +165,18 @@ func buildProvider(cfg ProviderConfig) runtime.Provider {
 
 func replayWiring(db *store.DB) *replay.Service {
 	return replay.NewService(db)
+}
+
+func (a *App) WebAddress() string {
+	a.webAddrMu.RLock()
+	defer a.webAddrMu.RUnlock()
+	return a.webAddress
+}
+
+func (a *App) setWebAddress(addr string) {
+	a.webAddrMu.Lock()
+	defer a.webAddrMu.Unlock()
+	a.webAddress = addr
 }
 
 func buildConnectors(

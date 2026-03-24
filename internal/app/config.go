@@ -15,6 +15,7 @@ type Config struct {
 	TeamDir       string         `yaml:"team_dir"`
 	Provider      ProviderConfig `yaml:"provider"`
 	Telegram      TelegramConfig `yaml:"telegram"`
+	Web           WebConfig      `yaml:"web"`
 	AdminToken    string         `yaml:"-"`
 }
 
@@ -33,6 +34,10 @@ type ModelLanes struct {
 type TelegramConfig struct {
 	BotToken string `yaml:"bot_token"`
 	AgentID  string `yaml:"agent_id"`
+}
+
+type WebConfig struct {
+	ListenAddr string `yaml:"listen_addr"`
 }
 
 func DefaultConfigPath() string {
@@ -120,5 +125,8 @@ func (c *Config) applyDefaults() {
 
 	if c.Telegram.AgentID == "" {
 		c.Telegram.AgentID = "assistant"
+	}
+	if c.Web.ListenAddr == "" {
+		c.Web.ListenAddr = "127.0.0.1:8080"
 	}
 }

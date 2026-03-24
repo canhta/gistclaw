@@ -36,6 +36,7 @@ Remaining gaps:
 
 - durable front-session reuse, thread binding, mailbox reads, session-scoped provider context, explicit session-message provenance, session-addressed collaboration, session discovery/history reads, and queued outbound delivery are now in place
 - Telegram now has a recovered live path on top of the session kernel; the broader channel matrix is still not back
+- `gistclaw serve` now hosts the local web control plane instead of only preparing state
 - plugins and extension seams are documented, not operational
 - teams are still mostly designed ahead of time, not created dynamically by the user
 
@@ -46,7 +47,7 @@ The next implementation slice should make the session runtime feel more like Ope
 1. extend the recovered channel path beyond Telegram without rebuilding the full OpenClaw matrix
 2. prepare the routing layer for later channel and gateway recovery without reintroducing connector-specific logic into the kernel
 3. keep moving team definition from predeclared structure toward user-defined runtime composition
-4. start exposing the session control plane through higher-level tools and UI surfaces instead of only runtime/service APIs
+4. extend the session control plane beyond the basic local web host into richer tools and operator surfaces
 
 ## Locked Review Outcomes
 

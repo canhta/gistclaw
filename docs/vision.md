@@ -61,3 +61,4 @@ That means the next implementation work favors:
 - session-addressed collaboration and delivery instead of run-addressed shortcuts
 - durable route state on the session/thread path instead of connector-specific delivery guesses
 - provider input assembled from session-local context instead of the whole conversation log
+- a real host process, where `serve` owns the local web control plane instead of only background preparation

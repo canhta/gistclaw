@@ -143,4 +143,7 @@ provider:
 	if cfg.DatabasePath == "" {
 		t.Fatal("expected DatabasePath to have a default value")
 	}
+	if cfg.Web.ListenAddr == "" {
+		t.Fatal("expected Web.ListenAddr to have a default value")
+	}
 }

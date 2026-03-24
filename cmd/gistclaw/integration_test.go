@@ -168,9 +168,10 @@ func writeCLIConfig(t *testing.T) (string, string) {
 	dbPath := filepath.Join(dir, "state", "runtime.db")
 	cfgPath := filepath.Join(dir, "config.yaml")
 	cfg := fmt.Sprintf(
-		"workspace_root: %q\ndatabase_path: %q\nprovider:\n  name: anthropic\n  api_key: sk-test\n",
+		"workspace_root: %q\ndatabase_path: %q\nweb:\n  listen_addr: %q\nprovider:\n  name: anthropic\n  api_key: sk-test\n",
 		workspaceRoot,
 		dbPath,
+		"127.0.0.1:0",
 	)
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
