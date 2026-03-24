@@ -91,6 +91,10 @@ func (s *Server) registerRoutes() {
 	}
 	s.mux.HandleFunc("GET /api/sessions", s.handleSessionsIndex)
 	s.mux.HandleFunc("GET /api/sessions/{id}", s.handleSessionDetail)
+	s.mux.HandleFunc("GET /sessions", s.handleSessionPageIndex)
+	s.mux.HandleFunc("GET /sessions/{id}", s.handleSessionPageDetail)
+	s.mux.Handle("POST /sessions/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleSessionPageSend)))
+	s.mux.Handle("POST /sessions/{id}/deliveries/{delivery_id}/retry", s.adminAuth(http.HandlerFunc(s.handleSessionPageRetryDelivery)))
 	s.mux.HandleFunc("GET /control", s.handleControlPage)
 	s.mux.Handle("POST /control/routes/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleControlRouteSend)))
 	s.mux.Handle("POST /control/routes/{id}/deactivate", s.adminAuth(http.HandlerFunc(s.handleControlRouteDeactivate)))
@@ -288,6 +292,8 @@ func loadTemplates() (*template.Template, error) {
 		filepath.Join(templateDir, "onboarding.html"),
 		filepath.Join(templateDir, "memory.html"),
 		filepath.Join(templateDir, "control.html"),
+		filepath.Join(templateDir, "sessions.html"),
+		filepath.Join(templateDir, "session_detail.html"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("web: parse templates: %w", err)

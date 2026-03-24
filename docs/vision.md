@@ -77,6 +77,7 @@ That means the next implementation work favors:
 - session-scoped delivery failures on the local host are now filtered down to actionable failures, so a successful redrive clears the active failure view without erasing the underlying run audit trail
 - the local host now authenticates server-rendered operator writes through an HttpOnly host session with same-origin checks, so HTML control-plane forms no longer depend on manual bearer-header injection
 - the local host now has a server-rendered control page for route bindings and delivery pressure, so operators can inspect and act on the runtime without dropping to raw JSON endpoints
+- the local host now also has server-rendered session directory and session detail pages, so sessions are becoming first-class operator objects instead of API-only records
 - explicit session send/wake behavior should flow through the runtime so the same session contract can back both local tools and future channel recovery
 - external channel recovery should keep reusing the same inbound-message runtime contract rather than teaching each connector its own session-start logic
 - external retries and redeliveries should be absorbed by one runtime-owned inbound receipt model, so connectors stay thin and duplicate delivery does not fork extra runs

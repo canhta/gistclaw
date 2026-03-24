@@ -1,0 +1,132 @@
+{{define "session_detail_body"}}
+<section class="panel">
+  <h1 style="margin-top:0">Session Detail</h1>
+  <div class="mono">{{.Session.ID}}</div>
+  <p class="muted">{{.Session.AgentID}} · {{.Session.Role}} · {{.Session.Status}}</p>
+</section>
+
+{{if .Error}}
+<section class="error">
+  {{.Error}}
+</section>
+{{end}}
+
+<section class="panel">
+  <h2 class="section-title">Send Message</h2>
+  <form class="inline-form" method="POST" action="/sessions/{{.Session.ID}}/messages">
+    <input type="text" name="body" placeholder="Send a message into this session">
+    <button type="submit">Wake Session</button>
+  </form>
+</section>
+
+<section class="panel">
+  <h2 class="section-title">Mailbox</h2>
+  {{if .Messages}}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Message</th>
+        <th>Kind</th>
+        <th>Sender</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Messages}}
+      <tr>
+        <td>{{.Body}}</td>
+        <td>{{.Kind}}</td>
+        <td>
+          {{if .SenderSessionID}}
+          <span class="mono">{{.SenderSessionID}}</span>
+          {{else}}
+          <span class="muted">operator/runtime</span>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No mailbox messages.</p>
+  {{end}}
+</section>
+
+<section class="panel">
+  <h2 class="section-title">Route</h2>
+  {{if .Route}}
+  <div class="mono">{{.Route.ID}}</div>
+  <div>{{.Route.ConnectorID}} / {{.Route.ExternalID}}</div>
+  <div class="muted mono">thread: {{.Route.ThreadID}}</div>
+  {{else}}
+  <p class="muted">This session is not currently bound to an external route.</p>
+  {{end}}
+</section>
+
+<section class="panel">
+  <h2 class="section-title">Deliveries</h2>
+  {{if .Deliveries}}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Delivery</th>
+        <th>Status</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Deliveries}}
+      <tr>
+        <td>
+          <div class="mono">{{.ID}}</div>
+          <div>{{.ConnectorID}} / {{.ChatID}}</div>
+          <div class="muted">{{.MessageText}}</div>
+        </td>
+        <td>
+          <div>{{.Status}}</div>
+          <div class="muted mono">attempts: {{.Attempts}}</div>
+        </td>
+        <td>
+          {{if eq .Status "terminal"}}
+          <form class="inline-form" method="POST" action="/sessions/{{$.Session.ID}}/deliveries/{{.ID}}/retry">
+            <button type="submit">Retry</button>
+          </form>
+          {{else}}
+          <span class="muted">No action</span>
+          {{end}}
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No outbound deliveries recorded for this session.</p>
+  {{end}}
+</section>
+
+<section class="panel">
+  <h2 class="section-title">Delivery Failures</h2>
+  {{if .DeliveryFailures}}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Failure</th>
+        <th>Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .DeliveryFailures}}
+      <tr>
+        <td>
+          <div class="mono">{{.ID}}</div>
+          <div>{{.ConnectorID}} / {{.ChatID}}</div>
+        </td>
+        <td>{{.Error}}</td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No active delivery failures for this session.</p>
+  {{end}}
+</section>
+{{end}}

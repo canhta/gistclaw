@@ -1381,6 +1381,27 @@ func TestControlPlanePage(t *testing.T) {
 		}
 	})
 
+	t.Run("POST /control/routes/{id}/messages with empty body re-renders the page with an error", func(t *testing.T) {
+		h := newServerHarness(t)
+		_, route, _ := h.seedControlPlaneRoute(t)
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/control")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/control/routes/"+route.ID+"/messages", strings.NewReader("body="))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://localhost")
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), "Route send body is required.") {
+			t.Fatalf("expected inline control-page error, got:\n%s", rr.Body.String())
+		}
+	})
+
 	t.Run("POST /control/routes/{id}/deactivate redirects and clears the active route", func(t *testing.T) {
 		h := newServerHarness(t)
 		_, route, _ := h.seedControlPlaneRoute(t)
@@ -1430,6 +1451,130 @@ func TestControlPlanePage(t *testing.T) {
 		}
 
 		delivery, err := h.rt.RetryDelivery(context.Background(), intentID)
+		if !errors.Is(err, runtime.ErrDeliveryNotRetryable) {
+			t.Fatalf("expected delivery to already be requeued, got delivery=%+v err=%v", delivery, err)
+		}
+	})
+}
+
+func TestSessionPages(t *testing.T) {
+	t.Run("GET /sessions renders the recent session directory", func(t *testing.T) {
+		h := newServerHarness(t)
+		front := h.startFrontSession(t, "Inspect the repo.")
+		worker := h.spawnWorkerSession(t, front.SessionID, "researcher", "Inspect docs.")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		for _, want := range []string{"Sessions", front.SessionID, worker.SessionID, "assistant", "researcher"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected session directory to contain %q:\n%s", want, body)
+			}
+		}
+	})
+
+	t.Run("GET /sessions/{id} renders mailbox route and delivery state", func(t *testing.T) {
+		h := newServerHarness(t)
+		run, route, intentID := h.seedControlPlaneRoute(t)
+		h.markOutboundIntentTerminal(t, intentID)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions/"+run.SessionID, nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		for _, want := range []string{"Session Detail", run.SessionID, "Inspect Telegram.", "mock response", route.ID, "terminal", "/sessions/" + run.SessionID + "/messages"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected session detail to contain %q:\n%s", want, body)
+			}
+		}
+	})
+
+	t.Run("POST /sessions/{id}/messages wakes the session and redirects to the new run", func(t *testing.T) {
+		h := newServerHarness(t)
+		front := h.startFrontSession(t, "Inspect the repo.")
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/sessions/"+front.SessionID)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"http://localhost/sessions/"+front.SessionID+"/messages",
+			strings.NewReader("body=What+changed%3F"),
+		)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://localhost")
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if !strings.HasPrefix(rr.Header().Get("Location"), "/runs/") {
+			t.Fatalf("expected redirect to /runs/{id}, got %q", rr.Header().Get("Location"))
+		}
+	})
+
+	t.Run("POST /sessions/{id}/messages with empty body re-renders the detail page with an error", func(t *testing.T) {
+		h := newServerHarness(t)
+		front := h.startFrontSession(t, "Inspect the repo.")
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/sessions/"+front.SessionID)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"http://localhost/sessions/"+front.SessionID+"/messages",
+			strings.NewReader("body="),
+		)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://localhost")
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), "Session message body is required.") {
+			t.Fatalf("expected inline session-detail error, got:\n%s", rr.Body.String())
+		}
+	})
+
+	t.Run("POST /sessions/{id}/deliveries/{delivery_id}/retry redirects back to session detail", func(t *testing.T) {
+		h := newServerHarness(t)
+		run, _, intentID := h.seedControlPlaneRoute(t)
+		h.markOutboundIntentTerminal(t, intentID)
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/sessions/"+run.SessionID)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(
+			http.MethodPost,
+			"http://localhost/sessions/"+run.SessionID+"/deliveries/"+intentID+"/retry",
+			nil,
+		)
+		req.Header.Set("Origin", "http://localhost")
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if rr.Header().Get("Location") != "/sessions/"+run.SessionID {
+			t.Fatalf("expected redirect to session detail, got %q", rr.Header().Get("Location"))
+		}
+
+		delivery, err := h.rt.RetrySessionDelivery(context.Background(), run.SessionID, intentID)
 		if !errors.Is(err, runtime.ErrDeliveryNotRetryable) {
 			t.Fatalf("expected delivery to already be requeued, got delivery=%+v err=%v", delivery, err)
 		}

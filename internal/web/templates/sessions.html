@@ -1,0 +1,50 @@
+{{define "sessions_body"}}
+<section class="panel">
+  <h1 style="margin-top:0">Sessions</h1>
+  <p class="muted">Browse the assistant front session and any spawned worker sessions currently stored in the runtime.</p>
+</section>
+
+{{if .Error}}
+<section class="error">
+  {{.Error}}
+</section>
+{{end}}
+
+<section class="panel">
+  {{if .Sessions}}
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Session</th>
+        <th>Agent</th>
+        <th>Status</th>
+        <th>Links</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Sessions}}
+      <tr>
+        <td>
+          <div class="mono"><a href="/sessions/{{.ID}}">{{.ID}}</a></div>
+          <div class="muted mono">conversation: {{.ConversationID}}</div>
+        </td>
+        <td>
+          <div>{{.AgentID}}</div>
+          <div class="muted">{{.Role}}</div>
+        </td>
+        <td>
+          <div>{{.Status}}</div>
+          <div class="muted mono">{{.UpdatedAt.Format "2006-01-02T15:04:05Z"}}</div>
+        </td>
+        <td>
+          <a href="/sessions/{{.ID}}">Open detail</a>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No sessions yet.</p>
+  {{end}}
+</section>
+{{end}}
