@@ -47,9 +47,12 @@ go vet ./...
 make dev
 make hooks-install
 make fmt
+make lint
 make test
 make coverage
 ```
+
+The expected floor for test coverage remains `70%`.
 
 ## Related Project
 

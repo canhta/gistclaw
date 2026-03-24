@@ -7,7 +7,7 @@ func TestMigrate_ExpectedMigrationFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadDir failed: %v", err)
 	}
-	want := []string{"001_init.sql", "003_scheduler.sql"}
+	want := []string{"001_init.sql"}
 	if len(entries) != len(want) {
 		t.Fatalf("expected %d migration files, got %d", len(want), len(entries))
 	}
@@ -15,34 +15,6 @@ func TestMigrate_ExpectedMigrationFiles(t *testing.T) {
 		if entries[i].Name() != name {
 			t.Errorf("migration[%d]: expected %q, got %q", i, name, entries[i].Name())
 		}
-	}
-}
-
-func TestMigration003_SchedulesTableExists(t *testing.T) {
-	db, err := Open(":memory:")
-	if err != nil {
-		t.Fatalf("Open failed: %v", err)
-	}
-	defer db.Close()
-
-	if err := Migrate(db); err != nil {
-		t.Fatalf("Migrate failed: %v", err)
-	}
-
-	// schedules table must exist and accept a zero-row SELECT.
-	rows, err := db.db.Query("SELECT id FROM schedules LIMIT 0")
-	if err != nil {
-		t.Fatalf("schedules table missing after migration 003: %v", err)
-	}
-	rows.Close()
-
-	// Schema version must be at least 3.
-	ver, err := SchemaVersion(db)
-	if err != nil {
-		t.Fatalf("SchemaVersion: %v", err)
-	}
-	if ver < 3 {
-		t.Fatalf("expected schema version >= 3, got %d", ver)
 	}
 }
 
@@ -62,8 +34,8 @@ func TestMigrate_FreshDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SchemaVersion failed: %v", err)
 	}
-	if ver != 3 {
-		t.Fatalf("expected schema version 3, got %d", ver)
+	if ver != 1 {
+		t.Fatalf("expected schema version 1, got %d", ver)
 	}
 
 	tables := []string{
@@ -121,8 +93,8 @@ func TestMigrate_Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SchemaVersion failed: %v", err)
 	}
-	if ver != 3 {
-		t.Fatalf("expected schema version 3, got %d", ver)
+	if ver != 1 {
+		t.Fatalf("expected schema version 1, got %d", ver)
 	}
 }
 
