@@ -17,9 +17,11 @@ type sessionListResponse struct {
 }
 
 type sessionMailboxResponse struct {
-	Session  model.Session          `json:"session"`
-	Messages []model.SessionMessage `json:"messages"`
-	Route    *model.SessionRoute    `json:"route,omitempty"`
+	Session          model.Session           `json:"session"`
+	Messages         []model.SessionMessage  `json:"messages"`
+	Route            *model.SessionRoute     `json:"route,omitempty"`
+	Deliveries       []model.OutboundIntent  `json:"deliveries,omitempty"`
+	DeliveryFailures []model.DeliveryFailure `json:"delivery_failures,omitempty"`
 }
 
 type sessionSendRequest struct {
@@ -72,10 +74,18 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	deliveries, failures, err := s.rt.SessionDeliveryState(r.Context(), sessionID, requestLimit(r, 25))
+	if err != nil {
+		http.Error(w, "failed to load session delivery state", http.StatusInternalServerError)
+		return
+	}
+
 	writeJSON(w, http.StatusOK, sessionMailboxResponse{
-		Session:  session,
-		Messages: messages,
-		Route:    route,
+		Session:          session,
+		Messages:         messages,
+		Route:            route,
+		Deliveries:       deliveries,
+		DeliveryFailures: failures,
 	})
 }
 

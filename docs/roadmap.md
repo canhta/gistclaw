@@ -40,7 +40,7 @@ Remaining gaps:
 - `gistclaw serve` now hosts the local web control plane instead of only preparing state
 - the local web host now exposes read-only session directory and mailbox APIs on top of the session kernel
 - the local web host can now send a message into a session and wake it through the runtime instead of only reading mailbox state
-- session detail on the local host now exposes the active bound route so operators can see which surface/thread a session is attached to
+- session detail on the local host now exposes the active bound route plus recent outbound deliveries and delivery failures, so operators can see both where a session is attached and how channel delivery is behaving
 - web submit and Telegram ingress now share the same runtime inbound-message path, so follow-up user turns reuse the bound session instead of depending on surface-specific startup logic
 - Telegram and WhatsApp ingress now carry source message identity through the runtime, so retries are idempotent and provenance stays explicit in the session mailbox
 - WhatsApp webhook ingress and outbound draining now use that same session/runtime contract, giving the platform a second real external surface

@@ -276,6 +276,146 @@ func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (mod
 	return route, nil
 }
 
+func (s *Service) ListSessionOutboundIntents(ctx context.Context, sessionID string, limit int) ([]model.OutboundIntent, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+
+	if limit > 0 {
+		rows, err = s.db.RawDB().QueryContext(ctx,
+			`SELECT id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at, last_attempt_at
+			 FROM (
+			     SELECT oi.id, COALESCE(oi.run_id, '') AS run_id, oi.connector_id, oi.chat_id, oi.message_text,
+			            COALESCE(oi.dedupe_key, '') AS dedupe_key, oi.status, oi.attempts, oi.created_at, oi.last_attempt_at
+			     FROM outbound_intents oi
+			     JOIN runs r ON r.id = oi.run_id
+			     WHERE r.session_id = ?
+			     ORDER BY oi.created_at DESC, oi.id DESC
+			     LIMIT ?
+			 )
+			 ORDER BY created_at ASC, id ASC`,
+			sessionID, limit,
+		)
+	} else {
+		rows, err = s.db.RawDB().QueryContext(ctx,
+			`SELECT oi.id, COALESCE(oi.run_id, ''), oi.connector_id, oi.chat_id, oi.message_text,
+			        COALESCE(oi.dedupe_key, ''), oi.status, oi.attempts, oi.created_at, oi.last_attempt_at
+			 FROM outbound_intents oi
+			 JOIN runs r ON r.id = oi.run_id
+			 WHERE r.session_id = ?
+			 ORDER BY oi.created_at ASC, oi.id ASC`,
+			sessionID,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list session outbound intents: %w", err)
+	}
+	defer rows.Close()
+
+	intents := make([]model.OutboundIntent, 0)
+	for rows.Next() {
+		var intent model.OutboundIntent
+		var lastAttempt sql.NullString
+		if err := rows.Scan(
+			&intent.ID,
+			&intent.RunID,
+			&intent.ConnectorID,
+			&intent.ChatID,
+			&intent.MessageText,
+			&intent.DedupeKey,
+			&intent.Status,
+			&intent.Attempts,
+			&intent.CreatedAt,
+			&lastAttempt,
+		); err != nil {
+			return nil, fmt.Errorf("scan session outbound intent: %w", err)
+		}
+		if lastAttempt.Valid && lastAttempt.String != "" {
+			parsed, err := parseActivityTime(lastAttempt.String)
+			if err != nil {
+				return nil, fmt.Errorf("parse outbound intent last_attempt_at: %w", err)
+			}
+			intent.LastAttemptAt = &parsed
+		}
+		intents = append(intents, intent)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate session outbound intents: %w", err)
+	}
+	return intents, nil
+}
+
+func (s *Service) ListSessionDeliveryFailures(ctx context.Context, sessionID string, limit int) ([]model.DeliveryFailure, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+
+	if limit > 0 {
+		rows, err = s.db.RawDB().QueryContext(ctx,
+			`SELECT id, run_id, payload_json, created_at
+			 FROM (
+			     SELECT e.id, COALESCE(e.run_id, '') AS run_id, COALESCE(e.payload_json, x'') AS payload_json, e.created_at
+			     FROM events e
+			     JOIN runs r ON r.id = e.run_id
+			     WHERE e.kind = 'delivery_failed' AND r.session_id = ?
+			     ORDER BY e.created_at DESC, e.id DESC
+			     LIMIT ?
+			 )
+			 ORDER BY created_at ASC, id ASC`,
+			sessionID, limit,
+		)
+	} else {
+		rows, err = s.db.RawDB().QueryContext(ctx,
+			`SELECT e.id, COALESCE(e.run_id, ''), COALESCE(e.payload_json, x''), e.created_at
+			 FROM events e
+			 JOIN runs r ON r.id = e.run_id
+			 WHERE e.kind = 'delivery_failed' AND r.session_id = ?
+			 ORDER BY e.created_at ASC, e.id ASC`,
+			sessionID,
+		)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("list session delivery failures: %w", err)
+	}
+	defer rows.Close()
+
+	failures := make([]model.DeliveryFailure, 0)
+	for rows.Next() {
+		var failure model.DeliveryFailure
+		var payloadJSON []byte
+		if err := rows.Scan(
+			&failure.ID,
+			&failure.RunID,
+			&payloadJSON,
+			&failure.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan session delivery failure: %w", err)
+		}
+		var payload struct {
+			ConnectorID string `json:"connector_id"`
+			ChatID      string `json:"chat_id"`
+			EventKind   string `json:"event_kind"`
+			Error       string `json:"error"`
+		}
+		if len(payloadJSON) > 0 {
+			if err := json.Unmarshal(payloadJSON, &payload); err != nil {
+				return nil, fmt.Errorf("unmarshal session delivery failure payload: %w", err)
+			}
+		}
+		failure.ConnectorID = payload.ConnectorID
+		failure.ChatID = payload.ChatID
+		failure.EventKind = payload.EventKind
+		failure.Error = payload.Error
+		failures = append(failures, failure)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate session delivery failures: %w", err)
+	}
+	return failures, nil
+}
+
 func parseActivityTime(value string) (time.Time, error) {
 	layouts := []string{
 		"2006-01-02 15:04:05.999999999 -0700 MST",

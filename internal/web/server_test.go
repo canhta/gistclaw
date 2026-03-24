@@ -596,6 +596,75 @@ func TestSessionAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("detail includes outbound deliveries and failures for the session", func(t *testing.T) {
+		h := newServerHarness(t)
+		run, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-1",
+				ExternalID:  "chat-1",
+				ThreadID:    "thread-1",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Inspect the repo.",
+			WorkspaceRoot: h.workspaceRoot,
+		})
+		if err != nil {
+			t.Fatalf("StartFrontSession failed: %v", err)
+		}
+
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE outbound_intents
+			 SET status='terminal', attempts=3, last_attempt_at=datetime('now')
+			 WHERE run_id = ?`,
+			run.ID,
+		); err != nil {
+			t.Fatalf("update outbound intent: %v", err)
+		}
+		payload := `{"intent_id":"intent-session","chat_id":"chat-1","connector_id":"telegram","event_kind":"run_completed","error":"delivery failed"}`
+		if err := conversations.NewConversationStore(h.db).AppendEvent(context.Background(), model.Event{
+			ID:             "evt-session-delivery-failed",
+			ConversationID: run.ConversationID,
+			RunID:          run.ID,
+			Kind:           "delivery_failed",
+			PayloadJSON:    []byte(payload),
+		}); err != nil {
+			t.Fatalf("append delivery_failed event: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+run.SessionID, nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			Deliveries       []model.OutboundIntent  `json:"deliveries"`
+			DeliveryFailures []model.DeliveryFailure `json:"delivery_failures"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if len(resp.Deliveries) != 1 {
+			t.Fatalf("expected 1 delivery, got %d", len(resp.Deliveries))
+		}
+		if resp.Deliveries[0].RunID != run.ID || resp.Deliveries[0].Status != "terminal" {
+			t.Fatalf("unexpected delivery payload: %+v", resp.Deliveries[0])
+		}
+		if len(resp.DeliveryFailures) != 1 {
+			t.Fatalf("expected 1 delivery failure, got %d", len(resp.DeliveryFailures))
+		}
+		if resp.DeliveryFailures[0].RunID != run.ID || resp.DeliveryFailures[0].ConnectorID != "telegram" {
+			t.Fatalf("unexpected delivery failure identity: %+v", resp.DeliveryFailures[0])
+		}
+		if resp.DeliveryFailures[0].Error != "delivery failed" {
+			t.Fatalf("unexpected delivery failure error: %+v", resp.DeliveryFailures[0])
+		}
+	})
+
 	t.Run("detail missing session returns not found", func(t *testing.T) {
 		h := newServerHarness(t)
 

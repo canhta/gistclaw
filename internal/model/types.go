@@ -200,6 +200,29 @@ type SessionRoute struct {
 	CreatedAt   time.Time
 }
 
+type OutboundIntent struct {
+	ID            string
+	RunID         string
+	ConnectorID   string
+	ChatID        string
+	MessageText   string
+	DedupeKey     string
+	Status        string
+	Attempts      int
+	CreatedAt     time.Time
+	LastAttemptAt *time.Time
+}
+
+type DeliveryFailure struct {
+	ID          string
+	RunID       string
+	ConnectorID string
+	ChatID      string
+	EventKind   string
+	Error       string
+	CreatedAt   time.Time
+}
+
 type RunRef struct {
 	ID     string
 	Status RunStatus

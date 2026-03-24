@@ -64,6 +64,7 @@ That means the next implementation work favors:
 - provider input assembled from session-local context instead of the whole conversation log
 - a real host process, where `serve` owns the local web control plane instead of only background preparation
 - operator-facing session visibility starts with the local session directory and mailbox APIs, and can grow into richer control-plane tools later
+- operator-facing session visibility now also includes session-scoped delivery state on the local host, so route attachment and delivery health can be inspected together
 - explicit session send/wake behavior should flow through the runtime so the same session contract can back both local tools and future channel recovery
 - external channel recovery should keep reusing the same inbound-message runtime contract rather than teaching each connector its own session-start logic
 - external retries and redeliveries should be absorbed by one runtime-owned inbound receipt model, so connectors stay thin and duplicate delivery does not fork extra runs
