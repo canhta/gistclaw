@@ -1,0 +1,67 @@
+{{define "onboarding_step1_body"}}
+<h1>Bind Workspace</h1>
+{{if .Error}}
+<p style="color:#dc2626;border:1.5px solid #dc2626;padding:8px;">{{.Error}}</p>
+{{end}}
+<div class="panel">
+  <form method="POST" action="/onboarding">
+    <label for="workspace_root"><strong>Workspace Path</strong></label><br>
+    <input type="text" id="workspace_root" name="workspace_root"
+           placeholder="/home/you/projects/myrepo"
+           style="width:100%;border:1.5px solid #1c1917;padding:6px;margin-top:4px;font-family:inherit;">
+    <br><br>
+    <p class="muted">Path must exist on disk and contain a .git directory.</p>
+    <button type="submit" style="border:1.5px solid #1c1917;background:#f8f7f5;padding:6px 16px;cursor:pointer;">
+      Bind Workspace
+    </button>
+  </form>
+</div>
+{{end}}
+
+{{define "onboarding_step2_body"}}
+<h1>Repo Scan</h1>
+<div class="panel">
+  <p>Signals detected in your workspace:</p>
+  <ul>
+  {{range .Candidates}}
+    <li><strong>{{.Kind}}</strong>: {{.Description}} <span class="muted">({{.Signal}})</span></li>
+  {{end}}
+  </ul>
+  <a href="/onboarding/step/3" style="display:inline-block;border:1.5px solid #1c1917;padding:6px 16px;text-decoration:none;color:#1c1917;">
+    Choose a Task
+  </a>
+</div>
+{{end}}
+
+{{define "onboarding_step3_body"}}
+<h1>Select Task</h1>
+<div class="panel">
+  <form method="POST" action="/onboarding/step/3">
+    {{range .Candidates}}
+    <label style="display:block;border:1.5px solid #1c1917;border-left:4px solid #0284c7;padding:12px;margin-bottom:8px;cursor:pointer;">
+      <input type="radio" name="task" value="{{.Description}}">
+      <strong>{{.Kind}}</strong>: {{.Description}}
+      <span class="muted" style="display:block;margin-top:4px;">Signal: {{.Signal}}</span>
+    </label>
+    {{end}}
+    <button type="submit" style="border:1.5px solid #1c1917;background:#f8f7f5;padding:6px 16px;cursor:pointer;">
+      Run Preview
+    </button>
+  </form>
+</div>
+{{end}}
+
+{{define "onboarding_step4_body"}}
+<h1>Preview Run</h1>
+<div class="panel">
+  <p>Run ID: <span class="mono">{{.RunID}}</span></p>
+  <p class="muted">Previewing changes — no files will be modified.</p>
+  <p>
+    <a href="/runs/{{.RunID}}">View run timeline</a>
+  </p>
+  <hr style="border:none;border-top:1.5px solid #e4e2de;margin:16px 0;">
+  <p>Connect Telegram to get updates on future runs &mdash;
+     <a href="/settings">Configure in Settings</a>
+  </p>
+</div>
+{{end}}

@@ -68,7 +68,7 @@ func NewServer(opts Options) (*Server, error) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	handler := s.recoverMiddleware(s.requestLogger(s.mux))
+	handler := s.recoverMiddleware(s.requestLogger(s.onboardingMiddleware(s.mux)))
 	handler.ServeHTTP(w, r)
 }
 
@@ -85,6 +85,12 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("POST /settings", s.adminAuth(http.HandlerFunc(s.handleSettingsUpdate)))
 	s.mux.HandleFunc("GET /run", s.handleRunForm)
 	s.mux.Handle("POST /run", s.adminAuth(http.HandlerFunc(s.handleRunSubmit)))
+	s.mux.HandleFunc("GET /onboarding", s.handleOnboarding)
+	s.mux.HandleFunc("POST /onboarding", s.handleOnboardingStep1Submit)
+	s.mux.HandleFunc("GET /onboarding/step/2", s.handleOnboardingStep2)
+	s.mux.HandleFunc("GET /onboarding/step/3", s.handleOnboardingStep3)
+	s.mux.HandleFunc("POST /onboarding/step/3", s.handleOnboardingStep3Submit)
+	s.mux.HandleFunc("GET /onboarding/step/4/{id}", s.handleOnboardingStep4)
 }
 
 func (s *Server) renderTemplate(w http.ResponseWriter, title, bodyTemplate string, data any) {
@@ -162,6 +168,7 @@ func loadTemplates() (*template.Template, error) {
 		filepath.Join(templateDir, "run_submit.html"),
 		filepath.Join(templateDir, "approvals.html"),
 		filepath.Join(templateDir, "settings.html"),
+		filepath.Join(templateDir, "onboarding.html"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("web: parse templates: %w", err)
