@@ -474,6 +474,91 @@ func TestSSE(t *testing.T) {
 }
 
 func TestSessionAPI(t *testing.T) {
+	t.Run("delivery health returns connector queue summary as JSON", func(t *testing.T) {
+		h := newServerHarness(t)
+		frontTelegram, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-1",
+				ExternalID:  "chat-1",
+				ThreadID:    "thread-1",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Inspect the repo.",
+			WorkspaceRoot: h.workspaceRoot,
+		})
+		if err != nil {
+			t.Fatalf("StartFrontSession telegram failed: %v", err)
+		}
+		frontWhatsApp, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "whatsapp",
+				AccountID:   "acct-2",
+				ExternalID:  "chat-2",
+				ThreadID:    "thread-2",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Inspect WhatsApp.",
+			WorkspaceRoot: h.workspaceRoot,
+		})
+		if err != nil {
+			t.Fatalf("StartFrontSession whatsapp failed: %v", err)
+		}
+
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE outbound_intents
+			 SET status='retrying', attempts=2, last_attempt_at=datetime('now', '-2 minutes')
+			 WHERE run_id = ?`,
+			frontTelegram.ID,
+		); err != nil {
+			t.Fatalf("update telegram outbound intent: %v", err)
+		}
+		if _, err := h.db.RawDB().Exec(
+			`INSERT INTO outbound_intents
+			 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at)
+			 VALUES ('intent-extra-terminal', ?, 'telegram', 'chat-1', 'reply extra', 'dedupe-extra', 'terminal', 5, datetime('now', '-1 minutes'))`,
+			frontTelegram.ID,
+		); err != nil {
+			t.Fatalf("insert telegram terminal outbound intent: %v", err)
+		}
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE outbound_intents
+			 SET status='pending', attempts=0, last_attempt_at=NULL
+			 WHERE run_id = ?`,
+			frontWhatsApp.ID,
+		); err != nil {
+			t.Fatalf("update whatsapp outbound intent: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/deliveries/health", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if got := rr.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+			t.Fatalf("expected JSON content type, got %q", got)
+		}
+
+		var resp struct {
+			Connectors []model.ConnectorDeliveryHealth `json:"connectors"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if len(resp.Connectors) != 2 {
+			t.Fatalf("expected 2 connector summaries, got %d", len(resp.Connectors))
+		}
+		if resp.Connectors[0].ConnectorID != "telegram" || resp.Connectors[0].RetryingCount != 1 || resp.Connectors[0].TerminalCount != 1 {
+			t.Fatalf("unexpected telegram connector summary: %+v", resp.Connectors[0])
+		}
+		if resp.Connectors[1].ConnectorID != "whatsapp" || resp.Connectors[1].PendingCount != 1 {
+			t.Fatalf("unexpected whatsapp connector summary: %+v", resp.Connectors[1])
+		}
+	})
+
 	t.Run("list returns recent sessions as JSON", func(t *testing.T) {
 		h := newServerHarness(t)
 		front := h.startFrontSession(t, "Inspect the repo.")

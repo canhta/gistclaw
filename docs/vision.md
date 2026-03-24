@@ -65,6 +65,7 @@ That means the next implementation work favors:
 - a real host process, where `serve` owns the local web control plane instead of only background preparation
 - operator-facing session visibility starts with the local session directory and mailbox APIs, and can grow into richer control-plane tools later
 - operator-facing session visibility now also includes session-scoped delivery state on the local host, so route attachment and delivery health can be inspected together
+- the local host now also exposes connector-level delivery queue health, so operators can see backlog and terminal-pressure by surface without drilling into individual sessions first
 - the local host can now request a controlled retry for terminal deliveries through the same session-scoped control plane, instead of requiring direct database intervention
 - session-scoped delivery failures on the local host are now filtered down to actionable failures, so a successful redrive clears the active failure view without erasing the underlying run audit trail
 - explicit session send/wake behavior should flow through the runtime so the same session contract can back both local tools and future channel recovery

@@ -326,6 +326,82 @@ func TestService_ListSessionDeliveryFailuresHidesResolvedFailures(t *testing.T) 
 	}
 }
 
+func TestService_ListConnectorDeliveryHealth(t *testing.T) {
+	svc := newTestSessionService(t)
+	ctx := context.Background()
+
+	frontTelegram := openFrontSession(t, svc)
+	frontWhatsApp, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-whatsapp",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession whatsapp failed: %v", err)
+	}
+
+	if _, err := svc.db.RawDB().ExecContext(
+		ctx,
+		`INSERT INTO runs
+		 (id, conversation_id, agent_id, session_id, objective, workspace_root, status, created_at, updated_at)
+		 VALUES
+		 ('run-telegram', ?, 'assistant', ?, 'Inspect Telegram', ?, 'completed', datetime('now', '-5 minutes'), datetime('now', '-5 minutes')),
+		 ('run-whatsapp', ?, 'assistant', ?, 'Inspect WhatsApp', ?, 'completed', datetime('now', '-5 minutes'), datetime('now', '-5 minutes'))`,
+		frontTelegram.ConversationID,
+		frontTelegram.ID,
+		t.TempDir(),
+		frontWhatsApp.ConversationID,
+		frontWhatsApp.ID,
+		t.TempDir(),
+	); err != nil {
+		t.Fatalf("insert runs: %v", err)
+	}
+
+	if _, err := svc.db.RawDB().ExecContext(
+		ctx,
+		`INSERT INTO outbound_intents
+		 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at, last_attempt_at)
+		 VALUES
+		 ('intent-telegram-pending', 'run-telegram', 'telegram', 'chat-1', 'reply one', 'dedupe-1', 'pending', 0, datetime('now', '-4 minutes'), NULL),
+		 ('intent-telegram-retrying', 'run-telegram', 'telegram', 'chat-1', 'reply two', 'dedupe-2', 'retrying', 2, datetime('now', '-3 minutes'), datetime('now', '-2 minutes')),
+		 ('intent-telegram-terminal', 'run-telegram', 'telegram', 'chat-1', 'reply three', 'dedupe-3', 'terminal', 5, datetime('now', '-2 minutes'), datetime('now', '-1 minutes')),
+		 ('intent-whatsapp-pending', 'run-whatsapp', 'whatsapp', 'chat-2', 'reply four', 'dedupe-4', 'pending', 0, datetime('now', '-90 seconds'), NULL)`,
+	); err != nil {
+		t.Fatalf("insert outbound intents: %v", err)
+	}
+
+	health, err := svc.ListConnectorDeliveryHealth(ctx)
+	if err != nil {
+		t.Fatalf("ListConnectorDeliveryHealth failed: %v", err)
+	}
+	if len(health) != 2 {
+		t.Fatalf("expected 2 connector summaries, got %d", len(health))
+	}
+
+	if health[0].ConnectorID != "telegram" {
+		t.Fatalf("expected telegram first, got %+v", health[0])
+	}
+	if health[0].PendingCount != 1 || health[0].RetryingCount != 1 || health[0].TerminalCount != 1 {
+		t.Fatalf("unexpected telegram counts: %+v", health[0])
+	}
+	if health[0].OldestPendingAt == nil || health[0].OldestRetryingAt == nil {
+		t.Fatalf("expected telegram oldest timestamps, got %+v", health[0])
+	}
+
+	if health[1].ConnectorID != "whatsapp" {
+		t.Fatalf("expected whatsapp second, got %+v", health[1])
+	}
+	if health[1].PendingCount != 1 || health[1].RetryingCount != 0 || health[1].TerminalCount != 0 {
+		t.Fatalf("unexpected whatsapp counts: %+v", health[1])
+	}
+	if health[1].OldestPendingAt == nil {
+		t.Fatalf("expected whatsapp pending timestamp, got %+v", health[1])
+	}
+	if health[1].OldestRetryingAt != nil {
+		t.Fatalf("expected whatsapp retrying timestamp to be nil, got %+v", health[1])
+	}
+}
+
 func TestService_ListConversationSessionsOrdersByLatestActivity(t *testing.T) {
 	svc := newTestSessionService(t)
 	ctx := context.Background()

@@ -26,6 +26,10 @@ func (r *Runtime) SessionHistory(ctx context.Context, sessionID string, limit in
 	return sessions.NewService(r.store, r.convStore).LoadSessionMailbox(ctx, sessionID, limit)
 }
 
+func (r *Runtime) ConnectorDeliveryHealth(ctx context.Context) ([]model.ConnectorDeliveryHealth, error) {
+	return sessions.NewService(r.store, r.convStore).ListConnectorDeliveryHealth(ctx)
+}
+
 func (r *Runtime) SessionDeliveryState(ctx context.Context, sessionID string, limit int) ([]model.OutboundIntent, []model.DeliveryFailure, error) {
 	svc := sessions.NewService(r.store, r.convStore)
 

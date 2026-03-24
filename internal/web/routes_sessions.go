@@ -16,6 +16,10 @@ type sessionListResponse struct {
 	Sessions []model.Session `json:"sessions"`
 }
 
+type connectorDeliveryHealthResponse struct {
+	Connectors []model.ConnectorDeliveryHealth `json:"connectors"`
+}
+
 type sessionMailboxResponse struct {
 	Session          model.Session           `json:"session"`
 	Messages         []model.SessionMessage  `json:"messages"`
@@ -50,6 +54,21 @@ func (s *Server) handleSessionsIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, sessionListResponse{Sessions: list})
+}
+
+func (s *Server) handleDeliveryHealth(w http.ResponseWriter, r *http.Request) {
+	if s.rt == nil {
+		http.Error(w, "runtime not configured", http.StatusInternalServerError)
+		return
+	}
+
+	list, err := s.rt.ConnectorDeliveryHealth(r.Context())
+	if err != nil {
+		http.Error(w, "failed to load delivery health", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, connectorDeliveryHealthResponse{Connectors: list})
 }
 
 func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {

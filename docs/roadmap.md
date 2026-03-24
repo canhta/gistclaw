@@ -41,6 +41,7 @@ Remaining gaps:
 - the local web host now exposes read-only session directory and mailbox APIs on top of the session kernel
 - the local web host can now send a message into a session and wake it through the runtime instead of only reading mailbox state
 - session detail on the local host now exposes the active bound route plus recent outbound deliveries and delivery failures, and terminal deliveries can now be re-queued from that same session control plane
+- the local web host now also exposes connector-level delivery queue health, so operators can inspect pending, retrying, and terminal backlog by surface
 - web submit and Telegram ingress now share the same runtime inbound-message path, so follow-up user turns reuse the bound session instead of depending on surface-specific startup logic
 - Telegram and WhatsApp ingress now carry source message identity through the runtime, so retries are idempotent and provenance stays explicit in the session mailbox
 - WhatsApp webhook ingress and outbound draining now use that same session/runtime contract, giving the platform a second real external surface

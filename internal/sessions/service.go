@@ -476,6 +476,61 @@ func (s *Service) ListSessionDeliveryFailures(ctx context.Context, sessionID str
 	return actionable, nil
 }
 
+func (s *Service) ListConnectorDeliveryHealth(ctx context.Context) ([]model.ConnectorDeliveryHealth, error) {
+	rows, err := s.db.RawDB().QueryContext(ctx,
+		`SELECT connector_id,
+		        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+		        SUM(CASE WHEN status = 'retrying' THEN 1 ELSE 0 END) AS retrying_count,
+		        SUM(CASE WHEN status = 'terminal' THEN 1 ELSE 0 END) AS terminal_count,
+		        MIN(CASE WHEN status = 'pending' THEN created_at END) AS oldest_pending_at,
+		        MIN(CASE WHEN status = 'retrying' THEN last_attempt_at END) AS oldest_retrying_at
+		 FROM outbound_intents
+		 WHERE status IN ('pending', 'retrying', 'terminal')
+		 GROUP BY connector_id
+		 ORDER BY connector_id ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("list connector delivery health: %w", err)
+	}
+	defer rows.Close()
+
+	summaries := make([]model.ConnectorDeliveryHealth, 0)
+	for rows.Next() {
+		var summary model.ConnectorDeliveryHealth
+		var oldestPending sql.NullString
+		var oldestRetrying sql.NullString
+		if err := rows.Scan(
+			&summary.ConnectorID,
+			&summary.PendingCount,
+			&summary.RetryingCount,
+			&summary.TerminalCount,
+			&oldestPending,
+			&oldestRetrying,
+		); err != nil {
+			return nil, fmt.Errorf("scan connector delivery health: %w", err)
+		}
+		if oldestPending.Valid && oldestPending.String != "" {
+			parsed, err := parseActivityTime(oldestPending.String)
+			if err != nil {
+				return nil, fmt.Errorf("parse oldest pending time: %w", err)
+			}
+			summary.OldestPendingAt = &parsed
+		}
+		if oldestRetrying.Valid && oldestRetrying.String != "" {
+			parsed, err := parseActivityTime(oldestRetrying.String)
+			if err != nil {
+				return nil, fmt.Errorf("parse oldest retrying time: %w", err)
+			}
+			summary.OldestRetryingAt = &parsed
+		}
+		summaries = append(summaries, summary)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate connector delivery health: %w", err)
+	}
+
+	return summaries, nil
+}
+
 func (s *Service) loadOutboundIntentStatus(ctx context.Context, intentID string) (string, error) {
 	var status string
 	err := s.db.RawDB().QueryRowContext(ctx,

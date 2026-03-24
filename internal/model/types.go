@@ -224,6 +224,15 @@ type DeliveryFailure struct {
 	CreatedAt   time.Time
 }
 
+type ConnectorDeliveryHealth struct {
+	ConnectorID      string
+	PendingCount     int
+	RetryingCount    int
+	TerminalCount    int
+	OldestPendingAt  *time.Time
+	OldestRetryingAt *time.Time
+}
+
 type RunRef struct {
 	ID     string
 	Status RunStatus
