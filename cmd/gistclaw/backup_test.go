@@ -1,8 +1,8 @@
 package main
 
 import (
+	"bytes"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,51 +23,43 @@ func seedDB(t *testing.T, dbPath string) {
 }
 
 func TestBackup_CreatesFile(t *testing.T) {
-	bin := buildBinary(t)
 	dbDir := t.TempDir()
 	dbPath := filepath.Join(dbDir, "gistclaw.db")
 	seedDB(t, dbPath)
 
-	cmd := exec.Command(bin, "backup", "--db", dbPath)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("backup failed: %v\n%s", err, out)
+	var stdout, stderr bytes.Buffer
+	code := runBackup([]string{"--db", dbPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("backup exited %d: %s", code, stderr.String())
 	}
-
-	// Backup path is printed to stdout.
-	bakPath := strings.TrimSpace(string(out))
+	bakPath := strings.TrimSpace(stdout.String())
 	if _, err := os.Stat(bakPath); err != nil {
 		t.Errorf("backup file not found at %q: %v", bakPath, err)
 	}
 }
 
 func TestBackup_FilenameHasTimestamp(t *testing.T) {
-	bin := buildBinary(t)
 	dbDir := t.TempDir()
 	dbPath := filepath.Join(dbDir, "gistclaw.db")
 	seedDB(t, dbPath)
 
-	cmd := exec.Command(bin, "backup", "--db", dbPath)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("backup failed: %v\n%s", err, out)
+	var stdout, stderr bytes.Buffer
+	code := runBackup([]string{"--db", dbPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("backup exited %d: %s", code, stderr.String())
 	}
-
-	bakPath := strings.TrimSpace(string(out))
+	bakPath := strings.TrimSpace(stdout.String())
 	base := filepath.Base(bakPath)
-	// Expect a timestamp component like 20260324-153000 in the filename.
 	if !strings.Contains(base, "-") || !strings.HasSuffix(base, ".db.bak") {
-		t.Errorf("expected backup filename with timestamp and .db.bak suffix, got %q", base)
+		t.Errorf("expected timestamped .db.bak filename, got %q", base)
 	}
 }
 
 func TestBackup_SucceedsWithConcurrentReader(t *testing.T) {
-	bin := buildBinary(t)
 	dbDir := t.TempDir()
 	dbPath := filepath.Join(dbDir, "gistclaw.db")
 	seedDB(t, dbPath)
 
-	// Hold a read connection open while backup runs.
 	db, err := store.Open(dbPath)
 	if err != nil {
 		t.Fatalf("open read connection: %v", err)
@@ -75,9 +67,38 @@ func TestBackup_SucceedsWithConcurrentReader(t *testing.T) {
 	defer db.Close()
 	_ = db.RawDB().QueryRow("SELECT 1")
 
-	cmd := exec.Command(bin, "backup", "--db", dbPath)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("backup with concurrent reader failed: %v\n%s", err, out)
+	var stdout, stderr bytes.Buffer
+	code := runBackup([]string{"--db", dbPath}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("backup with concurrent reader exited %d: %s", code, stderr.String())
+	}
+}
+
+func TestBackup_MissingDBFlagErrors(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := runBackup([]string{}, &stdout, &stderr)
+	if code == 0 {
+		t.Error("expected non-zero exit for missing --db flag")
+	}
+}
+
+func TestParseFlag_EqualsForm(t *testing.T) {
+	val, err := parseFlag([]string{"--db=/tmp/foo.db"}, "--db")
+	if err != nil || val != "/tmp/foo.db" {
+		t.Errorf("expected /tmp/foo.db, got %q err=%v", val, err)
+	}
+}
+
+func TestParseFlag_SpaceForm(t *testing.T) {
+	val, err := parseFlag([]string{"--db", "/tmp/foo.db"}, "--db")
+	if err != nil || val != "/tmp/foo.db" {
+		t.Errorf("expected /tmp/foo.db, got %q err=%v", val, err)
+	}
+}
+
+func TestParseFlag_Missing(t *testing.T) {
+	val, err := parseFlag([]string{"--other", "x"}, "--db")
+	if err != nil || val != "" {
+		t.Errorf("expected empty string, got %q err=%v", val, err)
 	}
 }

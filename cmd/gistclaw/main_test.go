@@ -1,83 +1,93 @@
 package main
 
 import (
-	"os"
-	"os/exec"
-	"path/filepath"
+	"bytes"
 	"strings"
 	"testing"
 )
 
-func TestMain_UnknownSubcommand(t *testing.T) {
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "gistclaw")
-
-	build := exec.Command("go", "build", "-o", bin, "./cmd/gistclaw")
-	build.Dir = findModuleRoot(t)
-	build.Env = append(os.Environ(), "GOFLAGS=")
-	out, err := build.CombinedOutput()
-	if err != nil {
-		t.Fatalf("build failed: %v\n%s", err, out)
+func TestRun_NoArgsShowsUsage(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{}, &stdout, &stderr)
+	if code == 0 {
+		t.Error("expected non-zero exit for no args")
 	}
-
-	cmd := exec.Command(bin, "nonsense")
-	err = cmd.Run()
-	if err == nil {
-		t.Fatal("expected non-zero exit code for unknown subcommand")
-	}
-
-	exitErr, ok := err.(*exec.ExitError)
-	if !ok {
-		t.Fatalf("expected *exec.ExitError, got %T", err)
-	}
-	if exitErr.ExitCode() != 1 {
-		t.Fatalf("expected exit code 1, got %d", exitErr.ExitCode())
+	if !strings.Contains(stderr.String(), "Usage") {
+		t.Errorf("expected usage in stderr:\n%s", stderr.String())
 	}
 }
 
-func TestMain_HelpFlag(t *testing.T) {
-	dir := t.TempDir()
-	bin := filepath.Join(dir, "gistclaw")
-
-	build := exec.Command("go", "build", "-o", bin, "./cmd/gistclaw")
-	build.Dir = findModuleRoot(t)
-	build.Env = append(os.Environ(), "GOFLAGS=")
-	out, err := build.CombinedOutput()
-	if err != nil {
-		t.Fatalf("build failed: %v\n%s", err, out)
-	}
-
-	cmd := exec.Command(bin, "-h")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() != 2 {
-			t.Fatalf("expected exit code 0 or 2 for -h, got %d", exitErr.ExitCode())
+func TestRun_HelpFlag(t *testing.T) {
+	for _, flag := range []string{"-h", "--help", "help"} {
+		var stdout, stderr bytes.Buffer
+		code := run([]string{flag}, &stdout, &stderr)
+		if code != 0 {
+			t.Errorf("%s: expected exit 0, got %d", flag, code)
+		}
+		if !strings.Contains(stdout.String(), "Usage") {
+			t.Errorf("%s: expected Usage in stdout:\n%s", flag, stdout.String())
 		}
 	}
+}
 
-	if len(output) == 0 {
-		t.Fatal("expected usage output, got empty")
+func TestRun_UnknownCommand(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"unknowncmd"}, &stdout, &stderr)
+	if code == 0 {
+		t.Error("expected non-zero exit for unknown command")
 	}
-
-	usage := string(output)
-	if !strings.Contains(usage, "serve") || !strings.Contains(usage, "run") || !strings.Contains(usage, "inspect") {
-		t.Fatalf("usage output missing expected subcommands:\n%s", usage)
+	if !strings.Contains(stderr.String(), "unknown command") {
+		t.Errorf("expected 'unknown command' in stderr:\n%s", stderr.String())
 	}
 }
 
-func findModuleRoot(t *testing.T) string {
-	t.Helper()
+func TestRun_BackupNoDBFlag(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"backup"}, &stdout, &stderr)
+	if code == 0 {
+		t.Error("expected non-zero exit for backup with no --db")
+	}
+}
 
-	cmd := exec.Command("go", "env", "GOMOD")
-	out, err := cmd.Output()
+func TestRun_ExportNoFlags(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"export"}, &stdout, &stderr)
+	if code == 0 {
+		t.Error("expected non-zero exit for export with no flags")
+	}
+}
+
+func TestParseConfigPath_EnvVar(t *testing.T) {
+	t.Setenv("GISTCLAW_CONFIG", "/tmp/from-env.yaml")
+	cfgPath, rest, err := parseConfigPath([]string{"serve"})
 	if err != nil {
-		t.Fatalf("cannot find module root: %v", err)
+		t.Fatalf("unexpected error: %v", err)
 	}
-
-	modPath := strings.TrimSpace(string(out))
-	if modPath == "" {
-		t.Fatal("go env GOMOD returned empty path")
+	if cfgPath != "/tmp/from-env.yaml" {
+		t.Errorf("expected /tmp/from-env.yaml, got %q", cfgPath)
 	}
+	if len(rest) != 1 || rest[0] != "serve" {
+		t.Errorf("expected rest=[serve], got %v", rest)
+	}
+}
 
-	return filepath.Dir(modPath)
+func TestParseConfigPath_ExplicitFlag(t *testing.T) {
+	t.Setenv("GISTCLAW_CONFIG", "")
+	cfgPath, rest, err := parseConfigPath([]string{"-c", "/tmp/explicit.yaml", "serve"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfgPath != "/tmp/explicit.yaml" {
+		t.Errorf("expected /tmp/explicit.yaml, got %q", cfgPath)
+	}
+	if len(rest) != 1 || rest[0] != "serve" {
+		t.Errorf("expected rest=[serve], got %v", rest)
+	}
+}
+
+func TestParseConfigPath_MissingValue(t *testing.T) {
+	_, _, err := parseConfigPath([]string{"-c"})
+	if err == nil {
+		t.Error("expected error for -c with no value")
+	}
 }

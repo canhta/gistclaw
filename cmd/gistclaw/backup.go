@@ -85,14 +85,19 @@ func runBackup(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// parseFlag extracts a named flag value (--name value) from args.
+// parseFlag extracts a named flag value (--name value or --name=value) from args.
 func parseFlag(args []string, name string) (string, error) {
-	for i := 0; i < len(args)-1; i++ {
-		if args[i] == name {
-			return args[i+1], nil
-		}
+	for i := 0; i < len(args); i++ {
+		// --flag=value form: no lookahead needed.
 		if len(args[i]) > len(name)+1 && args[i][:len(name)+1] == name+"=" {
 			return args[i][len(name)+1:], nil
+		}
+		// --flag value form: requires a following element.
+		if args[i] == name {
+			if i+1 < len(args) {
+				return args[i+1], nil
+			}
+			return "", nil
 		}
 	}
 	return "", nil
