@@ -157,6 +157,25 @@ func (r *Runtime) BindRoute(ctx context.Context, cmd BindRouteCommand) (model.Ro
 	return svc.LoadRoute(ctx, evt.ID)
 }
 
+func (r *Runtime) SendRoute(ctx context.Context, routeID, fromSessionID, body string) (model.Run, error) {
+	svc := sessions.NewService(r.store, r.convStore)
+	route, err := svc.LoadRoute(ctx, routeID)
+	if err != nil {
+		if errors.Is(err, sessions.ErrSessionRouteNotFound) {
+			return model.Run{}, ErrRouteNotFound
+		}
+		return model.Run{}, err
+	}
+	if route.Status != "active" {
+		return model.Run{}, ErrRouteNotActive
+	}
+	return r.SendSession(ctx, SendSessionCommand{
+		FromSessionID: fromSessionID,
+		ToSessionID:   route.SessionID,
+		Body:          body,
+	})
+}
+
 func (r *Runtime) retryDelivery(ctx context.Context, conversationID, sessionID string, intent model.OutboundIntent) (model.OutboundIntent, error) {
 	if intent.Status != "terminal" {
 		return model.OutboundIntent{}, ErrDeliveryNotRetryable

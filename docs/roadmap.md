@@ -45,6 +45,7 @@ Remaining gaps:
 - the local web host now also exposes a filtered global delivery queue plus top-level retry by delivery id, so operators can move from connector health to recovery without first locating the owning session
 - the local web host now also exposes a global route directory, so operators can inspect active external bindings across Telegram, WhatsApp, and future surfaces from one place
 - the local web host can now create a specific route binding for an existing session, so operators can rebind external surfaces without manual database work
+- the local web host can now send to a specific route by binding id, so route discovery can flow directly into a runtime wake-up action
 - the local web host can now deactivate a specific route by binding id, so stale external bindings can be cleared without manual database intervention
 - web submit and Telegram ingress now share the same runtime inbound-message path, so follow-up user turns reuse the bound session instead of depending on surface-specific startup logic
 - Telegram and WhatsApp ingress now carry source message identity through the runtime, so retries are idempotent and provenance stays explicit in the session mailbox

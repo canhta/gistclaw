@@ -69,6 +69,7 @@ That means the next implementation work favors:
 - the local host now also exposes a global delivery queue and top-level retry path, so connector health can flow into concrete operator action without session hunting
 - the local host now also exposes a global route directory, so operators can inspect how external surfaces are currently bound into the session kernel
 - the local host can now create a new route binding for an existing session, so operators can recover or rebind external surfaces through the journal-backed control plane
+- the local host can now send directly to a route by binding id, so route discovery can flow straight into session wake-up without manual ID translation
 - the local host can now deactivate a bound route explicitly, so stale or misrouted external bindings can be cleared without direct database work
 - the local host can now request a controlled retry for terminal deliveries through the same session-scoped control plane, instead of requiring direct database intervention
 - session-scoped delivery failures on the local host are now filtered down to actionable failures, so a successful redrive clears the active failure view without erasing the underlying run audit trail

@@ -193,6 +193,47 @@ func (s *Server) handleRouteDeactivate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, routeDeactivateResponse{Route: route})
 }
 
+func (s *Server) handleRouteSend(w http.ResponseWriter, r *http.Request) {
+	if s.rt == nil {
+		http.Error(w, "runtime not configured", http.StatusInternalServerError)
+		return
+	}
+
+	var req sessionSendRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if req.Body == "" {
+		http.Error(w, "body is required", http.StatusBadRequest)
+		return
+	}
+
+	run, err := s.rt.SendRoute(r.Context(), r.PathValue("id"), req.FromSessionID, req.Body)
+	if err != nil {
+		switch {
+		case errors.Is(err, runtime.ErrRouteNotFound):
+			http.NotFound(w, r)
+			return
+		case errors.Is(err, runtime.ErrRouteNotActive):
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"message": "Only active routes can receive messages.",
+			})
+			return
+		case errors.Is(err, conversations.ErrConversationBusy):
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"message": "The target session is busy with another active root run.",
+			})
+			return
+		default:
+			http.Error(w, "failed to send route message", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, sessionSendResponse{Run: run})
+}
+
 func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 	if s.rt == nil {
 		http.Error(w, "runtime not configured", http.StatusInternalServerError)

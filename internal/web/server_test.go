@@ -789,6 +789,61 @@ func TestSessionAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("route send wakes the bound session", func(t *testing.T) {
+		h := newServerHarness(t)
+		run, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-1",
+				ExternalID:  "chat-1",
+				ThreadID:    "thread-1",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Inspect Telegram.",
+			WorkspaceRoot: h.workspaceRoot,
+		})
+		if err != nil {
+			t.Fatalf("StartFrontSession telegram failed: %v", err)
+		}
+
+		listRR := httptest.NewRecorder()
+		listReq := httptest.NewRequest(http.MethodGet, "/api/routes?connector_id=telegram", nil)
+		h.server.ServeHTTP(listRR, listReq)
+		if listRR.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", listRR.Code, listRR.Body.String())
+		}
+
+		var listResp struct {
+			Routes []model.RouteDirectoryItem `json:"routes"`
+		}
+		if err := json.Unmarshal(listRR.Body.Bytes(), &listResp); err != nil {
+			t.Fatalf("decode list response: %v", err)
+		}
+		if len(listResp.Routes) != 1 {
+			t.Fatalf("expected 1 route, got %d", len(listResp.Routes))
+		}
+
+		sendRR := httptest.NewRecorder()
+		sendReq := httptest.NewRequest(http.MethodPost, "/api/routes/"+listResp.Routes[0].ID+"/messages",
+			strings.NewReader(`{"body":"What changed?"}`))
+		sendReq.Header.Set("Authorization", "Bearer "+h.adminToken)
+		sendReq.Header.Set("Content-Type", "application/json")
+		h.server.ServeHTTP(sendRR, sendReq)
+		if sendRR.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", sendRR.Code, sendRR.Body.String())
+		}
+
+		var sendResp struct {
+			Run model.Run `json:"run"`
+		}
+		if err := json.Unmarshal(sendRR.Body.Bytes(), &sendResp); err != nil {
+			t.Fatalf("decode send response: %v", err)
+		}
+		if sendResp.Run.SessionID != run.SessionID || sendResp.Run.ID == run.ID {
+			t.Fatalf("unexpected route send run: %+v", sendResp.Run)
+		}
+	})
+
 	t.Run("list returns recent sessions as JSON", func(t *testing.T) {
 		h := newServerHarness(t)
 		front := h.startFrontSession(t, "Inspect the repo.")
