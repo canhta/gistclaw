@@ -39,7 +39,40 @@ flowchart LR
 
 ## Status
 
-This repository is still in design and planning mode. There is no runnable implementation yet.
+Milestones 1 through 4 are complete. The binary is production-ready for local use.
+
+| Milestone | Description | Status |
+|-----------|-------------|--------|
+| 1 — Kernel Proof | Single-repo task execution, durable event journal, run receipts, interrupted-run recovery | complete |
+| 2 — Web UI and SSE | Live run stream via SSE, web UI for runs and approvals | complete |
+| 3 — Public Beta | Telegram approval integration, budget guard, multi-repo support | complete |
+| 4 — Stable 1.0 | Recovery hardening, doctor/backup/export operator tooling, onboarding and approval UX polish | complete |
+
+Phase 5 features (sharing, groups, publish-back, node-level control, compare view) are not yet scoped.
+
+## Installation
+
+Build from source:
+
+```bash
+go build -o bin/gistclaw ./cmd/gistclaw
+```
+
+Config file: `~/.config/gistclaw/config.yaml`
+
+## Usage
+
+```
+gistclaw <subcommand> [options]
+
+Subcommands:
+  serve      Start the GistClaw daemon
+  run        Submit a task directly
+  inspect    Inspect daemon state
+  doctor     Run health checks (config, database, provider, workspace, disk)
+  backup     Back up the SQLite database to a timestamped .db.bak file
+  export     Export runs, receipts, and approvals to a JSON file
+```
 
 ## Development
 
