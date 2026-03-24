@@ -2,7 +2,6 @@ package replay
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/canhta/gistclaw/internal/model"
@@ -81,32 +80,41 @@ func (s *Service) LoadRun(ctx context.Context, runID string) (RunReplay, error) 
 }
 
 func (s *Service) LoadGraph(ctx context.Context, rootRunID string) (ReplayGraph, error) {
-	var snapshotJSON []byte
-	err := s.db.RawDB().QueryRowContext(ctx,
-		"SELECT execution_snapshot_json FROM runs WHERE id = ?",
-		rootRunID,
-	).Scan(&snapshotJSON)
+	rows, err := s.db.RawDB().QueryContext(ctx,
+		`WITH RECURSIVE lineage(id, parent_run_id, created_at) AS (
+			SELECT id, COALESCE(parent_run_id, ''), created_at
+			FROM runs
+			WHERE id = ?
+			UNION ALL
+			SELECT r.id, COALESCE(r.parent_run_id, ''), r.created_at
+			FROM runs r
+			INNER JOIN lineage l ON r.parent_run_id = l.id
+		)
+		SELECT id, parent_run_id
+		FROM lineage
+		WHERE id != ?
+		ORDER BY created_at ASC`,
+		rootRunID, rootRunID,
+	)
 	if err != nil {
-		return ReplayGraph{}, fmt.Errorf("replay: load snapshot: %w", err)
+		return ReplayGraph{}, fmt.Errorf("replay: load graph lineage: %w", err)
 	}
+	defer rows.Close()
 
 	graph := ReplayGraph{RootRunID: rootRunID}
-	if len(snapshotJSON) == 0 {
-		return graph, nil
+	for rows.Next() {
+		var runID string
+		var parentRunID string
+		if err := rows.Scan(&runID, &parentRunID); err != nil {
+			return ReplayGraph{}, fmt.Errorf("replay: scan graph lineage: %w", err)
+		}
+		if parentRunID == "" {
+			continue
+		}
+		graph.Edges = append(graph.Edges, GraphEdge{From: parentRunID, To: runID})
 	}
-
-	var snapshot struct {
-		HandoffEdges []struct {
-			From string `json:"from"`
-			To   string `json:"to"`
-		} `json:"handoff_edges"`
-	}
-	if err := json.Unmarshal(snapshotJSON, &snapshot); err != nil {
-		return ReplayGraph{}, fmt.Errorf("replay: parse snapshot: %w", err)
-	}
-
-	for _, edge := range snapshot.HandoffEdges {
-		graph.Edges = append(graph.Edges, GraphEdge{From: edge.From, To: edge.To})
+	if err := rows.Err(); err != nil {
+		return ReplayGraph{}, fmt.Errorf("replay: iterate graph lineage: %w", err)
 	}
 
 	return graph, nil

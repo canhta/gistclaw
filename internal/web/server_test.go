@@ -40,6 +40,32 @@ func TestRuns(t *testing.T) {
 		}
 	})
 
+	t.Run("list renders front session summary", func(t *testing.T) {
+		h := newServerHarness(t)
+		h.insertRun(t, "run-front", "conv-1", "review the repo", "active")
+		_, err := h.db.RawDB().Exec(
+			`INSERT INTO runs
+			 (id, conversation_id, agent_id, parent_run_id, team_id, objective, workspace_root, status, created_at, updated_at)
+			 VALUES ('run-worker', 'conv-1', 'researcher', 'run-front', 'repo-task-team', 'inspect docs', ?, 'completed', datetime('now'), datetime('now'))`,
+			h.workspaceRoot,
+		)
+		if err != nil {
+			t.Fatalf("insert worker run: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/runs", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+		if !strings.Contains(rr.Body.String(), "front session with 1 worker run") {
+			t.Fatalf("expected front-session summary, got:\n%s", rr.Body.String())
+		}
+	})
+
 	t.Run("list renders empty state", func(t *testing.T) {
 		h := newServerHarness(t)
 

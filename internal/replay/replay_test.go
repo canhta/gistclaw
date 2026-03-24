@@ -59,29 +59,34 @@ func TestReplay_LoadRunFromJournal(t *testing.T) {
 	}
 }
 
-func TestReplay_HandoffEdgesFromSnapshot_NotFromDisk(t *testing.T) {
+func TestLoadGraph_UsesSessionLineageInsteadOfHandoffEdges(t *testing.T) {
 	db := setupReplayDB(t)
 	ctx := context.Background()
 
-	snapshotV1 := `{"handoff_edges":[{"from":"agent-a","to":"agent-b"}]}`
 	_, err := db.RawDB().Exec(
-		`INSERT INTO runs (id, conversation_id, agent_id, status, execution_snapshot_json, created_at, updated_at)
-		 VALUES ('run-snap', 'conv-snap', 'agent-a', 'completed', ?, datetime('now'), datetime('now'))`,
-		snapshotV1,
+		`INSERT INTO runs (id, conversation_id, agent_id, status, created_at, updated_at)
+		 VALUES ('run-front', 'conv-sessions', 'assistant', 'completed', datetime('now'), datetime('now'))`,
 	)
 	if err != nil {
-		t.Fatalf("insert run: %v", err)
+		t.Fatalf("insert front run: %v", err)
+	}
+	_, err = db.RawDB().Exec(
+		`INSERT INTO runs (id, conversation_id, agent_id, parent_run_id, status, created_at, updated_at)
+		 VALUES ('run-worker', 'conv-sessions', 'researcher', 'run-front', 'completed', datetime('now'), datetime('now'))`,
+	)
+	if err != nil {
+		t.Fatalf("insert worker run: %v", err)
 	}
 
 	svc := NewService(db)
-	graph, err := svc.LoadGraph(ctx, "run-snap")
+	graph, err := svc.LoadGraph(ctx, "run-front")
 	if err != nil {
 		t.Fatalf("LoadGraph failed: %v", err)
 	}
 	if len(graph.Edges) != 1 {
-		t.Fatalf("expected 1 edge from snapshot, got %d", len(graph.Edges))
+		t.Fatalf("expected 1 lineage edge, got %d", len(graph.Edges))
 	}
-	if graph.Edges[0].From != "agent-a" || graph.Edges[0].To != "agent-b" {
+	if graph.Edges[0].From != "run-front" || graph.Edges[0].To != "run-worker" {
 		t.Fatalf("unexpected edge: %+v", graph.Edges[0])
 	}
 }

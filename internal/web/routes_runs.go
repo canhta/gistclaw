@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -11,6 +12,7 @@ import (
 type runListItem struct {
 	ID        string
 	Objective string
+	Summary   string
 	Status    string
 }
 
@@ -31,7 +33,8 @@ type runEventView struct {
 
 func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.RawDB().QueryContext(r.Context(),
-		`SELECT id, COALESCE(objective, ''), status
+		`SELECT id, COALESCE(objective, ''), COALESCE(parent_run_id, ''), status,
+		        (SELECT count(*) FROM runs child WHERE child.parent_run_id = runs.id) AS worker_count
 		 FROM runs
 		 ORDER BY created_at DESC`,
 	)
@@ -44,10 +47,13 @@ func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 	runs := make([]runListItem, 0)
 	for rows.Next() {
 		var item runListItem
-		if err := rows.Scan(&item.ID, &item.Objective, &item.Status); err != nil {
+		var parentRunID string
+		var workerCount int
+		if err := rows.Scan(&item.ID, &item.Objective, &parentRunID, &item.Status, &workerCount); err != nil {
 			http.Error(w, "failed to load runs", http.StatusInternalServerError)
 			return
 		}
+		item.Summary = formatRunSummary(parentRunID, item.ID, workerCount)
 		runs = append(runs, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -56,6 +62,20 @@ func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.renderTemplate(w, "Runs", "runs_body", runsPageData{Runs: runs})
+}
+
+func formatRunSummary(parentRunID, runID string, workerCount int) string {
+	if parentRunID == "" {
+		return "front session with " + formatWorkerCount(workerCount)
+	}
+	return "worker session under " + parentRunID
+}
+
+func formatWorkerCount(count int) string {
+	if count == 1 {
+		return "1 worker run"
+	}
+	return fmt.Sprintf("%d worker runs", count)
 }
 
 func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
