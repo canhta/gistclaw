@@ -142,6 +142,18 @@ func TestRuntime_StartFrontSessionReusesExistingAssistantSession(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("expected 1 durable front session, got %d", count)
 	}
+
+	var bindingCount int
+	err = db.RawDB().QueryRow(
+		"SELECT count(*) FROM session_bindings WHERE thread_id = 'main' AND session_id = ?",
+		first.SessionID,
+	).Scan(&bindingCount)
+	if err != nil {
+		t.Fatalf("count session bindings: %v", err)
+	}
+	if bindingCount != 1 {
+		t.Fatalf("expected 1 active thread binding for durable front session, got %d", bindingCount)
+	}
 }
 
 func TestRuntime_SpawnCreatesWorkerRunAndSession(t *testing.T) {

@@ -48,7 +48,8 @@ func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) 
 		return model.Run{}, fmt.Errorf("resolve conversation: %w", err)
 	}
 
-	sessionID, createSession, err := r.resolveFrontSession(ctx, conv.ID)
+	threadID := normalizeThreadID(cmd.ConversationKey.ThreadID)
+	sessionID, createSession, createBinding, err := r.resolveFrontSession(ctx, conv.ID, threadID)
 	if err != nil {
 		return model.Run{}, err
 	}
@@ -67,6 +68,11 @@ func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) 
 	}
 	if createSession {
 		if err := r.openSession(ctx, conv.ID, runID, "", sessionID, cmd.FrontAgentID, model.SessionRoleFront, "", ""); err != nil {
+			return model.Run{}, err
+		}
+	}
+	if createBinding {
+		if err := r.bindSession(ctx, conv.ID, runID, threadID, sessionID); err != nil {
 			return model.Run{}, err
 		}
 	}
@@ -220,22 +226,67 @@ func (r *Runtime) openSession(
 	return nil
 }
 
-func (r *Runtime) resolveFrontSession(ctx context.Context, conversationID string) (string, bool, error) {
-	key := sessionkeys.BuildFrontSessionKey(conversationID)
-
+func (r *Runtime) resolveFrontSession(ctx context.Context, conversationID string, threadID string) (string, bool, bool, error) {
 	var sessionID string
 	err := r.store.RawDB().QueryRowContext(ctx,
+		`SELECT session_id
+		 FROM session_bindings
+		 WHERE conversation_id = ? AND thread_id = ? AND status = 'active'
+		 ORDER BY created_at DESC
+		 LIMIT 1`,
+		conversationID,
+		threadID,
+	).Scan(&sessionID)
+	if err == nil {
+		return sessionID, false, false, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", false, false, fmt.Errorf("runtime: load session binding: %w", err)
+	}
+
+	key := sessionkeys.BuildFrontSessionKey(conversationID)
+	err = r.store.RawDB().QueryRowContext(ctx,
 		"SELECT id FROM sessions WHERE key = ?",
 		key,
 	).Scan(&sessionID)
 	if err == nil {
-		return sessionID, false, nil
+		return sessionID, false, true, nil
 	}
 	if err != sql.ErrNoRows {
-		return "", false, fmt.Errorf("runtime: load front session: %w", err)
+		return "", false, false, fmt.Errorf("runtime: load front session: %w", err)
 	}
 
-	return generateID(), true, nil
+	return generateID(), true, true, nil
+}
+
+func (r *Runtime) bindSession(ctx context.Context, conversationID string, runID string, threadID string, sessionID string) error {
+	payload, err := json.Marshal(map[string]any{
+		"thread_id":  threadID,
+		"session_id": sessionID,
+		"status":     "active",
+	})
+	if err != nil {
+		return fmt.Errorf("marshal session_bound payload: %w", err)
+	}
+
+	if err := r.convStore.AppendEvent(ctx, model.Event{
+		ID:             generateID(),
+		ConversationID: conversationID,
+		RunID:          runID,
+		Kind:           "session_bound",
+		PayloadJSON:    payload,
+	}); err != nil {
+		return fmt.Errorf("journal session_bound: %w", err)
+	}
+
+	return nil
+}
+
+func normalizeThreadID(threadID string) string {
+	if threadID == "" {
+		return "main"
+	}
+	return threadID
 }
 
 func (r *Runtime) appendSessionMessage(

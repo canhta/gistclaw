@@ -428,6 +428,44 @@ func TestConversationStore_AppendEventProjectsRunSessionID(t *testing.T) {
 	}
 }
 
+func TestConversationStore_AppendEventProjectsSessionBinding(t *testing.T) {
+	db := setupTestStore(t)
+	cs := NewConversationStore(db)
+	ctx := context.Background()
+
+	bindingPayload, err := json.Marshal(map[string]any{
+		"thread_id":  "main",
+		"session_id": "sess-front",
+		"status":     "active",
+	})
+	if err != nil {
+		t.Fatalf("marshal binding payload: %v", err)
+	}
+
+	err = cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-session-bound",
+		ConversationID: "conv-binding",
+		RunID:          "run-front",
+		Kind:           "session_bound",
+		PayloadJSON:    bindingPayload,
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent session_bound failed: %v", err)
+	}
+
+	var sessionID string
+	var status string
+	err = db.RawDB().QueryRowContext(ctx,
+		"SELECT session_id, status FROM session_bindings WHERE conversation_id = 'conv-binding' AND thread_id = 'main'",
+	).Scan(&sessionID, &status)
+	if err != nil {
+		t.Fatalf("query session binding projection: %v", err)
+	}
+	if sessionID != "sess-front" || status != "active" {
+		t.Fatalf("unexpected session binding projection: session_id=%q status=%q", sessionID, status)
+	}
+}
+
 func TestConversationStore_AppendEventProjectsFailureAndInterruption(t *testing.T) {
 	db := setupTestStore(t)
 	cs := NewConversationStore(db)

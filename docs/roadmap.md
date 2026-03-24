@@ -34,16 +34,15 @@ The reset kernel is in place, but the product still does not fully behave like O
 
 Remaining gaps:
 
-- front-agent identity is still too run-shaped instead of conversation-shaped
-- worker collaboration exists, but the runtime still lacks a fuller mailbox and routing model
+- durable front-session reuse and thread binding are in place, but the runtime still lacks a fuller mailbox and routing model
 - channels and connectors are no longer core to the active build
 - plugins and extension seams are documented, not operational
 - teams are still mostly designed ahead of time, not created dynamically by the user
 
 ## Next Slice
 
-The next implementation slice should make the assistant more OpenClaw-like without reopening platform sprawl:
+The next implementation slice should make the session runtime feel more like OpenClaw without reopening platform sprawl:
 
-1. make the front agent durable across multiple runs in the same conversation
-2. route worker messages through that durable assistant session instead of treating each run as its own front identity
-3. prepare the runtime for richer mailbox, routing, and channel work after the assistant session model is stable
+1. add a fuller mailbox/read model on top of the durable front session
+2. route collaboration through explicit runtime-owned message targets instead of mostly direct append helpers
+3. prepare that routing layer for later channel and gateway recovery

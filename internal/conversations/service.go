@@ -131,6 +131,12 @@ type sessionMessageAddedPayload struct {
 	Body            string `json:"body"`
 }
 
+type sessionBoundPayload struct {
+	ThreadID  string `json:"thread_id"`
+	SessionID string `json:"session_id"`
+	Status    string `json:"status"`
+}
+
 func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt model.Event) error {
 	switch evt.Kind {
 	case "run_started":
@@ -243,6 +249,22 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 			 (id, session_id, sender_session_id, kind, body, created_at)
 			 VALUES (?, ?, ?, ?, ?, ?)`,
 			payload.MessageID, payload.SessionID, payload.SenderSessionID, payload.Kind, payload.Body, evt.CreatedAt,
+		)
+		return err
+	case "session_bound":
+		var payload sessionBoundPayload
+		if err := decodePayload(evt.PayloadJSON, &payload); err != nil {
+			return err
+		}
+		status := payload.Status
+		if status == "" {
+			status = "active"
+		}
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO session_bindings
+			 (id, conversation_id, thread_id, session_id, status, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			evt.ID, evt.ConversationID, payload.ThreadID, payload.SessionID, status, evt.CreatedAt,
 		)
 		return err
 	default:
