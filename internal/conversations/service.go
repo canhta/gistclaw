@@ -124,6 +124,24 @@ type summaryUpsertedPayload struct {
 	TokenCount int    `json:"token_count"`
 }
 
+type sessionOpenedPayload struct {
+	SessionID           string `json:"session_id"`
+	Key                 string `json:"key"`
+	AgentID             string `json:"agent_id"`
+	Role                string `json:"role"`
+	ParentSessionID     string `json:"parent_session_id"`
+	ControllerSessionID string `json:"controller_session_id"`
+	Status              string `json:"status"`
+}
+
+type sessionMessageAddedPayload struct {
+	MessageID       string `json:"message_id"`
+	SessionID       string `json:"session_id"`
+	SenderSessionID string `json:"sender_session_id"`
+	Kind            string `json:"kind"`
+	Body            string `json:"body"`
+}
+
 func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt model.Event) error {
 	switch evt.Kind {
 	case "run_started":
@@ -236,6 +254,35 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 			     token_count = excluded.token_count,
 			     updated_at = excluded.updated_at`,
 			payload.SummaryID, payload.RunID, payload.Content, payload.TokenCount, evt.CreatedAt, evt.CreatedAt,
+		)
+		return err
+	case "session_opened":
+		var payload sessionOpenedPayload
+		if err := decodePayload(evt.PayloadJSON, &payload); err != nil {
+			return err
+		}
+		status := payload.Status
+		if status == "" {
+			status = "active"
+		}
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO sessions
+			 (id, conversation_id, key, agent_id, role, parent_session_id, controller_session_id, status, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			payload.SessionID, evt.ConversationID, payload.Key, payload.AgentID, payload.Role,
+			payload.ParentSessionID, payload.ControllerSessionID, status, evt.CreatedAt,
+		)
+		return err
+	case "session_message_added":
+		var payload sessionMessageAddedPayload
+		if err := decodePayload(evt.PayloadJSON, &payload); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO session_messages
+			 (id, session_id, sender_session_id, kind, body, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?)`,
+			payload.MessageID, payload.SessionID, payload.SenderSessionID, payload.Kind, payload.Body, evt.CreatedAt,
 		)
 		return err
 	default:

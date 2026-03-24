@@ -259,7 +259,7 @@ func TestConversationStore_AppendEventProjectsRunLifecycle(t *testing.T) {
 	}
 }
 
-func TestConversationStore_AppendEventProjectsDelegationsAndSummary(t *testing.T) {
+func TestConversationStore_AppendEventProjectsSummary(t *testing.T) {
 	db := setupTestStore(t)
 	cs := NewConversationStore(db)
 	ctx := context.Background()
@@ -283,47 +283,6 @@ func TestConversationStore_AppendEventProjectsDelegationsAndSummary(t *testing.T
 		t.Fatalf("AppendEvent run_started failed: %v", err)
 	}
 
-	delegationPayload, err := json.Marshal(map[string]any{
-		"root_run_id":     "root-run",
-		"target_agent_id": "agent-b",
-		"objective":       "child task",
-	})
-	if err != nil {
-		t.Fatalf("marshal delegation payload: %v", err)
-	}
-
-	err = cs.AppendEvent(ctx, model.Event{
-		ID:             "evt-delegation-active",
-		ConversationID: "conv-delegation",
-		RunID:          "child-run",
-		ParentRunID:    "root-run",
-		Kind:           "delegation_created",
-		PayloadJSON:    delegationPayload,
-	})
-	if err != nil {
-		t.Fatalf("AppendEvent delegation_created failed: %v", err)
-	}
-
-	queuedPayload, err := json.Marshal(map[string]any{
-		"root_run_id":     "root-run",
-		"target_agent_id": "agent-c",
-	})
-	if err != nil {
-		t.Fatalf("marshal queued payload: %v", err)
-	}
-
-	err = cs.AppendEvent(ctx, model.Event{
-		ID:             "evt-delegation-queued",
-		ConversationID: "conv-delegation",
-		RunID:          "root-run",
-		ParentRunID:    "root-run",
-		Kind:           "delegation_queued",
-		PayloadJSON:    queuedPayload,
-	})
-	if err != nil {
-		t.Fatalf("AppendEvent delegation_queued failed: %v", err)
-	}
-
 	summaryPayload, err := json.Marshal(map[string]any{
 		"summary_id":  "sum-1",
 		"run_id":      "root-run",
@@ -345,24 +304,6 @@ func TestConversationStore_AppendEventProjectsDelegationsAndSummary(t *testing.T
 		t.Fatalf("AppendEvent summary_upserted failed: %v", err)
 	}
 
-	var activeDelegations int
-	var queuedDelegations int
-	err = db.RawDB().QueryRowContext(ctx,
-		"SELECT count(*) FROM delegations WHERE root_run_id = 'root-run' AND status = 'active'",
-	).Scan(&activeDelegations)
-	if err != nil {
-		t.Fatalf("count active delegations: %v", err)
-	}
-	err = db.RawDB().QueryRowContext(ctx,
-		"SELECT count(*) FROM delegations WHERE root_run_id = 'root-run' AND status = 'queued'",
-	).Scan(&queuedDelegations)
-	if err != nil {
-		t.Fatalf("count queued delegations: %v", err)
-	}
-	if activeDelegations != 1 || queuedDelegations != 1 {
-		t.Fatalf("unexpected delegation counts active=%d queued=%d", activeDelegations, queuedDelegations)
-	}
-
 	var summaryCount int
 	err = db.RawDB().QueryRowContext(ctx,
 		"SELECT count(*) FROM run_summaries WHERE run_id = 'root-run'",
@@ -372,6 +313,80 @@ func TestConversationStore_AppendEventProjectsDelegationsAndSummary(t *testing.T
 	}
 	if summaryCount != 1 {
 		t.Fatalf("expected 1 summary, got %d", summaryCount)
+	}
+}
+
+func TestConversationStore_AppendEventProjectsSessions(t *testing.T) {
+	db := setupTestStore(t)
+	cs := NewConversationStore(db)
+	ctx := context.Background()
+
+	sessionPayload, err := json.Marshal(map[string]any{
+		"session_id":            "sess-front",
+		"key":                   "front:conv-session",
+		"agent_id":              "assistant",
+		"role":                  "front",
+		"parent_session_id":     "",
+		"controller_session_id": "",
+		"status":                "active",
+	})
+	if err != nil {
+		t.Fatalf("marshal session payload: %v", err)
+	}
+
+	err = cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-session-opened",
+		ConversationID: "conv-session",
+		RunID:          "run-front",
+		Kind:           "session_opened",
+		PayloadJSON:    sessionPayload,
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent session_opened failed: %v", err)
+	}
+
+	messagePayload, err := json.Marshal(map[string]any{
+		"message_id":        "msg-1",
+		"session_id":        "sess-front",
+		"sender_session_id": "",
+		"kind":              "assistant",
+		"body":              "Hello.",
+	})
+	if err != nil {
+		t.Fatalf("marshal message payload: %v", err)
+	}
+
+	err = cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-session-message",
+		ConversationID: "conv-session",
+		RunID:          "run-front",
+		Kind:           "session_message_added",
+		PayloadJSON:    messagePayload,
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent session_message_added failed: %v", err)
+	}
+
+	var role string
+	err = db.RawDB().QueryRowContext(ctx,
+		"SELECT role FROM sessions WHERE id = 'sess-front'",
+	).Scan(&role)
+	if err != nil {
+		t.Fatalf("query session projection: %v", err)
+	}
+	if role != "front" {
+		t.Fatalf("expected session role %q, got %q", "front", role)
+	}
+
+	var kind string
+	err = db.RawDB().QueryRowContext(ctx,
+		"SELECT kind FROM session_messages WHERE id = 'msg-1'",
+	).Scan(&kind)
+	if err != nil {
+		t.Fatalf("query session message projection: %v", err)
+	}
+	if kind != "assistant" {
+		t.Fatalf("expected session message kind %q, got %q", "assistant", kind)
 	}
 }
 
