@@ -1,0 +1,15 @@
+#!/bin/sh
+set -eu
+
+hook_name=${1:?hook name is required}
+shift
+
+dir=$(git rev-parse --show-toplevel)
+bin="$dir/.bin/lefthook"
+
+if [ ! -x "$bin" ]; then
+	echo "Missing $bin. Run 'make dev' to install repo-local tooling." >&2
+	exit 1
+fi
+
+exec "$bin" run "$hook_name" --no-auto-install "$@"

@@ -50,7 +50,7 @@ func TestRepoTooling_MakeTargets(t *testing.T) {
 		{
 			name:      "hooks-install",
 			target:    "hooks-install",
-			wantSnips: []string{"lefthook install"},
+			wantSnips: []string{"git config core.hooksPath", ".githooks"},
 		},
 		{
 			name:      "precommit helper",
@@ -106,6 +106,26 @@ func TestRepoTooling_ConfigFiles(t *testing.T) {
 				"pre-push:",
 				"make precommit",
 				"make coverage",
+			},
+		},
+		{
+			path: filepath.Join(root, ".githooks", "run"),
+			wantSnips: []string{
+				".bin/lefthook",
+				"--no-auto-install",
+				"make dev",
+			},
+		},
+		{
+			path: filepath.Join(root, ".githooks", "pre-commit"),
+			wantSnips: []string{
+				`/run" pre-commit`,
+			},
+		},
+		{
+			path: filepath.Join(root, ".githooks", "pre-push"),
+			wantSnips: []string{
+				`/run" pre-push`,
 			},
 		},
 		{

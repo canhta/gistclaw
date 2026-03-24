@@ -41,7 +41,9 @@ run:
 	go run ./cmd/gistclaw $(ARGS)
 
 hooks-install: $(LEFTHOOK)
-	$(LEFTHOOK) install
+	rm -f .githooks/*.old .githooks/prepare-commit-msg
+	chmod +x .githooks/run .githooks/pre-commit .githooks/pre-push
+	git config core.hooksPath "$$(git rev-parse --show-toplevel)/.githooks"
 
 precommit: $(GOIMPORTS) $(GOLANGCI_LINT)
 	FILES="$(FILES)"; \
