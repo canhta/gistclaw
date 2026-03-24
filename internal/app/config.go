@@ -15,6 +15,7 @@ type Config struct {
 	TeamDir       string         `yaml:"team_dir"`
 	Provider      ProviderConfig `yaml:"provider"`
 	Telegram      TelegramConfig `yaml:"telegram"`
+	WhatsApp      WhatsAppConfig `yaml:"whatsapp"`
 	Web           WebConfig      `yaml:"web"`
 	AdminToken    string         `yaml:"-"`
 }
@@ -34,6 +35,13 @@ type ModelLanes struct {
 type TelegramConfig struct {
 	BotToken string `yaml:"bot_token"`
 	AgentID  string `yaml:"agent_id"`
+}
+
+type WhatsAppConfig struct {
+	PhoneNumberID string `yaml:"phone_number_id"`
+	AccessToken   string `yaml:"access_token"`
+	VerifyToken   string `yaml:"verify_token"`
+	AgentID       string `yaml:"agent_id"`
 }
 
 type WebConfig struct {
@@ -125,6 +133,9 @@ func (c *Config) applyDefaults() {
 
 	if c.Telegram.AgentID == "" {
 		c.Telegram.AgentID = "assistant"
+	}
+	if c.WhatsApp.AgentID == "" {
+		c.WhatsApp.AgentID = "assistant"
 	}
 	if c.Web.ListenAddr == "" {
 		c.Web.ListenAddr = "127.0.0.1:8080"

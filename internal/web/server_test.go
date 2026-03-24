@@ -151,6 +151,21 @@ func TestSettings(t *testing.T) {
 	}
 }
 
+func TestWebhooks(t *testing.T) {
+	t.Run("whatsapp webhook route is absent when not configured", func(t *testing.T) {
+		h := newServerHarness(t)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/webhooks/whatsapp", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d", rr.Code)
+		}
+	})
+}
+
 func TestRunSubmit(t *testing.T) {
 	t.Run("form renders on GET", func(t *testing.T) {
 		h := newServerHarness(t)

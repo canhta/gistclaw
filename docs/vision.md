@@ -46,6 +46,7 @@ What is still not earned yet:
 
 - broader runtime-owned routing across surfaces instead of mostly local queued delivery
 - only Telegram has a recovered live connector path so far; the wider channel/gateway set is still missing
+- WhatsApp now joins Telegram as an earned live surface, but the wider channel/gateway set is still missing
 - dynamic user-created teams at runtime instead of config-defined team shape only
 - restored channel/gateway surfaces on top of the new kernel
 - real extension contracts for providers, connectors, tools, and plugins
@@ -64,3 +65,4 @@ That means the next implementation work favors:
 - a real host process, where `serve` owns the local web control plane instead of only background preparation
 - operator-facing session visibility starts with the local session directory and mailbox APIs, and can grow into richer control-plane tools later
 - explicit session send/wake behavior should flow through the runtime so the same session contract can back both local tools and future channel recovery
+- external channel recovery should keep reusing the same inbound-message runtime contract rather than teaching each connector its own session-start logic

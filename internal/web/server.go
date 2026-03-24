@@ -18,19 +18,21 @@ import (
 )
 
 type Options struct {
-	DB          *store.DB
-	Replay      *replay.Service
-	Broadcaster *SSEBroadcaster
-	Runtime     *runtime.Runtime
+	DB              *store.DB
+	Replay          *replay.Service
+	Broadcaster     *SSEBroadcaster
+	Runtime         *runtime.Runtime
+	WhatsAppWebhook http.Handler
 }
 
 type Server struct {
-	db          *store.DB
-	replay      *replay.Service
-	broadcaster *SSEBroadcaster
-	rt          *runtime.Runtime
-	templates   *template.Template
-	mux         *http.ServeMux
+	db              *store.DB
+	replay          *replay.Service
+	broadcaster     *SSEBroadcaster
+	rt              *runtime.Runtime
+	whatsAppWebhook http.Handler
+	templates       *template.Template
+	mux             *http.ServeMux
 }
 
 type layoutData struct {
@@ -55,12 +57,13 @@ func NewServer(opts Options) (*Server, error) {
 	}
 
 	s := &Server{
-		db:          opts.DB,
-		replay:      opts.Replay,
-		broadcaster: opts.Broadcaster,
-		rt:          opts.Runtime,
-		templates:   tpls,
-		mux:         http.NewServeMux(),
+		db:              opts.DB,
+		replay:          opts.Replay,
+		broadcaster:     opts.Broadcaster,
+		rt:              opts.Runtime,
+		whatsAppWebhook: opts.WhatsAppWebhook,
+		templates:       tpls,
+		mux:             http.NewServeMux(),
 	}
 	s.registerRoutes()
 
@@ -76,6 +79,13 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/runs", http.StatusSeeOther)
 	})
+	if s.whatsAppWebhook != nil {
+		s.mux.Handle("GET /webhooks/whatsapp", s.whatsAppWebhook)
+		s.mux.Handle("POST /webhooks/whatsapp", s.whatsAppWebhook)
+	} else {
+		s.mux.HandleFunc("GET /webhooks/whatsapp", http.NotFound)
+		s.mux.HandleFunc("POST /webhooks/whatsapp", http.NotFound)
+	}
 	s.mux.HandleFunc("GET /api/sessions", s.handleSessionsIndex)
 	s.mux.HandleFunc("GET /api/sessions/{id}", s.handleSessionDetail)
 	s.mux.Handle("POST /api/sessions/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleSessionSend)))

@@ -146,4 +146,7 @@ provider:
 	if cfg.Web.ListenAddr == "" {
 		t.Fatal("expected Web.ListenAddr to have a default value")
 	}
+	if cfg.WhatsApp.AgentID == "" {
+		t.Fatal("expected WhatsApp.AgentID to have a default value")
+	}
 }

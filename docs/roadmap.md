@@ -35,12 +35,13 @@ The reset kernel is in place, but the product still does not fully behave like O
 Remaining gaps:
 
 - durable front-session reuse, thread binding, mailbox reads, session-scoped provider context, explicit session-message provenance, session-addressed collaboration, session discovery/history reads, and queued outbound delivery are now in place
-- Telegram now has a recovered live path on top of the session kernel; the broader channel matrix is still not back
+- Telegram and WhatsApp now have recovered live inbound paths on top of the session kernel; the broader channel matrix is still not back
 - `gistclaw serve` now hosts the local web control plane instead of only preparing state
 - the local web host now exposes read-only session directory and mailbox APIs on top of the session kernel
 - the local web host can now send a message into a session and wake it through the runtime instead of only reading mailbox state
 - session detail on the local host now exposes the active bound route so operators can see which surface/thread a session is attached to
 - web submit and Telegram ingress now share the same runtime inbound-message path, so follow-up user turns reuse the bound session instead of depending on surface-specific startup logic
+- WhatsApp webhook ingress and outbound draining now use that same session/runtime contract, giving the platform a second real external surface
 - plugins and extension seams are documented, not operational
 - teams are still mostly designed ahead of time, not created dynamically by the user
 

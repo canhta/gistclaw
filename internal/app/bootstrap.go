@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"sync"
 
 	telegramconnector "github.com/canhta/gistclaw/internal/connectors/telegram"
+	whatsappconnector "github.com/canhta/gistclaw/internal/connectors/whatsapp"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -59,10 +61,11 @@ func Bootstrap(cfg Config) (*App, error) {
 	rp := replayWiring(db)
 
 	webSrv, err := web.NewServer(web.Options{
-		DB:          db,
-		Replay:      rp,
-		Broadcaster: broadcaster,
-		Runtime:     rt,
+		DB:              db,
+		Replay:          rp,
+		Broadcaster:     broadcaster,
+		Runtime:         rt,
+		WhatsAppWebhook: buildWhatsAppWebhook(cfg, rt),
 	})
 	if err != nil {
 		_ = db.Close()
@@ -185,7 +188,7 @@ func buildConnectors(
 	cs *conversations.ConversationStore,
 	rt *runtime.Runtime,
 ) []model.Connector {
-	connectors := make([]model.Connector, 0, 1)
+	connectors := make([]model.Connector, 0, 2)
 	if cfg.Telegram.BotToken != "" {
 		connectors = append(connectors, telegramconnector.NewConnector(
 			cfg.Telegram.BotToken,
@@ -196,5 +199,25 @@ func buildConnectors(
 			cfg.WorkspaceRoot,
 		))
 	}
+	if cfg.WhatsApp.PhoneNumberID != "" && cfg.WhatsApp.AccessToken != "" {
+		connectors = append(connectors, whatsappconnector.NewConnector(
+			cfg.WhatsApp.PhoneNumberID,
+			cfg.WhatsApp.AccessToken,
+			db,
+			cs,
+		))
+	}
 	return connectors
+}
+
+func buildWhatsAppWebhook(cfg Config, rt *runtime.Runtime) http.Handler {
+	if cfg.WhatsApp.VerifyToken == "" || cfg.WhatsApp.PhoneNumberID == "" || cfg.WhatsApp.AccessToken == "" {
+		return nil
+	}
+	return whatsappconnector.NewWebhookHandler(
+		cfg.WhatsApp.VerifyToken,
+		cfg.WhatsApp.AgentID,
+		cfg.WorkspaceRoot,
+		rt,
+	)
 }

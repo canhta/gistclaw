@@ -144,3 +144,35 @@ func TestBootstrap_WiresTelegramConnectorWhenConfigured(t *testing.T) {
 		t.Fatalf("expected telegram connector, got %q", app.connectors[0].ID())
 	}
 }
+
+func TestBootstrap_WiresWhatsAppConnectorWhenConfigured(t *testing.T) {
+	cfg := Config{
+		DatabasePath:  ":memory:",
+		StateDir:      t.TempDir(),
+		WorkspaceRoot: t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "anthropic",
+			APIKey: "sk-test",
+		},
+		WhatsApp: WhatsAppConfig{
+			PhoneNumberID: "phone-123",
+			AccessToken:   "access-token",
+			VerifyToken:   "verify-token",
+		},
+	}
+
+	app, err := Bootstrap(cfg)
+	if err != nil {
+		t.Fatalf("Bootstrap failed: %v", err)
+	}
+
+	if len(app.connectors) != 1 {
+		t.Fatalf("expected 1 wired connector, got %d", len(app.connectors))
+	}
+	if app.connectors[0].ID() != "whatsapp" {
+		t.Fatalf("expected whatsapp connector, got %q", app.connectors[0].ID())
+	}
+	if app.webServer == nil {
+		t.Fatal("expected web server to be wired")
+	}
+}
