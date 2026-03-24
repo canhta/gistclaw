@@ -8,12 +8,19 @@
     {{range .Approvals}}
       <article class="run-row">
         <div class="mono">{{.ID}}</div>
-        <div><strong>{{.ToolName}}</strong>{{if .TargetPath}} &mdash; {{.TargetPath}}{{end}}</div>
+        <div>
+          <strong>{{.ToolName}}</strong>{{if .TargetPath}} &mdash; {{.TargetPath}}{{end}}
+          {{if eq .Status "expired"}}
+            <span style="display:inline-block;border:1.5px solid #1c1917;padding:0 6px;font-size:0.75em;font-family:var(--mono);border-radius:0">Expired</span>
+          {{end}}
+        </div>
         <div class="muted mono">run: {{.RunID}}</div>
-        <form method="POST" action="/approvals/{{.ID}}/resolve" style="display:inline">
-          <button type="submit" name="decision" value="approved">Approve</button>
-          <button type="submit" name="decision" value="denied">Deny</button>
-        </form>
+        {{if ne .Status "expired"}}
+          <form method="POST" action="/approvals/{{.ID}}/resolve" style="display:inline">
+            <button type="submit" name="decision" value="approved">Approve</button>
+            <button type="submit" name="decision" value="denied">Deny</button>
+          </form>
+        {{end}}
       </article>
     {{end}}
   {{else}}

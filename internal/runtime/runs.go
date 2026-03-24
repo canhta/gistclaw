@@ -445,6 +445,19 @@ func (r *Runtime) ReconcileInterrupted(ctx context.Context) (ReconcileReport, er
 	return report, nil
 }
 
+// ExpireStaleApprovals marks any pending approvals older than 24 hours as
+// 'expired'. Returns the number of approvals expired.
+func (r *Runtime) ExpireStaleApprovals(ctx context.Context) (int, error) {
+	res, err := r.store.RawDB().ExecContext(ctx,
+		`UPDATE approvals SET status = 'expired'
+		 WHERE status = 'pending' AND created_at < datetime('now', '-24 hours')`)
+	if err != nil {
+		return 0, fmt.Errorf("expire stale approvals: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
 func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) {
 	var run model.Run
 	var status string

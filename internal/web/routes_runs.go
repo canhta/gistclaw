@@ -86,6 +86,21 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleRunDismiss marks an interrupted run as dismissed so it no longer
+// appears in the active run list. The run record is retained in the journal.
+func (s *Server) handleRunDismiss(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("id")
+	_, err := s.db.RawDB().ExecContext(r.Context(),
+		`UPDATE runs SET status = 'dismissed', updated_at = datetime('now') WHERE id = ? AND status = 'interrupted'`,
+		runID,
+	)
+	if err != nil {
+		http.Error(w, "failed to dismiss run", http.StatusInternalServerError)
+		return
+	}
+	http.Redirect(w, r, "/runs", http.StatusSeeOther)
+}
+
 func (s *Server) handleRunEvents(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("id")
 

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,21 @@ import (
 )
 
 var ErrDiskFull = fmt.Errorf("store: disk full")
+
+// sqliteCodeErr is the interface satisfied by modernc.org/sqlite's Error type.
+type sqliteCodeErr interface {
+	Code() int
+}
+
+// IsSQLiteFull reports whether err (or any error in its chain) is a SQLite
+// SQLITE_FULL error (code 13).
+func IsSQLiteFull(err error) bool {
+	if err == nil {
+		return false
+	}
+	var ce sqliteCodeErr
+	return errors.As(err, &ce) && ce.Code() == 13 // SQLITE_FULL
+}
 
 type DB struct {
 	db *sql.DB
@@ -61,6 +77,9 @@ func (d *DB) Tx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 	}
 
 	if err := tx.Commit(); err != nil {
+		if IsSQLiteFull(err) {
+			return fmt.Errorf("store: commit tx: %w: %w", ErrDiskFull, err)
+		}
 		return fmt.Errorf("store: commit tx: %w", err)
 	}
 

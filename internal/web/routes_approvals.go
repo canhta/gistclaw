@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 )
@@ -10,6 +11,7 @@ type approvalItem struct {
 	RunID      string
 	ToolName   string
 	TargetPath string
+	Status     string
 	CreatedAt  time.Time
 }
 
@@ -20,8 +22,8 @@ type approvalsPageData struct {
 
 func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 	rows, err := s.db.RawDB().QueryContext(r.Context(),
-		`SELECT id, run_id, tool_name, COALESCE(target_path, ''), created_at
-		 FROM approvals WHERE status = 'pending'
+		`SELECT id, run_id, tool_name, COALESCE(target_path, ''), status, created_at
+		 FROM approvals WHERE status IN ('pending', 'expired')
 		 ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -33,7 +35,7 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 	items := make([]approvalItem, 0)
 	for rows.Next() {
 		var item approvalItem
-		if err := rows.Scan(&item.ID, &item.RunID, &item.ToolName, &item.TargetPath, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.RunID, &item.ToolName, &item.TargetPath, &item.Status, &item.CreatedAt); err != nil {
 			http.Error(w, "failed to load approvals", http.StatusInternalServerError)
 			return
 		}
@@ -49,6 +51,19 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleApprovalResolve(w http.ResponseWriter, r *http.Request) {
 	ticketID := r.PathValue("id")
+
+	// Guard: check if approval is expired before attempting to resolve.
+	var currentStatus string
+	if err := s.db.RawDB().QueryRowContext(r.Context(),
+		"SELECT status FROM approvals WHERE id = ?", ticketID,
+	).Scan(&currentStatus); err == nil && currentStatus == "expired" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"message": "This approval has expired and can no longer be resolved.",
+		})
+		return
+	}
 
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "invalid form", http.StatusBadRequest)
