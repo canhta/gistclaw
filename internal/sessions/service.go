@@ -22,6 +22,7 @@ type Service struct {
 var ErrThreadMailboxNotFound = fmt.Errorf("sessions: no active session bound to thread")
 var ErrSessionNotFound = fmt.Errorf("sessions: session not found")
 var ErrSessionRouteNotFound = fmt.Errorf("sessions: no active route bound to session")
+var ErrOutboundIntentNotFound = fmt.Errorf("sessions: outbound intent not found")
 
 type OpenFrontSession struct {
 	ConversationID string
@@ -274,6 +275,45 @@ func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (mod
 		return model.SessionRoute{}, fmt.Errorf("load route by session: %w", err)
 	}
 	return route, nil
+}
+
+func (s *Service) LoadSessionOutboundIntent(ctx context.Context, sessionID string, intentID string) (model.OutboundIntent, error) {
+	var intent model.OutboundIntent
+	var lastAttempt sql.NullString
+	err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT oi.id, COALESCE(oi.run_id, ''), oi.connector_id, oi.chat_id, oi.message_text,
+		        COALESCE(oi.dedupe_key, ''), oi.status, oi.attempts, oi.created_at, oi.last_attempt_at
+		 FROM outbound_intents oi
+		 JOIN runs r ON r.id = oi.run_id
+		 WHERE r.session_id = ? AND oi.id = ?`,
+		sessionID,
+		intentID,
+	).Scan(
+		&intent.ID,
+		&intent.RunID,
+		&intent.ConnectorID,
+		&intent.ChatID,
+		&intent.MessageText,
+		&intent.DedupeKey,
+		&intent.Status,
+		&intent.Attempts,
+		&intent.CreatedAt,
+		&lastAttempt,
+	)
+	if err == sql.ErrNoRows {
+		return model.OutboundIntent{}, ErrOutboundIntentNotFound
+	}
+	if err != nil {
+		return model.OutboundIntent{}, fmt.Errorf("load session outbound intent: %w", err)
+	}
+	if lastAttempt.Valid && lastAttempt.String != "" {
+		parsed, err := parseActivityTime(lastAttempt.String)
+		if err != nil {
+			return model.OutboundIntent{}, fmt.Errorf("parse outbound intent last_attempt_at: %w", err)
+		}
+		intent.LastAttemptAt = &parsed
+	}
+	return intent, nil
 }
 
 func (s *Service) ListSessionOutboundIntents(ctx context.Context, sessionID string, limit int) ([]model.OutboundIntent, error) {

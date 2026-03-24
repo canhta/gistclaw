@@ -727,6 +727,107 @@ func TestSessionAPI(t *testing.T) {
 			t.Fatalf("unexpected follow-up mailbox bodies: %q / %q", mailbox.Messages[2].Body, mailbox.Messages[3].Body)
 		}
 	})
+
+	t.Run("retry delivery requeues terminal outbound intent", func(t *testing.T) {
+		h := newServerHarness(t)
+		run, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-1",
+				ExternalID:  "chat-1",
+				ThreadID:    "thread-1",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Inspect the repo.",
+			WorkspaceRoot: h.workspaceRoot,
+		})
+		if err != nil {
+			t.Fatalf("StartFrontSession failed: %v", err)
+		}
+
+		var intentID string
+		if err := h.db.RawDB().QueryRow(
+			`SELECT id
+			 FROM outbound_intents
+			 WHERE run_id = ?
+			 ORDER BY created_at DESC, id DESC
+			 LIMIT 1`,
+			run.ID,
+		).Scan(&intentID); err != nil {
+			t.Fatalf("load outbound intent: %v", err)
+		}
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE outbound_intents
+			 SET status='terminal', attempts=3, last_attempt_at=datetime('now')
+			 WHERE id = ?`,
+			intentID,
+		); err != nil {
+			t.Fatalf("mark terminal intent: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/sessions/"+run.SessionID+"/deliveries/"+intentID+"/retry", nil)
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			Delivery model.OutboundIntent `json:"delivery"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if resp.Delivery.ID != intentID || resp.Delivery.Status != "pending" || resp.Delivery.Attempts != 0 {
+			t.Fatalf("unexpected delivery retry response: %+v", resp.Delivery)
+		}
+		if resp.Delivery.LastAttemptAt != nil {
+			t.Fatalf("expected cleared last_attempt_at, got %+v", resp.Delivery)
+		}
+	})
+
+	t.Run("retry delivery rejects non-terminal outbound intent", func(t *testing.T) {
+		h := newServerHarness(t)
+		run, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-1",
+				ExternalID:  "chat-1",
+				ThreadID:    "thread-1",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Inspect the repo.",
+			WorkspaceRoot: h.workspaceRoot,
+		})
+		if err != nil {
+			t.Fatalf("StartFrontSession failed: %v", err)
+		}
+
+		var intentID string
+		if err := h.db.RawDB().QueryRow(
+			`SELECT id
+			 FROM outbound_intents
+			 WHERE run_id = ?
+			 ORDER BY created_at DESC, id DESC
+			 LIMIT 1`,
+			run.ID,
+		).Scan(&intentID); err != nil {
+			t.Fatalf("load outbound intent: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/sessions/"+run.SessionID+"/deliveries/"+intentID+"/retry", nil)
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusConflict {
+			t.Fatalf("expected 409, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
 }
 
 type serverHarness struct {

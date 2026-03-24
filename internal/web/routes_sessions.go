@@ -33,6 +33,10 @@ type sessionSendResponse struct {
 	Run model.Run `json:"run"`
 }
 
+type sessionRetryDeliveryResponse struct {
+	Delivery model.OutboundIntent `json:"delivery"`
+}
+
 func (s *Server) handleSessionsIndex(w http.ResponseWriter, r *http.Request) {
 	if s.rt == nil {
 		http.Error(w, "runtime not configured", http.StatusInternalServerError)
@@ -127,6 +131,32 @@ func (s *Server) handleSessionSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, sessionSendResponse{Run: run})
+}
+
+func (s *Server) handleSessionRetryDelivery(w http.ResponseWriter, r *http.Request) {
+	if s.rt == nil {
+		http.Error(w, "runtime not configured", http.StatusInternalServerError)
+		return
+	}
+
+	delivery, err := s.rt.RetrySessionDelivery(r.Context(), r.PathValue("id"), r.PathValue("delivery_id"))
+	if err != nil {
+		switch {
+		case errors.Is(err, sessions.ErrSessionNotFound), errors.Is(err, runtime.ErrDeliveryNotFound):
+			http.NotFound(w, r)
+			return
+		case errors.Is(err, runtime.ErrDeliveryNotRetryable):
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"message": "Only terminal deliveries can be retried.",
+			})
+			return
+		default:
+			http.Error(w, "failed to retry delivery", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, sessionRetryDeliveryResponse{Delivery: delivery})
 }
 
 func requestLimit(r *http.Request, fallback int) int {

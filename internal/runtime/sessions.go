@@ -2,10 +2,17 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
 
+	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/sessions"
 )
+
+var ErrDeliveryNotFound = fmt.Errorf("runtime: delivery not found")
+var ErrDeliveryNotRetryable = fmt.Errorf("runtime: delivery not retryable")
 
 func (r *Runtime) ListSessions(ctx context.Context, conversationID string, limit int) ([]model.Session, error) {
 	return sessions.NewService(r.store, r.convStore).ListConversationSessions(ctx, conversationID, limit)
@@ -31,4 +38,55 @@ func (r *Runtime) SessionDeliveryState(ctx context.Context, sessionID string, li
 		return nil, nil, err
 	}
 	return deliveries, failures, nil
+}
+
+func (r *Runtime) RetrySessionDelivery(ctx context.Context, sessionID string, intentID string) (model.OutboundIntent, error) {
+	svc := sessions.NewService(r.store, r.convStore)
+	session, err := svc.LoadSession(ctx, sessionID)
+	if err != nil {
+		return model.OutboundIntent{}, err
+	}
+
+	intent, err := svc.LoadSessionOutboundIntent(ctx, sessionID, intentID)
+	if err != nil {
+		if errors.Is(err, sessions.ErrOutboundIntentNotFound) {
+			return model.OutboundIntent{}, ErrDeliveryNotFound
+		}
+		return model.OutboundIntent{}, err
+	}
+	if intent.Status != "terminal" {
+		return model.OutboundIntent{}, ErrDeliveryNotRetryable
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"intent_id":       intent.ID,
+		"previous_status": intent.Status,
+		"connector_id":    intent.ConnectorID,
+		"chat_id":         intent.ChatID,
+	})
+	if err != nil {
+		return model.OutboundIntent{}, fmt.Errorf("marshal delivery_redrive_requested payload: %w", err)
+	}
+
+	if err := r.convStore.AppendEvent(ctx, model.Event{
+		ID:             generateID(),
+		ConversationID: session.ConversationID,
+		RunID:          intent.RunID,
+		Kind:           "delivery_redrive_requested",
+		PayloadJSON:    payload,
+	}); err != nil {
+		if errors.Is(err, conversations.ErrDeliveryNotRetryable) {
+			return model.OutboundIntent{}, ErrDeliveryNotRetryable
+		}
+		return model.OutboundIntent{}, fmt.Errorf("journal delivery_redrive_requested: %w", err)
+	}
+
+	intent, err = svc.LoadSessionOutboundIntent(ctx, sessionID, intentID)
+	if err != nil {
+		if errors.Is(err, sessions.ErrOutboundIntentNotFound) {
+			return model.OutboundIntent{}, ErrDeliveryNotFound
+		}
+		return model.OutboundIntent{}, err
+	}
+	return intent, nil
 }

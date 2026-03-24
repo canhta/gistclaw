@@ -2,6 +2,7 @@ package conversations
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -487,6 +488,56 @@ func TestConversationStore_AppendEventProjectsSessionBinding(t *testing.T) {
 			externalID,
 			status,
 		)
+	}
+}
+
+func TestConversationStore_AppendEventProjectsDeliveryRedrive(t *testing.T) {
+	db := setupTestStore(t)
+	cs := NewConversationStore(db)
+	ctx := context.Background()
+
+	_, err := db.RawDB().ExecContext(ctx,
+		`INSERT INTO runs
+		 (id, conversation_id, agent_id, session_id, objective, workspace_root, status, created_at, updated_at)
+		 VALUES ('run-front', 'conv-redrive', 'assistant', 'sess-front', 'inspect repo', ?, 'completed', datetime('now'), datetime('now'))`,
+		t.TempDir(),
+	)
+	if err != nil {
+		t.Fatalf("insert run: %v", err)
+	}
+	_, err = db.RawDB().ExecContext(ctx,
+		`INSERT INTO outbound_intents
+		 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at, last_attempt_at)
+		 VALUES ('intent-1', 'run-front', 'telegram', 'chat-1', 'reply', 'dedupe-1', 'terminal', 3, datetime('now'), datetime('now'))`,
+	)
+	if err != nil {
+		t.Fatalf("insert outbound intent: %v", err)
+	}
+
+	err = cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-redrive",
+		ConversationID: "conv-redrive",
+		RunID:          "run-front",
+		Kind:           "delivery_redrive_requested",
+		PayloadJSON:    []byte(`{"intent_id":"intent-1"}`),
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent delivery_redrive_requested failed: %v", err)
+	}
+
+	var status string
+	var attempts int
+	var lastAttempt sql.NullString
+	err = db.RawDB().QueryRowContext(ctx,
+		`SELECT status, attempts, last_attempt_at
+		 FROM outbound_intents
+		 WHERE id = 'intent-1'`,
+	).Scan(&status, &attempts, &lastAttempt)
+	if err != nil {
+		t.Fatalf("query outbound intent projection: %v", err)
+	}
+	if status != "pending" || attempts != 0 || lastAttempt.Valid {
+		t.Fatalf("unexpected redrive projection status=%q attempts=%d last_attempt_valid=%v", status, attempts, lastAttempt.Valid)
 	}
 }
 

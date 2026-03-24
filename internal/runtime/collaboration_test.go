@@ -509,3 +509,57 @@ func TestRuntime_ReceiveInboundMessageDedupesDuplicateSourceMessageID(t *testing
 		t.Fatalf("expected 1 inbound receipt after duplicate delivery, got %d", receiptCount)
 	}
 }
+
+func TestRuntime_RetrySessionDeliveryRequeuesTerminalIntent(t *testing.T) {
+	rt, db := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "Front ready.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+	})
+
+	run, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Inspect the repo.",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+
+	var intentID string
+	if err := db.RawDB().QueryRow(
+		`SELECT id
+		 FROM outbound_intents
+		 WHERE run_id = ?
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		run.ID,
+	).Scan(&intentID); err != nil {
+		t.Fatalf("load outbound intent: %v", err)
+	}
+	if _, err := db.RawDB().Exec(
+		`UPDATE outbound_intents
+		 SET status='terminal', attempts=3, last_attempt_at=datetime('now')
+		 WHERE id = ?`,
+		intentID,
+	); err != nil {
+		t.Fatalf("mark terminal intent: %v", err)
+	}
+
+	intent, err := rt.RetrySessionDelivery(context.Background(), run.SessionID, intentID)
+	if err != nil {
+		t.Fatalf("RetrySessionDelivery failed: %v", err)
+	}
+	if intent.ID != intentID || intent.RunID != run.ID {
+		t.Fatalf("unexpected retried intent identity: %+v", intent)
+	}
+	if intent.Status != "pending" || intent.Attempts != 0 || intent.LastAttemptAt != nil {
+		t.Fatalf("expected pending reset intent, got %+v", intent)
+	}
+
+	assertRunEvent(t, db, run.ID, "delivery_redrive_requested")
+}

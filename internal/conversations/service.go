@@ -15,6 +15,7 @@ import (
 
 var ErrConversationBusy = fmt.Errorf("conversation: competing root run active")
 var ErrDuplicateInboundMessage = fmt.Errorf("conversation: duplicate inbound message")
+var ErrDeliveryNotRetryable = fmt.Errorf("conversation: delivery not retryable")
 
 type ConversationStore struct {
 	db *store.DB
@@ -155,6 +156,10 @@ type inboundMessageRecordedPayload struct {
 	RunID            string `json:"run_id"`
 	SessionID        string `json:"session_id"`
 	SessionMessageID string `json:"session_message_id"`
+}
+
+type deliveryRedriveRequestedPayload struct {
+	IntentID string `json:"intent_id"`
 }
 
 func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt model.Event) error {
@@ -333,6 +338,30 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 			return ErrDuplicateInboundMessage
 		}
 		return err
+	case "delivery_redrive_requested":
+		var payload deliveryRedriveRequestedPayload
+		if err := decodePayload(evt.PayloadJSON, &payload); err != nil {
+			return err
+		}
+		result, err := tx.ExecContext(ctx,
+			`UPDATE outbound_intents
+			 SET status = 'pending',
+			     attempts = 0,
+			     last_attempt_at = NULL
+			 WHERE id = ? AND status = 'terminal'`,
+			payload.IntentID,
+		)
+		if err != nil {
+			return err
+		}
+		rows, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if rows == 0 {
+			return ErrDeliveryNotRetryable
+		}
+		return nil
 	default:
 		return nil
 	}
