@@ -64,7 +64,9 @@ CREATE TABLE IF NOT EXISTS session_bindings (
     external_id TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'active',
     created_at DATETIME NOT NULL DEFAULT (datetime('now')),
-    deactivated_at DATETIME
+    deactivated_at DATETIME,
+    deactivation_reason TEXT NOT NULL DEFAULT '',
+    replaced_by_route_id TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS inbound_receipts (

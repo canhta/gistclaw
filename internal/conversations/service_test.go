@@ -574,8 +574,20 @@ func TestConversationStore_AppendEventProjectsSessionBindingReplacementHistory(t
 	if len(bindings) != 2 {
 		t.Fatalf("expected 2 session bindings, got %d", len(bindings))
 	}
+	var reason string
+	var replacedBy sql.NullString
+	if err := db.RawDB().QueryRowContext(ctx,
+		`SELECT deactivation_reason, replaced_by_route_id
+		 FROM session_bindings
+		 WHERE id = 'evt-session-bound-1'`,
+	).Scan(&reason, &replacedBy); err != nil {
+		t.Fatalf("query first binding reason: %v", err)
+	}
 	if bindings[0].id != "evt-session-bound-1" || bindings[0].status != "inactive" || !bindings[0].deactivatedAt.Valid {
 		t.Fatalf("unexpected first binding history row: %+v", bindings[0])
+	}
+	if reason != "replaced" || !replacedBy.Valid || replacedBy.String != "evt-session-bound-2" {
+		t.Fatalf("unexpected first binding deactivation metadata reason=%q replaced_by=%q", reason, replacedBy.String)
 	}
 	if bindings[1].id != "evt-session-bound-2" || bindings[1].status != "active" || bindings[1].deactivatedAt.Valid {
 		t.Fatalf("unexpected second binding history row: %+v", bindings[1])
@@ -608,16 +620,17 @@ func TestConversationStore_AppendEventProjectsSessionUnbound(t *testing.T) {
 
 	var status string
 	var deactivatedAt sql.NullString
+	var reason string
 	err = db.RawDB().QueryRowContext(ctx,
-		`SELECT status, deactivated_at
+		`SELECT status, deactivated_at, deactivation_reason
 		 FROM session_bindings
 		 WHERE id = 'bind-1'`,
-	).Scan(&status, &deactivatedAt)
+	).Scan(&status, &deactivatedAt, &reason)
 	if err != nil {
 		t.Fatalf("query session binding projection: %v", err)
 	}
-	if status != "inactive" || !deactivatedAt.Valid {
-		t.Fatalf("expected inactive binding with deactivated_at, got status=%q deactivated_valid=%v", status, deactivatedAt.Valid)
+	if status != "inactive" || !deactivatedAt.Valid || reason != "deactivated" {
+		t.Fatalf("expected inactive binding with deactivation metadata, got status=%q deactivated_valid=%v reason=%q", status, deactivatedAt.Valid, reason)
 	}
 }
 

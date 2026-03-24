@@ -565,8 +565,8 @@ func TestService_ListRoutesIncludesInactiveHistory(t *testing.T) {
 	if len(allRoutes) != 1 {
 		t.Fatalf("expected 1 historical route, got %d", len(allRoutes))
 	}
-	if allRoutes[0].Status != "inactive" || allRoutes[0].DeactivatedAt == nil {
-		t.Fatalf("expected inactive historical route with deactivated_at, got %+v", allRoutes[0])
+	if allRoutes[0].Status != "inactive" || allRoutes[0].DeactivatedAt == nil || allRoutes[0].DeactivationReason != "deactivated" {
+		t.Fatalf("expected inactive historical route with deactivation metadata, got %+v", allRoutes[0])
 	}
 }
 

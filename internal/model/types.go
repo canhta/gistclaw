@@ -191,15 +191,17 @@ type SessionMessageProvenance struct {
 }
 
 type SessionRoute struct {
-	ID            string
-	SessionID     string
-	ThreadID      string
-	ConnectorID   string
-	AccountID     string
-	ExternalID    string
-	Status        string
-	CreatedAt     time.Time
-	DeactivatedAt *time.Time
+	ID                 string
+	SessionID          string
+	ThreadID           string
+	ConnectorID        string
+	AccountID          string
+	ExternalID         string
+	Status             string
+	CreatedAt          time.Time
+	DeactivatedAt      *time.Time
+	DeactivationReason string
+	ReplacedByRouteID  string
 }
 
 type OutboundIntent struct {

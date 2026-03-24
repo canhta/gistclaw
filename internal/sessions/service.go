@@ -266,8 +266,11 @@ func (s *Service) listSessions(ctx context.Context, conversationID string, limit
 func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (model.SessionRoute, error) {
 	var route model.SessionRoute
 	var deactivatedAt sql.NullString
+	var deactivationReason string
+	var replacedByRouteID string
 	err := s.db.RawDB().QueryRowContext(ctx,
-		`SELECT id, session_id, thread_id, connector_id, account_id, external_id, status, created_at, deactivated_at
+		`SELECT id, session_id, thread_id, connector_id, account_id, external_id, status, created_at, deactivated_at,
+		        deactivation_reason, replaced_by_route_id
 		 FROM session_bindings
 		 WHERE session_id = ? AND status = 'active'
 		 ORDER BY created_at DESC, id DESC
@@ -283,6 +286,8 @@ func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (mod
 		&route.Status,
 		&route.CreatedAt,
 		&deactivatedAt,
+		&deactivationReason,
+		&replacedByRouteID,
 	)
 	if err == sql.ErrNoRows {
 		return model.SessionRoute{}, ErrSessionRouteNotFound
@@ -297,13 +302,16 @@ func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (mod
 		}
 		route.DeactivatedAt = &parsed
 	}
+	route.DeactivationReason = deactivationReason
+	route.ReplacedByRouteID = replacedByRouteID
 	return route, nil
 }
 
 func (s *Service) LoadRoute(ctx context.Context, routeID string) (model.RouteDirectoryItem, error) {
 	rows, err := s.db.RawDB().QueryContext(ctx,
 		`SELECT bind.id, bind.session_id, bind.thread_id, bind.connector_id, bind.account_id, bind.external_id,
-		        bind.status, bind.created_at, bind.deactivated_at, bind.conversation_id, sess.agent_id, sess.role
+		        bind.status, bind.created_at, bind.deactivated_at, bind.deactivation_reason, bind.replaced_by_route_id,
+		        bind.conversation_id, sess.agent_id, sess.role
 		 FROM session_bindings bind
 		 JOIN sessions sess ON sess.id = bind.session_id
 		 WHERE bind.id = ?
@@ -336,7 +344,8 @@ func (s *Service) ListRoutes(ctx context.Context, filter RouteListFilter) ([]mod
 	query := strings.Builder{}
 	query.WriteString(
 		`SELECT bind.id, bind.session_id, bind.thread_id, bind.connector_id, bind.account_id, bind.external_id,
-		        bind.status, bind.created_at, bind.deactivated_at, bind.conversation_id, sess.agent_id, sess.role
+		        bind.status, bind.created_at, bind.deactivated_at, bind.deactivation_reason, bind.replaced_by_route_id,
+		        bind.conversation_id, sess.agent_id, sess.role
 		 FROM session_bindings bind
 		 JOIN sessions sess ON sess.id = bind.session_id
 		 WHERE 1 = 1`,
@@ -734,6 +743,8 @@ func scanRouteDirectoryItem(scanner interface {
 	var route model.RouteDirectoryItem
 	var role string
 	var deactivatedAt sql.NullString
+	var deactivationReason string
+	var replacedByRouteID string
 	if err := scanner.Scan(
 		&route.ID,
 		&route.SessionID,
@@ -744,6 +755,8 @@ func scanRouteDirectoryItem(scanner interface {
 		&route.Status,
 		&route.CreatedAt,
 		&deactivatedAt,
+		&deactivationReason,
+		&replacedByRouteID,
 		&route.ConversationID,
 		&route.AgentID,
 		&role,
@@ -758,6 +771,8 @@ func scanRouteDirectoryItem(scanner interface {
 		}
 		route.DeactivatedAt = &parsed
 	}
+	route.DeactivationReason = deactivationReason
+	route.ReplacedByRouteID = replacedByRouteID
 	return route, nil
 }
 

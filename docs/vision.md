@@ -72,6 +72,7 @@ That means the next implementation work favors:
 - the local host can now send directly to a route by binding id, so route discovery can flow straight into session wake-up without manual ID translation
 - the local host can now deactivate a bound route explicitly, so stale or misrouted external bindings can be cleared without direct database work
 - the route directory can now also expose inactive history with deactivation timestamps, so route replacement and cleanup leave an inspectable trail instead of disappearing
+- route history now also records whether a binding was explicitly deactivated or replaced by a newer route, so the control plane can explain why a route went inactive
 - the local host can now request a controlled retry for terminal deliveries through the same session-scoped control plane, instead of requiring direct database intervention
 - session-scoped delivery failures on the local host are now filtered down to actionable failures, so a successful redrive clears the active failure view without erasing the underlying run audit trail
 - explicit session send/wake behavior should flow through the runtime so the same session contract can back both local tools and future channel recovery

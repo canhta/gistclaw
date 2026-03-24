@@ -294,9 +294,11 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 		if _, err := tx.ExecContext(ctx,
 			`UPDATE session_bindings
 			 SET status = 'inactive',
-			     deactivated_at = ?
+			     deactivated_at = ?,
+			     deactivation_reason = 'replaced',
+			     replaced_by_route_id = ?
 			 WHERE conversation_id = ? AND thread_id = ? AND status = 'active'`,
-			evt.CreatedAt, evt.ConversationID, payload.ThreadID,
+			evt.CreatedAt, evt.ID, evt.ConversationID, payload.ThreadID,
 		); err != nil {
 			return err
 		}
@@ -306,8 +308,8 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 		}
 		_, err := tx.ExecContext(ctx,
 			`INSERT INTO session_bindings
-			 (id, conversation_id, thread_id, session_id, connector_id, account_id, external_id, status, created_at, deactivated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+			 (id, conversation_id, thread_id, session_id, connector_id, account_id, external_id, status, created_at, deactivated_at, deactivation_reason, replaced_by_route_id)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '', '')`,
 			evt.ID,
 			evt.ConversationID,
 			payload.ThreadID,
@@ -327,7 +329,9 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 		_, err := tx.ExecContext(ctx,
 			`UPDATE session_bindings
 			 SET status = 'inactive',
-			     deactivated_at = ?
+			     deactivated_at = ?,
+			     deactivation_reason = 'deactivated',
+			     replaced_by_route_id = ''
 			 WHERE id = ? AND status = 'active'`,
 			evt.CreatedAt, payload.RouteID,
 		)

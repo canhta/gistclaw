@@ -804,8 +804,8 @@ func TestSessionAPI(t *testing.T) {
 		if len(historyResp.Routes) != 1 {
 			t.Fatalf("expected 1 historical route, got %d", len(historyResp.Routes))
 		}
-		if historyResp.Routes[0].Status != "inactive" || historyResp.Routes[0].DeactivatedAt == nil {
-			t.Fatalf("expected inactive historical route with deactivated_at, got %+v", historyResp.Routes[0])
+		if historyResp.Routes[0].Status != "inactive" || historyResp.Routes[0].DeactivatedAt == nil || historyResp.Routes[0].DeactivationReason != "deactivated" {
+			t.Fatalf("expected inactive historical route with deactivation metadata, got %+v", historyResp.Routes[0])
 		}
 	})
 

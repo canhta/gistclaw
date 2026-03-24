@@ -48,6 +48,7 @@ Remaining gaps:
 - the local web host can now send to a specific route by binding id, so route discovery can flow directly into a runtime wake-up action
 - the local web host can now deactivate a specific route by binding id, so stale external bindings can be cleared without manual database intervention
 - the local web host can now expose inactive route history with deactivation timestamps, so route replacement and cleanup remain auditable in the control plane
+- inactive route history now also records whether a binding was replaced or explicitly deactivated, so operators can tell why a route left the active set
 - web submit and Telegram ingress now share the same runtime inbound-message path, so follow-up user turns reuse the bound session instead of depending on surface-specific startup logic
 - Telegram and WhatsApp ingress now carry source message identity through the runtime, so retries are idempotent and provenance stays explicit in the session mailbox
 - WhatsApp webhook ingress and outbound draining now use that same session/runtime contract, giving the platform a second real external surface
