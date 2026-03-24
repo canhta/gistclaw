@@ -683,8 +683,70 @@ func TestSessionAPI(t *testing.T) {
 		if len(resp.Routes) != 1 {
 			t.Fatalf("expected 1 route, got %d", len(resp.Routes))
 		}
+		if resp.Routes[0].ID == "" {
+			t.Fatalf("expected route id, got %+v", resp.Routes[0])
+		}
 		if resp.Routes[0].ConnectorID != "telegram" || resp.Routes[0].SessionID != telegramRun.SessionID {
 			t.Fatalf("unexpected route payload: %+v", resp.Routes[0])
+		}
+	})
+
+	t.Run("route deactivate removes binding from route directory", func(t *testing.T) {
+		h := newServerHarness(t)
+		if _, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-1",
+				ExternalID:  "chat-1",
+				ThreadID:    "thread-1",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Inspect Telegram.",
+			WorkspaceRoot: h.workspaceRoot,
+		}); err != nil {
+			t.Fatalf("StartFrontSession telegram failed: %v", err)
+		}
+
+		listRR := httptest.NewRecorder()
+		listReq := httptest.NewRequest(http.MethodGet, "/api/routes?connector_id=telegram", nil)
+		h.server.ServeHTTP(listRR, listReq)
+		if listRR.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", listRR.Code, listRR.Body.String())
+		}
+
+		var listResp struct {
+			Routes []model.RouteDirectoryItem `json:"routes"`
+		}
+		if err := json.Unmarshal(listRR.Body.Bytes(), &listResp); err != nil {
+			t.Fatalf("decode list response: %v", err)
+		}
+		if len(listResp.Routes) != 1 {
+			t.Fatalf("expected 1 route, got %d", len(listResp.Routes))
+		}
+
+		deactivateRR := httptest.NewRecorder()
+		deactivateReq := httptest.NewRequest(http.MethodPost, "/api/routes/"+listResp.Routes[0].ID+"/deactivate", nil)
+		deactivateReq.Header.Set("Authorization", "Bearer "+h.adminToken)
+		h.server.ServeHTTP(deactivateRR, deactivateReq)
+		if deactivateRR.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", deactivateRR.Code, deactivateRR.Body.String())
+		}
+
+		afterRR := httptest.NewRecorder()
+		afterReq := httptest.NewRequest(http.MethodGet, "/api/routes?connector_id=telegram", nil)
+		h.server.ServeHTTP(afterRR, afterReq)
+		if afterRR.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", afterRR.Code, afterRR.Body.String())
+		}
+
+		var afterResp struct {
+			Routes []model.RouteDirectoryItem `json:"routes"`
+		}
+		if err := json.Unmarshal(afterRR.Body.Bytes(), &afterResp); err != nil {
+			t.Fatalf("decode post-deactivate response: %v", err)
+		}
+		if len(afterResp.Routes) != 0 {
+			t.Fatalf("expected route directory to be empty after deactivation, got %d", len(afterResp.Routes))
 		}
 	})
 

@@ -491,6 +491,44 @@ func TestConversationStore_AppendEventProjectsSessionBinding(t *testing.T) {
 	}
 }
 
+func TestConversationStore_AppendEventProjectsSessionUnbound(t *testing.T) {
+	db := setupTestStore(t)
+	cs := NewConversationStore(db)
+	ctx := context.Background()
+
+	if _, err := db.RawDB().ExecContext(ctx,
+		`INSERT INTO session_bindings
+		 (id, conversation_id, thread_id, session_id, connector_id, account_id, external_id, status, created_at)
+		 VALUES ('bind-1', 'conv-binding', 'main', 'sess-front', 'telegram', 'acct-1', 'chat-1', 'active', datetime('now'))`,
+	); err != nil {
+		t.Fatalf("insert session binding: %v", err)
+	}
+
+	err := cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-session-unbound",
+		ConversationID: "conv-binding",
+		RunID:          "run-front",
+		Kind:           "session_unbound",
+		PayloadJSON:    []byte(`{"route_id":"bind-1"}`),
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent session_unbound failed: %v", err)
+	}
+
+	var status string
+	err = db.RawDB().QueryRowContext(ctx,
+		`SELECT status
+		 FROM session_bindings
+		 WHERE id = 'bind-1'`,
+	).Scan(&status)
+	if err != nil {
+		t.Fatalf("query session binding projection: %v", err)
+	}
+	if status != "inactive" {
+		t.Fatalf("expected inactive binding status, got %q", status)
+	}
+}
+
 func TestConversationStore_AppendEventProjectsDeliveryRedrive(t *testing.T) {
 	db := setupTestStore(t)
 	cs := NewConversationStore(db)

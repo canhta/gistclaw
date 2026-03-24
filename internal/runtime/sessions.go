@@ -13,6 +13,8 @@ import (
 
 var ErrDeliveryNotFound = fmt.Errorf("runtime: delivery not found")
 var ErrDeliveryNotRetryable = fmt.Errorf("runtime: delivery not retryable")
+var ErrRouteNotFound = fmt.Errorf("runtime: route not found")
+var ErrRouteNotActive = fmt.Errorf("runtime: route not active")
 
 func (r *Runtime) ListSessions(ctx context.Context, conversationID string, limit int) ([]model.Session, error) {
 	return sessions.NewService(r.store, r.convStore).ListConversationSessions(ctx, conversationID, limit)
@@ -83,6 +85,39 @@ func (r *Runtime) RetryDelivery(ctx context.Context, intentID string) (model.Out
 		return model.OutboundIntent{}, err
 	}
 	return r.retryDelivery(ctx, item.ConversationID, item.SessionID, item.OutboundIntent)
+}
+
+func (r *Runtime) DeactivateRoute(ctx context.Context, routeID string) (model.RouteDirectoryItem, error) {
+	svc := sessions.NewService(r.store, r.convStore)
+	route, err := svc.LoadRoute(ctx, routeID)
+	if err != nil {
+		if errors.Is(err, sessions.ErrSessionRouteNotFound) {
+			return model.RouteDirectoryItem{}, ErrRouteNotFound
+		}
+		return model.RouteDirectoryItem{}, err
+	}
+	if route.Status != "active" {
+		return model.RouteDirectoryItem{}, ErrRouteNotActive
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"route_id": route.ID,
+	})
+	if err != nil {
+		return model.RouteDirectoryItem{}, fmt.Errorf("marshal session_unbound payload: %w", err)
+	}
+
+	if err := r.convStore.AppendEvent(ctx, model.Event{
+		ID:             generateID(),
+		ConversationID: route.ConversationID,
+		Kind:           "session_unbound",
+		PayloadJSON:    payload,
+	}); err != nil {
+		return model.RouteDirectoryItem{}, fmt.Errorf("journal session_unbound: %w", err)
+	}
+
+	route.Status = "inactive"
+	return route, nil
 }
 
 func (r *Runtime) retryDelivery(ctx context.Context, conversationID, sessionID string, intent model.OutboundIntent) (model.OutboundIntent, error) {

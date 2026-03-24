@@ -148,6 +148,10 @@ type sessionBoundPayload struct {
 	Status      string `json:"status"`
 }
 
+type sessionUnboundPayload struct {
+	RouteID string `json:"route_id"`
+}
+
 type inboundMessageRecordedPayload struct {
 	ConnectorID      string `json:"connector_id"`
 	AccountID        string `json:"account_id"`
@@ -312,6 +316,18 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 			payload.ExternalID,
 			status,
 			evt.CreatedAt,
+		)
+		return err
+	case "session_unbound":
+		var payload sessionUnboundPayload
+		if err := decodePayload(evt.PayloadJSON, &payload); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx,
+			`UPDATE session_bindings
+			 SET status = 'inactive'
+			 WHERE id = ? AND status = 'active'`,
+			payload.RouteID,
 		)
 		return err
 	case "inbound_message_recorded":

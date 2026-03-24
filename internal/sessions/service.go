@@ -260,13 +260,14 @@ func (s *Service) listSessions(ctx context.Context, conversationID string, limit
 func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (model.SessionRoute, error) {
 	var route model.SessionRoute
 	err := s.db.RawDB().QueryRowContext(ctx,
-		`SELECT session_id, thread_id, connector_id, account_id, external_id, status, created_at
+		`SELECT id, session_id, thread_id, connector_id, account_id, external_id, status, created_at
 		 FROM session_bindings
 		 WHERE session_id = ? AND status = 'active'
 		 ORDER BY created_at DESC, id DESC
 		 LIMIT 1`,
 		sessionID,
 	).Scan(
+		&route.ID,
 		&route.SessionID,
 		&route.ThreadID,
 		&route.ConnectorID,
@@ -284,10 +285,44 @@ func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (mod
 	return route, nil
 }
 
+func (s *Service) LoadRoute(ctx context.Context, routeID string) (model.RouteDirectoryItem, error) {
+	var route model.RouteDirectoryItem
+	var role string
+	err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT bind.id, bind.session_id, bind.thread_id, bind.connector_id, bind.account_id, bind.external_id,
+		        bind.status, bind.created_at, bind.conversation_id, sess.agent_id, sess.role
+		 FROM session_bindings bind
+		 JOIN sessions sess ON sess.id = bind.session_id
+		 WHERE bind.id = ?
+		 LIMIT 1`,
+		routeID,
+	).Scan(
+		&route.ID,
+		&route.SessionID,
+		&route.ThreadID,
+		&route.ConnectorID,
+		&route.AccountID,
+		&route.ExternalID,
+		&route.Status,
+		&route.CreatedAt,
+		&route.ConversationID,
+		&route.AgentID,
+		&role,
+	)
+	if err == sql.ErrNoRows {
+		return model.RouteDirectoryItem{}, ErrSessionRouteNotFound
+	}
+	if err != nil {
+		return model.RouteDirectoryItem{}, fmt.Errorf("load route: %w", err)
+	}
+	route.Role = model.SessionRole(role)
+	return route, nil
+}
+
 func (s *Service) ListRoutes(ctx context.Context, connectorID string, limit int) ([]model.RouteDirectoryItem, error) {
 	query := strings.Builder{}
 	query.WriteString(
-		`SELECT bind.session_id, bind.thread_id, bind.connector_id, bind.account_id, bind.external_id,
+		`SELECT bind.id, bind.session_id, bind.thread_id, bind.connector_id, bind.account_id, bind.external_id,
 		        bind.status, bind.created_at, bind.conversation_id, sess.agent_id, sess.role
 		 FROM session_bindings bind
 		 JOIN sessions sess ON sess.id = bind.session_id
@@ -317,6 +352,7 @@ func (s *Service) ListRoutes(ctx context.Context, connectorID string, limit int)
 		var route model.RouteDirectoryItem
 		var role string
 		if err := rows.Scan(
+			&route.ID,
 			&route.SessionID,
 			&route.ThreadID,
 			&route.ConnectorID,

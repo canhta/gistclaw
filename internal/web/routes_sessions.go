@@ -24,6 +24,10 @@ type routeDirectoryResponse struct {
 	Routes []model.RouteDirectoryItem `json:"routes"`
 }
 
+type routeDeactivateResponse struct {
+	Route model.RouteDirectoryItem `json:"route"`
+}
+
 type deliveryQueueResponse struct {
 	Deliveries []model.DeliveryQueueItem `json:"deliveries"`
 }
@@ -112,6 +116,32 @@ func (s *Server) handleDeliveryIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, deliveryQueueResponse{Deliveries: list})
+}
+
+func (s *Server) handleRouteDeactivate(w http.ResponseWriter, r *http.Request) {
+	if s.rt == nil {
+		http.Error(w, "runtime not configured", http.StatusInternalServerError)
+		return
+	}
+
+	route, err := s.rt.DeactivateRoute(r.Context(), r.PathValue("id"))
+	if err != nil {
+		switch {
+		case errors.Is(err, runtime.ErrRouteNotFound):
+			http.NotFound(w, r)
+			return
+		case errors.Is(err, runtime.ErrRouteNotActive):
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"message": "Only active routes can be deactivated.",
+			})
+			return
+		default:
+			http.Error(w, "failed to deactivate route", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, routeDeactivateResponse{Route: route})
 }
 
 func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {

@@ -191,6 +191,7 @@ type SessionMessageProvenance struct {
 }
 
 type SessionRoute struct {
+	ID          string
 	SessionID   string
 	ThreadID    string
 	ConnectorID string
