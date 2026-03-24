@@ -105,18 +105,6 @@ type runCompletedPayload struct {
 	ModelLane    string  `json:"model_lane"`
 }
 
-type delegationCreatedPayload struct {
-	RootRunID             string `json:"root_run_id"`
-	TargetAgentID         string `json:"target_agent_id"`
-	Objective             string `json:"objective"`
-	ExecutionSnapshotJSON []byte `json:"execution_snapshot_json"`
-}
-
-type delegationQueuedPayload struct {
-	RootRunID     string `json:"root_run_id"`
-	TargetAgentID string `json:"target_agent_id"`
-}
-
 type summaryUpsertedPayload struct {
 	SummaryID  string `json:"summary_id"`
 	RunID      string `json:"run_id"`
@@ -151,10 +139,10 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 		}
 		_, err := tx.ExecContext(ctx,
 			`INSERT INTO runs
-			 (id, conversation_id, agent_id, team_id, objective, workspace_root, status, execution_snapshot_json, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
-			evt.RunID, evt.ConversationID, payload.AgentID, payload.TeamID, payload.Objective,
-			payload.WorkspaceRoot, payload.ExecutionSnapshotJSON, evt.CreatedAt, evt.CreatedAt,
+			 (id, conversation_id, agent_id, team_id, parent_run_id, objective, workspace_root, status, execution_snapshot_json, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, NULLIF(?, ''), ?, ?, 'active', ?, ?, ?)`,
+			evt.RunID, evt.ConversationID, payload.AgentID, payload.TeamID, evt.ParentRunID,
+			payload.Objective, payload.WorkspaceRoot, payload.ExecutionSnapshotJSON, evt.CreatedAt, evt.CreatedAt,
 		)
 		return err
 	case "turn_completed":
@@ -210,35 +198,6 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 		_, err := tx.ExecContext(ctx,
 			"UPDATE runs SET updated_at = ? WHERE id = ?",
 			evt.CreatedAt, evt.RunID,
-		)
-		return err
-	case "delegation_created":
-		var payload delegationCreatedPayload
-		if err := decodePayload(evt.PayloadJSON, &payload); err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO runs (id, conversation_id, agent_id, parent_run_id, objective, status, execution_snapshot_json, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
-			evt.RunID, evt.ConversationID, payload.TargetAgentID, evt.ParentRunID, payload.Objective, payload.ExecutionSnapshotJSON, evt.CreatedAt, evt.CreatedAt,
-		); err != nil {
-			return err
-		}
-		_, err := tx.ExecContext(ctx,
-			`INSERT INTO delegations (id, root_run_id, parent_run_id, child_run_id, target_agent_id, status, created_at)
-			 VALUES (?, ?, ?, ?, ?, 'active', ?)`,
-			evt.ID, payload.RootRunID, evt.ParentRunID, evt.RunID, payload.TargetAgentID, evt.CreatedAt,
-		)
-		return err
-	case "delegation_queued":
-		var payload delegationQueuedPayload
-		if err := decodePayload(evt.PayloadJSON, &payload); err != nil {
-			return err
-		}
-		_, err := tx.ExecContext(ctx,
-			`INSERT INTO delegations (id, root_run_id, parent_run_id, target_agent_id, status, created_at)
-			 VALUES (?, ?, ?, ?, 'queued', ?)`,
-			evt.ID, payload.RootRunID, evt.ParentRunID, payload.TargetAgentID, evt.CreatedAt,
 		)
 		return err
 	case "summary_upserted":

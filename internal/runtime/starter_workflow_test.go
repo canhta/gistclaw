@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/store"
 	"github.com/canhta/gistclaw/internal/tools"
@@ -21,8 +22,8 @@ func TestStarterWorkflow_PreviewOnly(t *testing.T) {
 		{
 			Content: "I will apply a patch",
 			ToolCalls: []model.ToolCallRequest{{
-				ID:       "tc-001",
-				ToolName: "workspace_apply",
+				ID:        "tc-001",
+				ToolName:  "workspace_apply",
 				InputJSON: []byte(`{"path":"main.go","content":"package main\n"}`),
 			}},
 			StopReason: "tool_use",
@@ -168,6 +169,83 @@ func TestStarterWorkflow_VerificationResultAttached(t *testing.T) {
 	}
 	if verifyCount == 0 {
 		t.Fatalf("expected verification_completed event after verification agent run")
+	}
+}
+
+func TestStarterWorkflow_RepoPatchRunsAsWorkerFlow(t *testing.T) {
+	db, cs, mem, reg := setupMilestoneTestDeps(t)
+	prov := NewMockProvider([]GenerateResult{
+		{Content: "I will coordinate the patch flow.", InputTokens: 9, OutputTokens: 11, StopReason: "end_turn"},
+		{Content: "Patch drafted.", InputTokens: 8, OutputTokens: 14, StopReason: "end_turn"},
+		{Content: "Verification passed.", InputTokens: 7, OutputTokens: 12, StopReason: "end_turn"},
+	}, nil)
+	sink := &model.NoopEventSink{}
+	rt := New(db, cs, reg, mem, prov, sink)
+	ctx := context.Background()
+
+	front, err := rt.StartFrontSession(ctx, StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Prepare a patch and verify it.",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+
+	patcher, err := rt.Spawn(ctx, SpawnCommand{
+		ControllerRunID: front.ID,
+		AgentID:         "patcher",
+		Prompt:          "Draft the patch for main.go.",
+	})
+	if err != nil {
+		t.Fatalf("Spawn patcher failed: %v", err)
+	}
+	verifier, err := rt.Spawn(ctx, SpawnCommand{
+		ControllerRunID: front.ID,
+		AgentID:         "verifier",
+		Prompt:          "Verify the proposed patch.",
+	})
+	if err != nil {
+		t.Fatalf("Spawn verifier failed: %v", err)
+	}
+
+	if err := rt.Announce(ctx, AnnounceCommand{
+		WorkerRunID: patcher.ID,
+		TargetRunID: front.ID,
+		Body:        "Patch ready for review.",
+	}); err != nil {
+		t.Fatalf("Patch announce failed: %v", err)
+	}
+	if err := rt.Announce(ctx, AnnounceCommand{
+		WorkerRunID: verifier.ID,
+		TargetRunID: front.ID,
+		Body:        "Verification passed.",
+	}); err != nil {
+		t.Fatalf("Verification announce failed: %v", err)
+	}
+
+	if patcher.ParentRunID != front.ID {
+		t.Fatalf("expected patcher parent %s, got %s", front.ID, patcher.ParentRunID)
+	}
+	if verifier.ParentRunID != front.ID {
+		t.Fatalf("expected verifier parent %s, got %s", front.ID, verifier.ParentRunID)
+	}
+
+	var announceCount int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM session_messages WHERE session_id = ? AND kind = 'announce'",
+		front.ID,
+	).Scan(&announceCount); err != nil {
+		t.Fatalf("query announce messages: %v", err)
+	}
+	if announceCount != 2 {
+		t.Fatalf("expected 2 worker announcements on front session, got %d", announceCount)
 	}
 }
 

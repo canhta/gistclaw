@@ -39,12 +39,6 @@ type ContinueRun struct {
 	Input string
 }
 
-type DelegateRun struct {
-	ParentRunID   string
-	TargetAgentID string
-	Objective     string
-}
-
 type ResumeRun struct {
 	RunID string
 }
@@ -111,7 +105,6 @@ type Runtime struct {
 	eventSink         model.RunEventSink
 	budget            BudgetGuard
 	contextWindowSize int
-	maxActiveChildren int
 }
 
 func New(
@@ -144,47 +137,9 @@ func (r *Runtime) Memory() *memory.Store {
 }
 
 func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
-	if err := r.budget.CheckDailyCap(ctx, cmd.AccountID); err != nil {
-		return model.Run{}, err
-	}
-	if active, err := r.convStore.ActiveRootRun(ctx, cmd.ConversationID); err != nil {
-		return model.Run{}, err
-	} else if active.ID != "" {
-		return model.Run{}, conversations.ErrConversationBusy
-	}
-
 	runID := generateID()
-	now := time.Now().UTC()
-
-	payload, err := json.Marshal(map[string]any{
-		"agent_id":                cmd.AgentID,
-		"team_id":                 cmd.TeamID,
-		"objective":               cmd.Objective,
-		"workspace_root":          cmd.WorkspaceRoot,
-		"execution_snapshot_json": cmd.ExecutionSnapshotJSON,
-	})
-	if err != nil {
-		return model.Run{}, fmt.Errorf("marshal run_started payload: %w", err)
-	}
-
-	err = r.convStore.AppendEvent(ctx, model.Event{
-		ID:             generateID(),
-		ConversationID: cmd.ConversationID,
-		RunID:          runID,
-		Kind:           "run_started",
-		PayloadJSON:    payload,
-		CreatedAt:      now,
-	})
-	if err != nil {
-		return model.Run{}, fmt.Errorf("journal run_started: %w", err)
-	}
-
-	if r.eventSink != nil {
-		_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
-			RunID:      runID,
-			Kind:       "run_started",
-			OccurredAt: now,
-		})
+	if err := r.createRun(ctx, runID, "", cmd); err != nil {
+		return model.Run{}, err
 	}
 
 	return r.executeRunLoop(ctx, runLoopOpts{
@@ -195,6 +150,55 @@ func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
 		previewOnly:       cmd.PreviewOnly,
 		verificationAgent: cmd.VerificationAgent,
 	})
+}
+
+func (r *Runtime) createRun(ctx context.Context, runID, parentRunID string, cmd StartRun) error {
+	if err := r.budget.CheckDailyCap(ctx, cmd.AccountID); err != nil {
+		return err
+	}
+	if parentRunID == "" {
+		if active, err := r.convStore.ActiveRootRun(ctx, cmd.ConversationID); err != nil {
+			return err
+		} else if active.ID != "" {
+			return conversations.ErrConversationBusy
+		}
+	}
+
+	now := time.Now().UTC()
+
+	payload, err := json.Marshal(map[string]any{
+		"agent_id":                cmd.AgentID,
+		"team_id":                 cmd.TeamID,
+		"objective":               cmd.Objective,
+		"workspace_root":          cmd.WorkspaceRoot,
+		"execution_snapshot_json": cmd.ExecutionSnapshotJSON,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal run_started payload: %w", err)
+	}
+
+	err = r.convStore.AppendEvent(ctx, model.Event{
+		ID:             generateID(),
+		ConversationID: cmd.ConversationID,
+		RunID:          runID,
+		ParentRunID:    parentRunID,
+		Kind:           "run_started",
+		PayloadJSON:    payload,
+		CreatedAt:      now,
+	})
+	if err != nil {
+		return fmt.Errorf("journal run_started: %w", err)
+	}
+
+	if r.eventSink != nil {
+		_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
+			RunID:      runID,
+			Kind:       "run_started",
+			OccurredAt: now,
+		})
+	}
+
+	return nil
 }
 
 type runLoopOpts struct {
@@ -222,9 +226,9 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			OutputTokens: cumulativeOutput,
 		}); err != nil {
 			stopPayload, _ := json.Marshal(map[string]any{
-				"limit_type":    "per_run_tokens",
-				"tokens_used":   cumulativeInput + cumulativeOutput,
-				"token_cap":     r.budget.PerRunTokenCap,
+				"limit_type":  "per_run_tokens",
+				"tokens_used": cumulativeInput + cumulativeOutput,
+				"token_cap":   r.budget.PerRunTokenCap,
 			})
 			_ = r.convStore.AppendEvent(ctx, model.Event{
 				ID:             generateID(),
@@ -390,10 +394,6 @@ func (r *Runtime) Continue(ctx context.Context, cmd ContinueRun) (model.Run, err
 	return r.loadRun(ctx, cmd.RunID)
 }
 
-func (r *Runtime) Delegate(ctx context.Context, cmd DelegateRun) (model.Run, error) {
-	return r.createDelegation(ctx, cmd)
-}
-
 func (r *Runtime) Resume(ctx context.Context, cmd ResumeRun) (model.Run, error) {
 	return r.loadRun(ctx, cmd.RunID)
 }
@@ -493,21 +493,16 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 // web conversation key internally. This is the canonical entry point for
 // write-path web handlers.
 func (r *Runtime) SubmitTask(ctx context.Context, objective, workspaceRoot string) (model.Run, error) {
-	conv, err := r.convStore.Resolve(ctx, conversations.ConversationKey{
-		ConnectorID: "web",
-		AccountID:   "local",
-		ExternalID:  "default",
-		ThreadID:    "main",
-	})
-	if err != nil {
-		return model.Run{}, fmt.Errorf("resolve web conversation: %w", err)
-	}
-	return r.Start(ctx, StartRun{
-		ConversationID: conv.ID,
-		AgentID:        "web-operator",
-		Objective:      objective,
-		WorkspaceRoot:  workspaceRoot,
-		AccountID:      "local",
+	return r.StartFrontSession(ctx, StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "default",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: objective,
+		WorkspaceRoot: workspaceRoot,
 	})
 }
 

@@ -191,3 +191,78 @@ func TestAcceptance_IdleDaemonMakesZeroModelCalls(t *testing.T) {
 		t.Fatalf("idle daemon made %d model calls, expected 0", prov.CallCount())
 	}
 }
+
+func TestAcceptance_FrontSessionCanSpawnAndReceiveAnnounce(t *testing.T) {
+	db, cs, mem, reg := setupMilestoneTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "I will coordinate the work.", InputTokens: 12, OutputTokens: 18, StopReason: "end_turn"},
+			{Content: "Docs review complete.", InputTokens: 7, OutputTokens: 10, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	sink := &model.NoopEventSink{}
+	rt := New(db, cs, reg, mem, prov, sink)
+	ctx := context.Background()
+
+	front, err := rt.StartFrontSession(ctx, StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Review the docs and summarize the outcome.",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+
+	worker, err := rt.Spawn(ctx, SpawnCommand{
+		ControllerRunID: front.ID,
+		AgentID:         "researcher",
+		Prompt:          "Inspect the docs folder.",
+	})
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+
+	if err := rt.Announce(ctx, AnnounceCommand{
+		WorkerRunID: worker.ID,
+		TargetRunID: front.ID,
+		Body:        "Docs review finished with three follow-ups.",
+	}); err != nil {
+		t.Fatalf("Announce failed: %v", err)
+	}
+
+	rp := replay.NewService(db)
+	runReplay, err := rp.LoadRun(ctx, front.ID)
+	if err != nil {
+		t.Fatalf("LoadRun failed: %v", err)
+	}
+	if len(runReplay.Events) == 0 {
+		t.Fatal("expected replay events for front run")
+	}
+
+	receipt, err := rp.Build(ctx, front.ID)
+	if err != nil {
+		t.Fatalf("Build receipt failed: %v", err)
+	}
+	if receipt.RunID != front.ID {
+		t.Fatalf("expected receipt for %s, got %s", front.ID, receipt.RunID)
+	}
+
+	var announceCount int
+	err = db.RawDB().QueryRow(
+		"SELECT count(*) FROM session_messages WHERE session_id = ? AND kind = 'announce'",
+		front.ID,
+	).Scan(&announceCount)
+	if err != nil {
+		t.Fatalf("query announce messages: %v", err)
+	}
+	if announceCount != 1 {
+		t.Fatalf("expected 1 announce message on front session, got %d", announceCount)
+	}
+}
