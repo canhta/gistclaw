@@ -613,6 +613,18 @@ func TestSessionAPI(t *testing.T) {
 			t.Fatalf("StartFrontSession failed: %v", err)
 		}
 
+		var intentID string
+		if err := h.db.RawDB().QueryRow(
+			`SELECT id
+			 FROM outbound_intents
+			 WHERE run_id = ?
+			 ORDER BY created_at DESC, id DESC
+			 LIMIT 1`,
+			run.ID,
+		).Scan(&intentID); err != nil {
+			t.Fatalf("load outbound intent: %v", err)
+		}
+
 		if _, err := h.db.RawDB().Exec(
 			`UPDATE outbound_intents
 			 SET status='terminal', attempts=3, last_attempt_at=datetime('now')
@@ -621,7 +633,7 @@ func TestSessionAPI(t *testing.T) {
 		); err != nil {
 			t.Fatalf("update outbound intent: %v", err)
 		}
-		payload := `{"intent_id":"intent-session","chat_id":"chat-1","connector_id":"telegram","event_kind":"run_completed","error":"delivery failed"}`
+		payload := `{"intent_id":"` + intentID + `","chat_id":"chat-1","connector_id":"telegram","event_kind":"run_completed","error":"delivery failed"}`
 		if err := conversations.NewConversationStore(h.db).AppendEvent(context.Background(), model.Event{
 			ID:             "evt-session-delivery-failed",
 			ConversationID: run.ConversationID,
@@ -786,6 +798,23 @@ func TestSessionAPI(t *testing.T) {
 		}
 		if resp.Delivery.LastAttemptAt != nil {
 			t.Fatalf("expected cleared last_attempt_at, got %+v", resp.Delivery)
+		}
+
+		detail := httptest.NewRecorder()
+		detailReq := httptest.NewRequest(http.MethodGet, "/api/sessions/"+run.SessionID, nil)
+		h.server.ServeHTTP(detail, detailReq)
+		if detail.Code != http.StatusOK {
+			t.Fatalf("expected 200 from detail endpoint, got %d body=%s", detail.Code, detail.Body.String())
+		}
+
+		var detailResp struct {
+			DeliveryFailures []model.DeliveryFailure `json:"delivery_failures"`
+		}
+		if err := json.Unmarshal(detail.Body.Bytes(), &detailResp); err != nil {
+			t.Fatalf("decode detail response: %v", err)
+		}
+		if len(detailResp.DeliveryFailures) != 0 {
+			t.Fatalf("expected no actionable delivery failures after retry, got %d", len(detailResp.DeliveryFailures))
 		}
 	})
 

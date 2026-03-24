@@ -215,6 +215,7 @@ type OutboundIntent struct {
 
 type DeliveryFailure struct {
 	ID          string
+	IntentID    string
 	RunID       string
 	ConnectorID string
 	ChatID      string

@@ -434,6 +434,7 @@ func (s *Service) ListSessionDeliveryFailures(ctx context.Context, sessionID str
 			return nil, fmt.Errorf("scan session delivery failure: %w", err)
 		}
 		var payload struct {
+			IntentID    string `json:"intent_id"`
 			ConnectorID string `json:"connector_id"`
 			ChatID      string `json:"chat_id"`
 			EventKind   string `json:"event_kind"`
@@ -444,6 +445,7 @@ func (s *Service) ListSessionDeliveryFailures(ctx context.Context, sessionID str
 				return nil, fmt.Errorf("unmarshal session delivery failure payload: %w", err)
 			}
 		}
+		failure.IntentID = payload.IntentID
 		failure.ConnectorID = payload.ConnectorID
 		failure.ChatID = payload.ChatID
 		failure.EventKind = payload.EventKind
@@ -453,7 +455,40 @@ func (s *Service) ListSessionDeliveryFailures(ctx context.Context, sessionID str
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate session delivery failures: %w", err)
 	}
-	return failures, nil
+
+	actionable := make([]model.DeliveryFailure, 0, len(failures))
+	for _, failure := range failures {
+		if failure.IntentID != "" {
+			status, err := s.loadOutboundIntentStatus(ctx, failure.IntentID)
+			if err == nil && status != "terminal" {
+				continue
+			}
+			if err == ErrOutboundIntentNotFound {
+				continue
+			}
+			if err != nil {
+				return nil, fmt.Errorf("load delivery failure intent status: %w", err)
+			}
+		}
+		actionable = append(actionable, failure)
+	}
+
+	return actionable, nil
+}
+
+func (s *Service) loadOutboundIntentStatus(ctx context.Context, intentID string) (string, error) {
+	var status string
+	err := s.db.RawDB().QueryRowContext(ctx,
+		"SELECT status FROM outbound_intents WHERE id = ?",
+		intentID,
+	).Scan(&status)
+	if err == sql.ErrNoRows {
+		return "", ErrOutboundIntentNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("load outbound intent status: %w", err)
+	}
+	return status, nil
 }
 
 func parseActivityTime(value string) (time.Time, error) {

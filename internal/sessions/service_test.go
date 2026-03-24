@@ -232,7 +232,7 @@ func TestService_ListSessionOutboundIntentsAndFailures(t *testing.T) {
 		ctx,
 		`INSERT INTO outbound_intents
 		 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at, last_attempt_at)
-		 VALUES ('intent-1', 'run-front', 'telegram', 'chat-1', 'reply one', 'dedupe-1', 'delivered', 1, datetime('now', '-90 seconds'), datetime('now', '-80 seconds'))`,
+		 VALUES ('intent-1', 'run-front', 'telegram', 'chat-1', 'reply one', 'dedupe-1', 'terminal', 3, datetime('now', '-90 seconds'), datetime('now', '-80 seconds'))`,
 	); err != nil {
 		t.Fatalf("insert outbound intent: %v", err)
 	}
@@ -261,7 +261,7 @@ func TestService_ListSessionOutboundIntentsAndFailures(t *testing.T) {
 	if deliveries[0].ConnectorID != "telegram" || deliveries[0].ChatID != "chat-1" {
 		t.Fatalf("unexpected outbound target: %+v", deliveries[0])
 	}
-	if deliveries[0].Status != "delivered" || deliveries[0].Attempts != 1 {
+	if deliveries[0].Status != "terminal" || deliveries[0].Attempts != 3 {
 		t.Fatalf("unexpected outbound delivery status: %+v", deliveries[0])
 	}
 
@@ -277,6 +277,52 @@ func TestService_ListSessionOutboundIntentsAndFailures(t *testing.T) {
 	}
 	if failures[0].ChatID != "chat-1" || failures[0].EventKind != "run_completed" || failures[0].Error != "provider offline" {
 		t.Fatalf("unexpected delivery failure payload: %+v", failures[0])
+	}
+}
+
+func TestService_ListSessionDeliveryFailuresHidesResolvedFailures(t *testing.T) {
+	svc := newTestSessionService(t)
+	ctx := context.Background()
+	front := openFrontSession(t, svc)
+
+	if _, err := svc.db.RawDB().ExecContext(
+		ctx,
+		`INSERT INTO runs
+		 (id, conversation_id, agent_id, session_id, objective, workspace_root, status, created_at, updated_at)
+		 VALUES ('run-front', ?, 'assistant', ?, 'Inspect the repo', ?, 'completed', datetime('now', '-2 minutes'), datetime('now', '-2 minutes'))`,
+		front.ConversationID,
+		front.ID,
+		t.TempDir(),
+	); err != nil {
+		t.Fatalf("insert run: %v", err)
+	}
+
+	if _, err := svc.db.RawDB().ExecContext(
+		ctx,
+		`INSERT INTO outbound_intents
+		 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at, last_attempt_at)
+		 VALUES ('intent-1', 'run-front', 'telegram', 'chat-1', 'reply one', 'dedupe-1', 'pending', 0, datetime('now', '-90 seconds'), NULL)`,
+	); err != nil {
+		t.Fatalf("insert outbound intent: %v", err)
+	}
+
+	if err := svc.conv.AppendEvent(ctx, model.Event{
+		ID:             "evt-delivery-failed",
+		ConversationID: front.ConversationID,
+		RunID:          "run-front",
+		Kind:           "delivery_failed",
+		PayloadJSON:    []byte(`{"intent_id":"intent-1","chat_id":"chat-1","connector_id":"telegram","event_kind":"run_completed","error":"provider offline"}`),
+		CreatedAt:      time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("append delivery_failed event: %v", err)
+	}
+
+	failures, err := svc.ListSessionDeliveryFailures(ctx, front.ID, 10)
+	if err != nil {
+		t.Fatalf("ListSessionDeliveryFailures failed: %v", err)
+	}
+	if len(failures) != 0 {
+		t.Fatalf("expected resolved delivery failure to be hidden, got %d", len(failures))
 	}
 }
 
