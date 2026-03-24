@@ -8,10 +8,11 @@ import (
 type settingsPageData struct {
 	TeamName          string
 	WorkspaceRoot     string
-	AdminToken        string  // masked for display only
+	AdminToken        string // masked for display only
 	PerRunTokenBudget string
 	DailyCostCapUSD   string
 	RollingCostUSD    float64
+	TelegramToken     string // masked: first 8 chars then asterisks
 	Error             string
 }
 
@@ -38,6 +39,14 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		data.AdminToken = strings.Repeat("*", len(raw))
 	}
 
+	// Mask telegram bot token similarly.
+	tgRaw := lookupSetting(s.db, "telegram_bot_token")
+	if len(tgRaw) > 8 {
+		data.TelegramToken = tgRaw[:8] + strings.Repeat("*", len(tgRaw)-8)
+	} else if tgRaw != "" {
+		data.TelegramToken = strings.Repeat("*", len(tgRaw))
+	}
+
 	s.renderTemplate(w, "Settings", "settings_body", data)
 }
 
@@ -53,7 +62,7 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updates := make(map[string]string)
-	for _, key := range []string{"team_name", "workspace_root", "per_run_token_budget", "daily_cost_cap_usd"} {
+	for _, key := range []string{"team_name", "workspace_root", "per_run_token_budget", "daily_cost_cap_usd", "telegram_bot_token"} {
 		if v := strings.TrimSpace(r.FormValue(key)); v != "" {
 			updates[key] = v
 		}

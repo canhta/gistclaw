@@ -32,5 +32,19 @@
     <div class="mono">{{.AdminToken}}</div>
     <p class="muted">Use <code>gistclaw inspect token</code> to retrieve the full token.</p>
   </div>
+  <div class="panel" style="margin-top:16px">
+    <label>Telegram Bot Token</label>
+    {{if .TelegramToken}}
+    <div class="mono">{{.TelegramToken}}</div>
+    {{else}}
+    <div class="muted">Not configured</div>
+    {{end}}
+    <form method="POST" action="/settings" style="margin-top:8px">
+      <div class="field">
+        <input type="password" name="telegram_bot_token" placeholder="Paste new token to update" autocomplete="off" style="width:320px">
+      </div>
+      <button type="submit">Update Telegram Token</button>
+    </form>
+  </div>
 </section>
 {{end}}

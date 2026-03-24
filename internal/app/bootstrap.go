@@ -12,17 +12,19 @@ import (
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
 	"github.com/canhta/gistclaw/internal/store"
+	"github.com/canhta/gistclaw/internal/telegram"
 	"github.com/canhta/gistclaw/internal/tools"
 	"github.com/canhta/gistclaw/internal/web"
 )
 
 type App struct {
-	cfg       Config
-	db        *store.DB
-	convStore *conversations.ConversationStore
-	runtime   *runtime.Runtime
-	replay    *replay.Service
-	webServer *web.Server
+	cfg        Config
+	db         *store.DB
+	convStore  *conversations.ConversationStore
+	runtime    *runtime.Runtime
+	replay     *replay.Service
+	webServer  *web.Server
+	tgDispatch *telegram.OutboundDispatcher
 }
 
 func Bootstrap(cfg Config) (*App, error) {
@@ -60,14 +62,28 @@ func Bootstrap(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("bootstrap: web server: %w", err)
 	}
 
+	// Wire Telegram connector if a bot token is present in settings.
+	var tgDispatch *telegram.OutboundDispatcher
+	if tgToken := lookupDBSetting(db, "telegram_bot_token"); tgToken != "" {
+		tgDispatch = telegram.NewOutboundDispatcher(tgToken, db, convStore)
+	}
+
 	return &App{
-		cfg:       cfg,
-		db:        db,
-		convStore: convStore,
-		runtime:   rt,
-		replay:    rp,
-		webServer: webSrv,
+		cfg:        cfg,
+		db:         db,
+		convStore:  convStore,
+		runtime:    rt,
+		replay:     rp,
+		webServer:  webSrv,
+		tgDispatch: tgDispatch,
 	}, nil
+}
+
+// lookupDBSetting reads a single setting value from the database.
+func lookupDBSetting(db *store.DB, key string) string {
+	var value string
+	_ = db.RawDB().QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	return value
 }
 
 // ensureAdminToken generates and persists a cryptographically random 32-byte

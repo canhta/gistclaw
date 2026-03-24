@@ -16,6 +16,14 @@ func (a *App) Prepare(ctx context.Context) error {
 		}
 	}
 
+	// Drain any pending Telegram intents from a previous session.
+	if a.tgDispatch != nil {
+		if err := a.tgDispatch.Drain(ctx); err != nil {
+			// Drain failure is non-fatal — log and continue.
+			fmt.Printf("telegram: drain warning: %v\n", err)
+		}
+	}
+
 	return nil
 }
 
