@@ -1,7 +1,5 @@
 # AGENTS.md
 
-This file provides guidance to AI agents when working with code in this repository.
-
 ## Project
 
 GistClaw is a local-first multi-agent runtime for software repo tasks. A single Go binary (`gistclaw`) coordinates multiple AI agents around one repo task, with approvals before side effects, durable event journaling, and full audit trails. It is the clean-slate successor to OpenClaw.
@@ -23,7 +21,7 @@ go vet ./...
 
 ## Problem-Solving Policy
 
-**Think broadly, fix correctly.** Always identify the root cause before touching code. No hotfixes, no workarounds, no hacks. If a proper fix requires touching multiple files or refactoring a boundary, do it fully. A narrow patch that papers over the real issue is worse than doing nothing.
+**Think broadly, fix correctly.** Always identify the root cause before touching code. No hotfixes, no workarounds, no hacks. If a proper fix requires touching multiple files or refactoring a boundary, do it fully.
 
 ## Branch Policy
 
@@ -56,6 +54,14 @@ go vet ./...
 ## Refactoring Policy
 
 **No backward compatibility. No legacy support.** When refactoring, do it completely — no shims, no deprecated wrappers, no compatibility aliases. Delete the old code.
+
+## Naming Policy
+
+**No phase or version names in code.** Never embed milestone, phase, or version labels in identifiers, comments, or constants (e.g. no `phase1`, `m2Handler`, `v2Route`). Names must describe what something *is*, not when it was added. Exception: `// TODO(m3): ...` notes are allowed.
+
+## Scope Policy
+
+**Out-of-scope changes get a TODO, not an implementation.** If a correct fix or feature belongs to a future milestone, add `// TODO(mX): <description>` at the relevant call site and stop. Do not implement deferred work inline without explicit instruction.
 
 ## Architecture
 
@@ -109,27 +115,15 @@ memory -> store
 
 Verify with `go list -deps`.
 
-### Ownership Rules
-
-| Package | Owns | Does NOT own |
-|---------|------|-------------|
-| `internal/runtime` | Run lifecycle, provider calls, delegation, handoff validation, streaming to `RunEventSink` | Conversation normalization, tool registry, approval tickets, workspace apply, memory |
-| `internal/conversations` | `ConversationKey` normalization, `AppendEvent` (single journal write path), active-run arbitration | Connector payload normalization, run lifecycle |
-| `internal/tools` | Tool registry, policy evaluation, approval ticket creation, `WorkspaceApplier`, tool execution | Connector routing, prompt assembly, run lifecycle |
-| `internal/replay` | Read-only replay queries, delegation graph, timeline, receipt projection | Any writes to journal or durable state |
-| `internal/memory` | Durable memory items, retrieval, promotion, inspection | Team-scope publish authorization (that's the run engine), transport |
-| `internal/store` | All durable writes, SQLite transactions | Connector logic, provider logic |
-| `internal/model` | Shared domain types, `RunEventSink` interface | Everything else (no project imports) |
-
 ### Global Guardrails
 
-1. No WebSocket control plane (SSE is wired in Milestone 2)
+1. No WebSocket control plane — SSE only
 2. No transcript files or JSON side stores — SQLite only
 3. No plugin runtime
 4. No vector memory
 5. No autonomous background loops — only explicit run starts
 6. No journal writes outside `ConversationStore.AppendEvent`
-7. `schedules` table is NOT in 001_init.sql — deferred to Milestone 3
+7. `schedules` table is NOT in `001_init.sql` — deferred
 8. `BudgetGuard` does NOT handle active-child concurrency — that is `delegations.go`
 
 ## Design System
