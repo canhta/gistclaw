@@ -222,18 +222,18 @@ func TestAcceptance_FrontSessionCanSpawnAndReceiveAnnounce(t *testing.T) {
 	}
 
 	worker, err := rt.Spawn(ctx, SpawnCommand{
-		ControllerRunID: front.ID,
-		AgentID:         "researcher",
-		Prompt:          "Inspect the docs folder.",
+		ControllerSessionID: front.SessionID,
+		AgentID:             "researcher",
+		Prompt:              "Inspect the docs folder.",
 	})
 	if err != nil {
 		t.Fatalf("Spawn failed: %v", err)
 	}
 
 	if err := rt.Announce(ctx, AnnounceCommand{
-		WorkerRunID: worker.ID,
-		TargetRunID: front.ID,
-		Body:        "Docs review finished with three follow-ups.",
+		WorkerSessionID: worker.SessionID,
+		TargetSessionID: front.SessionID,
+		Body:            "Docs review finished with three follow-ups.",
 	}); err != nil {
 		t.Fatalf("Announce failed: %v", err)
 	}
@@ -265,6 +265,75 @@ func TestAcceptance_FrontSessionCanSpawnAndReceiveAnnounce(t *testing.T) {
 	}
 	if announceCount != 1 {
 		t.Fatalf("expected 1 announce message on front session, got %d", announceCount)
+	}
+}
+
+func TestAcceptance_RuntimeExposesSessionDirectoryAndHistory(t *testing.T) {
+	db, cs, mem, reg := setupMilestoneTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "Front ready.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+			{Content: "Worker ready.", InputTokens: 8, OutputTokens: 9, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	ctx := context.Background()
+
+	front, err := rt.StartFrontSession(ctx, StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Inspect the repo.",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+
+	worker, err := rt.Spawn(ctx, SpawnCommand{
+		ControllerSessionID: front.SessionID,
+		AgentID:             "researcher",
+		Prompt:              "Inspect docs.",
+	})
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+	if err := rt.Announce(ctx, AnnounceCommand{
+		WorkerSessionID: worker.SessionID,
+		TargetSessionID: front.SessionID,
+		Body:            "Docs inspected.",
+	}); err != nil {
+		t.Fatalf("Announce failed: %v", err)
+	}
+
+	sessionsList, err := rt.ListSessions(ctx, front.ConversationID, 10)
+	if err != nil {
+		t.Fatalf("ListSessions failed: %v", err)
+	}
+	if len(sessionsList) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(sessionsList))
+	}
+	if sessionsList[0].ID != front.SessionID {
+		t.Fatalf("expected front session first in directory, got %q", sessionsList[0].ID)
+	}
+
+	session, history, err := rt.SessionHistory(ctx, front.SessionID, 10)
+	if err != nil {
+		t.Fatalf("SessionHistory failed: %v", err)
+	}
+	if session.ID != front.SessionID {
+		t.Fatalf("expected session %q, got %q", front.SessionID, session.ID)
+	}
+	if len(history) != 3 {
+		t.Fatalf("expected 3 front-session history messages, got %d", len(history))
+	}
+	if history[0].Body != "Inspect the repo." || history[1].Body != "Front ready." || history[2].Body != "Docs inspected." {
+		t.Fatalf("unexpected session history bodies: %q / %q / %q", history[0].Body, history[1].Body, history[2].Body)
 	}
 }
 
@@ -374,5 +443,52 @@ func TestAcceptance_FrontMailboxIncludesAssistantReplies(t *testing.T) {
 	}
 	if mailbox[1].Kind != model.MessageAssistant || mailbox[1].Body != "Assistant reply." {
 		t.Fatalf("expected second mailbox message to be assistant reply, got kind=%q body=%q", mailbox[1].Kind, mailbox[1].Body)
+	}
+}
+
+func TestAcceptance_FrontSessionQueuesOutboundIntentForExternalRoute(t *testing.T) {
+	db, cs, mem, reg := setupMilestoneTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "Assistant reply.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	ctx := context.Background()
+
+	run, err := rt.StartFrontSession(ctx, StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "User prompt.",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+
+	var connectorID string
+	var chatID string
+	var messageText string
+	var status string
+	err = db.RawDB().QueryRowContext(ctx,
+		`SELECT connector_id, chat_id, message_text, status
+		 FROM outbound_intents
+		 WHERE run_id = ?`,
+		run.ID,
+	).Scan(&connectorID, &chatID, &messageText, &status)
+	if err != nil {
+		t.Fatalf("query outbound intent: %v", err)
+	}
+	if connectorID != "telegram" || chatID != "chat-1" {
+		t.Fatalf("unexpected outbound target: connector_id=%q chat_id=%q", connectorID, chatID)
+	}
+	if messageText != "Assistant reply." || status != "pending" {
+		t.Fatalf("unexpected outbound payload: message_text=%q status=%q", messageText, status)
 	}
 }

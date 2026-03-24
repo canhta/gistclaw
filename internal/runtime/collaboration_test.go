@@ -2,11 +2,13 @@ package runtime
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/sessions"
 	"github.com/canhta/gistclaw/internal/store"
 	"github.com/canhta/gistclaw/internal/tools"
 )
@@ -55,9 +57,9 @@ func startParentAndChildRuns(t *testing.T, rt *Runtime) (model.Run, model.Run) {
 
 	parent := startFrontRun(t, rt, "Investigate the repo")
 	child, err := rt.Spawn(context.Background(), SpawnCommand{
-		ControllerRunID: parent.ID,
-		AgentID:         "researcher",
-		Prompt:          "Inspect the docs folder.",
+		ControllerSessionID: parent.SessionID,
+		AgentID:             "researcher",
+		Prompt:              "Inspect the docs folder.",
 	})
 	if err != nil {
 		t.Fatalf("Spawn failed: %v", err)
@@ -164,9 +166,9 @@ func TestRuntime_SpawnCreatesWorkerRunAndSession(t *testing.T) {
 	parent := startFrontRun(t, rt, "Investigate the repo")
 
 	child, err := rt.Spawn(context.Background(), SpawnCommand{
-		ControllerRunID: parent.ID,
-		AgentID:         "researcher",
-		Prompt:          "Inspect the docs folder.",
+		ControllerSessionID: parent.SessionID,
+		AgentID:             "researcher",
+		Prompt:              "Inspect the docs folder.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -195,12 +197,99 @@ func TestRuntime_AnnouncePersistsInterAgentMessage(t *testing.T) {
 	parent, child := startParentAndChildRuns(t, rt)
 
 	if err := rt.Announce(context.Background(), AnnounceCommand{
-		WorkerRunID: child.ID,
-		TargetRunID: parent.ID,
-		Body:        "Tests passed.",
+		WorkerSessionID: child.SessionID,
+		TargetSessionID: parent.SessionID,
+		Body:            "Tests passed.",
 	}); err != nil {
 		t.Fatal(err)
 	}
 
 	assertRunEvent(t, db, parent.ID, "session_message_added")
+
+	var provenanceJSON string
+	err := db.RawDB().QueryRow(
+		`SELECT provenance_json
+		 FROM session_messages
+		 WHERE session_id = ? AND kind = 'announce'
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		parent.SessionID,
+	).Scan(&provenanceJSON)
+	if err != nil {
+		t.Fatalf("query announce provenance: %v", err)
+	}
+	if !strings.Contains(provenanceJSON, `"kind":"inter_session"`) || !strings.Contains(provenanceJSON, child.SessionID) {
+		t.Fatalf("expected inter-session provenance for announce, got %q", provenanceJSON)
+	}
+}
+
+func TestRuntime_AnnounceRejectsCrossConversationSessions(t *testing.T) {
+	rt, _ := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "Front one ready.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+		{Content: "Worker ready.", InputTokens: 8, OutputTokens: 9, StopReason: "end_turn"},
+		{Content: "Front two ready.", InputTokens: 11, OutputTokens: 13, StopReason: "end_turn"},
+	})
+
+	first := startFrontRun(t, rt, "Inspect repo one")
+	worker, err := rt.Spawn(context.Background(), SpawnCommand{
+		ControllerSessionID: first.SessionID,
+		AgentID:             "researcher",
+		Prompt:              "Inspect docs.",
+	})
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+
+	second, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant-two",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Inspect repo two",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+
+	err = rt.Announce(context.Background(), AnnounceCommand{
+		WorkerSessionID: worker.SessionID,
+		TargetSessionID: second.SessionID,
+		Body:            "This should not cross conversations.",
+	})
+	if err == nil || !strings.Contains(err.Error(), "across conversations") {
+		t.Fatalf("expected cross-conversation error, got %v", err)
+	}
+}
+
+func TestRuntime_AnnounceRejectsSessionWithoutRun(t *testing.T) {
+	rt, db := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "Front ready.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+	})
+	target := startFrontRun(t, rt, "Inspect repo")
+
+	convStore := conversations.NewConversationStore(db)
+	sessionSvc := sessions.NewService(db, convStore)
+	source, err := sessionSvc.SpawnWorkerSession(context.Background(), sessions.SpawnWorkerSession{
+		ConversationID:      target.ConversationID,
+		ParentSessionID:     target.SessionID,
+		ControllerSessionID: target.SessionID,
+		AgentID:             "orphan",
+		InitialPrompt:       "No run backs this session.",
+	})
+	if err != nil {
+		t.Fatalf("SpawnWorkerSession failed: %v", err)
+	}
+
+	err = rt.Announce(context.Background(), AnnounceCommand{
+		WorkerSessionID: source.ID,
+		TargetSessionID: target.SessionID,
+		Body:            "This should fail.",
+	})
+	if err == nil || !strings.Contains(err.Error(), "has no runs") {
+		t.Fatalf("expected missing-run error, got %v", err)
+	}
 }

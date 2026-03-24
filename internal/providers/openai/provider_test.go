@@ -149,6 +149,43 @@ func TestProvider_ConversationEventsConvertedToMessages(t *testing.T) {
 	}
 }
 
+func TestProvider_SessionMessageEventsConvertedToMessages(t *testing.T) {
+	var capturedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(successResponse("response", 5, 3))
+	}))
+	defer srv.Close()
+
+	userPayload, _ := json.Marshal(map[string]any{"kind": "user", "body": "front prompt"})
+	assistantPayload, _ := json.Marshal(map[string]any{"kind": "assistant", "body": "front reply"})
+
+	p := New("key", "gpt-4o", srv.URL)
+	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "system",
+		MaxTokens:    100,
+		ConversationCtx: []model.Event{
+			{Kind: "session_message_added", PayloadJSON: userPayload},
+			{Kind: "session_message_added", PayloadJSON: assistantPayload},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	msgs, _ := capturedBody["messages"].([]any)
+	if len(msgs) < 3 {
+		t.Fatalf("expected system + 2 session messages, got %v", capturedBody["messages"])
+	}
+	if msgs[1].(map[string]any)["role"] != "user" || msgs[1].(map[string]any)["content"] != "front prompt" {
+		t.Fatalf("unexpected user mailbox message: %v", msgs[1])
+	}
+	if msgs[2].(map[string]any)["role"] != "assistant" || msgs[2].(map[string]any)["content"] != "front reply" {
+		t.Fatalf("unexpected assistant mailbox message: %v", msgs[2])
+	}
+}
+
 func TestProvider_ToolCallsInResponse(t *testing.T) {
 	argsJSON, _ := json.Marshal(map[string]any{"path": "main.go"})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

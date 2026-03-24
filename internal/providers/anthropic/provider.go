@@ -190,6 +190,22 @@ func eventsToMessages(events []model.Event) []message {
 			if payload.Content != "" {
 				msgs = append(msgs, message{Role: "assistant", Content: payload.Content})
 			}
+		case "session_message_added":
+			var payload struct {
+				Kind string `json:"kind"`
+				Body string `json:"body"`
+			}
+			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil {
+				continue
+			}
+			if payload.Body == "" {
+				continue
+			}
+			role := "user"
+			if payload.Kind == "assistant" {
+				role = "assistant"
+			}
+			msgs = append(msgs, message{Role: role, Content: payload.Body})
 		}
 	}
 	return msgs

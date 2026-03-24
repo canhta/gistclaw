@@ -60,8 +60,10 @@ func TestMigrate_FreshDB(t *testing.T) {
 		"idx_sessions_conversation_id_status",
 		"idx_session_messages_session_id_created_at",
 		"idx_session_bindings_conversation_id_thread_id_status",
+		"idx_session_bindings_session_id_status_created_at",
 		"idx_approvals_run_id_status",
 		"idx_memory_items_agent_id_scope",
+		"idx_runs_session_id_status_updated_at",
 	}
 	for _, index := range indexes {
 		var name string

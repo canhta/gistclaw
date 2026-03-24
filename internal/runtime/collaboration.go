@@ -19,27 +19,27 @@ type StartFrontSession struct {
 }
 
 type SpawnCommand struct {
-	ControllerRunID string
-	AgentID         string
-	Prompt          string
+	ControllerSessionID string
+	AgentID             string
+	Prompt              string
 }
 
 type AnnounceCommand struct {
-	WorkerRunID string
-	TargetRunID string
-	Body        string
-}
-
-type SteerCommand struct {
-	ControllerRunID string
-	TargetRunID     string
+	WorkerSessionID string
+	TargetSessionID string
 	Body            string
 }
 
+type SteerCommand struct {
+	ControllerSessionID string
+	TargetSessionID     string
+	Body                string
+}
+
 type AgentSendCommand struct {
-	FromRunID string
-	ToRunID   string
-	Body      string
+	FromSessionID string
+	ToSessionID   string
+	Body          string
 }
 
 func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) (model.Run, error) {
@@ -72,11 +72,24 @@ func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) 
 		}
 	}
 	if createBinding {
-		if err := r.bindSession(ctx, conv.ID, runID, threadID, sessionID); err != nil {
+		if err := r.bindSession(ctx, conv.ID, runID, cmd.ConversationKey, sessionID); err != nil {
 			return model.Run{}, err
 		}
 	}
-	if err := r.appendSessionMessage(ctx, conv.ID, runID, sessionID, "", model.MessageUser, cmd.InitialPrompt); err != nil {
+	if _, err := r.appendSessionMessage(
+		ctx,
+		conv.ID,
+		runID,
+		sessionID,
+		"",
+		model.MessageUser,
+		cmd.InitialPrompt,
+		model.SessionMessageProvenance{
+			Kind:              model.MessageProvenanceInbound,
+			SourceConnectorID: cmd.ConversationKey.ConnectorID,
+			SourceThreadID:    normalizeThreadID(cmd.ConversationKey.ThreadID),
+		},
+	); err != nil {
 		return model.Run{}, err
 	}
 
@@ -90,7 +103,7 @@ func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) 
 }
 
 func (r *Runtime) Spawn(ctx context.Context, cmd SpawnCommand) (model.Run, error) {
-	controller, err := r.loadRun(ctx, cmd.ControllerRunID)
+	controllerSession, controllerRun, err := r.loadSessionRun(ctx, cmd.ControllerSessionID)
 	if err != nil {
 		return model.Run{}, err
 	}
@@ -98,43 +111,48 @@ func (r *Runtime) Spawn(ctx context.Context, cmd SpawnCommand) (model.Run, error
 	runID := generateID()
 	workerSessionID := generateID()
 	start := StartRun{
-		ConversationID: controller.ConversationID,
+		ConversationID: controllerSession.ConversationID,
 		AgentID:        cmd.AgentID,
 		SessionID:      workerSessionID,
 		Objective:      cmd.Prompt,
-		WorkspaceRoot:  controller.WorkspaceRoot,
+		WorkspaceRoot:  controllerRun.WorkspaceRoot,
 	}
-	if err := r.createRun(ctx, runID, controller.ID, start); err != nil {
+	if err := r.createRun(ctx, runID, controllerRun.ID, start); err != nil {
 		return model.Run{}, err
 	}
 	if err := r.openSession(
 		ctx,
-		controller.ConversationID,
+		controllerSession.ConversationID,
 		runID,
-		controller.ID,
+		controllerRun.ID,
 		workerSessionID,
 		cmd.AgentID,
 		model.SessionRoleWorker,
-		controller.SessionID,
-		controller.SessionID,
+		controllerSession.ID,
+		controllerSession.ID,
 	); err != nil {
 		return model.Run{}, err
 	}
-	if err := r.appendSessionMessage(
+	if _, err := r.appendSessionMessage(
 		ctx,
-		controller.ConversationID,
+		controllerSession.ConversationID,
 		runID,
 		workerSessionID,
-		controller.SessionID,
+		controllerSession.ID,
 		model.MessageSpawn,
 		cmd.Prompt,
+		model.SessionMessageProvenance{
+			Kind:            model.MessageProvenanceInterSession,
+			SourceSessionID: controllerSession.ID,
+			SourceRunID:     controllerRun.ID,
+		},
 	); err != nil {
 		return model.Run{}, err
 	}
 
 	return r.executeRunLoop(ctx, runLoopOpts{
 		runID:          runID,
-		conversationID: controller.ConversationID,
+		conversationID: controllerSession.ConversationID,
 		agentID:        cmd.AgentID,
 		sessionID:      workerSessionID,
 		objective:      cmd.Prompt,
@@ -142,47 +160,109 @@ func (r *Runtime) Spawn(ctx context.Context, cmd SpawnCommand) (model.Run, error
 }
 
 func (r *Runtime) Announce(ctx context.Context, cmd AnnounceCommand) error {
-	return r.directSessionMessage(ctx, cmd.WorkerRunID, cmd.TargetRunID, model.MessageAnnounce, cmd.Body)
+	return r.directSessionMessage(ctx, cmd.WorkerSessionID, cmd.TargetSessionID, model.MessageAnnounce, cmd.Body)
 }
 
 func (r *Runtime) Steer(ctx context.Context, cmd SteerCommand) error {
-	return r.directSessionMessage(ctx, cmd.ControllerRunID, cmd.TargetRunID, model.MessageSteer, cmd.Body)
+	return r.directSessionMessage(ctx, cmd.ControllerSessionID, cmd.TargetSessionID, model.MessageSteer, cmd.Body)
 }
 
 func (r *Runtime) AgentSend(ctx context.Context, cmd AgentSendCommand) error {
-	return r.directSessionMessage(ctx, cmd.FromRunID, cmd.ToRunID, model.MessageAgentSend, cmd.Body)
+	return r.directSessionMessage(ctx, cmd.FromSessionID, cmd.ToSessionID, model.MessageAgentSend, cmd.Body)
 }
 
 func (r *Runtime) directSessionMessage(
 	ctx context.Context,
-	sourceRunID string,
-	targetRunID string,
+	sourceSessionID string,
+	targetSessionID string,
 	kind model.SessionMessageKind,
 	body string,
 ) error {
-	sourceRun, err := r.loadRun(ctx, sourceRunID)
+	sourceSession, sourceRun, err := r.loadSessionRun(ctx, sourceSessionID)
 	if err != nil {
 		return err
 	}
-	targetRun, err := r.loadRun(ctx, targetRunID)
+	targetSession, targetRun, err := r.loadSessionRun(ctx, targetSessionID)
 	if err != nil {
 		return err
 	}
-	if sourceRun.ConversationID != targetRun.ConversationID {
-		return fmt.Errorf("runtime: run %s cannot message run %s across conversations", sourceRunID, targetRunID)
+	if sourceSession.ConversationID != targetSession.ConversationID {
+		return fmt.Errorf("runtime: session %s cannot message session %s across conversations", sourceSessionID, targetSessionID)
 	}
-	if sourceRun.SessionID == "" || targetRun.SessionID == "" {
-		return fmt.Errorf("runtime: run %s cannot message run %s without session identities", sourceRunID, targetRunID)
-	}
-	return r.appendSessionMessage(
+	_, err = r.appendSessionMessage(
 		ctx,
-		targetRun.ConversationID,
+		targetSession.ConversationID,
 		targetRun.ID,
-		targetRun.SessionID,
-		sourceRun.SessionID,
+		targetSession.ID,
+		sourceSession.ID,
 		kind,
 		body,
+		model.SessionMessageProvenance{
+			Kind:            model.MessageProvenanceInterSession,
+			SourceSessionID: sourceSession.ID,
+			SourceRunID:     sourceRun.ID,
+		},
 	)
+	return err
+}
+
+func (r *Runtime) loadSessionRun(ctx context.Context, sessionID string) (model.Session, model.Run, error) {
+	sessionSvc := sessionkeys.NewService(r.store, r.convStore)
+	session, err := sessionSvc.LoadSession(ctx, sessionID)
+	if err != nil {
+		return model.Session{}, model.Run{}, err
+	}
+
+	run, err := r.loadPreferredRunForSession(ctx, sessionID)
+	if err != nil {
+		return model.Session{}, model.Run{}, err
+	}
+	return session, run, nil
+}
+
+func (r *Runtime) loadPreferredRunForSession(ctx context.Context, sessionID string) (model.Run, error) {
+	var run model.Run
+	var status string
+	err := r.store.RawDB().QueryRowContext(ctx,
+		`SELECT id, conversation_id, agent_id, COALESCE(session_id, ''), COALESCE(team_id, ''), COALESCE(parent_run_id, ''),
+		        COALESCE(objective, ''), COALESCE(workspace_root, ''), status,
+		        input_tokens, output_tokens, created_at, updated_at
+		 FROM runs
+		 WHERE session_id = ?
+		 ORDER BY CASE status
+		              WHEN 'active' THEN 0
+		              WHEN 'pending' THEN 1
+		              ELSE 2
+		          END,
+		          updated_at DESC,
+		          created_at DESC,
+		          id DESC
+		 LIMIT 1`,
+		sessionID,
+	).Scan(
+		&run.ID,
+		&run.ConversationID,
+		&run.AgentID,
+		&run.SessionID,
+		&run.TeamID,
+		&run.ParentRunID,
+		&run.Objective,
+		&run.WorkspaceRoot,
+		&status,
+		&run.InputTokens,
+		&run.OutputTokens,
+		&run.CreatedAt,
+		&run.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return model.Run{}, fmt.Errorf("runtime: session %s has no runs", sessionID)
+	}
+	if err != nil {
+		return model.Run{}, fmt.Errorf("load run for session %s: %w", sessionID, err)
+	}
+
+	run.Status = model.RunStatus(status)
+	return run, nil
 }
 
 func (r *Runtime) openSession(
@@ -261,11 +341,20 @@ func (r *Runtime) resolveFrontSession(ctx context.Context, conversationID string
 	return generateID(), true, true, nil
 }
 
-func (r *Runtime) bindSession(ctx context.Context, conversationID string, runID string, threadID string, sessionID string) error {
+func (r *Runtime) bindSession(
+	ctx context.Context,
+	conversationID string,
+	runID string,
+	key conversations.ConversationKey,
+	sessionID string,
+) error {
 	payload, err := json.Marshal(map[string]any{
-		"thread_id":  threadID,
-		"session_id": sessionID,
-		"status":     "active",
+		"thread_id":    normalizeThreadID(key.ThreadID),
+		"session_id":   sessionID,
+		"connector_id": key.ConnectorID,
+		"account_id":   key.AccountID,
+		"external_id":  key.ExternalID,
+		"status":       "active",
 	})
 	if err != nil {
 		return fmt.Errorf("marshal session_bound payload: %w", err)
@@ -299,16 +388,19 @@ func (r *Runtime) appendSessionMessage(
 	senderSessionID string,
 	kind model.SessionMessageKind,
 	body string,
-) error {
+	provenance model.SessionMessageProvenance,
+) (string, error) {
+	messageID := generateID()
 	payload, err := json.Marshal(map[string]any{
-		"message_id":        generateID(),
+		"message_id":        messageID,
 		"session_id":        sessionID,
 		"sender_session_id": senderSessionID,
 		"kind":              kind,
 		"body":              body,
+		"provenance":        provenance,
 	})
 	if err != nil {
-		return fmt.Errorf("marshal session_message_added payload: %w", err)
+		return "", fmt.Errorf("marshal session_message_added payload: %w", err)
 	}
 
 	if err := r.convStore.AppendEvent(ctx, model.Event{
@@ -318,8 +410,8 @@ func (r *Runtime) appendSessionMessage(
 		Kind:           "session_message_added",
 		PayloadJSON:    payload,
 	}); err != nil {
-		return fmt.Errorf("journal session_message_added: %w", err)
+		return "", fmt.Errorf("journal session_message_added: %w", err)
 	}
 
-	return nil
+	return messageID, nil
 }

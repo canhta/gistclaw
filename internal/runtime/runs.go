@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/sessions"
 	"github.com/canhta/gistclaw/internal/store"
 	"github.com/canhta/gistclaw/internal/tools"
 )
@@ -287,10 +289,13 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			return model.Run{}, fmt.Errorf("journal memory read: %w", err)
 		}
 
-		events, _ := r.convStore.ListEvents(ctx, conversationID, 100)
+		providerReq, err := r.buildProviderRequest(ctx, sessionID, agentID, objective, contextView)
+		if err != nil {
+			return model.Run{}, err
+		}
 		result, err := r.provider.Generate(ctx, GenerateRequest{
-			Instructions:    objective,
-			ConversationCtx: events,
+			Instructions:    providerReq.Instructions,
+			ConversationCtx: providerReq.ConversationCtx,
 		}, nil)
 		if err != nil {
 			_ = r.convStore.AppendEvent(ctx, model.Event{
@@ -328,7 +333,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			return model.Run{}, fmt.Errorf("journal turn_completed: %w", err)
 		}
 		if sessionID != "" && result.Content != "" {
-			if err := r.appendSessionMessage(
+			messageID, err := r.appendSessionMessage(
 				ctx,
 				conversationID,
 				runID,
@@ -336,7 +341,15 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 				sessionID,
 				model.MessageAssistant,
 				result.Content,
-			); err != nil {
+				model.SessionMessageProvenance{
+					Kind:        model.MessageProvenanceAssistantTurn,
+					SourceRunID: runID,
+				},
+			)
+			if err != nil {
+				return model.Run{}, err
+			}
+			if err := r.queueOutboundIntent(ctx, runID, sessionID, messageID, result.Content); err != nil {
 				return model.Run{}, err
 			}
 		}
@@ -406,6 +419,73 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 	}
 
 	return r.loadRun(ctx, runID)
+}
+
+func (r *Runtime) buildProviderRequest(
+	ctx context.Context,
+	sessionID string,
+	agentID string,
+	objective string,
+	contextView memory.ContextView,
+) (GenerateRequest, error) {
+	req := GenerateRequest{
+		Instructions: composeInstructions(objective, contextView),
+	}
+	if sessionID == "" {
+		return req, nil
+	}
+
+	_, mailbox, err := sessions.NewService(r.store, r.convStore).LoadSessionMailbox(ctx, sessionID, 100)
+	if err == sessions.ErrSessionNotFound {
+		return req, nil
+	}
+	if err != nil {
+		return GenerateRequest{}, fmt.Errorf("load session mailbox: %w", err)
+	}
+	req.ConversationCtx = mailboxToEvents(mailbox)
+	return req, nil
+}
+
+func composeInstructions(objective string, contextView memory.ContextView) string {
+	parts := []string{objective}
+	if contextView.Summary.Content != "" {
+		parts = append(parts, "Working summary:\n"+contextView.Summary.Content)
+	}
+	if len(contextView.Items) > 0 {
+		facts := make([]string, 0, len(contextView.Items))
+		for _, item := range contextView.Items {
+			if item.Content == "" {
+				continue
+			}
+			facts = append(facts, "- "+item.Content)
+		}
+		if len(facts) > 0 {
+			parts = append(parts, "Memory facts:\n"+strings.Join(facts, "\n"))
+		}
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func mailboxToEvents(messages []model.SessionMessage) []model.Event {
+	events := make([]model.Event, 0, len(messages))
+	for _, msg := range messages {
+		payload, err := json.Marshal(map[string]any{
+			"kind":              msg.Kind,
+			"body":              msg.Body,
+			"sender_session_id": msg.SenderSessionID,
+			"provenance":        msg.Provenance,
+		})
+		if err != nil {
+			continue
+		}
+		events = append(events, model.Event{
+			ID:          msg.ID,
+			Kind:        "session_message_added",
+			PayloadJSON: payload,
+			CreatedAt:   msg.CreatedAt,
+		})
+	}
+	return events
 }
 
 func (r *Runtime) Continue(ctx context.Context, cmd ContinueRun) (model.Run, error) {
@@ -506,6 +586,49 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 
 	run.Status = model.RunStatus(status)
 	return run, nil
+}
+
+func (r *Runtime) queueOutboundIntent(
+	ctx context.Context,
+	runID string,
+	sessionID string,
+	messageID string,
+	body string,
+) error {
+	route, err := sessions.NewService(r.store, r.convStore).LoadRouteBySession(ctx, sessionID)
+	if err == sessions.ErrSessionRouteNotFound {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load outbound route: %w", err)
+	}
+	if route.ConnectorID == "" || route.ConnectorID == "web" || route.ExternalID == "" {
+		return nil
+	}
+
+	dedupeKey := "session-message:" + messageID
+	var existing int
+	if err := r.store.RawDB().QueryRowContext(ctx,
+		"SELECT count(*) FROM outbound_intents WHERE dedupe_key = ?",
+		dedupeKey,
+	).Scan(&existing); err != nil {
+		return fmt.Errorf("check outbound intent dedupe: %w", err)
+	}
+	if existing > 0 {
+		return nil
+	}
+
+	_, err = r.store.RawDB().ExecContext(ctx,
+		`INSERT INTO outbound_intents
+		 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, datetime('now'))`,
+		generateID(), runID, route.ConnectorID, route.ExternalID, body, dedupeKey,
+	)
+	if err != nil {
+		return fmt.Errorf("insert outbound intent: %w", err)
+	}
+
+	return nil
 }
 
 // SubmitTask starts a new root run via the web interface, resolving the

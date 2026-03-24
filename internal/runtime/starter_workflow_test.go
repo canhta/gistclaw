@@ -198,33 +198,33 @@ func TestStarterWorkflow_RepoPatchRunsAsWorkerFlow(t *testing.T) {
 	}
 
 	patcher, err := rt.Spawn(ctx, SpawnCommand{
-		ControllerRunID: front.ID,
-		AgentID:         "patcher",
-		Prompt:          "Draft the patch for main.go.",
+		ControllerSessionID: front.SessionID,
+		AgentID:             "patcher",
+		Prompt:              "Draft the patch for main.go.",
 	})
 	if err != nil {
 		t.Fatalf("Spawn patcher failed: %v", err)
 	}
 	verifier, err := rt.Spawn(ctx, SpawnCommand{
-		ControllerRunID: front.ID,
-		AgentID:         "verifier",
-		Prompt:          "Verify the proposed patch.",
+		ControllerSessionID: front.SessionID,
+		AgentID:             "verifier",
+		Prompt:              "Verify the proposed patch.",
 	})
 	if err != nil {
 		t.Fatalf("Spawn verifier failed: %v", err)
 	}
 
 	if err := rt.Announce(ctx, AnnounceCommand{
-		WorkerRunID: patcher.ID,
-		TargetRunID: front.ID,
-		Body:        "Patch ready for review.",
+		WorkerSessionID: patcher.SessionID,
+		TargetSessionID: front.SessionID,
+		Body:            "Patch ready for review.",
 	}); err != nil {
 		t.Fatalf("Patch announce failed: %v", err)
 	}
 	if err := rt.Announce(ctx, AnnounceCommand{
-		WorkerRunID: verifier.ID,
-		TargetRunID: front.ID,
-		Body:        "Verification passed.",
+		WorkerSessionID: verifier.SessionID,
+		TargetSessionID: front.SessionID,
+		Body:            "Verification passed.",
 	}); err != nil {
 		t.Fatalf("Verification announce failed: %v", err)
 	}

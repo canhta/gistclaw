@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS session_messages (
     sender_session_id TEXT,
     kind TEXT NOT NULL,
     body TEXT NOT NULL,
+    provenance_json BLOB,
     created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -58,6 +59,9 @@ CREATE TABLE IF NOT EXISTS session_bindings (
     conversation_id TEXT NOT NULL,
     thread_id TEXT NOT NULL,
     session_id TEXT NOT NULL,
+    connector_id TEXT NOT NULL DEFAULT '',
+    account_id TEXT NOT NULL DEFAULT '',
+    external_id TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'active',
     created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
@@ -156,8 +160,10 @@ CREATE INDEX IF NOT EXISTS idx_runs_conversation_id_status ON runs(conversation_
 CREATE INDEX IF NOT EXISTS idx_sessions_conversation_id_status ON sessions(conversation_id, status);
 CREATE INDEX IF NOT EXISTS idx_session_messages_session_id_created_at ON session_messages(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_session_bindings_conversation_id_thread_id_status ON session_bindings(conversation_id, thread_id, status);
+CREATE INDEX IF NOT EXISTS idx_session_bindings_session_id_status_created_at ON session_bindings(session_id, status, created_at);
 CREATE INDEX IF NOT EXISTS idx_approvals_run_id_status ON approvals(run_id, status);
 CREATE INDEX IF NOT EXISTS idx_memory_items_agent_id_scope ON memory_items(agent_id, scope);
+CREATE INDEX IF NOT EXISTS idx_runs_session_id_status_updated_at ON runs(session_id, status, updated_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_one_active_root_per_conversation
     ON runs(conversation_id)
     WHERE parent_run_id IS NULL AND status IN ('pending', 'active', 'needs_approval');

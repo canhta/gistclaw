@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -19,6 +20,8 @@ type Service struct {
 }
 
 var ErrThreadMailboxNotFound = fmt.Errorf("sessions: no active session bound to thread")
+var ErrSessionNotFound = fmt.Errorf("sessions: session not found")
+var ErrSessionRouteNotFound = fmt.Errorf("sessions: no active route bound to session")
 
 type OpenFrontSession struct {
 	ConversationID string
@@ -38,6 +41,9 @@ type BindFollowUp struct {
 	ConversationID string
 	ThreadID       string
 	SessionID      string
+	ConnectorID    string
+	AccountID      string
+	ExternalID     string
 }
 
 func NewService(db *store.DB, conv *conversations.ConversationStore) *Service {
@@ -57,13 +63,7 @@ func (s *Service) OpenFrontSession(ctx context.Context, cmd OpenFrontSession) (m
 		UpdatedAt:      now,
 	}
 
-	_, err := s.db.RawDB().ExecContext(ctx,
-		`INSERT INTO sessions
-		 (id, conversation_id, key, agent_id, role, parent_session_id, controller_session_id, status, created_at)
-		 VALUES (?, ?, ?, ?, ?, '', '', ?, ?)`,
-		session.ID, session.ConversationID, session.Key, session.AgentID, session.Role, session.Status, session.CreatedAt,
-	)
-	if err != nil {
+	if err := s.appendSessionOpened(ctx, "", session); err != nil {
 		return model.Session{}, fmt.Errorf("open front session: %w", err)
 	}
 
@@ -85,14 +85,7 @@ func (s *Service) SpawnWorkerSession(ctx context.Context, cmd SpawnWorkerSession
 		UpdatedAt:           now,
 	}
 
-	_, err := s.db.RawDB().ExecContext(ctx,
-		`INSERT INTO sessions
-		 (id, conversation_id, key, agent_id, role, parent_session_id, controller_session_id, status, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		session.ID, session.ConversationID, session.Key, session.AgentID, session.Role,
-		session.ParentSessionID, session.ControllerSessionID, session.Status, session.CreatedAt,
-	)
-	if err != nil {
+	if err := s.appendSessionOpened(ctx, "", session); err != nil {
 		return model.Session{}, fmt.Errorf("spawn worker session: %w", err)
 	}
 
@@ -102,7 +95,11 @@ func (s *Service) SpawnWorkerSession(ctx context.Context, cmd SpawnWorkerSession
 		SenderSessionID: cmd.ControllerSessionID,
 		Kind:            model.MessageSpawn,
 		Body:            cmd.InitialPrompt,
-		CreatedAt:       now,
+		Provenance: model.SessionMessageProvenance{
+			Kind:            model.MessageProvenanceInterSession,
+			SourceSessionID: cmd.ControllerSessionID,
+		},
+		CreatedAt: now,
 	}); err != nil {
 		return model.Session{}, err
 	}
@@ -114,26 +111,18 @@ func (s *Service) AppendMessage(ctx context.Context, msg model.SessionMessage) e
 	if msg.CreatedAt.IsZero() {
 		msg.CreatedAt = time.Now().UTC()
 	}
+	if msg.ID == "" {
+		msg.ID = generateID()
+	}
 
-	_, err := s.db.RawDB().ExecContext(ctx,
-		`INSERT INTO session_messages
-		 (id, session_id, sender_session_id, kind, body, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-		msg.ID, msg.SessionID, msg.SenderSessionID, msg.Kind, msg.Body, msg.CreatedAt,
-	)
-	if err != nil {
+	if err := s.appendSessionMessage(ctx, "", msg); err != nil {
 		return fmt.Errorf("append session message: %w", err)
 	}
 	return nil
 }
 
 func (s *Service) BindFollowUp(ctx context.Context, cmd BindFollowUp) error {
-	_, err := s.db.RawDB().ExecContext(ctx,
-		`INSERT INTO session_bindings (id, conversation_id, thread_id, session_id, status, created_at)
-		 VALUES (?, ?, ?, ?, 'active', ?)`,
-		generateID(), cmd.ConversationID, cmd.ThreadID, cmd.SessionID, time.Now().UTC(),
-	)
-	if err != nil {
+	if err := s.appendSessionBinding(ctx, "", cmd); err != nil {
 		return fmt.Errorf("bind follow up: %w", err)
 	}
 	return nil
@@ -156,6 +145,139 @@ func (s *Service) LoadThreadMailbox(
 	}
 
 	return session, messages, nil
+}
+
+func (s *Service) LoadSessionMailbox(
+	ctx context.Context,
+	sessionID string,
+	limit int,
+) (model.Session, []model.SessionMessage, error) {
+	session, err := s.loadSession(ctx, sessionID)
+	if err != nil {
+		return model.Session{}, nil, err
+	}
+	messages, err := s.listSessionMessages(ctx, session.ID, limit)
+	if err != nil {
+		return model.Session{}, nil, err
+	}
+	return session, messages, nil
+}
+
+func (s *Service) LoadSession(ctx context.Context, sessionID string) (model.Session, error) {
+	session, err := s.loadSession(ctx, sessionID)
+	if err != nil {
+		return model.Session{}, err
+	}
+	return session, nil
+}
+
+func (s *Service) ListConversationSessions(ctx context.Context, conversationID string, limit int) ([]model.Session, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+
+	rows, err := s.db.RawDB().QueryContext(ctx,
+		`SELECT sess.id, sess.conversation_id, sess.key, sess.agent_id, sess.role,
+		        COALESCE(sess.parent_session_id, ''), COALESCE(sess.controller_session_id, ''),
+		        sess.status, sess.created_at, COALESCE(activity.updated_at, sess.created_at) AS updated_at
+		 FROM sessions sess
+		 LEFT JOIN (
+		     SELECT session_id, MAX(activity_at) AS updated_at
+		     FROM (
+		         SELECT session_id, created_at AS activity_at
+		         FROM session_messages
+		         UNION ALL
+		         SELECT session_id, updated_at AS activity_at
+		         FROM runs
+		         WHERE session_id IS NOT NULL AND session_id != ''
+		     )
+		     GROUP BY session_id
+		 ) activity ON activity.session_id = sess.id
+		 WHERE sess.conversation_id = ?
+		 ORDER BY updated_at DESC, sess.created_at DESC, sess.id DESC
+		 LIMIT ?`,
+		conversationID,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list conversation sessions: %w", err)
+	}
+	defer rows.Close()
+
+	list := make([]model.Session, 0)
+	for rows.Next() {
+		var session model.Session
+		var role string
+		var updatedAt string
+		if err := rows.Scan(
+			&session.ID,
+			&session.ConversationID,
+			&session.Key,
+			&session.AgentID,
+			&role,
+			&session.ParentSessionID,
+			&session.ControllerSessionID,
+			&session.Status,
+			&session.CreatedAt,
+			&updatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan conversation session: %w", err)
+		}
+		parsedUpdatedAt, err := parseActivityTime(updatedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse conversation session updated_at: %w", err)
+		}
+		session.UpdatedAt = parsedUpdatedAt
+		session.Role = model.SessionRole(role)
+		list = append(list, session)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate conversation sessions: %w", err)
+	}
+	return list, nil
+}
+
+func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (model.SessionRoute, error) {
+	var route model.SessionRoute
+	err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT session_id, thread_id, connector_id, account_id, external_id, status, created_at
+		 FROM session_bindings
+		 WHERE session_id = ? AND status = 'active'
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		sessionID,
+	).Scan(
+		&route.SessionID,
+		&route.ThreadID,
+		&route.ConnectorID,
+		&route.AccountID,
+		&route.ExternalID,
+		&route.Status,
+		&route.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return model.SessionRoute{}, ErrSessionRouteNotFound
+	}
+	if err != nil {
+		return model.SessionRoute{}, fmt.Errorf("load route by session: %w", err)
+	}
+	return route, nil
+}
+
+func parseActivityTime(value string) (time.Time, error) {
+	layouts := []string{
+		"2006-01-02 15:04:05.999999999 -0700 MST",
+		"2006-01-02 15:04:05.999999999",
+		"2006-01-02 15:04:05",
+		time.RFC3339Nano,
+	}
+	for _, layout := range layouts {
+		parsed, err := time.Parse(layout, value)
+		if err == nil {
+			return parsed.UTC(), nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unsupported time format %q", value)
 }
 
 func (s *Service) loadBoundSession(ctx context.Context, conversationID string, threadID string) (model.Session, error) {
@@ -194,6 +316,38 @@ func (s *Service) loadBoundSession(ctx context.Context, conversationID string, t
 	return session, nil
 }
 
+func (s *Service) loadSession(ctx context.Context, sessionID string) (model.Session, error) {
+	var session model.Session
+	var role string
+	err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT id, conversation_id, key, agent_id, role,
+		        COALESCE(parent_session_id, ''), COALESCE(controller_session_id, ''),
+		        status, created_at
+		 FROM sessions
+		 WHERE id = ?`,
+		sessionID,
+	).Scan(
+		&session.ID,
+		&session.ConversationID,
+		&session.Key,
+		&session.AgentID,
+		&role,
+		&session.ParentSessionID,
+		&session.ControllerSessionID,
+		&session.Status,
+		&session.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return model.Session{}, ErrSessionNotFound
+	}
+	if err != nil {
+		return model.Session{}, fmt.Errorf("load session: %w", err)
+	}
+	session.Role = model.SessionRole(role)
+	session.UpdatedAt = session.CreatedAt
+	return session, nil
+}
+
 func (s *Service) listSessionMessages(ctx context.Context, sessionID string, limit int) ([]model.SessionMessage, error) {
 	var (
 		rows *sql.Rows
@@ -202,12 +356,12 @@ func (s *Service) listSessionMessages(ctx context.Context, sessionID string, lim
 
 	if limit > 0 {
 		rows, err = s.db.RawDB().QueryContext(ctx,
-			`SELECT id, session_id, sender_session_id, kind, body, created_at
-			 FROM (
-			     SELECT id, session_id, COALESCE(sender_session_id, '') AS sender_session_id, kind, body, created_at
-			     FROM session_messages
-			     WHERE session_id = ?
-			     ORDER BY created_at DESC, id DESC
+			`SELECT id, session_id, sender_session_id, kind, body, COALESCE(provenance_json, '{}'), created_at
+				 FROM (
+				     SELECT id, session_id, COALESCE(sender_session_id, '') AS sender_session_id, kind, body, COALESCE(provenance_json, '{}') AS provenance_json, created_at
+				     FROM session_messages
+				     WHERE session_id = ?
+				     ORDER BY created_at DESC, id DESC
 			     LIMIT ?
 			 )
 			 ORDER BY created_at ASC, id ASC`,
@@ -215,10 +369,10 @@ func (s *Service) listSessionMessages(ctx context.Context, sessionID string, lim
 		)
 	} else {
 		rows, err = s.db.RawDB().QueryContext(ctx,
-			`SELECT id, session_id, COALESCE(sender_session_id, ''), kind, body, created_at
-			 FROM session_messages
-			 WHERE session_id = ?
-			 ORDER BY created_at ASC, id ASC`,
+			`SELECT id, session_id, COALESCE(sender_session_id, ''), kind, body, COALESCE(provenance_json, '{}'), created_at
+				 FROM session_messages
+				 WHERE session_id = ?
+				 ORDER BY created_at ASC, id ASC`,
 			sessionID,
 		)
 	}
@@ -231,17 +385,24 @@ func (s *Service) listSessionMessages(ctx context.Context, sessionID string, lim
 	for rows.Next() {
 		var msg model.SessionMessage
 		var kind string
+		var provenanceJSON []byte
 		if err := rows.Scan(
 			&msg.ID,
 			&msg.SessionID,
 			&msg.SenderSessionID,
 			&kind,
 			&msg.Body,
+			&provenanceJSON,
 			&msg.CreatedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan session message: %w", err)
 		}
 		msg.Kind = model.SessionMessageKind(kind)
+		if len(provenanceJSON) > 0 {
+			if err := json.Unmarshal(provenanceJSON, &msg.Provenance); err != nil {
+				return nil, fmt.Errorf("unmarshal session message provenance: %w", err)
+			}
+		}
 		messages = append(messages, msg)
 	}
 	if err := rows.Err(); err != nil {
@@ -256,6 +417,96 @@ func normalizeThreadID(threadID string) string {
 		return "main"
 	}
 	return threadID
+}
+
+func (s *Service) appendSessionOpened(ctx context.Context, runID string, session model.Session) error {
+	payload := map[string]any{
+		"session_id":            session.ID,
+		"key":                   session.Key,
+		"agent_id":              session.AgentID,
+		"role":                  session.Role,
+		"parent_session_id":     session.ParentSessionID,
+		"controller_session_id": session.ControllerSessionID,
+		"status":                session.Status,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal session_opened payload: %w", err)
+	}
+	return s.conv.AppendEvent(ctx, model.Event{
+		ID:             generateID(),
+		ConversationID: session.ConversationID,
+		RunID:          runID,
+		Kind:           "session_opened",
+		PayloadJSON:    body,
+		CreatedAt:      session.CreatedAt,
+	})
+}
+
+func (s *Service) appendSessionMessage(ctx context.Context, runID string, msg model.SessionMessage) error {
+	conversationID, err := s.conversationIDForSession(ctx, msg.SessionID)
+	if err != nil {
+		return err
+	}
+	payload := map[string]any{
+		"message_id":        msg.ID,
+		"session_id":        msg.SessionID,
+		"sender_session_id": msg.SenderSessionID,
+		"kind":              msg.Kind,
+		"body":              msg.Body,
+		"provenance":        msg.Provenance,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal session_message_added payload: %w", err)
+	}
+	return s.conv.AppendEvent(ctx, model.Event{
+		ID:             generateID(),
+		ConversationID: conversationID,
+		RunID:          runID,
+		Kind:           "session_message_added",
+		PayloadJSON:    body,
+		CreatedAt:      msg.CreatedAt,
+	})
+}
+
+func (s *Service) appendSessionBinding(ctx context.Context, runID string, cmd BindFollowUp) error {
+	now := time.Now().UTC()
+	payload := map[string]any{
+		"thread_id":    normalizeThreadID(cmd.ThreadID),
+		"session_id":   cmd.SessionID,
+		"connector_id": cmd.ConnectorID,
+		"account_id":   cmd.AccountID,
+		"external_id":  cmd.ExternalID,
+		"status":       "active",
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("marshal session_bound payload: %w", err)
+	}
+	return s.conv.AppendEvent(ctx, model.Event{
+		ID:             generateID(),
+		ConversationID: cmd.ConversationID,
+		RunID:          runID,
+		Kind:           "session_bound",
+		PayloadJSON:    body,
+		CreatedAt:      now,
+	})
+}
+
+func (s *Service) conversationIDForSession(ctx context.Context, sessionID string) (string, error) {
+	var conversationID string
+	err := s.db.RawDB().QueryRowContext(ctx,
+		"SELECT conversation_id FROM sessions WHERE id = ?",
+		sessionID,
+	).Scan(&conversationID)
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("lookup session conversation: session %s not found", sessionID)
+	}
+	if err != nil {
+		return "", fmt.Errorf("lookup session conversation: %w", err)
+	}
+	return conversationID, nil
 }
 
 func generateID() string {

@@ -43,6 +43,21 @@ The append-only event journal remains the source of truth. Replay, receipts, app
 
 Routing is deterministic and runtime-owned. Model output does not choose delivery paths or follow-up bindings.
 
+Session routing should be carried by durable session/thread route state, not connector-specific side logic.
+
+The kernel should therefore own:
+
+- which session is bound to a given thread
+- which connector/account/external target that bound thread can deliver back to
+- how assistant replies become outbound intents
+- how inter-session messages retain sender and route provenance
+
+### Context Assembly
+
+Provider input should be assembled from the session's own mailbox, routed inter-session messages, and memory summaries.
+
+Conversation-wide event history is useful for replay and audit, but it is not the long-term context boundary for an assistant session.
+
 ## What The Kernel Does Not Assume
 
 The kernel does not assume:

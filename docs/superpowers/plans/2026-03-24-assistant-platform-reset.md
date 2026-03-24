@@ -4,7 +4,7 @@
 
 **Goal:** Replace GistClaw's current repo-task/delegation-centered contract with an assistant-first, session-centric runtime built around one front agent plus spawned worker sessions, while deleting the stale doc set and rewriting only the docs that describe the new contract.
 
-**Architecture:** Keep the SQLite event journal, replay, approvals, and local-first surfaces. Replace rigid handoff-edge delegation with explicit session primitives: `spawn`, `announce`, `steer`, and `agent-send`. Introduce first-class session identity and a new team spec package, defer channel/plugin breadth, and do the rewrite without backward-compatibility shims.
+**Architecture:** Keep the SQLite event journal, replay, approvals, and local-first surfaces. Replace rigid handoff-edge delegation with explicit session primitives: `spawn`, `announce`, `steer`, and `agent-send`. Introduce first-class session identity and a new team spec package, add session-scoped context and explicit message provenance, promote thread binding into durable runtime-owned route state, reuse `outbound_intents` for external delivery, defer channel/plugin breadth, and do the rewrite without backward-compatibility shims.
 
 **Tech Stack:** Go 1.24+, SQLite via `modernc.org/sqlite`, stdlib `net/http`, Go `testing`, YAML via `go.yaml.in/yaml/v4`
 
@@ -47,7 +47,7 @@
 - `internal/model/types.go`
   Add session and collaboration domain types; remove delegation-specific types that no longer define the kernel.
 - `internal/conversations/service.go`
-  Keep journal/projection ownership, add session projections and collaboration events.
+  Keep journal/projection ownership, add session projections, route projections, and collaboration events.
 - `internal/conversations/service_test.go`
   Projection coverage for new session/collaboration events.
 - `internal/store/migrations/001_init.sql`
@@ -59,7 +59,7 @@
 - `internal/app/team_validation_test.go`
   Coverage for the new team spec rules and capability flags.
 - `internal/runtime/runs.go`
-  Retain only the parts that still fit the new front-session run loop.
+  Retain only the parts that still fit the new front-session run loop and assemble provider context from session-local state.
 - `internal/replay/service.go`
   Replace handoff-edge graph loading with session/run lineage replay.
 - `internal/replay/replay_test.go`
@@ -701,9 +701,9 @@ func TestRuntime_SpawnCreatesWorkerRunAndSession(t *testing.T) {
 	parent := startFrontRun(t, rt, "Investigate the repo")
 
 	child, err := rt.Spawn(context.Background(), SpawnCommand{
-		ControllerRunID: parent.ID,
-		AgentID:         "researcher",
-		Prompt:          "Inspect the docs folder.",
+		ControllerSessionID: parent.SessionID,
+		AgentID:             "researcher",
+		Prompt:              "Inspect the docs folder.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -717,9 +717,9 @@ func TestRuntime_AnnouncePersistsInterAgentMessage(t *testing.T) {
 	rt := newTestRuntime(t)
 	parent, child := startParentAndChildRuns(t, rt)
 	if err := rt.Announce(context.Background(), AnnounceCommand{
-		WorkerRunID: child.ID,
-		TargetRunID: parent.ID,
-		Body:        "Tests passed.",
+		WorkerSessionID: child.SessionID,
+		TargetSessionID: parent.SessionID,
+		Body:            "Tests passed.",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -743,27 +743,27 @@ type StartFrontSession struct {
 }
 
 type SpawnCommand struct {
-	ControllerRunID string
-	AgentID         string
-	Prompt          string
+	ControllerSessionID string
+	AgentID             string
+	Prompt              string
 }
 
 type AnnounceCommand struct {
-	WorkerRunID string
-	TargetRunID string
-	Body        string
-}
-
-type SteerCommand struct {
-	ControllerRunID string
-	TargetRunID     string
+	WorkerSessionID string
+	TargetSessionID string
 	Body            string
 }
 
+type SteerCommand struct {
+	ControllerSessionID string
+	TargetSessionID     string
+	Body                string
+}
+
 type AgentSendCommand struct {
-	FromRunID string
-	ToRunID   string
-	Body      string
+	FromSessionID string
+	ToSessionID   string
+	Body          string
 }
 
 func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) (model.Run, error) { /* ... */ }

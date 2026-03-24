@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"os/exec"
 	"strings"
 	"testing"
@@ -488,5 +489,90 @@ func TestRunEngine_MemoryContextReadIsJournaled(t *testing.T) {
 	}
 	if readEvents == 0 {
 		t.Fatal("expected memory_context_loaded event")
+	}
+}
+
+func TestStartFrontSession_ProviderContextUsesSessionMailboxNotConversationWideEvents(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "Front reply 1.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+			{Content: "Worker reply.", InputTokens: 8, OutputTokens: 10, StopReason: "end_turn"},
+			{Content: "Front reply 2.", InputTokens: 11, OutputTokens: 13, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	ctx := context.Background()
+
+	first, err := rt.StartFrontSession(ctx, StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "First prompt.",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("first StartFrontSession failed: %v", err)
+	}
+
+	if _, err := rt.Spawn(ctx, SpawnCommand{
+		ControllerSessionID: first.SessionID,
+		AgentID:             "researcher",
+		Prompt:              "Worker prompt.",
+	}); err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+
+	if _, err := rt.StartFrontSession(ctx, StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Second prompt.",
+		WorkspaceRoot: t.TempDir(),
+	}); err != nil {
+		t.Fatalf("second StartFrontSession failed: %v", err)
+	}
+
+	if len(prov.Requests) != 3 {
+		t.Fatalf("expected 3 provider requests, got %d", len(prov.Requests))
+	}
+
+	gotBodies := make([]string, 0, len(prov.Requests[2].ConversationCtx))
+	for _, ev := range prov.Requests[2].ConversationCtx {
+		if ev.Kind != "session_message_added" {
+			t.Fatalf("expected session-scoped conversation events, got %q", ev.Kind)
+		}
+		var payload struct {
+			Body       string `json:"body"`
+			Provenance struct {
+				Kind string `json:"kind"`
+			} `json:"provenance"`
+		}
+		if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil {
+			t.Fatalf("unmarshal provider context payload: %v", err)
+		}
+		gotBodies = append(gotBodies, payload.Body)
+		if payload.Provenance.Kind == "" {
+			t.Fatalf("expected provider context payload to carry provenance, got %s", string(ev.PayloadJSON))
+		}
+	}
+
+	gotJoined := strings.Join(gotBodies, " | ")
+	if strings.Contains(gotJoined, "Worker prompt.") || strings.Contains(gotJoined, "Worker reply.") {
+		t.Fatalf("expected worker-only history to stay out of front-session context, got %q", gotJoined)
+	}
+	for _, want := range []string{"First prompt.", "Front reply 1.", "Second prompt."} {
+		if !strings.Contains(gotJoined, want) {
+			t.Fatalf("expected provider context to include %q, got %q", want, gotJoined)
+		}
 	}
 }

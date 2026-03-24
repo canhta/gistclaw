@@ -3,6 +3,7 @@ package conversations
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/model"
@@ -351,6 +352,10 @@ func TestConversationStore_AppendEventProjectsSessions(t *testing.T) {
 		"sender_session_id": "",
 		"kind":              "assistant",
 		"body":              "Hello.",
+		"provenance": map[string]any{
+			"kind":          "assistant_turn",
+			"source_run_id": "run-front",
+		},
 	})
 	if err != nil {
 		t.Fatalf("marshal message payload: %v", err)
@@ -379,14 +384,18 @@ func TestConversationStore_AppendEventProjectsSessions(t *testing.T) {
 	}
 
 	var kind string
+	var provenanceJSON string
 	err = db.RawDB().QueryRowContext(ctx,
-		"SELECT kind FROM session_messages WHERE id = 'msg-1'",
-	).Scan(&kind)
+		"SELECT kind, provenance_json FROM session_messages WHERE id = 'msg-1'",
+	).Scan(&kind, &provenanceJSON)
 	if err != nil {
 		t.Fatalf("query session message projection: %v", err)
 	}
 	if kind != "assistant" {
 		t.Fatalf("expected session message kind %q, got %q", "assistant", kind)
+	}
+	if !strings.Contains(provenanceJSON, `"kind":"assistant_turn"`) || !strings.Contains(provenanceJSON, `"source_run_id":"run-front"`) {
+		t.Fatalf("expected provenance to round-trip, got %q", provenanceJSON)
 	}
 }
 
@@ -434,9 +443,12 @@ func TestConversationStore_AppendEventProjectsSessionBinding(t *testing.T) {
 	ctx := context.Background()
 
 	bindingPayload, err := json.Marshal(map[string]any{
-		"thread_id":  "main",
-		"session_id": "sess-front",
-		"status":     "active",
+		"thread_id":    "main",
+		"session_id":   "sess-front",
+		"connector_id": "telegram",
+		"account_id":   "acct-1",
+		"external_id":  "chat-1",
+		"status":       "active",
 	})
 	if err != nil {
 		t.Fatalf("marshal binding payload: %v", err)
@@ -454,15 +466,27 @@ func TestConversationStore_AppendEventProjectsSessionBinding(t *testing.T) {
 	}
 
 	var sessionID string
+	var connectorID string
+	var accountID string
+	var externalID string
 	var status string
 	err = db.RawDB().QueryRowContext(ctx,
-		"SELECT session_id, status FROM session_bindings WHERE conversation_id = 'conv-binding' AND thread_id = 'main'",
-	).Scan(&sessionID, &status)
+		`SELECT session_id, connector_id, account_id, external_id, status
+		 FROM session_bindings
+		 WHERE conversation_id = 'conv-binding' AND thread_id = 'main'`,
+	).Scan(&sessionID, &connectorID, &accountID, &externalID, &status)
 	if err != nil {
 		t.Fatalf("query session binding projection: %v", err)
 	}
-	if sessionID != "sess-front" || status != "active" {
-		t.Fatalf("unexpected session binding projection: session_id=%q status=%q", sessionID, status)
+	if sessionID != "sess-front" || connectorID != "telegram" || accountID != "acct-1" || externalID != "chat-1" || status != "active" {
+		t.Fatalf(
+			"unexpected session binding projection: session_id=%q connector_id=%q account_id=%q external_id=%q status=%q",
+			sessionID,
+			connectorID,
+			accountID,
+			externalID,
+			status,
+		)
 	}
 }
 

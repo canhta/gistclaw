@@ -135,6 +135,43 @@ func TestProvider_ConversationEventsConvertedToMessages(t *testing.T) {
 	}
 }
 
+func TestProvider_SessionMessageEventsConvertedToMessages(t *testing.T) {
+	var capturedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(successResponse("response", 5, 3))
+	}))
+	defer srv.Close()
+
+	userPayload, _ := json.Marshal(map[string]any{"kind": "user", "body": "front prompt"})
+	assistantPayload, _ := json.Marshal(map[string]any{"kind": "assistant", "body": "front reply"})
+
+	p := newWithEndpoint("key", "claude-3-5-sonnet-20241022", srv.URL)
+	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "system",
+		MaxTokens:    100,
+		ConversationCtx: []model.Event{
+			{Kind: "session_message_added", PayloadJSON: userPayload},
+			{Kind: "session_message_added", PayloadJSON: assistantPayload},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	msgs, ok := capturedBody["messages"].([]any)
+	if !ok || len(msgs) != 2 {
+		t.Fatalf("expected 2 session messages, got %v", capturedBody["messages"])
+	}
+	if msgs[0].(map[string]any)["role"] != "user" || msgs[0].(map[string]any)["content"] != "front prompt" {
+		t.Fatalf("unexpected user mailbox message: %v", msgs[0])
+	}
+	if msgs[1].(map[string]any)["role"] != "assistant" || msgs[1].(map[string]any)["content"] != "front reply" {
+		t.Fatalf("unexpected assistant mailbox message: %v", msgs[1])
+	}
+}
+
 func TestProvider_ToolCallsInResponse(t *testing.T) {
 	toolInputJSON, _ := json.Marshal(map[string]any{"path": "main.go"})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

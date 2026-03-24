@@ -124,17 +124,21 @@ type sessionOpenedPayload struct {
 }
 
 type sessionMessageAddedPayload struct {
-	MessageID       string `json:"message_id"`
-	SessionID       string `json:"session_id"`
-	SenderSessionID string `json:"sender_session_id"`
-	Kind            string `json:"kind"`
-	Body            string `json:"body"`
+	MessageID       string          `json:"message_id"`
+	SessionID       string          `json:"session_id"`
+	SenderSessionID string          `json:"sender_session_id"`
+	Kind            string          `json:"kind"`
+	Body            string          `json:"body"`
+	Provenance      json.RawMessage `json:"provenance"`
 }
 
 type sessionBoundPayload struct {
-	ThreadID  string `json:"thread_id"`
-	SessionID string `json:"session_id"`
-	Status    string `json:"status"`
+	ThreadID    string `json:"thread_id"`
+	SessionID   string `json:"session_id"`
+	ConnectorID string `json:"connector_id"`
+	AccountID   string `json:"account_id"`
+	ExternalID  string `json:"external_id"`
+	Status      string `json:"status"`
 }
 
 func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt model.Event) error {
@@ -246,14 +250,28 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 		}
 		_, err := tx.ExecContext(ctx,
 			`INSERT INTO session_messages
-			 (id, session_id, sender_session_id, kind, body, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?)`,
-			payload.MessageID, payload.SessionID, payload.SenderSessionID, payload.Kind, payload.Body, evt.CreatedAt,
+			 (id, session_id, sender_session_id, kind, body, provenance_json, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			payload.MessageID,
+			payload.SessionID,
+			payload.SenderSessionID,
+			payload.Kind,
+			payload.Body,
+			payload.Provenance,
+			evt.CreatedAt,
 		)
 		return err
 	case "session_bound":
 		var payload sessionBoundPayload
 		if err := decodePayload(evt.PayloadJSON, &payload); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE session_bindings
+			 SET status = 'inactive'
+			 WHERE conversation_id = ? AND thread_id = ? AND status = 'active'`,
+			evt.ConversationID, payload.ThreadID,
+		); err != nil {
 			return err
 		}
 		status := payload.Status
@@ -262,9 +280,17 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 		}
 		_, err := tx.ExecContext(ctx,
 			`INSERT INTO session_bindings
-			 (id, conversation_id, thread_id, session_id, status, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?)`,
-			evt.ID, evt.ConversationID, payload.ThreadID, payload.SessionID, status, evt.CreatedAt,
+			 (id, conversation_id, thread_id, session_id, connector_id, account_id, external_id, status, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			evt.ID,
+			evt.ConversationID,
+			payload.ThreadID,
+			payload.SessionID,
+			payload.ConnectorID,
+			payload.AccountID,
+			payload.ExternalID,
+			status,
+			evt.CreatedAt,
 		)
 		return err
 	default:

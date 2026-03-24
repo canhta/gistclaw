@@ -44,9 +44,19 @@ The current reset is closer to OpenClaw in kernel direction than in product brea
 
 What is still not earned yet:
 
-- fuller runtime-owned delivery and mailbox-update behavior on top of the durable assistant session, thread binding, and mailbox read model now in place
-- broader runtime-owned routing across surfaces instead of mostly local run-scoped coordination
+- broader runtime-owned routing across surfaces instead of mostly local queued delivery
 - dynamic user-created teams at runtime instead of config-defined team shape only
 - restored channel/gateway surfaces on top of the new kernel
 - real extension contracts for providers, connectors, tools, and plugins
 - a broader control-plane style collaboration model that feels like OpenClaw instead of just a better run engine
+
+## Current Build Direction
+
+The immediate build direction after the reset is to make the session kernel operationally trustworthy, not just structurally suggestive.
+
+That means the next implementation work favors:
+
+- one journal-backed session control plane instead of mixed write paths
+- session-addressed collaboration and delivery instead of run-addressed shortcuts
+- durable route state on the session/thread path instead of connector-specific delivery guesses
+- provider input assembled from session-local context instead of the whole conversation log

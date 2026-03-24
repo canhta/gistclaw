@@ -90,6 +90,14 @@ const (
 	MessageAgentSend SessionMessageKind = "agent_send"
 )
 
+type SessionMessageProvenanceKind string
+
+const (
+	MessageProvenanceInbound       SessionMessageProvenanceKind = "inbound"
+	MessageProvenanceAssistantTurn SessionMessageProvenanceKind = "assistant_turn"
+	MessageProvenanceInterSession  SessionMessageProvenanceKind = "inter_session"
+)
+
 type RunPhase string
 
 const (
@@ -168,7 +176,27 @@ type SessionMessage struct {
 	SenderSessionID string
 	Kind            SessionMessageKind
 	Body            string
+	Provenance      SessionMessageProvenance
 	CreatedAt       time.Time
+}
+
+type SessionMessageProvenance struct {
+	Kind              SessionMessageProvenanceKind `json:"kind,omitempty"`
+	SourceSessionID   string                       `json:"source_session_id,omitempty"`
+	SourceRunID       string                       `json:"source_run_id,omitempty"`
+	SourceConnectorID string                       `json:"source_connector_id,omitempty"`
+	SourceThreadID    string                       `json:"source_thread_id,omitempty"`
+	SourceTool        string                       `json:"source_tool,omitempty"`
+}
+
+type SessionRoute struct {
+	SessionID   string
+	ThreadID    string
+	ConnectorID string
+	AccountID   string
+	ExternalID  string
+	Status      string
+	CreatedAt   time.Time
 }
 
 type RunRef struct {

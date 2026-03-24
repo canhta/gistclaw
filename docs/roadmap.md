@@ -34,7 +34,7 @@ The reset kernel is in place, but the product still does not fully behave like O
 
 Remaining gaps:
 
-- durable front-session reuse, thread binding, and mailbox reads are in place, but the runtime still lacks a fuller delivery and routing model
+- durable front-session reuse, thread binding, mailbox reads, session-scoped provider context, explicit session-message provenance, session-addressed collaboration, session discovery/history reads, and queued outbound delivery are now in place
 - channels and connectors are no longer core to the active build
 - plugins and extension seams are documented, not operational
 - teams are still mostly designed ahead of time, not created dynamically by the user
@@ -43,6 +43,18 @@ Remaining gaps:
 
 The next implementation slice should make the session runtime feel more like OpenClaw without reopening platform sprawl:
 
-1. promote mailbox state from a read model into a fuller runtime-owned delivery surface
-2. route collaboration through explicit runtime-owned message targets instead of mostly direct append helpers
-3. prepare that routing layer for later channel and gateway recovery
+1. recover selected channel delivery paths on top of the new route state and queued outbound-intent flow
+2. prepare that routing layer for later channel and gateway recovery without rebuilding the full OpenClaw matrix
+3. keep moving team definition from predeclared structure toward user-defined runtime composition
+4. start exposing the session control plane through higher-level tools and UI surfaces instead of only runtime/service APIs
+
+## Locked Review Outcomes
+
+The 2026-03-24 engineering review locked the following implementation decisions for long-term scale:
+
+- one session control-plane facade with journal-backed writes
+- session-addressed collaboration as the durable model
+- explicit provenance on session messages instead of inference-only debugging
+- session-scoped provider context instead of conversation-wide event loading
+- an indexed active-run-by-session lookup path for session routing
+- durable route state plus runtime-owned external delivery on top of existing `outbound_intents`
