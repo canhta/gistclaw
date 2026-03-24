@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -73,24 +74,41 @@ func (r *Runtime) createDelegation(ctx context.Context, cmd DelegateRun) (model.
 		maxChildren = snapshot.MaxActiveChildren
 	}
 
+	rootRunID, err := r.rootRunID(ctx, cmd.ParentRunID)
+	if err != nil {
+		return model.Run{}, err
+	}
+
 	var activeChildren int
 	err = r.store.RawDB().QueryRowContext(ctx,
-		"SELECT count(*) FROM delegations WHERE parent_run_id = ? AND status = 'active'",
-		cmd.ParentRunID,
+		"SELECT count(*) FROM delegations WHERE root_run_id = ? AND status = 'active'",
+		rootRunID,
 	).Scan(&activeChildren)
 	if err != nil {
 		return model.Run{}, fmt.Errorf("count active children: %w", err)
 	}
 
 	delegationID := generateID()
+	childRunID := generateID()
 	now := time.Now().UTC()
 
 	if activeChildren >= maxChildren {
-		_, err = r.store.RawDB().ExecContext(ctx,
-			`INSERT INTO delegations (id, root_run_id, parent_run_id, target_agent_id, status, created_at)
-			 VALUES (?, ?, ?, ?, 'queued', ?)`,
-			delegationID, cmd.ParentRunID, cmd.ParentRunID, cmd.TargetAgentID, now,
-		)
+		payload, err := json.Marshal(map[string]any{
+			"root_run_id":     rootRunID,
+			"target_agent_id": cmd.TargetAgentID,
+		})
+		if err != nil {
+			return model.Run{}, fmt.Errorf("marshal delegation_queued payload: %w", err)
+		}
+		err = r.convStore.AppendEvent(ctx, model.Event{
+			ID:             delegationID,
+			ConversationID: conversationID,
+			RunID:          cmd.ParentRunID,
+			ParentRunID:    cmd.ParentRunID,
+			Kind:           "delegation_queued",
+			PayloadJSON:    payload,
+			CreatedAt:      now,
+		})
 		if err != nil {
 			return model.Run{}, fmt.Errorf("queue delegation: %w", err)
 		}
@@ -101,36 +119,27 @@ func (r *Runtime) createDelegation(ctx context.Context, cmd DelegateRun) (model.
 		}, nil
 	}
 
-	childRunID := generateID()
-	_, err = r.store.RawDB().ExecContext(ctx,
-		`INSERT INTO runs (id, conversation_id, agent_id, parent_run_id, objective, status, execution_snapshot_json, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
-		childRunID, conversationID, cmd.TargetAgentID, cmd.ParentRunID, cmd.Objective, snapshotJSON, now, now,
-	)
+	payload, err := json.Marshal(map[string]any{
+		"root_run_id":             rootRunID,
+		"target_agent_id":         cmd.TargetAgentID,
+		"objective":               cmd.Objective,
+		"execution_snapshot_json": snapshotJSON,
+	})
 	if err != nil {
-		return model.Run{}, fmt.Errorf("create child run: %w", err)
+		return model.Run{}, fmt.Errorf("marshal delegation_created payload: %w", err)
 	}
-
-	_, err = r.store.RawDB().ExecContext(ctx,
-		`INSERT INTO delegations (id, root_run_id, parent_run_id, child_run_id, target_agent_id, status, created_at)
-		 VALUES (?, ?, ?, ?, ?, 'active', ?)`,
-		delegationID, cmd.ParentRunID, cmd.ParentRunID, childRunID, cmd.TargetAgentID, now,
-	)
-	if err != nil {
-		return model.Run{}, fmt.Errorf("create delegation: %w", err)
-	}
-
-	_ = r.convStore.AppendEvent(ctx, model.Event{
-		ID:             generateID(),
+	err = r.convStore.AppendEvent(ctx, model.Event{
+		ID:             delegationID,
 		ConversationID: conversationID,
 		RunID:          childRunID,
 		ParentRunID:    cmd.ParentRunID,
 		Kind:           "delegation_created",
-		PayloadJSON: []byte(fmt.Sprintf(
-			`{"parent":"%s","child":"%s","target":"%s"}`,
-			cmd.ParentRunID, childRunID, cmd.TargetAgentID,
-		)),
+		PayloadJSON:    payload,
+		CreatedAt:      now,
 	})
+	if err != nil {
+		return model.Run{}, fmt.Errorf("create delegation: %w", err)
+	}
 
 	return model.Run{
 		ID:          childRunID,
@@ -138,4 +147,22 @@ func (r *Runtime) createDelegation(ctx context.Context, cmd DelegateRun) (model.
 		AgentID:     cmd.TargetAgentID,
 		Status:      model.RunStatusActive,
 	}, nil
+}
+
+func (r *Runtime) rootRunID(ctx context.Context, runID string) (string, error) {
+	current := runID
+	for {
+		var parentRunID sql.NullString
+		err := r.store.RawDB().QueryRowContext(ctx,
+			"SELECT parent_run_id FROM runs WHERE id = ?",
+			current,
+		).Scan(&parentRunID)
+		if err != nil {
+			return "", fmt.Errorf("load root lineage: %w", err)
+		}
+		if !parentRunID.Valid || parentRunID.String == "" {
+			return current, nil
+		}
+		current = parentRunID.String
+	}
 }

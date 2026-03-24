@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 )
@@ -58,6 +60,20 @@ func TestDB_OpenAndPragmas_FileDB(t *testing.T) {
 	}
 	if journalMode != "wal" {
 		t.Fatalf("expected journal_mode=wal, got %q", journalMode)
+	}
+}
+
+func TestDB_OpenCreatesParentDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested", "state", "runtime.db")
+
+	db, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := os.Stat(filepath.Dir(path)); err != nil {
+		t.Fatalf("parent directory was not created: %v", err)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -16,6 +17,11 @@ import (
 type Store struct {
 	db        *store.DB
 	convStore *conversations.ConversationStore
+}
+
+type ContextView struct {
+	Summary model.SummaryRef
+	Items   []model.MemoryItem
 }
 
 func NewStore(db *store.DB, cs *conversations.ConversationStore) *Store {
@@ -141,27 +147,73 @@ func (s *Store) Search(ctx context.Context, query model.MemoryQuery) ([]model.Me
 	return items, rows.Err()
 }
 
-func (s *Store) SummarizeConversation(ctx context.Context, conversationID string) (model.SummaryRef, error) {
+func (s *Store) UpsertWorkingSummary(ctx context.Context, runID, conversationID string) (model.SummaryRef, error) {
 	id := memGenerateID()
 	now := time.Now().UTC()
-	summary := fmt.Sprintf("Summary of conversation %s generated at %s", conversationID, now.Format(time.RFC3339))
+	summary := fmt.Sprintf("Summary of conversation %s for run %s generated at %s", conversationID, runID, now.Format(time.RFC3339))
 
-	_, err := s.db.RawDB().ExecContext(ctx,
-		`INSERT INTO run_summaries (id, run_id, content, token_count, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?)
-		 ON CONFLICT(run_id) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at`,
-		id, conversationID, summary, len(summary)/4, now, now,
-	)
+	ref := model.SummaryRef{
+		ID:         id,
+		RunID:      runID,
+		Content:    summary,
+		TokenCount: len(summary) / 4,
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"summary_id":  ref.ID,
+		"run_id":      ref.RunID,
+		"content":     ref.Content,
+		"token_count": ref.TokenCount,
+	})
 	if err != nil {
+		return model.SummaryRef{}, fmt.Errorf("memory: summarize payload: %w", err)
+	}
+
+	if err := s.convStore.AppendEvent(ctx, model.Event{
+		ID:             memGenerateID(),
+		ConversationID: conversationID,
+		RunID:          runID,
+		Kind:           "summary_upserted",
+		PayloadJSON:    payload,
+		CreatedAt:      now,
+	}); err != nil {
 		return model.SummaryRef{}, fmt.Errorf("memory: summarize: %w", err)
 	}
 
-	return model.SummaryRef{
-		ID:         id,
-		RunID:      conversationID,
-		Content:    summary,
-		TokenCount: len(summary) / 4,
-	}, nil
+	return ref, nil
+}
+
+func (s *Store) LoadContext(ctx context.Context, runID, agentID, scope string, limit int) (ContextView, error) {
+	view := ContextView{
+		Items: make([]model.MemoryItem, 0),
+	}
+
+	err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT id, run_id, content, token_count
+		 FROM run_summaries
+		 WHERE run_id = ?`,
+		runID,
+	).Scan(
+		&view.Summary.ID,
+		&view.Summary.RunID,
+		&view.Summary.Content,
+		&view.Summary.TokenCount,
+	)
+	if err != nil && err != sql.ErrNoRows {
+		return ContextView{}, fmt.Errorf("memory: load summary: %w", err)
+	}
+
+	items, err := s.Search(ctx, model.MemoryQuery{
+		AgentID: agentID,
+		Scope:   scope,
+		Limit:   limit,
+	})
+	if err != nil {
+		return ContextView{}, fmt.Errorf("memory: load scoped facts: %w", err)
+	}
+	view.Items = items
+
+	return view, nil
 }
 
 func memGenerateID() string {

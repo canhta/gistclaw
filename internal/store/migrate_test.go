@@ -116,3 +116,31 @@ func TestMigrate_WALEnabled(t *testing.T) {
 		t.Fatalf("expected WAL mode, got %q", journalMode)
 	}
 }
+
+func TestMigrate_EnforcesSingleActiveRootRunPerConversation(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer db.Close()
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+
+	_, err = db.db.Exec(
+		`INSERT INTO runs (id, conversation_id, agent_id, status, created_at, updated_at)
+		 VALUES ('run-1', 'conv-1', 'agent-a', 'active', datetime('now'), datetime('now'))`,
+	)
+	if err != nil {
+		t.Fatalf("insert first active root run: %v", err)
+	}
+
+	_, err = db.db.Exec(
+		`INSERT INTO runs (id, conversation_id, agent_id, status, created_at, updated_at)
+		 VALUES ('run-2', 'conv-1', 'agent-b', 'active', datetime('now'), datetime('now'))`,
+	)
+	if err == nil {
+		t.Fatal("expected unique constraint for second active root run, got nil")
+	}
+}

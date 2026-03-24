@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/conversations"
@@ -236,15 +237,115 @@ func TestDelegation_QueuedVisibleAfterRestart(t *testing.T) {
 	}
 }
 
+func TestDelegation_RollsBackWhenDelegationEventFails(t *testing.T) {
+	rt, db := setupDelegationTestDeps(t)
+	ctx := context.Background()
+
+	snapshot := map[string]interface{}{
+		"handoff_edges": []map[string]string{
+			{"from": "agent-a", "to": "agent-b"},
+		},
+	}
+	insertRootRun(t, db, "root-rollback", "conv-d-rollback", snapshot)
+
+	_, err := db.RawDB().Exec(
+		`CREATE TRIGGER fail_events_before_insert
+		 BEFORE INSERT ON events
+		 BEGIN
+		   SELECT RAISE(FAIL, 'boom');
+		 END;`,
+	)
+	if err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	_, err = rt.Delegate(ctx, DelegateRun{
+		ParentRunID:   "root-rollback",
+		TargetAgentID: "agent-b",
+		Objective:     "should rollback",
+	})
+	if err == nil {
+		t.Fatal("expected delegation error, got nil")
+	}
+
+	var childRuns int
+	err = db.RawDB().QueryRow(
+		"SELECT count(*) FROM runs WHERE parent_run_id = 'root-rollback'",
+	).Scan(&childRuns)
+	if err != nil {
+		t.Fatalf("count child runs: %v", err)
+	}
+	if childRuns != 0 {
+		t.Fatalf("expected 0 child runs after rollback, got %d", childRuns)
+	}
+
+	var delegations int
+	err = db.RawDB().QueryRow(
+		"SELECT count(*) FROM delegations WHERE parent_run_id = 'root-rollback'",
+	).Scan(&delegations)
+	if err != nil {
+		t.Fatalf("count delegations: %v", err)
+	}
+	if delegations != 0 {
+		t.Fatalf("expected 0 delegations after rollback, got %d", delegations)
+	}
+}
+
+func TestDelegation_NestedDelegationsUseRootBudget(t *testing.T) {
+	rt, db := setupDelegationTestDeps(t)
+	ctx := context.Background()
+
+	snapshot := map[string]interface{}{
+		"handoff_edges": []map[string]string{
+			{"from": "agent-a", "to": "agent-b"},
+			{"from": "agent-b", "to": "agent-c"},
+		},
+		"max_active_children": 1,
+	}
+	insertRootRun(t, db, "root-budget", "conv-d-budget", snapshot)
+
+	child, err := rt.Delegate(ctx, DelegateRun{
+		ParentRunID:   "root-budget",
+		TargetAgentID: "agent-b",
+		Objective:     "first child",
+	})
+	if err != nil {
+		t.Fatalf("first delegation failed: %v", err)
+	}
+
+	queued, err := rt.Delegate(ctx, DelegateRun{
+		ParentRunID:   child.ID,
+		TargetAgentID: "agent-c",
+		Objective:     "should queue under root budget",
+	})
+	if err != nil {
+		t.Fatalf("nested delegation failed: %v", err)
+	}
+	if queued.Status != model.RunStatusPending {
+		t.Fatalf("expected nested delegation to queue, got %q", queued.Status)
+	}
+
+	var queuedCount int
+	err = db.RawDB().QueryRow(
+		"SELECT count(*) FROM delegations WHERE root_run_id = 'root-budget' AND status = 'queued'",
+	).Scan(&queuedCount)
+	if err != nil {
+		t.Fatalf("count queued delegations: %v", err)
+	}
+	if queuedCount != 1 {
+		t.Fatalf("expected 1 queued nested delegation, got %d", queuedCount)
+	}
+}
+
 func TestReconcile_ActiveRunsBecomesInterrupted(t *testing.T) {
 	rt, db := setupDelegationTestDeps(t)
 	ctx := context.Background()
 
-	for _, id := range []string{"run-a1", "run-a2"} {
+	for i, id := range []string{"run-a1", "run-a2"} {
 		_, err := db.RawDB().Exec(
 			`INSERT INTO runs (id, conversation_id, agent_id, status, created_at, updated_at)
-			 VALUES (?, 'conv-r', 'agent-a', 'active', datetime('now'), datetime('now'))`,
-			id,
+			 VALUES (?, ?, 'agent-a', 'active', datetime('now'), datetime('now'))`,
+			id, fmt.Sprintf("conv-r-%d", i+1),
 		)
 		if err != nil {
 			t.Fatalf("insert %s: %v", id, err)

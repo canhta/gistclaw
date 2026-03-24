@@ -11,9 +11,11 @@ import (
 )
 
 type App struct {
-	db      *store.DB
-	runtime *runtime.Runtime
-	replay  *replay.Service
+	cfg       Config
+	db        *store.DB
+	convStore *conversations.ConversationStore
+	runtime   *runtime.Runtime
+	replay    *replay.Service
 }
 
 func Bootstrap(cfg Config) (*App, error) {
@@ -30,9 +32,11 @@ func Bootstrap(cfg Config) (*App, error) {
 	rp := replayWiring(db)
 
 	return &App{
-		db:      db,
-		runtime: rt,
-		replay:  rp,
+		cfg:       cfg,
+		db:        db,
+		convStore: convStore,
+		runtime:   rt,
+		replay:    rp,
 	}, nil
 }
 

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -106,11 +107,11 @@ func TestAcceptance_RestartReconciles(t *testing.T) {
 	rt := New(db, cs, reg, mem, prov, sink)
 	ctx := context.Background()
 
-	for _, id := range []string{"stale-run-1", "stale-run-2"} {
+	for i, id := range []string{"stale-run-1", "stale-run-2"} {
 		_, err := db.RawDB().Exec(
 			`INSERT INTO runs (id, conversation_id, agent_id, status, created_at, updated_at)
-			 VALUES (?, 'conv-stale', 'agent-a', 'active', datetime('now'), datetime('now'))`,
-			id,
+			 VALUES (?, ?, 'agent-a', 'active', datetime('now'), datetime('now'))`,
+			id, fmt.Sprintf("conv-stale-%d", i+1),
 		)
 		if err != nil {
 			t.Fatalf("insert %s: %v", id, err)
@@ -139,9 +140,7 @@ func TestAcceptance_RestartReconciles(t *testing.T) {
 
 func TestAcceptance_MemoryReadPathExercised(t *testing.T) {
 	db, cs, _, reg := setupMilestoneTestDeps(t)
-	spyMem := &spyMemoryStore{
-		Store: memory.NewStore(db, cs),
-	}
+	mem := memory.NewStore(db, cs)
 
 	prov := NewMockProvider(
 		[]GenerateResult{
@@ -150,11 +149,10 @@ func TestAcceptance_MemoryReadPathExercised(t *testing.T) {
 		nil,
 	)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, spyMem.Store, prov, sink)
-	rt.memory = spyMem.Store
+	rt := New(db, cs, reg, mem, prov, sink)
 	ctx := context.Background()
 
-	_, err := rt.Start(ctx, StartRun{
+	run, err := rt.Start(ctx, StartRun{
 		ConversationID: "conv-mem-spy",
 		AgentID:        "agent-a",
 		Objective:      "memory test",
@@ -164,11 +162,17 @@ func TestAcceptance_MemoryReadPathExercised(t *testing.T) {
 		t.Fatalf("Start failed: %v", err)
 	}
 
-	t.Log("Memory read path exercised (verified by code inspection of run loop)")
-}
-
-type spyMemoryStore struct {
-	*memory.Store
+	var readEvents int
+	err = db.RawDB().QueryRow(
+		"SELECT count(*) FROM events WHERE run_id = ? AND kind = 'memory_context_loaded'",
+		run.ID,
+	).Scan(&readEvents)
+	if err != nil {
+		t.Fatalf("query memory read events: %v", err)
+	}
+	if readEvents == 0 {
+		t.Fatal("expected memory_context_loaded event")
+	}
 }
 
 func TestAcceptance_IdleDaemonMakesZeroModelCalls(t *testing.T) {

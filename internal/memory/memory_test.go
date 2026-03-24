@@ -219,6 +219,65 @@ func TestMemory_ModelCannotOverwriteHumanFact(t *testing.T) {
 	}
 }
 
+func TestMemory_UpsertWorkingSummaryUsesRunID(t *testing.T) {
+	db, cs := setupMemoryDB(t)
+	s := NewStore(db, cs)
+	ctx := context.Background()
+
+	ref, err := s.UpsertWorkingSummary(ctx, "run-summary", "conv-summary")
+	if err != nil {
+		t.Fatalf("UpsertWorkingSummary failed: %v", err)
+	}
+	if ref.RunID != "run-summary" {
+		t.Fatalf("expected summary RunID %q, got %q", "run-summary", ref.RunID)
+	}
+
+	var count int
+	err = db.RawDB().QueryRow(
+		"SELECT count(*) FROM run_summaries WHERE run_id = 'run-summary'",
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("count run summaries: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 run summary for run-summary, got %d", count)
+	}
+}
+
+func TestMemory_LoadContextUsesRunScopedSummaryAndScopedFacts(t *testing.T) {
+	db, cs := setupMemoryDB(t)
+	s := NewStore(db, cs)
+	ctx := context.Background()
+
+	for _, item := range []model.MemoryItem{
+		{ID: "mem-a", AgentID: "agent-a", Scope: "local", Content: "keep me", Source: "model"},
+		{ID: "mem-b", AgentID: "agent-b", Scope: "local", Content: "ignore me", Source: "model"},
+		{ID: "mem-team", AgentID: "agent-a", Scope: "team", Content: "other scope", Source: "model"},
+	} {
+		if err := s.WriteFact(ctx, item); err != nil {
+			t.Fatalf("WriteFact %s failed: %v", item.ID, err)
+		}
+	}
+
+	if _, err := s.UpsertWorkingSummary(ctx, "run-context", "conv-context"); err != nil {
+		t.Fatalf("UpsertWorkingSummary failed: %v", err)
+	}
+
+	contextView, err := s.LoadContext(ctx, "run-context", "agent-a", "local", 10)
+	if err != nil {
+		t.Fatalf("LoadContext failed: %v", err)
+	}
+	if contextView.Summary.RunID != "run-context" {
+		t.Fatalf("expected run-scoped summary, got %q", contextView.Summary.RunID)
+	}
+	if len(contextView.Items) != 1 {
+		t.Fatalf("expected 1 scoped memory item, got %d", len(contextView.Items))
+	}
+	if contextView.Items[0].ID != "mem-a" {
+		t.Fatalf("expected mem-a, got %q", contextView.Items[0].ID)
+	}
+}
+
 func TestMemory_SearchEmptyStoreReturnsEmpty(t *testing.T) {
 	db, cs := setupMemoryDB(t)
 	s := NewStore(db, cs)

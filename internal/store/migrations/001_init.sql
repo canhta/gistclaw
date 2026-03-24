@@ -124,3 +124,6 @@ CREATE INDEX IF NOT EXISTS idx_runs_conversation_id_status ON runs(conversation_
 CREATE INDEX IF NOT EXISTS idx_delegations_parent_run_id_status ON delegations(parent_run_id, status);
 CREATE INDEX IF NOT EXISTS idx_approvals_run_id_status ON approvals(run_id, status);
 CREATE INDEX IF NOT EXISTS idx_memory_items_agent_id_scope ON memory_items(agent_id, scope);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_one_active_root_per_conversation
+    ON runs(conversation_id)
+    WHERE parent_run_id IS NULL AND status IN ('pending', 'active', 'needs_approval');

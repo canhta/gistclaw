@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -135,19 +136,24 @@ func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
 	if err := r.budget.CheckDailyCap(ctx, cmd.AccountID); err != nil {
 		return model.Run{}, err
 	}
+	if active, err := r.convStore.ActiveRootRun(ctx, cmd.ConversationID); err != nil {
+		return model.Run{}, err
+	} else if active.ID != "" {
+		return model.Run{}, conversations.ErrConversationBusy
+	}
 
 	runID := generateID()
 	now := time.Now().UTC()
 
-	_, err := r.store.RawDB().ExecContext(ctx,
-		`INSERT INTO runs
-		 (id, conversation_id, agent_id, team_id, objective, workspace_root, status, execution_snapshot_json, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
-		runID, cmd.ConversationID, cmd.AgentID, cmd.TeamID, cmd.Objective, cmd.WorkspaceRoot,
-		cmd.ExecutionSnapshotJSON, now, now,
-	)
+	payload, err := json.Marshal(map[string]any{
+		"agent_id":                cmd.AgentID,
+		"team_id":                 cmd.TeamID,
+		"objective":               cmd.Objective,
+		"workspace_root":          cmd.WorkspaceRoot,
+		"execution_snapshot_json": cmd.ExecutionSnapshotJSON,
+	})
 	if err != nil {
-		return model.Run{}, fmt.Errorf("create run: %w", err)
+		return model.Run{}, fmt.Errorf("marshal run_started payload: %w", err)
 	}
 
 	err = r.convStore.AppendEvent(ctx, model.Event{
@@ -155,7 +161,8 @@ func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
 		ConversationID: cmd.ConversationID,
 		RunID:          runID,
 		Kind:           "run_started",
-		PayloadJSON:    []byte(fmt.Sprintf(`{"objective":%q}`, cmd.Objective)),
+		PayloadJSON:    payload,
+		CreatedAt:      now,
 	})
 	if err != nil {
 		return model.Run{}, fmt.Errorf("journal run_started: %w", err)
@@ -169,10 +176,10 @@ func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
 		})
 	}
 
-	return r.executeRunLoop(ctx, runID, cmd.ConversationID, cmd.Objective)
+	return r.executeRunLoop(ctx, runID, cmd.ConversationID, cmd.AgentID, cmd.Objective)
 }
 
-func (r *Runtime) executeRunLoop(ctx context.Context, runID, conversationID, objective string) (model.Run, error) {
+func (r *Runtime) executeRunLoop(ctx context.Context, runID, conversationID, agentID, objective string) (model.Run, error) {
 	var cumulativeInput int
 	var cumulativeOutput int
 
@@ -193,7 +200,9 @@ func (r *Runtime) executeRunLoop(ctx context.Context, runID, conversationID, obj
 
 		totalTokens := cumulativeInput + cumulativeOutput
 		if totalTokens > int(float64(r.contextWindowSize)*0.75) {
-			_, _ = r.memory.SummarizeConversation(ctx, conversationID)
+			if _, err := r.memory.UpsertWorkingSummary(ctx, runID, conversationID); err != nil {
+				return model.Run{}, err
+			}
 			_ = r.convStore.AppendEvent(ctx, model.Event{
 				ID:             generateID(),
 				ConversationID: conversationID,
@@ -202,7 +211,27 @@ func (r *Runtime) executeRunLoop(ctx context.Context, runID, conversationID, obj
 			})
 		}
 
-		_, _ = r.memory.Search(ctx, model.MemoryQuery{Limit: 10})
+		contextView, err := r.memory.LoadContext(ctx, runID, agentID, "local", 10)
+		if err != nil {
+			return model.Run{}, fmt.Errorf("load memory context: %w", err)
+		}
+		readPayload, err := json.Marshal(map[string]any{
+			"scope":        "local",
+			"memory_count": len(contextView.Items),
+			"summary_id":   contextView.Summary.ID,
+		})
+		if err != nil {
+			return model.Run{}, fmt.Errorf("marshal memory context payload: %w", err)
+		}
+		if err := r.convStore.AppendEvent(ctx, model.Event{
+			ID:             generateID(),
+			ConversationID: conversationID,
+			RunID:          runID,
+			Kind:           "memory_context_loaded",
+			PayloadJSON:    readPayload,
+		}); err != nil {
+			return model.Run{}, fmt.Errorf("journal memory read: %w", err)
+		}
 
 		events, _ := r.convStore.ListEvents(ctx, conversationID, 100)
 		result, err := r.provider.Generate(ctx, GenerateRequest{
@@ -226,18 +255,24 @@ func (r *Runtime) executeRunLoop(ctx context.Context, runID, conversationID, obj
 
 		cumulativeInput += result.InputTokens
 		cumulativeOutput += result.OutputTokens
-		_ = r.budget.RecordUsage(ctx, runID, model.UsageRecord{
-			InputTokens:  result.InputTokens,
-			OutputTokens: result.OutputTokens,
+		payload, err := json.Marshal(map[string]any{
+			"content":       result.Content,
+			"input_tokens":  result.InputTokens,
+			"output_tokens": result.OutputTokens,
 		})
+		if err != nil {
+			return model.Run{}, fmt.Errorf("marshal turn payload: %w", err)
+		}
 
-		_ = r.convStore.AppendEvent(ctx, model.Event{
+		if err := r.convStore.AppendEvent(ctx, model.Event{
 			ID:             generateID(),
 			ConversationID: conversationID,
 			RunID:          runID,
 			Kind:           "turn_completed",
-			PayloadJSON:    []byte(fmt.Sprintf(`{"content":%q}`, result.Content)),
-		})
+			PayloadJSON:    payload,
+		}); err != nil {
+			return model.Run{}, fmt.Errorf("journal turn_completed: %w", err)
+		}
 
 		if r.eventSink != nil {
 			_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
@@ -252,12 +287,24 @@ func (r *Runtime) executeRunLoop(ctx context.Context, runID, conversationID, obj
 		}
 	}
 
-	_ = r.convStore.AppendEvent(ctx, model.Event{
+	completedPayload, err := json.Marshal(map[string]any{
+		"input_tokens":  cumulativeInput,
+		"output_tokens": cumulativeOutput,
+		"cost_usd":      0.0,
+		"model_lane":    "",
+	})
+	if err != nil {
+		return model.Run{}, fmt.Errorf("marshal run_completed payload: %w", err)
+	}
+	if err := r.convStore.AppendEvent(ctx, model.Event{
 		ID:             generateID(),
 		ConversationID: conversationID,
 		RunID:          runID,
 		Kind:           "run_completed",
-	})
+		PayloadJSON:    completedPayload,
+	}); err != nil {
+		return model.Run{}, fmt.Errorf("journal run_completed: %w", err)
+	}
 
 	if r.eventSink != nil {
 		_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
@@ -265,15 +312,6 @@ func (r *Runtime) executeRunLoop(ctx context.Context, runID, conversationID, obj
 			Kind:       "run_completed",
 			OccurredAt: time.Now().UTC(),
 		})
-	}
-
-	_, err := r.store.RawDB().ExecContext(ctx,
-		`INSERT INTO receipts (id, run_id, input_tokens, output_tokens, cost_usd, created_at)
-		 VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-		generateID(), runID, cumulativeInput, cumulativeOutput, 0.0,
-	)
-	if err != nil {
-		return model.Run{}, fmt.Errorf("write receipt: %w", err)
 	}
 
 	return r.loadRun(ctx, runID)

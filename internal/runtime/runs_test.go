@@ -130,6 +130,102 @@ func TestRunEngine_LifecycleEventsJournaled(t *testing.T) {
 	}
 }
 
+func TestRunEngine_StartRollsBackWhenRunStartedEventFails(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(nil, nil)
+	sink := &model.NoopEventSink{}
+	rt := New(db, cs, reg, mem, prov, sink)
+	ctx := context.Background()
+
+	_, err := db.RawDB().Exec(
+		`CREATE TRIGGER fail_events_before_insert
+		 BEFORE INSERT ON events
+		 BEGIN
+		   SELECT RAISE(FAIL, 'boom');
+		 END;`,
+	)
+	if err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	_, err = rt.Start(ctx, StartRun{
+		ConversationID: "conv-atomic-start",
+		AgentID:        "agent-a",
+		Objective:      "should rollback",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("expected start error, got nil")
+	}
+
+	var runCount int
+	err = db.RawDB().QueryRow(
+		"SELECT count(*) FROM runs WHERE conversation_id = 'conv-atomic-start'",
+	).Scan(&runCount)
+	if err != nil {
+		t.Fatalf("count runs: %v", err)
+	}
+	if runCount != 0 {
+		t.Fatalf("expected 0 runs after rollback, got %d", runCount)
+	}
+}
+
+func TestRunEngine_RunCompletedAndReceiptAreAtomic(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "done", InputTokens: 10, OutputTokens: 20, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	sink := &model.NoopEventSink{}
+	rt := New(db, cs, reg, mem, prov, sink)
+	ctx := context.Background()
+
+	_, err := db.RawDB().Exec(
+		`CREATE TRIGGER fail_receipts_before_insert
+		 BEFORE INSERT ON receipts
+		 BEGIN
+		   SELECT RAISE(FAIL, 'boom');
+		 END;`,
+	)
+	if err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	_, err = rt.Start(ctx, StartRun{
+		ConversationID: "conv-atomic-complete",
+		AgentID:        "agent-a",
+		Objective:      "should fail on receipt",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("expected completion error, got nil")
+	}
+
+	var completedEvents int
+	err = db.RawDB().QueryRow(
+		"SELECT count(*) FROM events WHERE conversation_id = 'conv-atomic-complete' AND kind = 'run_completed'",
+	).Scan(&completedEvents)
+	if err != nil {
+		t.Fatalf("count run_completed events: %v", err)
+	}
+	if completedEvents != 0 {
+		t.Fatalf("expected 0 run_completed events after rollback, got %d", completedEvents)
+	}
+
+	var completedRuns int
+	err = db.RawDB().QueryRow(
+		"SELECT count(*) FROM runs WHERE conversation_id = 'conv-atomic-complete' AND status = 'completed'",
+	).Scan(&completedRuns)
+	if err != nil {
+		t.Fatalf("count completed runs: %v", err)
+	}
+	if completedRuns != 0 {
+		t.Fatalf("expected 0 completed runs after rollback, got %d", completedRuns)
+	}
+}
+
 func TestRunEngine_NeverWritesToStoreDirectly(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(
@@ -167,6 +263,35 @@ func TestRunEngine_NeverWritesToStoreDirectly(t *testing.T) {
 	}
 	if orphaned > 0 {
 		t.Fatalf("found %d events without conversation_id (written outside AppendEvent path)", orphaned)
+	}
+}
+
+func TestRunEngine_RejectsCompetingRootRun(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(nil, nil)
+	sink := &model.NoopEventSink{}
+	rt := New(db, cs, reg, mem, prov, sink)
+	ctx := context.Background()
+
+	_, err := db.RawDB().Exec(
+		`INSERT INTO runs (id, conversation_id, agent_id, status, created_at, updated_at)
+		 VALUES ('root-1', 'conv-busy', 'agent-a', 'active', datetime('now'), datetime('now'))`,
+	)
+	if err != nil {
+		t.Fatalf("insert active root run: %v", err)
+	}
+
+	_, err = rt.Start(ctx, StartRun{
+		ConversationID: "conv-busy",
+		AgentID:        "agent-b",
+		Objective:      "should be blocked",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("expected competing root run error, got nil")
+	}
+	if !strings.Contains(err.Error(), "competing root run active") {
+		t.Fatalf("expected ErrConversationBusy, got %v", err)
 	}
 }
 
@@ -328,5 +453,40 @@ func TestRunEngine_ContextCompaction_At75Percent(t *testing.T) {
 	}
 	if compactionCount == 0 {
 		t.Fatal("expected at least 1 context_compacted event")
+	}
+}
+
+func TestRunEngine_MemoryContextReadIsJournaled(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "done", InputTokens: 10, OutputTokens: 20, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	sink := &model.NoopEventSink{}
+	rt := New(db, cs, reg, mem, prov, sink)
+	ctx := context.Background()
+
+	run, err := rt.Start(ctx, StartRun{
+		ConversationID: "conv-memory-read",
+		AgentID:        "agent-a",
+		Objective:      "journal memory reads",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	var readEvents int
+	err = db.RawDB().QueryRow(
+		"SELECT count(*) FROM events WHERE run_id = ? AND kind = 'memory_context_loaded'",
+		run.ID,
+	).Scan(&readEvents)
+	if err != nil {
+		t.Fatalf("count memory read events: %v", err)
+	}
+	if readEvents == 0 {
+		t.Fatal("expected memory_context_loaded event")
 	}
 }
