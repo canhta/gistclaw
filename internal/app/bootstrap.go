@@ -36,6 +36,11 @@ func Bootstrap(cfg Config) (*App, error) {
 		return nil, err
 	}
 
+	if err := validateTeamDir(cfg.TeamDir); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+
 	convStore := conversations.NewConversationStore(db)
 	mem := memory.NewStore(db, convStore)
 	reg := tools.NewRegistry()

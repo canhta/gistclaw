@@ -12,6 +12,7 @@ type Config struct {
 	WorkspaceRoot string         `yaml:"workspace_root"`
 	StateDir      string         `yaml:"state_dir"`
 	DatabasePath  string         `yaml:"database_path"`
+	TeamDir       string         `yaml:"team_dir"`
 	Provider      ProviderConfig `yaml:"provider"`
 	AdminToken    string         `yaml:"-"`
 }

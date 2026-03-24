@@ -1,0 +1,31 @@
+name: default
+
+agents:
+  - id: coordinator
+    soul_file: coordinator.soul.yaml
+  - id: patcher
+    soul_file: patcher.soul.yaml
+  - id: reviewer
+    soul_file: reviewer.soul.yaml
+  - id: verifier
+    soul_file: verifier.soul.yaml
+
+capability_flags:
+  coordinator: [operator_facing]
+  patcher: [workspace_write]
+  reviewer: [read_heavy]
+  verifier: [propose_only]
+
+handoff_edges:
+  # Forward delegation
+  - from: coordinator
+    to: patcher
+  - from: patcher
+    to: reviewer
+  - from: coordinator
+    to: verifier
+  # Return edges
+  - from: reviewer
+    to: coordinator
+  - from: verifier
+    to: coordinator

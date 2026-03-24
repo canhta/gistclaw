@@ -36,7 +36,7 @@ func TestStarterWorkflow_PreviewOnly(t *testing.T) {
 
 	run, err := rt.Start(ctx, StartRun{
 		ConversationID: "conv-preview",
-		AgentID:        "agent-01",
+		AgentID:        "coordinator",
 		Objective:      "Apply a patch to main.go",
 		WorkspaceRoot:  t.TempDir(),
 		PreviewOnly:    true,
@@ -150,7 +150,7 @@ func TestStarterWorkflow_VerificationResultAttached(t *testing.T) {
 
 	run, err := rt.Start(ctx, StartRun{
 		ConversationID:    "conv-verify",
-		AgentID:           "agent-04",
+		AgentID:           "verifier",
 		Objective:         "verify: run tests",
 		WorkspaceRoot:     t.TempDir(),
 		VerificationAgent: true,
@@ -218,12 +218,12 @@ func TestTeamValidation_UnknownAgentInEdge(t *testing.T) {
 	yaml := `
 name: default
 agents:
-  - id: agent-01
-    soul_file: agent-01.soul.yaml
+  - id: coordinator
+    soul_file: coordinator.soul.yaml
 capability_flags:
-  agent-01: [operator_facing]
+  coordinator: [operator_facing]
 handoff_edges:
-  - from: agent-01
+  - from: coordinator
     to: agent-UNKNOWN
 `
 	_, err := LoadTeamSpec([]byte(yaml))
