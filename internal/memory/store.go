@@ -82,8 +82,14 @@ func (s *Store) UpdateFact(ctx context.Context, item model.MemoryItem) error {
 }
 
 func (s *Store) ForgetFact(ctx context.Context, memoryID string) error {
+	return s.Forget(ctx, memoryID)
+}
+
+// Forget soft-deletes a memory item by setting forgotten_at to now.
+// Forgotten items are excluded from all Filter and Search results.
+func (s *Store) Forget(ctx context.Context, memoryID string) error {
 	_, err := s.db.RawDB().ExecContext(ctx,
-		"DELETE FROM memory_items WHERE id = ?",
+		"UPDATE memory_items SET forgotten_at = datetime('now') WHERE id = ?",
 		memoryID,
 	)
 	if err != nil {
@@ -92,10 +98,71 @@ func (s *Store) ForgetFact(ctx context.Context, memoryID string) error {
 	return nil
 }
 
+// Edit updates a fact's content and records source=human, replacing any prior source.
+// Human edits are permanent: a subsequent model UpdateFact will not overwrite them.
+func (s *Store) Edit(ctx context.Context, memoryID, newContent string) error {
+	_, err := s.db.RawDB().ExecContext(ctx,
+		`UPDATE memory_items
+		 SET content = ?, source = 'human', updated_at = datetime('now')
+		 WHERE id = ?`,
+		newContent, memoryID,
+	)
+	if err != nil {
+		return fmt.Errorf("memory: edit: %w", err)
+	}
+	return nil
+}
+
+// MemoryFilter controls which facts are returned by Filter.
+// Zero-value fields are treated as "no constraint".
+type MemoryFilter struct {
+	Scope   string
+	AgentID string
+}
+
+// Filter returns all non-forgotten facts matching the given filter.
+func (s *Store) Filter(ctx context.Context, f MemoryFilter) ([]model.MemoryItem, error) {
+	q := `SELECT id, agent_id, scope, content, source, COALESCE(provenance, ''),
+		COALESCE(confidence, 0), COALESCE(dedupe_key, ''), created_at, updated_at
+		FROM memory_items
+		WHERE forgotten_at IS NULL`
+	args := make([]any, 0)
+
+	if f.AgentID != "" {
+		q += " AND agent_id = ?"
+		args = append(args, f.AgentID)
+	}
+	if f.Scope != "" {
+		q += " AND scope = ?"
+		args = append(args, f.Scope)
+	}
+	q += " ORDER BY updated_at DESC"
+
+	rows, err := s.db.RawDB().QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("memory: filter: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]model.MemoryItem, 0)
+	for rows.Next() {
+		var item model.MemoryItem
+		if err := rows.Scan(
+			&item.ID, &item.AgentID, &item.Scope, &item.Content, &item.Source,
+			&item.Provenance, &item.Confidence, &item.DedupeKey,
+			&item.CreatedAt, &item.UpdatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("memory: filter scan: %w", err)
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (s *Store) Search(ctx context.Context, query model.MemoryQuery) ([]model.MemoryItem, error) {
 	sqlQuery := `SELECT id, agent_id, scope, content, source, COALESCE(provenance, ''),
 		COALESCE(confidence, 0), COALESCE(dedupe_key, ''), created_at, updated_at
-		FROM memory_items WHERE 1=1`
+		FROM memory_items WHERE forgotten_at IS NULL`
 	args := make([]any, 0)
 
 	if query.AgentID != "" {

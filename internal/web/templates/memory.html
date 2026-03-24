@@ -1,0 +1,71 @@
+{{define "memory_body"}}
+<section class="panel">
+  <h1>Memory</h1>
+
+  {{if .Confirm}}
+  <div class="panel" style="margin-bottom:16px;border:1.5px solid #1c1917">
+    <p>Forget this fact?</p>
+    <div class="mono" style="margin-bottom:8px">{{.Confirm.Content}}</div>
+    <form method="POST" action="/memory/{{.Confirm.ID}}/forget">
+      <input type="hidden" name="confirm" value="yes">
+      <button type="submit">Yes, forget it</button>
+      <a href="/memory" style="margin-left:8px">Cancel</a>
+    </form>
+  </div>
+  {{end}}
+
+  <form method="GET" action="/memory" style="margin-bottom:16px;display:flex;gap:8px;align-items:flex-end">
+    <div class="field" style="margin-bottom:0">
+      <label for="scope">scope</label>
+      <select id="scope" name="scope">
+        <option value=""{{if eq .Filter.Scope ""}} selected{{end}}>all</option>
+        <option value="local"{{if eq .Filter.Scope "local"}} selected{{end}}>local</option>
+        <option value="team"{{if eq .Filter.Scope "team"}} selected{{end}}>team</option>
+      </select>
+    </div>
+    <div class="field" style="margin-bottom:0">
+      <label for="agent_id">agent_id</label>
+      <input type="text" id="agent_id" name="agent_id" value="{{.Filter.AgentID}}" placeholder="filter by agent">
+    </div>
+    <button type="submit">Filter</button>
+    <a href="/memory">Clear</a>
+  </form>
+
+  {{if .Facts}}
+  <table style="width:100%;border-collapse:collapse">
+    <thead>
+      <tr>
+        <th style="text-align:left;padding:4px 8px;border-bottom:1.5px solid #1c1917;font-weight:700">ID</th>
+        <th style="text-align:left;padding:4px 8px;border-bottom:1.5px solid #1c1917;font-weight:700">Content</th>
+        <th style="text-align:left;padding:4px 8px;border-bottom:1.5px solid #1c1917;font-weight:700">Scope</th>
+        <th style="text-align:left;padding:4px 8px;border-bottom:1.5px solid #1c1917;font-weight:700">Source</th>
+        <th style="text-align:left;padding:4px 8px;border-bottom:1.5px solid #1c1917;font-weight:700">Agent</th>
+        <th style="text-align:left;padding:4px 8px;border-bottom:1.5px solid #1c1917;font-weight:700">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Facts}}
+      <tr>
+        <td class="mono" style="padding:4px 8px;font-size:11px">{{.ID}}</td>
+        <td style="padding:4px 8px">{{.Content}}</td>
+        <td style="padding:4px 8px"><span class="mono" style="font-size:11px">{{.Scope}}</span></td>
+        <td style="padding:4px 8px"><span class="muted">{{.Source}}</span></td>
+        <td class="mono" style="padding:4px 8px;font-size:11px">{{.AgentID}}</td>
+        <td style="padding:4px 8px;display:flex;gap:4px">
+          <form method="POST" action="/memory/{{.ID}}/forget" style="display:inline">
+            <button type="submit" style="font-size:11px">Forget</button>
+          </form>
+          <form method="POST" action="/memory/{{.ID}}/edit" style="display:inline">
+            <input type="text" name="value" value="{{.Content}}" style="font-size:11px;width:200px">
+            <button type="submit" style="font-size:11px">Save</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No memory facts found.</p>
+  {{end}}
+</section>
+{{end}}

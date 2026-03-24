@@ -99,6 +99,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /teams/{id}/soul/{agent}", s.handleSoulUpdate)
 	s.mux.HandleFunc("GET /teams/{id}/composer", s.handleComposer)
 	s.mux.HandleFunc("POST /teams/{id}/composer", s.handleComposerMutate)
+	s.mux.HandleFunc("GET /memory", s.handleMemoryList)
+	s.mux.HandleFunc("POST /memory/{id}/forget", s.handleMemoryForget)
+	s.mux.HandleFunc("POST /memory/{id}/edit", s.handleMemoryEdit)
 }
 
 func (s *Server) renderTemplate(w http.ResponseWriter, title, bodyTemplate string, data any) {
@@ -179,6 +182,7 @@ func loadTemplates() (*template.Template, error) {
 		filepath.Join(templateDir, "onboarding.html"),
 		filepath.Join(templateDir, "team.html"),
 		filepath.Join(templateDir, "team_composer.html"),
+		filepath.Join(templateDir, "memory.html"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("web: parse templates: %w", err)

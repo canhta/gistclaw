@@ -138,6 +138,11 @@ func New(
 	}
 }
 
+// Memory exposes the memory store so callers (e.g. web layer) can read facts.
+func (r *Runtime) Memory() *memory.Store {
+	return r.memory
+}
+
 func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
 	if err := r.budget.CheckDailyCap(ctx, cmd.AccountID); err != nil {
 		return model.Run{}, err

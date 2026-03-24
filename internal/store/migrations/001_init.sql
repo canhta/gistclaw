@@ -87,6 +87,7 @@ CREATE TABLE IF NOT EXISTS memory_items (
     provenance TEXT,
     confidence REAL DEFAULT 1.0,
     dedupe_key TEXT,
+    forgotten_at DATETIME,
     created_at DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
