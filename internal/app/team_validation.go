@@ -5,17 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/canhta/gistclaw/internal/runtime"
+	"github.com/canhta/gistclaw/internal/teams"
 )
-
-// allowedCapabilityFlags is the exhaustive set of capability flags that may
-// appear in a team.yaml file. Any value outside this set is a schema error.
-var allowedCapabilityFlags = map[string]bool{
-	"operator_facing": true,
-	"workspace_write": true,
-	"read_heavy":      true,
-	"propose_only":    true,
-}
 
 // validateTeamDir parses and validates teams/default/team.yaml and all soul
 // files it references. It returns a descriptive error on any schema violation
@@ -34,7 +25,7 @@ func validateTeamDir(teamDir string) error {
 		return fmt.Errorf("team validation: read team.yaml: %w", err)
 	}
 
-	spec, err := runtime.LoadTeamSpec(data)
+	spec, err := teams.LoadSpec(data)
 	if err != nil {
 		return fmt.Errorf("team validation: %w", err)
 	}
@@ -47,15 +38,6 @@ func validateTeamDir(teamDir string) error {
 				return fmt.Errorf("team validation: agent %q soul file %q not found", agent.ID, agent.SoulFile)
 			}
 			return fmt.Errorf("team validation: stat soul file %q: %w", agent.SoulFile, err)
-		}
-	}
-
-	// Validate all capability flags are from the allowed set.
-	for agentID, flags := range spec.CapabilityFlags {
-		for _, flag := range flags {
-			if !allowedCapabilityFlags[flag] {
-				return fmt.Errorf("team validation: agent %q has unknown capability flag %q", agentID, flag)
-			}
 		}
 	}
 

@@ -23,19 +23,18 @@ func validTeamDir(t *testing.T) string {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "team.yaml"), `
 name: default
+front_agent: assistant
 agents:
-  - id: coordinator
-    soul_file: coordinator.soul.yaml
+  - id: assistant
+    soul_file: assistant.soul.yaml
+    can_spawn: [patcher]
+    can_message: [patcher]
   - id: patcher
     soul_file: patcher.soul.yaml
-capability_flags:
-  coordinator: [operator_facing]
-  patcher: [workspace_write]
-handoff_edges:
-  - from: coordinator
-    to: patcher
+    can_spawn: []
+    can_message: [assistant]
 `)
-	writeFile(t, filepath.Join(dir, "coordinator.soul.yaml"), "role: coordinator\n")
+	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\n")
 	writeFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\n")
 	return dir
 }
@@ -75,16 +74,16 @@ func TestTeamValidation_MissingTeamYAML(t *testing.T) {
 }
 
 // TestTeamValidation_MissingRequiredField verifies Bootstrap fails when team.yaml
-// is missing a required top-level field.
+// is missing front_agent.
 func TestTeamValidation_MissingRequiredField(t *testing.T) {
 	dir := t.TempDir()
-	writeFile(t, filepath.Join(dir, "team.yaml"), "name: default\nagents: []\ncapability_flags: {}\n")
+	writeFile(t, filepath.Join(dir, "team.yaml"), "name: default\nagents: []\n")
 	err := bootstrapWithTeamDir(t, dir)
 	if err == nil {
-		t.Fatal("expected error for missing handoff_edges, got nil")
+		t.Fatal("expected error for missing front_agent, got nil")
 	}
-	if !strings.Contains(err.Error(), "handoff_edges") {
-		t.Fatalf("expected error to mention 'handoff_edges', got: %v", err)
+	if !strings.Contains(err.Error(), "front_agent") {
+		t.Fatalf("expected error to mention 'front_agent', got: %v", err)
 	}
 }
 
@@ -94,43 +93,43 @@ func TestTeamValidation_SoulFileMissing(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "team.yaml"), `
 name: default
+front_agent: assistant
 agents:
-  - id: coordinator
-    soul_file: coordinator.soul.yaml
-capability_flags:
-  coordinator: [operator_facing]
-handoff_edges: []
+  - id: assistant
+    soul_file: assistant.soul.yaml
+    can_spawn: []
+    can_message: []
 `)
-	// coordinator.soul.yaml intentionally not written
+	// assistant.soul.yaml intentionally not written
 	err := bootstrapWithTeamDir(t, dir)
 	if err == nil {
 		t.Fatal("expected error when soul file is missing, got nil")
 	}
-	if !strings.Contains(err.Error(), "coordinator.soul.yaml") {
+	if !strings.Contains(err.Error(), "assistant.soul.yaml") {
 		t.Fatalf("expected error to mention missing soul file, got: %v", err)
 	}
 }
 
-// TestTeamValidation_UnknownCapabilityFlag verifies Bootstrap fails when a
-// capability flag is not in the allowed set.
-func TestTeamValidation_UnknownCapabilityFlag(t *testing.T) {
+// TestTeamValidation_UnknownMessageTarget verifies Bootstrap fails when an
+// agent references a message target that is not declared in the team.
+func TestTeamValidation_UnknownMessageTarget(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "team.yaml"), `
 name: default
+front_agent: assistant
 agents:
-  - id: coordinator
-    soul_file: coordinator.soul.yaml
-capability_flags:
-  coordinator: [super_admin]
-handoff_edges: []
+  - id: assistant
+    soul_file: assistant.soul.yaml
+    can_spawn: []
+    can_message: [ghost]
 `)
-	writeFile(t, filepath.Join(dir, "coordinator.soul.yaml"), "role: coordinator\n")
+	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\n")
 	err := bootstrapWithTeamDir(t, dir)
 	if err == nil {
-		t.Fatal("expected error for unknown capability flag, got nil")
+		t.Fatal("expected error for unknown message target, got nil")
 	}
-	if !strings.Contains(err.Error(), "super_admin") {
-		t.Fatalf("expected error to mention 'super_admin', got: %v", err)
+	if !strings.Contains(err.Error(), "ghost") {
+		t.Fatalf("expected error to mention 'ghost', got: %v", err)
 	}
 }
 
