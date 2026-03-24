@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"time"
 
+	deliveryconnector "github.com/canhta/gistclaw/internal/connectors/delivery"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/store"
@@ -43,6 +44,8 @@ type OutboundDispatcher struct {
 	db            *store.DB
 	cs            *conversations.ConversationStore
 	client        *http.Client
+	maxAttempts   int
+	retryDelay    time.Duration
 }
 
 // NewOutboundDispatcher creates a dispatcher for the given Meta phoneNumberID and accessToken.
@@ -59,6 +62,8 @@ func newWithBaseURL(phoneNumberID, accessToken string, db *store.DB, cs *convers
 		db:            db,
 		cs:            cs,
 		client:        &http.Client{},
+		maxAttempts:   5,
+		retryDelay:    2 * time.Second,
 	}
 }
 
@@ -99,7 +104,7 @@ func (d *OutboundDispatcher) Notify(ctx context.Context, chatID string, delta mo
 		return fmt.Errorf("whatsapp: write intent: %w", err)
 	}
 
-	return d.deliver(ctx, intentID, chatID, text)
+	return d.deliverWithRetry(ctx, intentID, chatID, text, delta.Kind)
 }
 
 // Drain delivers all pending or retrying outbound intents from a prior session.
@@ -125,13 +130,53 @@ func (d *OutboundDispatcher) Drain(ctx context.Context) error {
 	_ = rows.Close()
 
 	for _, it := range intents {
-		_ = d.deliver(ctx, it.id, it.chatID, it.text)
+		_ = d.deliverWithRetry(ctx, it.id, it.chatID, it.text, "")
 	}
 	return nil
 }
 
-// deliver POSTs a WhatsApp text message and updates the intent status.
-func (d *OutboundDispatcher) deliver(ctx context.Context, intentID, to, text string) error {
+func (d *OutboundDispatcher) deliverWithRetry(ctx context.Context, intentID, to, text, eventKind string) error {
+	maxAttempts := d.maxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if attempt > 1 && d.retryDelay > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(d.retryDelay):
+			}
+		}
+
+		if err := d.deliverOnce(ctx, to, text); err != nil {
+			lastErr = err
+			d.markStatus(ctx, intentID, "retrying", attempt)
+			continue
+		}
+
+		d.markStatus(ctx, intentID, "delivered", attempt)
+		return nil
+	}
+
+	d.markStatus(ctx, intentID, "terminal", maxAttempts)
+	_ = deliveryconnector.AppendDeliveryFailedEvent(
+		ctx,
+		d.db,
+		d.cs,
+		intentID,
+		d.connectorID,
+		to,
+		eventKind,
+		lastErr,
+	)
+	return lastErr
+}
+
+// deliverOnce POSTs a WhatsApp text message once.
+func (d *OutboundDispatcher) deliverOnce(ctx context.Context, to, text string) error {
 	endpoint := fmt.Sprintf("%s/%s/%s/messages", d.apiBase, defaultAPIVer, d.phoneNumberID)
 
 	payload, err := json.Marshal(map[string]any{
@@ -153,25 +198,22 @@ func (d *OutboundDispatcher) deliver(ctx context.Context, intentID, to, text str
 
 	resp, err := d.client.Do(req)
 	if err != nil {
-		d.markStatus(ctx, intentID, "retrying")
 		return fmt.Errorf("whatsapp: send: %w", err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		d.markStatus(ctx, intentID, "retrying")
 		return fmt.Errorf("whatsapp: API status %d: %s", resp.StatusCode, body)
 	}
 
-	d.markStatus(ctx, intentID, "delivered")
 	return nil
 }
 
-func (d *OutboundDispatcher) markStatus(ctx context.Context, intentID, status string) {
+func (d *OutboundDispatcher) markStatus(ctx context.Context, intentID, status string, attempts int) {
 	_, _ = d.db.RawDB().ExecContext(ctx,
-		"UPDATE outbound_intents SET status=?, last_attempt_at=datetime('now') WHERE id=?",
-		status, intentID,
+		"UPDATE outbound_intents SET status=?, attempts=?, last_attempt_at=datetime('now') WHERE id=?",
+		status, attempts, intentID,
 	)
 }
 

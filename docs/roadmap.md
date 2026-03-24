@@ -36,6 +36,7 @@ Remaining gaps:
 
 - durable front-session reuse, thread binding, mailbox reads, session-scoped provider context, explicit session-message provenance, session-addressed collaboration, session discovery/history reads, and queued outbound delivery are now in place
 - Telegram and WhatsApp now have recovered live inbound paths on top of the session kernel, and duplicate external deliveries collapse at the runtime boundary instead of spawning duplicate turns; the broader channel matrix is still not back
+- outbound delivery failures now journal back to the owning conversation/run, and the connector delivery path is converging on one retry/terminal-state model instead of per-connector drift
 - `gistclaw serve` now hosts the local web control plane instead of only preparing state
 - the local web host now exposes read-only session directory and mailbox APIs on top of the session kernel
 - the local web host can now send a message into a session and wake it through the runtime instead of only reading mailbox state

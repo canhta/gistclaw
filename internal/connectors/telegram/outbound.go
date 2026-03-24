@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	deliveryconnector "github.com/canhta/gistclaw/internal/connectors/delivery"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/store"
@@ -155,56 +156,18 @@ func (d *OutboundDispatcher) deliverWithRetry(ctx context.Context, intentID, cha
 	)
 
 	// Append delivery_failed journal event.
-	_ = d.appendDeliveryFailedEvent(ctx, intentID, chatID, eventKind, lastErr)
+	_ = deliveryconnector.AppendDeliveryFailedEvent(
+		ctx,
+		d.db,
+		d.cs,
+		intentID,
+		d.connectorID,
+		chatID,
+		eventKind,
+		lastErr,
+	)
 
 	return lastErr
-}
-
-func (d *OutboundDispatcher) appendDeliveryFailedEvent(
-	ctx context.Context,
-	intentID string,
-	chatID string,
-	eventKind string,
-	lastErr error,
-) error {
-	var runID string
-	var conversationID string
-	err := d.db.RawDB().QueryRowContext(ctx,
-		`SELECT oi.run_id, COALESCE(r.conversation_id, '')
-		 FROM outbound_intents oi
-		 LEFT JOIN runs r ON r.id = oi.run_id
-		 WHERE oi.id = ?`,
-		intentID,
-	).Scan(&runID, &conversationID)
-	if err != nil {
-		return fmt.Errorf("telegram: load delivery failure context: %w", err)
-	}
-	if conversationID == "" || runID == "" {
-		return nil
-	}
-
-	payload, err := json.Marshal(map[string]any{
-		"intent_id":    intentID,
-		"chat_id":      chatID,
-		"event_kind":   eventKind,
-		"connector_id": d.connectorID,
-		"error":        lastErr.Error(),
-	})
-	if err != nil {
-		return fmt.Errorf("telegram: marshal delivery_failed payload: %w", err)
-	}
-
-	if err := d.cs.AppendEvent(ctx, model.Event{
-		ID:             generateIntentID(),
-		ConversationID: conversationID,
-		RunID:          runID,
-		Kind:           "delivery_failed",
-		PayloadJSON:    payload,
-		CreatedAt:      time.Now().UTC(),
-	}); err != nil {
-		return fmt.Errorf("telegram: append delivery_failed: %w", err)
-	}
-	return nil
 }
 
 func (d *OutboundDispatcher) sendMessage(ctx context.Context, chatID, text string) error {

@@ -12,6 +12,7 @@ import (
 	"net/smtp"
 	"time"
 
+	deliveryconnector "github.com/canhta/gistclaw/internal/connectors/delivery"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/store"
@@ -45,6 +46,8 @@ type OutboundDispatcher struct {
 	db          *store.DB
 	cs          *conversations.ConversationStore
 	sender      senderFunc
+	maxAttempts int
+	retryDelay  time.Duration
 }
 
 // NewOutboundDispatcher creates a dispatcher using the given SMTP configuration.
@@ -55,6 +58,8 @@ func NewOutboundDispatcher(cfg SMTPConfig, db *store.DB, cs *conversations.Conve
 		db:          db,
 		cs:          cs,
 		sender:      defaultSender,
+		maxAttempts: 5,
+		retryDelay:  2 * time.Second,
 	}
 }
 
@@ -100,7 +105,7 @@ func (d *OutboundDispatcher) Notify(ctx context.Context, chatID string, delta mo
 		return fmt.Errorf("email: write intent: %w", err)
 	}
 
-	return d.deliver(ctx, intentID, chatID, subject, body)
+	return d.deliverWithRetry(ctx, intentID, chatID, subject, body, delta.Kind)
 }
 
 // Drain delivers all pending or retrying outbound intents from a prior session.
@@ -128,30 +133,64 @@ func (d *OutboundDispatcher) Drain(ctx context.Context) error {
 	for _, it := range intents {
 		// text stored as "subject\nbody" — split on first newline.
 		subject, body := splitSubjectBody(it.text)
-		_ = d.deliver(ctx, it.id, it.chatID, subject, body)
+		_ = d.deliverWithRetry(ctx, it.id, it.chatID, subject, body, "")
 	}
 	return nil
 }
 
-// deliver builds an RFC 2822 message and sends it via SMTP.
-func (d *OutboundDispatcher) deliver(ctx context.Context, intentID, to, subject, body string) error {
-	_ = ctx // reserved for future use (SMTP does not accept context)
+func (d *OutboundDispatcher) deliverWithRetry(ctx context.Context, intentID, to, subject, body, eventKind string) error {
+	maxAttempts := d.maxAttempts
+	if maxAttempts <= 0 {
+		maxAttempts = 1
+	}
 
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if attempt > 1 && d.retryDelay > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(d.retryDelay):
+			}
+		}
+
+		if err := d.deliverOnce(to, subject, body); err != nil {
+			lastErr = err
+			d.markStatus(ctx, intentID, "retrying", attempt)
+			continue
+		}
+
+		d.markStatus(ctx, intentID, "delivered", attempt)
+		return nil
+	}
+
+	d.markStatus(ctx, intentID, "terminal", maxAttempts)
+	_ = deliveryconnector.AppendDeliveryFailedEvent(
+		ctx,
+		d.db,
+		d.cs,
+		intentID,
+		d.connectorID,
+		to,
+		eventKind,
+		lastErr,
+	)
+	return lastErr
+}
+
+// deliverOnce builds an RFC 2822 message and sends it via SMTP once.
+func (d *OutboundDispatcher) deliverOnce(to, subject, body string) error {
 	msg := buildRawMessage(d.cfg.From, to, subject, body)
-
 	if err := d.sender(d.cfg.Addr, d.cfg.From, []string{to}, msg); err != nil {
-		d.markStatus(ctx, intentID, "retrying")
 		return fmt.Errorf("email: send: %w", err)
 	}
-
-	d.markStatus(ctx, intentID, "delivered")
 	return nil
 }
 
-func (d *OutboundDispatcher) markStatus(ctx context.Context, intentID, status string) {
+func (d *OutboundDispatcher) markStatus(ctx context.Context, intentID, status string, attempts int) {
 	_, _ = d.db.RawDB().ExecContext(ctx,
-		"UPDATE outbound_intents SET status=?, last_attempt_at=datetime('now') WHERE id=?",
-		status, intentID,
+		"UPDATE outbound_intents SET status=?, attempts=?, last_attempt_at=datetime('now') WHERE id=?",
+		status, attempts, intentID,
 	)
 }
 

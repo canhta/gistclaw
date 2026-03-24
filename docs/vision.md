@@ -67,3 +67,4 @@ That means the next implementation work favors:
 - explicit session send/wake behavior should flow through the runtime so the same session contract can back both local tools and future channel recovery
 - external channel recovery should keep reusing the same inbound-message runtime contract rather than teaching each connector its own session-start logic
 - external retries and redeliveries should be absorbed by one runtime-owned inbound receipt model, so connectors stay thin and duplicate delivery does not fork extra runs
+- outbound delivery should also converge on one audit shape, where terminal failures attach to the owning conversation/run instead of disappearing into connector-local logs

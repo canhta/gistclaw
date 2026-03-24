@@ -26,6 +26,31 @@ func setupDB(t *testing.T) (*store.DB, *conversations.ConversationStore) {
 	return db, conversations.NewConversationStore(db)
 }
 
+func seedOutboundRun(t *testing.T, db *store.DB, cs *conversations.ConversationStore, runID string) string {
+	t.Helper()
+
+	conv, err := cs.Resolve(context.Background(), conversations.ConversationKey{
+		ConnectorID: "whatsapp",
+		AccountID:   "phone-123",
+		ExternalID:  "15551234567",
+		ThreadID:    "main",
+	})
+	if err != nil {
+		t.Fatalf("Resolve conversation: %v", err)
+	}
+
+	_, err = db.RawDB().Exec(
+		`INSERT INTO runs (id, conversation_id, agent_id, status, created_at, updated_at)
+		 VALUES (?, ?, ?, 'completed', datetime('now'), datetime('now'))`,
+		runID, conv.ID, "assistant",
+	)
+	if err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	return conv.ID
+}
+
 func TestOutboundDispatcher_IDReturnsWhatsapp(t *testing.T) {
 	db, cs := setupDB(t)
 	d := NewOutboundDispatcher("phone-id", "token", db, cs)
@@ -146,4 +171,48 @@ func TestOutboundDispatcher_StartIsNoOp(t *testing.T) {
 	cancel()
 	// Start with already-cancelled context should return quickly.
 	_ = d.Start(ctx)
+}
+
+func TestOutboundDispatcher_TerminalFailureJournalsDeliveryFailed(t *testing.T) {
+	db, cs := setupDB(t)
+	convID := seedOutboundRun(t, db, cs, "run-whatsapp-terminal")
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "always fail", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	d := newWithBaseURL("phone-123", "token", db, cs, srv.URL)
+	d.retryDelay = 0
+	d.maxAttempts = 3
+
+	err := d.Notify(context.Background(), "+15551234567", model.ReplayDelta{
+		RunID:      "run-whatsapp-terminal",
+		Kind:       "run_completed",
+		OccurredAt: time.Now(),
+	}, "dedupe-terminal")
+	if err == nil {
+		t.Fatal("expected Notify to fail after max attempts")
+	}
+
+	var status string
+	if err := db.RawDB().QueryRow(
+		"SELECT status FROM outbound_intents WHERE dedupe_key = 'dedupe-terminal'",
+	).Scan(&status); err != nil {
+		t.Fatalf("query outbound intent status: %v", err)
+	}
+	if status != "terminal" {
+		t.Fatalf("expected terminal status after max attempts, got %q", status)
+	}
+
+	var eventConversationID string
+	var eventRunID string
+	if err := db.RawDB().QueryRow(
+		"SELECT conversation_id, run_id FROM events WHERE kind = 'delivery_failed' ORDER BY created_at DESC, id DESC LIMIT 1",
+	).Scan(&eventConversationID, &eventRunID); err != nil {
+		t.Fatalf("query delivery_failed event: %v", err)
+	}
+	if eventConversationID != convID || eventRunID != "run-whatsapp-terminal" {
+		t.Fatalf("expected delivery_failed to attach to conversation=%q run=%q, got conversation=%q run=%q", convID, "run-whatsapp-terminal", eventConversationID, eventRunID)
+	}
 }
