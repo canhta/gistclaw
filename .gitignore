@@ -2,7 +2,9 @@
 bin/
 dist/
 tmp/
+/gistclaw
 *.db
+*.db.bak
 *.db-shm
 *.db-wal
 *.sqlite

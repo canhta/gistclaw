@@ -57,6 +57,21 @@ func LoadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
+// LoadConfigRaw parses the config file without running validation. Used by
+// operator commands (doctor) that check fields individually.
+func LoadConfigRaw(path string) (Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("reading config: %w", err)
+	}
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return Config{}, fmt.Errorf("parsing config: %w", err)
+	}
+	cfg.applyDefaults()
+	return cfg, nil
+}
+
 func (c *Config) validate() error {
 	if c.WorkspaceRoot == "" {
 		return fmt.Errorf("config validation: workspace_root is required")

@@ -13,12 +13,15 @@ import (
 	"github.com/canhta/gistclaw/internal/app"
 )
 
-const usage = `Usage: gistclaw <command> [options]
+const usage = `Usage: gistclaw <subcommand> [options]
 
-Commands:
+Subcommands:
   serve      Start the GistClaw daemon
   run        Submit a task directly
   inspect    Inspect daemon state
+  doctor     Run health checks (config, database, provider, workspace, disk)
+  backup     Back up the SQLite database to a timestamped .db.bak file
+  export     Export runs, receipts, and approvals to a JSON file
 
 Inspect subcommands:
   inspect status           Show active runs, interrupted runs, pending approvals
@@ -57,6 +60,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runTask(configPath, args[1:], stdout, stderr)
 	case "inspect":
 		return runInspect(configPath, args[1:], stdout, stderr)
+	case "doctor":
+		return runDoctor(configPath, stdout, stderr)
+	case "backup":
+		return runBackup(args[1:], stdout, stderr)
+	case "export":
+		return runExport(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n%s", args[0], usage)
 		return 1
