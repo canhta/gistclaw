@@ -423,16 +423,6 @@ func (s *Server) cachedTeamSpec(teamDir string) (*runtime.TeamSpec, error) {
 	return spec, nil
 }
 
-// loadTeamSpec reads and validates team.yaml from teamDir (no cache).
-// Used during write operations where stale cache must not be returned.
-func loadTeamSpec(teamDir string) (*runtime.TeamSpec, error) {
-	data, err := os.ReadFile(filepath.Join(teamDir, "team.yaml"))
-	if err != nil {
-		return nil, fmt.Errorf("read team.yaml: %w", err)
-	}
-	return runtime.LoadTeamSpec(data)
-}
-
 // splitLines splits a multi-line string into trimmed non-empty lines.
 func splitLines(s string) []string {
 	var result []string
