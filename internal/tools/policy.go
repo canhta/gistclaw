@@ -16,6 +16,17 @@ func (p *Policy) Decide(agent model.AgentProfile, _ model.RunProfile, spec model
 		}
 	}
 
+	switch spec.Name {
+	case "session_spawn":
+		if !hasCapability(agent.Capabilities, model.CapSpawn) {
+			return model.ToolDecision{Mode: model.DecisionDeny, Reason: "spawn capability required"}
+		}
+	case "workspace_apply":
+		if !hasCapability(agent.Capabilities, model.CapWorkspaceWrite) {
+			return model.ToolDecision{Mode: model.DecisionDeny, Reason: "workspace_write capability required"}
+		}
+	}
+
 	if spec.Risk == model.RiskLow {
 		return model.ToolDecision{Mode: model.DecisionAllow, Reason: "low risk tool"}
 	}
@@ -47,4 +58,13 @@ func (p *Policy) Decide(agent model.AgentProfile, _ model.RunProfile, spec model
 	default:
 		return model.ToolDecision{Mode: model.DecisionAllow, Reason: "default allow"}
 	}
+}
+
+func hasCapability(capabilities []model.AgentCapability, target model.AgentCapability) bool {
+	for _, capability := range capabilities {
+		if capability == target {
+			return true
+		}
+	}
+	return false
 }

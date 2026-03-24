@@ -50,6 +50,9 @@ func (a *WorkspaceApplier) Apply(ctx context.Context, runID string, ticket model
 	if ticket.ID == "" || ticket.Status != "approved" {
 		return model.ApplyResult{}, ErrNoApproval
 	}
+	if ticket.RunID != runID {
+		return model.ApplyResult{}, ErrNoApproval
+	}
 
 	// If the applier has a DB reference, verify the stored fingerprint.
 	if a.db != nil {

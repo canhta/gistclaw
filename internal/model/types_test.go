@@ -94,3 +94,9 @@ func TestSessionMessageKindsRemainStable(t *testing.T) {
 		t.Fatalf("unexpected message kinds: %#v", got)
 	}
 }
+
+func TestIsValidCapability_RecognizesSpawn(t *testing.T) {
+	if !IsValidCapability("spawn") {
+		t.Fatal("expected spawn to be a valid capability")
+	}
+}

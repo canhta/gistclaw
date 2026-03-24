@@ -106,6 +106,7 @@ const (
 	CapOperatorFacing AgentCapability = "operator_facing"
 	CapReadHeavy      AgentCapability = "read_heavy"
 	CapProposeOnly    AgentCapability = "propose_only"
+	CapSpawn          AgentCapability = "spawn"
 )
 
 // validCapabilities is the canonical set of allowed agent capability flag strings.
@@ -114,6 +115,7 @@ var validCapabilities = map[AgentCapability]bool{
 	CapOperatorFacing: true,
 	CapReadHeavy:      true,
 	CapProposeOnly:    true,
+	CapSpawn:          true,
 }
 
 // IsValidCapability reports whether s names a known AgentCapability flag.

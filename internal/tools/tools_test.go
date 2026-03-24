@@ -90,6 +90,21 @@ func TestPolicy_ReadToolAlwaysAllowed(t *testing.T) {
 	}
 }
 
+func TestPolicy_DeniesSpawnForAgentWithoutCapability(t *testing.T) {
+	p := &Policy{}
+	agent := model.AgentProfile{
+		AgentID:      "worker",
+		Capabilities: []model.AgentCapability{model.CapReadHeavy},
+		ToolProfile:  "read_heavy",
+	}
+	spec := model.ToolSpec{Name: "session_spawn", Risk: model.RiskLow}
+
+	decision := p.Decide(agent, model.RunProfile{}, spec)
+	if decision.Mode != model.DecisionDeny {
+		t.Fatalf("expected deny, got %s", decision.Mode)
+	}
+}
+
 func TestApproval_FingerprintChangeCausesExpiry(t *testing.T) {
 	db := setupToolsDB(t)
 	ctx := context.Background()
@@ -169,6 +184,40 @@ func TestWorkspaceApplier_AllowsValidPath(t *testing.T) {
 	}
 	if len(preview.Changes) != 1 {
 		t.Fatalf("expected 1 change, got %d", len(preview.Changes))
+	}
+}
+
+func TestWorkspaceApply_RequiresApprovedTicketForWorkerRun(t *testing.T) {
+	db := setupToolsDB(t)
+	ctx := context.Background()
+	workspaceRoot := t.TempDir()
+
+	ticket, err := CreateTicket(ctx, db, model.ApprovalRequest{
+		RunID:      "run-front",
+		ToolName:   "workspace_apply",
+		ArgsJSON:   []byte(`{"path":"main.go"}`),
+		TargetPath: "main.go",
+	})
+	if err != nil {
+		t.Fatalf("CreateTicket failed: %v", err)
+	}
+	if err := ResolveTicket(ctx, db, ticket.ID, "approved"); err != nil {
+		t.Fatalf("ResolveTicket failed: %v", err)
+	}
+	ticket, err = LoadTicket(ctx, db, ticket.ID)
+	if err != nil {
+		t.Fatalf("LoadTicket failed: %v", err)
+	}
+
+	applier := NewWorkspaceApplierWithDB(workspaceRoot, db)
+	_, err = applier.Apply(ctx, "run-worker", ticket, []model.FileChange{
+		{Path: "main.go", Content: []byte("package main\n"), Op: "update"},
+	})
+	if err == nil {
+		t.Fatal("expected run-bound approval failure")
+	}
+	if err != ErrNoApproval {
+		t.Fatalf("expected ErrNoApproval, got %v", err)
 	}
 }
 

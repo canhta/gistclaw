@@ -52,7 +52,7 @@ func (s *Service) BuildPreviewPackage(ctx context.Context, runID string) (Previe
 		workerCount = 0
 	}
 
-	summary := fmt.Sprintf("Run %s: %s (%s, %d events)", runID, objective, status, eventCount)
+	var summary string
 	if parentRunID == "" {
 		summary = fmt.Sprintf(
 			"Run %s: front session with %d %s (%s, %d events)",
