@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	telegramconnector "github.com/canhta/gistclaw/internal/connectors/telegram"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -63,13 +64,16 @@ func Bootstrap(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("bootstrap: web server: %w", err)
 	}
 
+	connectors := buildConnectors(cfg, db, convStore, rt)
+
 	return &App{
-		cfg:       cfg,
-		db:        db,
-		convStore: convStore,
-		runtime:   rt,
-		replay:    rp,
-		webServer: webSrv,
+		cfg:        cfg,
+		db:         db,
+		convStore:  convStore,
+		runtime:    rt,
+		replay:     rp,
+		webServer:  webSrv,
+		connectors: connectors,
 	}, nil
 }
 
@@ -156,4 +160,24 @@ func buildProvider(cfg ProviderConfig) runtime.Provider {
 
 func replayWiring(db *store.DB) *replay.Service {
 	return replay.NewService(db)
+}
+
+func buildConnectors(
+	cfg Config,
+	db *store.DB,
+	cs *conversations.ConversationStore,
+	rt *runtime.Runtime,
+) []model.Connector {
+	connectors := make([]model.Connector, 0, 1)
+	if cfg.Telegram.BotToken != "" {
+		connectors = append(connectors, telegramconnector.NewConnector(
+			cfg.Telegram.BotToken,
+			db,
+			cs,
+			rt,
+			cfg.Telegram.AgentID,
+			cfg.WorkspaceRoot,
+		))
+	}
+	return connectors
 }

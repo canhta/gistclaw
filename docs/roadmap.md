@@ -35,7 +35,7 @@ The reset kernel is in place, but the product still does not fully behave like O
 Remaining gaps:
 
 - durable front-session reuse, thread binding, mailbox reads, session-scoped provider context, explicit session-message provenance, session-addressed collaboration, session discovery/history reads, and queued outbound delivery are now in place
-- channels and connectors are no longer core to the active build
+- Telegram now has a recovered live path on top of the session kernel; the broader channel matrix is still not back
 - plugins and extension seams are documented, not operational
 - teams are still mostly designed ahead of time, not created dynamically by the user
 
@@ -43,8 +43,8 @@ Remaining gaps:
 
 The next implementation slice should make the session runtime feel more like OpenClaw without reopening platform sprawl:
 
-1. recover selected channel delivery paths on top of the new route state and queued outbound-intent flow
-2. prepare that routing layer for later channel and gateway recovery without rebuilding the full OpenClaw matrix
+1. extend the recovered channel path beyond Telegram without rebuilding the full OpenClaw matrix
+2. prepare the routing layer for later channel and gateway recovery without reintroducing connector-specific logic into the kernel
 3. keep moving team definition from predeclared structure toward user-defined runtime composition
 4. start exposing the session control plane through higher-level tools and UI surfaces instead of only runtime/service APIs
 

@@ -45,6 +45,7 @@ The current reset is closer to OpenClaw in kernel direction than in product brea
 What is still not earned yet:
 
 - broader runtime-owned routing across surfaces instead of mostly local queued delivery
+- only Telegram has a recovered live connector path so far; the wider channel/gateway set is still missing
 - dynamic user-created teams at runtime instead of config-defined team shape only
 - restored channel/gateway surfaces on top of the new kernel
 - real extension contracts for providers, connectors, tools, and plugins

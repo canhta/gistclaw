@@ -10,12 +10,12 @@ import (
 	"github.com/canhta/gistclaw/internal/store"
 )
 
-// stubStarter records the StartRun calls made to it.
+// stubStarter records the StartFrontSession calls made to it.
 type stubStarter struct {
-	calls []runtime.StartRun
+	calls []runtime.StartFrontSession
 }
 
-func (s *stubStarter) Start(_ context.Context, req runtime.StartRun) (model.Run, error) {
+func (s *stubStarter) StartFrontSession(_ context.Context, req runtime.StartFrontSession) (model.Run, error) {
 	s.calls = append(s.calls, req)
 	return model.Run{ID: "test-run"}, nil
 }
@@ -35,9 +35,8 @@ func setupDispatchDB(t *testing.T) (*store.DB, *conversations.ConversationStore)
 }
 
 func TestInboundDispatcher_DispatchesEnvelopeToRuntime(t *testing.T) {
-	_, cs := setupDispatchDB(t)
 	starter := &stubStarter{}
-	dispatcher := NewInboundDispatcher(cs, starter, "cli-operator", "")
+	dispatcher := NewInboundDispatcher(starter, "assistant", "")
 
 	env := model.Envelope{
 		ConnectorID:    "telegram",
@@ -54,24 +53,32 @@ func TestInboundDispatcher_DispatchesEnvelopeToRuntime(t *testing.T) {
 	}
 
 	if len(starter.calls) != 1 {
-		t.Fatalf("expected 1 rt.Start call, got %d", len(starter.calls))
+		t.Fatalf("expected 1 StartFrontSession call, got %d", len(starter.calls))
 	}
 	call := starter.calls[0]
-	if call.Objective != env.Text {
-		t.Errorf("Objective: expected %q, got %q", env.Text, call.Objective)
+	if call.InitialPrompt != env.Text {
+		t.Errorf("InitialPrompt: expected %q, got %q", env.Text, call.InitialPrompt)
 	}
-	if call.AccountID != env.AccountID {
-		t.Errorf("AccountID: expected %q, got %q", env.AccountID, call.AccountID)
+	if call.FrontAgentID != "assistant" {
+		t.Errorf("FrontAgentID: expected %q, got %q", "assistant", call.FrontAgentID)
 	}
-	if call.ConversationID == "" {
-		t.Error("ConversationID must be resolved and non-empty")
+	if call.ConversationKey.ConnectorID != env.ConnectorID {
+		t.Errorf("ConnectorID: expected %q, got %q", env.ConnectorID, call.ConversationKey.ConnectorID)
+	}
+	if call.ConversationKey.AccountID != env.AccountID {
+		t.Errorf("AccountID: expected %q, got %q", env.AccountID, call.ConversationKey.AccountID)
+	}
+	if call.ConversationKey.ExternalID != env.ConversationID {
+		t.Errorf("ExternalID: expected %q, got %q", env.ConversationID, call.ConversationKey.ExternalID)
+	}
+	if call.ConversationKey.ThreadID != env.ThreadID {
+		t.Errorf("ThreadID: expected %q, got %q", env.ThreadID, call.ConversationKey.ThreadID)
 	}
 }
 
 func TestInboundDispatcher_EmptyTextIsRejected(t *testing.T) {
-	_, cs := setupDispatchDB(t)
 	starter := &stubStarter{}
-	dispatcher := NewInboundDispatcher(cs, starter, "cli-operator", "")
+	dispatcher := NewInboundDispatcher(starter, "assistant", "")
 
 	env := model.Envelope{
 		ConnectorID: "telegram",
@@ -84,6 +91,6 @@ func TestInboundDispatcher_EmptyTextIsRejected(t *testing.T) {
 		t.Fatal("expected error for empty text, got nil")
 	}
 	if len(starter.calls) != 0 {
-		t.Fatalf("expected no rt.Start calls for empty text, got %d", len(starter.calls))
+		t.Fatalf("expected no StartFrontSession calls for empty text, got %d", len(starter.calls))
 	}
 }

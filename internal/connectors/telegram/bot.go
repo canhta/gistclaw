@@ -13,7 +13,7 @@ import (
 )
 
 // UpdateHandler is called for each dispatched Telegram update.
-type UpdateHandler func(Update)
+type UpdateHandler func(context.Context, Update)
 
 // Bot manages the Telegram long-poll loop.
 type Bot struct {
@@ -69,7 +69,7 @@ func (b *Bot) Start(ctx context.Context) error {
 				offset = upd.UpdateID + 1
 			}
 			if b.handler != nil {
-				b.handler(upd)
+				b.handler(ctx, upd)
 			}
 		}
 	}

@@ -81,7 +81,7 @@ func TestBot_ContextCancelExitsLoop(t *testing.T) {
 func TestBot_DispatchesUpdatesToHandler(t *testing.T) {
 	var dispatched atomic.Int32
 
-	handler := func(upd Update) {
+	handler := func(_ context.Context, upd Update) {
 		dispatched.Add(1)
 	}
 

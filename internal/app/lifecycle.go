@@ -4,7 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"syscall"
+
+	"github.com/canhta/gistclaw/internal/model"
 )
 
 func (a *App) Prepare(ctx context.Context) error {
@@ -81,8 +84,39 @@ func (a *App) Start(ctx context.Context) error {
 		return err
 	}
 
-	<-ctx.Done()
-	return ctx.Err()
+	if len(a.connectors) == 0 {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	errCh := make(chan error, len(a.connectors))
+	var wg sync.WaitGroup
+	for _, connector := range a.connectors {
+		wg.Add(1)
+		go func(connector model.Connector) {
+			defer wg.Done()
+			if err := connector.Start(runCtx); err != nil && err != context.Canceled && err != context.DeadlineExceeded {
+				select {
+				case errCh <- fmt.Errorf("connector %s: %w", connector.ID(), err):
+				default:
+				}
+				cancel()
+			}
+		}(connector)
+	}
+
+	select {
+	case err := <-errCh:
+		wg.Wait()
+		return err
+	case <-ctx.Done():
+		cancel()
+		wg.Wait()
+		return ctx.Err()
+	}
 }
 
 func (a *App) Stop() error {

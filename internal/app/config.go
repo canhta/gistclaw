@@ -14,6 +14,7 @@ type Config struct {
 	DatabasePath  string         `yaml:"database_path"`
 	TeamDir       string         `yaml:"team_dir"`
 	Provider      ProviderConfig `yaml:"provider"`
+	Telegram      TelegramConfig `yaml:"telegram"`
 	AdminToken    string         `yaml:"-"`
 }
 
@@ -27,6 +28,11 @@ type ProviderConfig struct {
 type ModelLanes struct {
 	Cheap  string `yaml:"cheap"`
 	Strong string `yaml:"strong"`
+}
+
+type TelegramConfig struct {
+	BotToken string `yaml:"bot_token"`
+	AgentID  string `yaml:"agent_id"`
 }
 
 func DefaultConfigPath() string {
@@ -110,5 +116,9 @@ func (c *Config) applyDefaults() {
 
 	if c.DatabasePath == "" {
 		c.DatabasePath = filepath.Join(c.StateDir, "runtime.db")
+	}
+
+	if c.Telegram.AgentID == "" {
+		c.Telegram.AgentID = "assistant"
 	}
 }

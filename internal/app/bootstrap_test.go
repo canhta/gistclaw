@@ -117,3 +117,30 @@ func TestBootstrap_DoesNotWireDeferredConnectorsOrScheduler(t *testing.T) {
 		t.Fatalf("expected deferred connectors to be unwired, got %d", len(app.connectors))
 	}
 }
+
+func TestBootstrap_WiresTelegramConnectorWhenConfigured(t *testing.T) {
+	cfg := Config{
+		DatabasePath:  ":memory:",
+		StateDir:      t.TempDir(),
+		WorkspaceRoot: t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "anthropic",
+			APIKey: "sk-test",
+		},
+		Telegram: TelegramConfig{
+			BotToken: "telegram-token",
+		},
+	}
+
+	app, err := Bootstrap(cfg)
+	if err != nil {
+		t.Fatalf("Bootstrap failed: %v", err)
+	}
+
+	if len(app.connectors) != 1 {
+		t.Fatalf("expected 1 wired connector, got %d", len(app.connectors))
+	}
+	if app.connectors[0].ID() != "telegram" {
+		t.Fatalf("expected telegram connector, got %q", app.connectors[0].ID())
+	}
+}

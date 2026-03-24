@@ -141,7 +141,7 @@
 - `internal/web/templates/team.html`
 - `internal/web/templates/team_composer.html`
 
-The connector packages under `internal/connectors/` remain in the tree for now but must be unwired from bootstrap during the immediate rewrite. Do not expand them in this phase.
+The connector packages under `internal/connectors/` were initially unwired during the reset, but Telegram is now back as the first recovered live channel on top of the session kernel. Keep the rest of the channel matrix deferred until each channel can follow the same runtime-owned route model.
 
 ## Task 1: Replace The Doc Set
 
@@ -978,7 +978,7 @@ func TestHandleRunSubmit_StartsFrontAgentSession(t *testing.T) {
 	}
 }
 
-func TestBootstrap_DoesNotWireDeferredConnectorsOrScheduler(t *testing.T) {
+func TestBootstrap_DoesNotWireDeferredConnectorsWithoutConfig(t *testing.T) {
 	app := bootstrapTestApp(t)
 	if len(app.connectors) != 0 {
 		t.Fatalf("expected deferred connectors to be unwired, got %d", len(app.connectors))
@@ -999,7 +999,8 @@ Expected: FAIL because the current submit flow still calls `SubmitTask` and boot
 ```go
 func Bootstrap(cfg Config) (*App, error) {
 	// keep db, conversation store, sessions service, runtime, replay, web server
-	// do not wire scheduler or deferred connectors in this phase
+	// do not wire scheduler in this phase
+	// wire only channel paths that already obey the session-first runtime contract
 }
 ```
 
