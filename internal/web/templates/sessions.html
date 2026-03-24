@@ -4,6 +4,36 @@
   <p class="muted">Browse the assistant front session and any spawned worker sessions currently stored in the runtime.</p>
 </section>
 
+<section class="panel">
+  <form class="inline-form" method="GET" action="/sessions">
+    <input type="text" name="q" value="{{.Filters.Query}}" placeholder="Search sessions or routes">
+    <input type="text" name="agent_id" value="{{.Filters.AgentID}}" placeholder="Agent ID">
+    <label>
+      Role
+      <select name="role">
+        <option value="" {{if eq .Filters.Role ""}}selected{{end}}>All</option>
+        <option value="front" {{if eq .Filters.Role "front"}}selected{{end}}>Front</option>
+        <option value="worker" {{if eq .Filters.Role "worker"}}selected{{end}}>Worker</option>
+      </select>
+    </label>
+    <label>
+      Status
+      <select name="status">
+        <option value="" {{if eq .Filters.Status ""}}selected{{end}}>All</option>
+        <option value="active" {{if eq .Filters.Status "active"}}selected{{end}}>Active</option>
+        <option value="archived" {{if eq .Filters.Status "archived"}}selected{{end}}>Archived</option>
+      </select>
+    </label>
+    <input type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="Connector ID">
+    <label>
+      <input type="checkbox" name="bound_only" value="1" {{if .Filters.BoundOnly}}checked{{end}}>
+      Bound only
+    </label>
+    <button type="submit">Filter</button>
+    <a href="/sessions">Reset</a>
+  </form>
+</section>
+
 {{if .Error}}
 <section class="error">
   {{.Error}}

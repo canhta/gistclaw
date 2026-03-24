@@ -29,16 +29,12 @@ func (r *Runtime) ListSessions(ctx context.Context, conversationID string, limit
 	return sessions.NewService(r.store, r.convStore).ListConversationSessions(ctx, conversationID, limit)
 }
 
-func (r *Runtime) ListAllSessions(ctx context.Context, limit int) ([]model.Session, error) {
-	return sessions.NewService(r.store, r.convStore).ListSessions(ctx, limit)
+func (r *Runtime) ListAllSessions(ctx context.Context, filter sessions.SessionListFilter) ([]model.Session, error) {
+	return sessions.NewService(r.store, r.convStore).ListSessions(ctx, filter)
 }
 
-func (r *Runtime) ListRoutes(ctx context.Context, connectorID, status string, limit int) ([]model.RouteDirectoryItem, error) {
-	return sessions.NewService(r.store, r.convStore).ListRoutes(ctx, sessions.RouteListFilter{
-		ConnectorID: connectorID,
-		Status:      status,
-		Limit:       limit,
-	})
+func (r *Runtime) ListRoutes(ctx context.Context, filter sessions.RouteListFilter) ([]model.RouteDirectoryItem, error) {
+	return sessions.NewService(r.store, r.convStore).ListRoutes(ctx, filter)
 }
 
 func (r *Runtime) SessionHistory(ctx context.Context, sessionID string, limit int) (model.Session, []model.SessionMessage, error) {
@@ -49,12 +45,8 @@ func (r *Runtime) ConnectorDeliveryHealth(ctx context.Context) ([]model.Connecto
 	return sessions.NewService(r.store, r.convStore).ListConnectorDeliveryHealth(ctx)
 }
 
-func (r *Runtime) ListDeliveries(ctx context.Context, connectorID, status string, limit int) ([]model.DeliveryQueueItem, error) {
-	return sessions.NewService(r.store, r.convStore).ListDeliveryQueue(ctx, sessions.DeliveryQueueFilter{
-		ConnectorID: connectorID,
-		Status:      status,
-		Limit:       limit,
-	})
+func (r *Runtime) ListDeliveries(ctx context.Context, filter sessions.DeliveryQueueFilter) ([]model.DeliveryQueueItem, error) {
+	return sessions.NewService(r.store, r.convStore).ListDeliveryQueue(ctx, filter)
 }
 
 func (r *Runtime) SessionDeliveryState(ctx context.Context, sessionID string, limit int) ([]model.OutboundIntent, []model.DeliveryFailure, error) {

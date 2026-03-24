@@ -50,14 +50,28 @@ type BindFollowUp struct {
 
 type DeliveryQueueFilter struct {
 	ConnectorID string
+	SessionID   string
 	Status      string
+	Query       string
 	Limit       int
 }
 
 type RouteListFilter struct {
 	ConnectorID string
 	Status      string
+	Query       string
 	Limit       int
+}
+
+type SessionListFilter struct {
+	ConversationID string
+	AgentID        string
+	Role           string
+	Status         string
+	ConnectorID    string
+	Query          string
+	BoundOnly      bool
+	Limit          int
 }
 
 func NewService(db *store.DB, conv *conversations.ConversationStore) *Service {
@@ -186,16 +200,15 @@ func (s *Service) LoadSession(ctx context.Context, sessionID string) (model.Sess
 }
 
 func (s *Service) ListConversationSessions(ctx context.Context, conversationID string, limit int) ([]model.Session, error) {
-	return s.listSessions(ctx, conversationID, limit)
+	return s.ListSessions(ctx, SessionListFilter{
+		ConversationID: conversationID,
+		Limit:          limit,
+	})
 }
 
-func (s *Service) ListSessions(ctx context.Context, limit int) ([]model.Session, error) {
-	return s.listSessions(ctx, "", limit)
-}
-
-func (s *Service) listSessions(ctx context.Context, conversationID string, limit int) ([]model.Session, error) {
-	if limit <= 0 {
-		limit = 100
+func (s *Service) ListSessions(ctx context.Context, filter SessionListFilter) ([]model.Session, error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 100
 	}
 
 	query := `SELECT sess.id, sess.conversation_id, sess.key, sess.agent_id, sess.role,
@@ -213,16 +226,71 @@ func (s *Service) listSessions(ctx context.Context, conversationID string, limit
 		         WHERE session_id IS NOT NULL AND session_id != ''
 		     )
 		     GROUP BY session_id
-		 ) activity ON activity.session_id = sess.id`
-	args := []any{limit}
-	if conversationID != "" {
+		 ) activity ON activity.session_id = sess.id
+		 WHERE 1 = 1`
+	args := make([]any, 0, 16)
+	if filter.ConversationID != "" {
 		query += `
-		 WHERE sess.conversation_id = ?`
-		args = []any{conversationID, limit}
+		   AND sess.conversation_id = ?`
+		args = append(args, filter.ConversationID)
+	}
+	if filter.AgentID != "" {
+		query += `
+		   AND sess.agent_id = ?`
+		args = append(args, filter.AgentID)
+	}
+	if filter.Role != "" {
+		query += `
+		   AND sess.role = ?`
+		args = append(args, filter.Role)
+	}
+	if filter.Status != "" {
+		query += `
+		   AND sess.status = ?`
+		args = append(args, filter.Status)
+	}
+	if filter.BoundOnly || filter.ConnectorID != "" {
+		query += `
+		   AND EXISTS (
+		       SELECT 1
+		       FROM session_bindings bind
+		       WHERE bind.session_id = sess.id
+		         AND bind.status = 'active'`
+		if filter.ConnectorID != "" {
+			query += `
+		         AND bind.connector_id = ?`
+			args = append(args, filter.ConnectorID)
+		}
+		query += `
+		   )`
+	}
+	if filter.Query != "" {
+		q := "%" + strings.ToLower(strings.TrimSpace(filter.Query)) + "%"
+		query += `
+		   AND (
+		       LOWER(sess.id) LIKE ?
+		       OR LOWER(sess.conversation_id) LIKE ?
+		       OR LOWER(sess.key) LIKE ?
+		       OR LOWER(sess.agent_id) LIKE ?
+		       OR EXISTS (
+		           SELECT 1
+		           FROM session_bindings bind
+		           WHERE bind.session_id = sess.id
+		             AND bind.status = 'active'
+		             AND (
+		                 LOWER(bind.id) LIKE ?
+		                 OR LOWER(bind.connector_id) LIKE ?
+		                 OR LOWER(bind.external_id) LIKE ?
+		                 OR LOWER(bind.thread_id) LIKE ?
+		             )
+		       )
+		   )`
+		args = append(args, q, q, q, q, q, q, q, q)
 	}
 	query += `
 		 ORDER BY updated_at DESC, sess.created_at DESC, sess.id DESC
 		 LIMIT ?`
+	args = append(args, filter.Limit)
 
 	rows, err := s.db.RawDB().QueryContext(ctx, query, args...)
 	if err != nil {
@@ -363,6 +431,20 @@ func (s *Service) ListRoutes(ctx context.Context, filter RouteListFilter) ([]mod
 	if status != "all" {
 		query.WriteString(" AND bind.status = ?")
 		args = append(args, status)
+	}
+	if filter.Query != "" {
+		q := "%" + strings.ToLower(strings.TrimSpace(filter.Query)) + "%"
+		query.WriteString(` AND (
+			LOWER(bind.id) LIKE ?
+			OR LOWER(bind.session_id) LIKE ?
+			OR LOWER(bind.thread_id) LIKE ?
+			OR LOWER(bind.connector_id) LIKE ?
+			OR LOWER(bind.account_id) LIKE ?
+			OR LOWER(bind.external_id) LIKE ?
+			OR LOWER(bind.conversation_id) LIKE ?
+			OR LOWER(sess.agent_id) LIKE ?
+		)`)
+		args = append(args, q, q, q, q, q, q, q, q)
 	}
 	query.WriteString(`
 		 ORDER BY bind.created_at DESC, bind.id DESC`)
@@ -517,11 +599,20 @@ func (s *Service) ListDeliveryQueue(ctx context.Context, filter DeliveryQueueFil
 		conditions = append(conditions, "oi.connector_id = ?")
 		args = append(args, filter.ConnectorID)
 	}
-	if filter.Status != "" {
+	if filter.SessionID != "" {
+		conditions = append(conditions, "r.session_id = ?")
+		args = append(args, filter.SessionID)
+	}
+	if filter.Status != "" && filter.Status != "all" {
 		conditions = append(conditions, "oi.status = ?")
 		args = append(args, filter.Status)
 	} else {
 		conditions = append(conditions, "oi.status IN ('pending', 'retrying', 'terminal')")
+	}
+	if filter.Query != "" {
+		q := "%" + strings.ToLower(strings.TrimSpace(filter.Query)) + "%"
+		conditions = append(conditions, `(LOWER(oi.id) LIKE ? OR LOWER(COALESCE(oi.run_id, '')) LIKE ? OR LOWER(r.session_id) LIKE ? OR LOWER(r.conversation_id) LIKE ? OR LOWER(oi.connector_id) LIKE ? OR LOWER(oi.chat_id) LIKE ? OR LOWER(oi.message_text) LIKE ?)`)
+		args = append(args, q, q, q, q, q, q, q)
 	}
 	if len(conditions) > 0 {
 		query.WriteString(" WHERE ")

@@ -967,6 +967,31 @@ func TestSessionAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("list applies query filters for sessions", func(t *testing.T) {
+		h := newServerHarness(t)
+		front := h.startFrontSession(t, "Inspect the repo.")
+		worker := h.spawnWorkerSession(t, front.SessionID, "researcher", "Inspect docs.")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions?role=worker&q=researcher", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			Sessions []model.Session `json:"sessions"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if len(resp.Sessions) != 1 || resp.Sessions[0].ID != worker.SessionID {
+			t.Fatalf("expected only researcher worker session, got %+v", resp.Sessions)
+		}
+	})
+
 	t.Run("detail returns session mailbox as JSON", func(t *testing.T) {
 		h := newServerHarness(t)
 		front := h.startFrontSession(t, "Inspect the repo.")
@@ -1336,6 +1361,45 @@ func TestControlPlanePage(t *testing.T) {
 		}
 	})
 
+	t.Run("GET /control applies shared query filters", func(t *testing.T) {
+		h := newServerHarness(t)
+		_, route, intentID := h.seedControlPlaneRoute(t)
+		h.markOutboundIntentTerminal(t, intentID)
+		if _, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "whatsapp",
+				AccountID:   "acct-2",
+				ExternalID:  "chat-beta",
+				ThreadID:    "thread-2",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Inspect WhatsApp.",
+			WorkspaceRoot: h.workspaceRoot,
+		}); err != nil {
+			t.Fatalf("StartFrontSession whatsapp failed: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/control?connector_id=telegram&q=chat-1&route_status=all&delivery_status=terminal", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		for _, want := range []string{route.ID, "chat-1", "terminal"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected filtered control page to contain %q:\n%s", want, body)
+			}
+		}
+		for _, unwanted := range []string{"chat-beta", "whatsapp", "thread-2"} {
+			if strings.Contains(body, unwanted) {
+				t.Fatalf("expected filtered control page to exclude %q:\n%s", unwanted, body)
+			}
+		}
+	})
+
 	t.Run("POST /control/routes/{id}/messages wakes the bound session", func(t *testing.T) {
 		h := newServerHarness(t)
 		run, route, _ := h.seedControlPlaneRoute(t)
@@ -1421,7 +1485,11 @@ func TestControlPlanePage(t *testing.T) {
 			t.Fatalf("expected redirect to /control, got %q", rr.Header().Get("Location"))
 		}
 
-		routes, err := h.rt.ListRoutes(context.Background(), "telegram", "active", 10)
+		routes, err := h.rt.ListRoutes(context.Background(), sessions.RouteListFilter{
+			ConnectorID: "telegram",
+			Status:      "active",
+			Limit:       10,
+		})
 		if err != nil {
 			t.Fatalf("list active routes: %v", err)
 		}
@@ -1476,6 +1544,28 @@ func TestSessionPages(t *testing.T) {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected session directory to contain %q:\n%s", want, body)
 			}
+		}
+	})
+
+	t.Run("GET /sessions applies shared directory filters", func(t *testing.T) {
+		h := newServerHarness(t)
+		run, _, _ := h.seedControlPlaneRoute(t)
+		worker := h.spawnWorkerSession(t, run.SessionID, "researcher", "Inspect docs.")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions?connector_id=telegram&bound_only=1", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, run.SessionID) {
+			t.Fatalf("expected bound front session to appear:\n%s", body)
+		}
+		if strings.Contains(body, worker.SessionID) {
+			t.Fatalf("expected unbound worker session to be filtered out:\n%s", body)
 		}
 	})
 
@@ -1718,7 +1808,11 @@ func (h *serverHarness) seedControlPlaneRoute(t *testing.T) (model.Run, model.Ro
 		t.Fatalf("StartFrontSession telegram failed: %v", err)
 	}
 
-	routes, err := h.rt.ListRoutes(context.Background(), "telegram", "active", 10)
+	routes, err := h.rt.ListRoutes(context.Background(), sessions.RouteListFilter{
+		ConnectorID: "telegram",
+		Status:      "active",
+		Limit:       10,
+	})
 	if err != nil {
 		t.Fatalf("list routes: %v", err)
 	}

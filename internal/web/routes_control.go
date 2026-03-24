@@ -8,6 +8,7 @@ import (
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime"
+	"github.com/canhta/gistclaw/internal/sessions"
 )
 
 type controlPageData struct {
@@ -15,7 +16,15 @@ type controlPageData struct {
 	ActiveRoutes []model.RouteDirectoryItem
 	RouteHistory []model.RouteDirectoryItem
 	Deliveries   []model.DeliveryQueueItem
+	Filters      controlPageFilters
 	Error        string
+}
+
+type controlPageFilters struct {
+	Query          string
+	ConnectorID    string
+	RouteStatus    string
+	DeliveryStatus string
 }
 
 func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
@@ -120,19 +129,62 @@ func (s *Server) loadControlPageData(r *http.Request) (controlPageData, error) {
 		return controlPageData{}, errors.New("runtime not configured")
 	}
 
+	filters := controlPageFilters{
+		Query:          strings.TrimSpace(r.URL.Query().Get("q")),
+		ConnectorID:    strings.TrimSpace(r.URL.Query().Get("connector_id")),
+		RouteStatus:    normalizeControlStatus(r.URL.Query().Get("route_status")),
+		DeliveryStatus: normalizeControlStatus(r.URL.Query().Get("delivery_status")),
+	}
+	routeFilter := sessions.RouteListFilter{
+		ConnectorID: filters.ConnectorID,
+		Query:       filters.Query,
+		Limit:       50,
+	}
+	deliveryFilter := sessions.DeliveryQueueFilter{
+		ConnectorID: filters.ConnectorID,
+		Status:      filters.DeliveryStatus,
+		Query:       filters.Query,
+		Limit:       50,
+	}
+
 	health, err := s.rt.ConnectorDeliveryHealth(r.Context())
 	if err != nil {
 		return controlPageData{}, errors.New("failed to load connector delivery health")
 	}
-	activeRoutes, err := s.rt.ListRoutes(r.Context(), "", "active", 50)
-	if err != nil {
-		return controlPageData{}, errors.New("failed to load active routes")
+	health = filterConnectorHealth(health, filters)
+
+	var (
+		activeRoutes []model.RouteDirectoryItem
+		routeHistory []model.RouteDirectoryItem
+	)
+	switch filters.RouteStatus {
+	case "inactive":
+		historyFilter := routeFilter
+		historyFilter.Status = "inactive"
+		historyFilter.Limit = 25
+		routeHistory, err = s.rt.ListRoutes(r.Context(), historyFilter)
+		if err != nil {
+			return controlPageData{}, errors.New("failed to load route history")
+		}
+	default:
+		activeFilter := routeFilter
+		activeFilter.Status = "active"
+		activeRoutes, err = s.rt.ListRoutes(r.Context(), activeFilter)
+		if err != nil {
+			return controlPageData{}, errors.New("failed to load active routes")
+		}
+		if filters.RouteStatus == "all" {
+			historyFilter := routeFilter
+			historyFilter.Status = "inactive"
+			historyFilter.Limit = 25
+			routeHistory, err = s.rt.ListRoutes(r.Context(), historyFilter)
+			if err != nil {
+				return controlPageData{}, errors.New("failed to load route history")
+			}
+		}
 	}
-	routeHistory, err := s.rt.ListRoutes(r.Context(), "", "inactive", 25)
-	if err != nil {
-		return controlPageData{}, errors.New("failed to load route history")
-	}
-	deliveries, err := s.rt.ListDeliveries(r.Context(), "", "all", 50)
+
+	deliveries, err := s.rt.ListDeliveries(r.Context(), deliveryFilter)
 	if err != nil {
 		return controlPageData{}, errors.New("failed to load delivery queue")
 	}
@@ -142,5 +194,44 @@ func (s *Server) loadControlPageData(r *http.Request) (controlPageData, error) {
 		ActiveRoutes: activeRoutes,
 		RouteHistory: routeHistory,
 		Deliveries:   deliveries,
+		Filters:      filters,
 	}, nil
+}
+
+func normalizeControlStatus(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "all":
+		return "all"
+	case "active":
+		return "active"
+	case "inactive":
+		return "inactive"
+	case "pending":
+		return "pending"
+	case "retrying":
+		return "retrying"
+	case "terminal":
+		return "terminal"
+	default:
+		return "all"
+	}
+}
+
+func filterConnectorHealth(list []model.ConnectorDeliveryHealth, filters controlPageFilters) []model.ConnectorDeliveryHealth {
+	if filters.ConnectorID == "" && filters.Query == "" {
+		return list
+	}
+
+	filtered := make([]model.ConnectorDeliveryHealth, 0, len(list))
+	query := strings.ToLower(filters.Query)
+	for _, item := range list {
+		if filters.ConnectorID != "" && item.ConnectorID != filters.ConnectorID {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(item.ConnectorID), query) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
 }

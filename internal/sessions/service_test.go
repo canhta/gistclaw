@@ -464,6 +464,64 @@ func TestService_ListDeliveryQueue(t *testing.T) {
 	}
 }
 
+func TestService_ListDeliveryQueueAppliesQueryAndAllStatus(t *testing.T) {
+	svc := newTestSessionService(t)
+	ctx := context.Background()
+
+	frontTelegram := openFrontSession(t, svc)
+	frontWhatsApp, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-whatsapp",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession whatsapp failed: %v", err)
+	}
+
+	if _, err := svc.db.RawDB().ExecContext(
+		ctx,
+		`INSERT INTO runs
+		 (id, conversation_id, agent_id, session_id, team_id, objective, workspace_root, status, created_at, updated_at)
+		 VALUES
+		 ('run-telegram', ?, 'assistant', ?, 'team-a', 'Inspect Telegram', ?, 'completed', datetime('now'), datetime('now')),
+		 ('run-whatsapp', ?, 'assistant', ?, 'team-a', 'Inspect WhatsApp', ?, 'completed', datetime('now'), datetime('now'))`,
+		frontTelegram.ConversationID,
+		frontTelegram.ID,
+		t.TempDir(),
+		frontWhatsApp.ConversationID,
+		frontWhatsApp.ID,
+		t.TempDir(),
+	); err != nil {
+		t.Fatalf("insert runs: %v", err)
+	}
+
+	if _, err := svc.db.RawDB().ExecContext(
+		ctx,
+		`INSERT INTO outbound_intents
+		 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at)
+		 VALUES
+		 ('intent-telegram-terminal', 'run-telegram', 'telegram', 'chat-alpha', 'reply alpha', 'dedupe-1', 'terminal', 5, datetime('now', '-3 minutes')),
+		 ('intent-whatsapp-pending', 'run-whatsapp', 'whatsapp', 'chat-beta', 'reply beta', 'dedupe-2', 'pending', 0, datetime('now', '-90 seconds'))`,
+	); err != nil {
+		t.Fatalf("insert outbound intents: %v", err)
+	}
+
+	items, err := svc.ListDeliveryQueue(ctx, DeliveryQueueFilter{
+		Status: "all",
+		Query:  "chat-alpha",
+		Limit:  10,
+	})
+	if err != nil {
+		t.Fatalf("ListDeliveryQueue failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 delivery queue item, got %d", len(items))
+	}
+	if items[0].ID != "intent-telegram-terminal" || items[0].Status != "terminal" {
+		t.Fatalf("unexpected delivery queue item: %+v", items[0])
+	}
+}
+
 func TestService_ListRoutes(t *testing.T) {
 	svc := newTestSessionService(t)
 	ctx := context.Background()
@@ -514,6 +572,57 @@ func TestService_ListRoutes(t *testing.T) {
 	}
 	if routes[0].ConnectorID != "telegram" || routes[0].ThreadID != "thread-1" {
 		t.Fatalf("unexpected route target: %+v", routes[0])
+	}
+}
+
+func TestService_ListRoutesAppliesQueryFilter(t *testing.T) {
+	svc := newTestSessionService(t)
+	ctx := context.Background()
+
+	frontTelegram := openFrontSession(t, svc)
+	frontWhatsApp, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-whatsapp",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession whatsapp failed: %v", err)
+	}
+
+	if err := svc.BindFollowUp(ctx, BindFollowUp{
+		ConversationID: frontTelegram.ConversationID,
+		ThreadID:       "thread-alpha",
+		SessionID:      frontTelegram.ID,
+		ConnectorID:    "telegram",
+		AccountID:      "acct-1",
+		ExternalID:     "chat-alpha",
+	}); err != nil {
+		t.Fatalf("BindFollowUp telegram failed: %v", err)
+	}
+	if err := svc.BindFollowUp(ctx, BindFollowUp{
+		ConversationID: frontWhatsApp.ConversationID,
+		ThreadID:       "thread-beta",
+		SessionID:      frontWhatsApp.ID,
+		ConnectorID:    "whatsapp",
+		AccountID:      "acct-2",
+		ExternalID:     "chat-beta",
+	}); err != nil {
+		t.Fatalf("BindFollowUp whatsapp failed: %v", err)
+	}
+
+	routes, err := svc.ListRoutes(ctx, RouteListFilter{
+		Status: "all",
+		Query:  "chat-alpha",
+		Limit:  10,
+	})
+	if err != nil {
+		t.Fatalf("ListRoutes failed: %v", err)
+	}
+	if len(routes) != 1 {
+		t.Fatalf("expected 1 route, got %d", len(routes))
+	}
+	if routes[0].SessionID != frontTelegram.ID || routes[0].ConnectorID != "telegram" {
+		t.Fatalf("unexpected route payload: %+v", routes[0])
 	}
 }
 
@@ -661,7 +770,7 @@ func TestService_ListSessionsOrdersByLatestActivityAcrossConversations(t *testin
 		t.Fatalf("AppendMessage second failed: %v", err)
 	}
 
-	list, err := svc.ListSessions(ctx, 10)
+	list, err := svc.ListSessions(ctx, SessionListFilter{Limit: 10})
 	if err != nil {
 		t.Fatalf("ListSessions failed: %v", err)
 	}
@@ -670,5 +779,88 @@ func TestService_ListSessionsOrdersByLatestActivityAcrossConversations(t *testin
 	}
 	if list[0].ID != second.ID || list[1].ID != first.ID {
 		t.Fatalf("expected newer session first, got %q then %q", list[0].ID, list[1].ID)
+	}
+}
+
+func TestService_ListSessionsAppliesDirectoryFilters(t *testing.T) {
+	svc := newTestSessionService(t)
+	ctx := context.Background()
+
+	frontTelegram, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-telegram",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession telegram failed: %v", err)
+	}
+	worker, err := svc.SpawnWorkerSession(ctx, SpawnWorkerSession{
+		ConversationID:      frontTelegram.ConversationID,
+		ParentSessionID:     frontTelegram.ID,
+		ControllerSessionID: frontTelegram.ID,
+		AgentID:             "researcher",
+		InitialPrompt:       "Inspect docs.",
+	})
+	if err != nil {
+		t.Fatalf("SpawnWorkerSession failed: %v", err)
+	}
+	frontArchive, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-archive",
+		AgentID:        "archivist",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession archive failed: %v", err)
+	}
+
+	if err := svc.BindFollowUp(ctx, BindFollowUp{
+		ConversationID: frontTelegram.ConversationID,
+		ThreadID:       "thread-1",
+		SessionID:      frontTelegram.ID,
+		ConnectorID:    "telegram",
+		AccountID:      "acct-1",
+		ExternalID:     "chat-alpha",
+	}); err != nil {
+		t.Fatalf("BindFollowUp failed: %v", err)
+	}
+
+	if _, err := svc.db.RawDB().ExecContext(ctx, `UPDATE sessions SET status = 'archived' WHERE id = ?`, frontArchive.ID); err != nil {
+		t.Fatalf("update archived session status: %v", err)
+	}
+
+	list, err := svc.ListSessions(ctx, SessionListFilter{
+		ConnectorID: "telegram",
+		BoundOnly:   true,
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("ListSessions telegram bound failed: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != frontTelegram.ID {
+		t.Fatalf("expected only telegram-bound front session, got %+v", list)
+	}
+
+	list, err = svc.ListSessions(ctx, SessionListFilter{
+		Role:  string(model.SessionRoleWorker),
+		Query: "researcher",
+		Limit: 10,
+	})
+	if err != nil {
+		t.Fatalf("ListSessions worker failed: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != worker.ID {
+		t.Fatalf("expected only worker session, got %+v", list)
+	}
+
+	list, err = svc.ListSessions(ctx, SessionListFilter{
+		Status: "archived",
+		Query:  "conv-archive",
+		Limit:  10,
+	})
+	if err != nil {
+		t.Fatalf("ListSessions archived failed: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != frontArchive.ID {
+		t.Fatalf("expected only archived session, got %+v", list)
 	}
 }

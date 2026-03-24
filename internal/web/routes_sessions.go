@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
@@ -71,7 +72,7 @@ func (s *Server) handleSessionsIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	list, err := s.rt.ListAllSessions(r.Context(), requestLimit(r, 50))
+	list, err := s.rt.ListAllSessions(r.Context(), sessionListFilterFromRequest(r, 50))
 	if err != nil {
 		http.Error(w, "failed to load sessions", http.StatusInternalServerError)
 		return
@@ -101,12 +102,7 @@ func (s *Server) handleRoutesIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	routes, err := s.rt.ListRoutes(
-		r.Context(),
-		r.URL.Query().Get("connector_id"),
-		r.URL.Query().Get("status"),
-		requestLimit(r, 50),
-	)
+	routes, err := s.rt.ListRoutes(r.Context(), routeListFilterFromRequest(r, 50))
 	if err != nil {
 		http.Error(w, "failed to load routes", http.StatusInternalServerError)
 		return
@@ -158,12 +154,7 @@ func (s *Server) handleDeliveryIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	list, err := s.rt.ListDeliveries(
-		r.Context(),
-		r.URL.Query().Get("connector_id"),
-		r.URL.Query().Get("status"),
-		requestLimit(r, 50),
-	)
+	list, err := s.rt.ListDeliveries(r.Context(), deliveryQueueFilterFromRequest(r, 50))
 	if err != nil {
 		http.Error(w, "failed to load deliveries", http.StatusInternalServerError)
 		return
@@ -382,6 +373,47 @@ func requestLimit(r *http.Request, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func sessionListFilterFromRequest(r *http.Request, fallbackLimit int) sessions.SessionListFilter {
+	return sessions.SessionListFilter{
+		ConversationID: strings.TrimSpace(r.URL.Query().Get("conversation_id")),
+		AgentID:        strings.TrimSpace(r.URL.Query().Get("agent_id")),
+		Role:           strings.TrimSpace(r.URL.Query().Get("role")),
+		Status:         strings.TrimSpace(r.URL.Query().Get("status")),
+		ConnectorID:    strings.TrimSpace(r.URL.Query().Get("connector_id")),
+		Query:          strings.TrimSpace(r.URL.Query().Get("q")),
+		BoundOnly:      requestBool(r, "bound_only"),
+		Limit:          requestLimit(r, fallbackLimit),
+	}
+}
+
+func routeListFilterFromRequest(r *http.Request, fallbackLimit int) sessions.RouteListFilter {
+	return sessions.RouteListFilter{
+		ConnectorID: strings.TrimSpace(r.URL.Query().Get("connector_id")),
+		Status:      strings.TrimSpace(r.URL.Query().Get("status")),
+		Query:       strings.TrimSpace(r.URL.Query().Get("q")),
+		Limit:       requestLimit(r, fallbackLimit),
+	}
+}
+
+func deliveryQueueFilterFromRequest(r *http.Request, fallbackLimit int) sessions.DeliveryQueueFilter {
+	return sessions.DeliveryQueueFilter{
+		ConnectorID: strings.TrimSpace(r.URL.Query().Get("connector_id")),
+		SessionID:   strings.TrimSpace(r.URL.Query().Get("session_id")),
+		Status:      strings.TrimSpace(r.URL.Query().Get("status")),
+		Query:       strings.TrimSpace(r.URL.Query().Get("q")),
+		Limit:       requestLimit(r, fallbackLimit),
+	}
+}
+
+func requestBool(r *http.Request, key string) bool {
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get(key))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

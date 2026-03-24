@@ -13,6 +13,7 @@ import (
 
 type sessionPageIndexData struct {
 	Sessions []model.Session
+	Filters  sessionPageIndexFilters
 	Error    string
 }
 
@@ -23,6 +24,15 @@ type sessionPageDetailData struct {
 	Deliveries       []model.OutboundIntent
 	DeliveryFailures []model.DeliveryFailure
 	Error            string
+}
+
+type sessionPageIndexFilters struct {
+	Query       string
+	AgentID     string
+	Role        string
+	Status      string
+	ConnectorID string
+	BoundOnly   bool
 }
 
 func (s *Server) handleSessionPageIndex(w http.ResponseWriter, r *http.Request) {
@@ -120,12 +130,23 @@ func (s *Server) loadSessionPageIndexData(r *http.Request) (sessionPageIndexData
 		return sessionPageIndexData{}, errors.New("runtime not configured")
 	}
 
-	list, err := s.rt.ListAllSessions(r.Context(), 100)
+	filter := sessionListFilterFromRequest(r, 100)
+	list, err := s.rt.ListAllSessions(r.Context(), filter)
 	if err != nil {
 		return sessionPageIndexData{}, errors.New("failed to load sessions")
 	}
 
-	return sessionPageIndexData{Sessions: list}, nil
+	return sessionPageIndexData{
+		Sessions: list,
+		Filters: sessionPageIndexFilters{
+			Query:       filter.Query,
+			AgentID:     filter.AgentID,
+			Role:        filter.Role,
+			Status:      filter.Status,
+			ConnectorID: filter.ConnectorID,
+			BoundOnly:   filter.BoundOnly,
+		},
+	}, nil
 }
 
 func (s *Server) loadSessionPageDetailData(r *http.Request) (sessionPageDetailData, int, error) {

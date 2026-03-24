@@ -4,6 +4,32 @@
   <p class="muted">Inspect connector pressure, route bindings, and queued delivery state from the local host.</p>
 </section>
 
+<section class="panel">
+  <form class="inline-form" method="GET" action="/control">
+    <input type="text" name="q" value="{{.Filters.Query}}" placeholder="Search routes or deliveries">
+    <input type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="Connector ID">
+    <label>
+      Routes
+      <select name="route_status">
+        <option value="all" {{if eq .Filters.RouteStatus "all"}}selected{{end}}>All</option>
+        <option value="active" {{if eq .Filters.RouteStatus "active"}}selected{{end}}>Active</option>
+        <option value="inactive" {{if eq .Filters.RouteStatus "inactive"}}selected{{end}}>Inactive</option>
+      </select>
+    </label>
+    <label>
+      Deliveries
+      <select name="delivery_status">
+        <option value="all" {{if eq .Filters.DeliveryStatus "all"}}selected{{end}}>All</option>
+        <option value="pending" {{if eq .Filters.DeliveryStatus "pending"}}selected{{end}}>Pending</option>
+        <option value="retrying" {{if eq .Filters.DeliveryStatus "retrying"}}selected{{end}}>Retrying</option>
+        <option value="terminal" {{if eq .Filters.DeliveryStatus "terminal"}}selected{{end}}>Terminal</option>
+      </select>
+    </label>
+    <button type="submit">Filter</button>
+    <a href="/control">Reset</a>
+  </form>
+</section>
+
 {{if .Error}}
 <section class="error">
   {{.Error}}
