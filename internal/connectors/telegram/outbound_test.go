@@ -27,6 +27,31 @@ func setupOutboundDB(t *testing.T) *store.DB {
 	return db
 }
 
+func seedOutboundRun(t *testing.T, db *store.DB, cs *conversations.ConversationStore, runID string) string {
+	t.Helper()
+
+	conv, err := cs.Resolve(context.Background(), conversations.ConversationKey{
+		ConnectorID: "telegram",
+		AccountID:   "acct-1",
+		ExternalID:  "chat-1",
+		ThreadID:    "main",
+	})
+	if err != nil {
+		t.Fatalf("Resolve conversation: %v", err)
+	}
+
+	_, err = db.RawDB().Exec(
+		`INSERT INTO runs (id, conversation_id, agent_id, status, created_at, updated_at)
+		 VALUES (?, ?, ?, 'completed', datetime('now'), datetime('now'))`,
+		runID, conv.ID, "assistant",
+	)
+	if err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	return conv.ID
+}
+
 func TestOutbound_StartedEventDelivers(t *testing.T) {
 	db := setupOutboundDB(t)
 	cs := conversations.NewConversationStore(db)
@@ -215,6 +240,7 @@ func TestRetry_RetriesOnAPIError(t *testing.T) {
 func TestRetry_TerminalAfterMaxAttempts(t *testing.T) {
 	db := setupOutboundDB(t)
 	cs := conversations.NewConversationStore(db)
+	convID := seedOutboundRun(t, db, cs, "run-terminal")
 
 	var callCount atomic.Int32
 	// Always fail.
@@ -248,11 +274,21 @@ func TestRetry_TerminalAfterMaxAttempts(t *testing.T) {
 	if count == 0 {
 		t.Fatal("expected delivery_failed journal event after max attempts")
 	}
+
+	var eventConversationID string
+	var eventRunID string
+	_ = db.RawDB().QueryRow(
+		"SELECT conversation_id, run_id FROM events WHERE kind = 'delivery_failed' ORDER BY created_at DESC, id DESC LIMIT 1",
+	).Scan(&eventConversationID, &eventRunID)
+	if eventConversationID != convID || eventRunID != "run-terminal" {
+		t.Fatalf("expected delivery_failed event to attach to conversation=%q run=%q, got conversation=%q run=%q", convID, "run-terminal", eventConversationID, eventRunID)
+	}
 }
 
 func TestRetry_DeliveryFailedPayload(t *testing.T) {
 	db := setupOutboundDB(t)
 	cs := conversations.NewConversationStore(db)
+	seedOutboundRun(t, db, cs, "run-payload")
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "fail", http.StatusInternalServerError)
