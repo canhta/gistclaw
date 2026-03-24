@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
@@ -15,6 +16,14 @@ var ErrDeliveryNotFound = fmt.Errorf("runtime: delivery not found")
 var ErrDeliveryNotRetryable = fmt.Errorf("runtime: delivery not retryable")
 var ErrRouteNotFound = fmt.Errorf("runtime: route not found")
 var ErrRouteNotActive = fmt.Errorf("runtime: route not active")
+
+type BindRouteCommand struct {
+	SessionID   string
+	ThreadID    string
+	ConnectorID string
+	AccountID   string
+	ExternalID  string
+}
 
 func (r *Runtime) ListSessions(ctx context.Context, conversationID string, limit int) ([]model.Session, error) {
 	return sessions.NewService(r.store, r.convStore).ListConversationSessions(ctx, conversationID, limit)
@@ -118,6 +127,34 @@ func (r *Runtime) DeactivateRoute(ctx context.Context, routeID string) (model.Ro
 
 	route.Status = "inactive"
 	return route, nil
+}
+
+func (r *Runtime) BindRoute(ctx context.Context, cmd BindRouteCommand) (model.RouteDirectoryItem, error) {
+	svc := sessions.NewService(r.store, r.convStore)
+	session, err := svc.LoadSession(ctx, cmd.SessionID)
+	if err != nil {
+		return model.RouteDirectoryItem{}, err
+	}
+
+	evt, err := newSessionBoundEvent(
+		session.ConversationID,
+		"",
+		conversations.ConversationKey{
+			ConnectorID: cmd.ConnectorID,
+			AccountID:   cmd.AccountID,
+			ExternalID:  cmd.ExternalID,
+			ThreadID:    cmd.ThreadID,
+		},
+		session.ID,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		return model.RouteDirectoryItem{}, err
+	}
+	if err := r.convStore.AppendEvent(ctx, evt); err != nil {
+		return model.RouteDirectoryItem{}, fmt.Errorf("journal session_bound: %w", err)
+	}
+	return svc.LoadRoute(ctx, evt.ID)
 }
 
 func (r *Runtime) retryDelivery(ctx context.Context, conversationID, sessionID string, intent model.OutboundIntent) (model.OutboundIntent, error) {

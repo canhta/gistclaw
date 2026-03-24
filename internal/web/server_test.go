@@ -15,6 +15,7 @@ import (
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
+	"github.com/canhta/gistclaw/internal/sessions"
 	"github.com/canhta/gistclaw/internal/store"
 	"github.com/canhta/gistclaw/internal/tools"
 )
@@ -688,6 +689,44 @@ func TestSessionAPI(t *testing.T) {
 		}
 		if resp.Routes[0].ConnectorID != "telegram" || resp.Routes[0].SessionID != telegramRun.SessionID {
 			t.Fatalf("unexpected route payload: %+v", resp.Routes[0])
+		}
+	})
+
+	t.Run("route create binds an existing session", func(t *testing.T) {
+		h := newServerHarness(t)
+		sessionSvc := sessions.NewService(h.db, conversations.NewConversationStore(h.db))
+		front, err := sessionSvc.OpenFrontSession(context.Background(), sessions.OpenFrontSession{
+			ConversationID: "conv-manual-bind",
+			AgentID:        "assistant",
+			WorkspaceRoot:  h.workspaceRoot,
+		})
+		if err != nil {
+			t.Fatalf("OpenFrontSession failed: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/routes",
+			strings.NewReader(`{"session_id":"`+front.ID+`","connector_id":"telegram","account_id":"acct-1","external_id":"chat-1","thread_id":"thread-1"}`))
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+		req.Header.Set("Content-Type", "application/json")
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			Route model.RouteDirectoryItem `json:"route"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if resp.Route.ID == "" || resp.Route.SessionID != front.ID {
+			t.Fatalf("unexpected route identity: %+v", resp.Route)
+		}
+		if resp.Route.ConnectorID != "telegram" || resp.Route.ThreadID != "thread-1" {
+			t.Fatalf("unexpected route target: %+v", resp.Route)
 		}
 	})
 

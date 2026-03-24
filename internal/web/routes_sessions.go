@@ -24,6 +24,18 @@ type routeDirectoryResponse struct {
 	Routes []model.RouteDirectoryItem `json:"routes"`
 }
 
+type routeCreateRequest struct {
+	SessionID   string `json:"session_id"`
+	ThreadID    string `json:"thread_id"`
+	ConnectorID string `json:"connector_id"`
+	AccountID   string `json:"account_id"`
+	ExternalID  string `json:"external_id"`
+}
+
+type routeCreateResponse struct {
+	Route model.RouteDirectoryItem `json:"route"`
+}
+
 type routeDeactivateResponse struct {
 	Route model.RouteDirectoryItem `json:"route"`
 }
@@ -96,6 +108,43 @@ func (s *Server) handleRoutesIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, routeDirectoryResponse{Routes: routes})
+}
+
+func (s *Server) handleRouteCreate(w http.ResponseWriter, r *http.Request) {
+	if s.rt == nil {
+		http.Error(w, "runtime not configured", http.StatusInternalServerError)
+		return
+	}
+
+	var req routeCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if req.SessionID == "" || req.ConnectorID == "" || req.ExternalID == "" {
+		http.Error(w, "session_id, connector_id, and external_id are required", http.StatusBadRequest)
+		return
+	}
+
+	route, err := s.rt.BindRoute(r.Context(), runtime.BindRouteCommand{
+		SessionID:   req.SessionID,
+		ThreadID:    req.ThreadID,
+		ConnectorID: req.ConnectorID,
+		AccountID:   req.AccountID,
+		ExternalID:  req.ExternalID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, sessions.ErrSessionNotFound):
+			http.NotFound(w, r)
+			return
+		default:
+			http.Error(w, "failed to create route", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, routeCreateResponse{Route: route})
 }
 
 func (s *Server) handleDeliveryIndex(w http.ResponseWriter, r *http.Request) {
