@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
@@ -37,6 +38,12 @@ type SteerCommand struct {
 }
 
 type AgentSendCommand struct {
+	FromSessionID string
+	ToSessionID   string
+	Body          string
+}
+
+type SendSessionCommand struct {
 	FromSessionID string
 	ToSessionID   string
 	Body          string
@@ -169,6 +176,84 @@ func (r *Runtime) Steer(ctx context.Context, cmd SteerCommand) error {
 
 func (r *Runtime) AgentSend(ctx context.Context, cmd AgentSendCommand) error {
 	return r.directSessionMessage(ctx, cmd.FromSessionID, cmd.ToSessionID, model.MessageAgentSend, cmd.Body)
+}
+
+func (r *Runtime) SendSession(ctx context.Context, cmd SendSessionCommand) (model.Run, error) {
+	if strings.TrimSpace(cmd.Body) == "" {
+		return model.Run{}, fmt.Errorf("runtime: session message body is required")
+	}
+
+	targetSession, targetRun, err := r.loadSessionRun(ctx, cmd.ToSessionID)
+	if err != nil {
+		return model.Run{}, err
+	}
+
+	kind := model.MessageUser
+	senderSessionID := ""
+	provenance := model.SessionMessageProvenance{
+		Kind:              model.MessageProvenanceInbound,
+		SourceConnectorID: "web",
+	}
+	if cmd.FromSessionID != "" {
+		sourceSession, sourceRun, err := r.loadSessionRun(ctx, cmd.FromSessionID)
+		if err != nil {
+			return model.Run{}, err
+		}
+		if sourceSession.ConversationID != targetSession.ConversationID {
+			return model.Run{}, fmt.Errorf(
+				"runtime: session %s cannot message session %s across conversations",
+				cmd.FromSessionID,
+				cmd.ToSessionID,
+			)
+		}
+		kind = model.MessageAgentSend
+		senderSessionID = sourceSession.ID
+		provenance = model.SessionMessageProvenance{
+			Kind:            model.MessageProvenanceInterSession,
+			SourceSessionID: sourceSession.ID,
+			SourceRunID:     sourceRun.ID,
+		}
+	}
+
+	parentRunID := ""
+	if targetSession.Role == model.SessionRoleWorker {
+		parentRunID = targetRun.ParentRunID
+		if parentRunID == "" {
+			parentRunID = targetRun.ID
+		}
+	}
+
+	runID := generateID()
+	start := StartRun{
+		ConversationID: targetSession.ConversationID,
+		AgentID:        targetSession.AgentID,
+		SessionID:      targetSession.ID,
+		Objective:      cmd.Body,
+		WorkspaceRoot:  targetRun.WorkspaceRoot,
+	}
+	if err := r.createRun(ctx, runID, parentRunID, start); err != nil {
+		return model.Run{}, err
+	}
+	if _, err := r.appendSessionMessage(
+		ctx,
+		targetSession.ConversationID,
+		runID,
+		targetSession.ID,
+		senderSessionID,
+		kind,
+		cmd.Body,
+		provenance,
+	); err != nil {
+		return model.Run{}, err
+	}
+
+	return r.executeRunLoop(ctx, runLoopOpts{
+		runID:          runID,
+		conversationID: targetSession.ConversationID,
+		agentID:        targetSession.AgentID,
+		sessionID:      targetSession.ID,
+		objective:      cmd.Body,
+	})
 }
 
 func (r *Runtime) directSessionMessage(

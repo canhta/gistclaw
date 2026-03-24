@@ -293,3 +293,82 @@ func TestRuntime_AnnounceRejectsSessionWithoutRun(t *testing.T) {
 		t.Fatalf("expected missing-run error, got %v", err)
 	}
 }
+
+func TestRuntime_SendSessionWakesFrontSessionWithNewRootRun(t *testing.T) {
+	rt, db := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "Front ready.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+		{Content: "Follow-up reply.", InputTokens: 11, OutputTokens: 13, StopReason: "end_turn"},
+	})
+	front := startFrontRun(t, rt, "Inspect the repo.")
+
+	run, err := rt.SendSession(context.Background(), SendSessionCommand{
+		ToSessionID: front.SessionID,
+		Body:        "What changed?",
+	})
+	if err != nil {
+		t.Fatalf("SendSession failed: %v", err)
+	}
+	if run.SessionID != front.SessionID {
+		t.Fatalf("expected follow-up run to reuse front session %q, got %q", front.SessionID, run.SessionID)
+	}
+	if run.ID == front.ID {
+		t.Fatalf("expected follow-up run to create a new run, got original %q", run.ID)
+	}
+	if run.ParentRunID != "" {
+		t.Fatalf("expected front follow-up run to remain a root run, got parent %q", run.ParentRunID)
+	}
+
+	svc := sessions.NewService(db, conversations.NewConversationStore(db))
+	_, history, err := svc.LoadSessionMailbox(context.Background(), front.SessionID, 10)
+	if err != nil {
+		t.Fatalf("LoadSessionMailbox failed: %v", err)
+	}
+	if len(history) != 4 {
+		t.Fatalf("expected 4 front-session messages after send, got %d", len(history))
+	}
+	if history[2].Kind != model.MessageUser || history[2].Body != "What changed?" {
+		t.Fatalf("expected user follow-up message, got kind=%q body=%q", history[2].Kind, history[2].Body)
+	}
+	if history[3].Kind != model.MessageAssistant || history[3].Body != "Follow-up reply." {
+		t.Fatalf("expected assistant follow-up reply, got kind=%q body=%q", history[3].Kind, history[3].Body)
+	}
+}
+
+func TestRuntime_SendSessionWakesWorkerSessionWithSiblingChildRun(t *testing.T) {
+	rt, db := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "Front ready.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+		{Content: "Worker ready.", InputTokens: 8, OutputTokens: 9, StopReason: "end_turn"},
+		{Content: "Worker follow-up complete.", InputTokens: 7, OutputTokens: 10, StopReason: "end_turn"},
+	})
+	front, worker := startParentAndChildRuns(t, rt)
+
+	run, err := rt.SendSession(context.Background(), SendSessionCommand{
+		FromSessionID: front.SessionID,
+		ToSessionID:   worker.SessionID,
+		Body:          "Keep checking tests.",
+	})
+	if err != nil {
+		t.Fatalf("SendSession failed: %v", err)
+	}
+	if run.SessionID != worker.SessionID {
+		t.Fatalf("expected follow-up run to target worker session %q, got %q", worker.SessionID, run.SessionID)
+	}
+	if run.ParentRunID != worker.ParentRunID {
+		t.Fatalf("expected worker follow-up run parent %q, got %q", worker.ParentRunID, run.ParentRunID)
+	}
+
+	svc := sessions.NewService(db, conversations.NewConversationStore(db))
+	_, history, err := svc.LoadSessionMailbox(context.Background(), worker.SessionID, 10)
+	if err != nil {
+		t.Fatalf("LoadSessionMailbox failed: %v", err)
+	}
+	if len(history) != 4 {
+		t.Fatalf("expected 4 worker-session messages after send, got %d", len(history))
+	}
+	if history[2].Kind != model.MessageAgentSend || history[2].Body != "Keep checking tests." {
+		t.Fatalf("expected agent_send follow-up message, got kind=%q body=%q", history[2].Kind, history[2].Body)
+	}
+	if history[3].Kind != model.MessageAssistant || history[3].Body != "Worker follow-up complete." {
+		t.Fatalf("expected worker follow-up reply, got kind=%q body=%q", history[3].Kind, history[3].Body)
+	}
+}

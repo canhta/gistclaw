@@ -63,3 +63,4 @@ That means the next implementation work favors:
 - provider input assembled from session-local context instead of the whole conversation log
 - a real host process, where `serve` owns the local web control plane instead of only background preparation
 - operator-facing session visibility starts with the local session directory and mailbox APIs, and can grow into richer control-plane tools later
+- explicit session send/wake behavior should flow through the runtime so the same session contract can back both local tools and future channel recovery

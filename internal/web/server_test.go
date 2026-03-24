@@ -548,6 +548,56 @@ func TestSessionAPI(t *testing.T) {
 			t.Fatalf("expected 404, got %d", rr.Code)
 		}
 	})
+
+	t.Run("send wakes session and returns follow-up run JSON", func(t *testing.T) {
+		h := newServerHarness(t)
+		front := h.startFrontSession(t, "Inspect the repo.")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/sessions/"+front.SessionID+"/messages",
+			strings.NewReader(`{"body":"What changed?"}`))
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+		req.Header.Set("Content-Type", "application/json")
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			Run model.Run `json:"run"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if resp.Run.SessionID != front.SessionID {
+			t.Fatalf("expected run to reuse session %q, got %q", front.SessionID, resp.Run.SessionID)
+		}
+		if resp.Run.ID == front.ID {
+			t.Fatalf("expected a new follow-up run, got original %q", resp.Run.ID)
+		}
+
+		detail := httptest.NewRecorder()
+		detailReq := httptest.NewRequest(http.MethodGet, "/api/sessions/"+front.SessionID, nil)
+		h.server.ServeHTTP(detail, detailReq)
+		if detail.Code != http.StatusOK {
+			t.Fatalf("expected 200 from detail endpoint, got %d body=%s", detail.Code, detail.Body.String())
+		}
+
+		var mailbox struct {
+			Messages []model.SessionMessage `json:"messages"`
+		}
+		if err := json.Unmarshal(detail.Body.Bytes(), &mailbox); err != nil {
+			t.Fatalf("decode mailbox: %v", err)
+		}
+		if len(mailbox.Messages) != 4 {
+			t.Fatalf("expected 4 mailbox messages after send, got %d", len(mailbox.Messages))
+		}
+		if mailbox.Messages[2].Body != "What changed?" || mailbox.Messages[3].Body != "mock response" {
+			t.Fatalf("unexpected follow-up mailbox bodies: %q / %q", mailbox.Messages[2].Body, mailbox.Messages[3].Body)
+		}
+	})
 }
 
 type serverHarness struct {

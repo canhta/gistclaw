@@ -38,6 +38,7 @@ Remaining gaps:
 - Telegram now has a recovered live path on top of the session kernel; the broader channel matrix is still not back
 - `gistclaw serve` now hosts the local web control plane instead of only preparing state
 - the local web host now exposes read-only session directory and mailbox APIs on top of the session kernel
+- the local web host can now send a message into a session and wake it through the runtime instead of only reading mailbox state
 - plugins and extension seams are documented, not operational
 - teams are still mostly designed ahead of time, not created dynamically by the user
 
@@ -48,7 +49,7 @@ The next implementation slice should make the session runtime feel more like Ope
 1. extend the recovered channel path beyond Telegram without rebuilding the full OpenClaw matrix
 2. prepare the routing layer for later channel and gateway recovery without reintroducing connector-specific logic into the kernel
 3. keep moving team definition from predeclared structure toward user-defined runtime composition
-4. extend the session control plane from read-only directory/history into richer tools and operator surfaces when routed wake-up semantics are ready
+4. extend the session control plane beyond the local host send/wake path into richer operator tools and recovered channel/gateway surfaces
 
 ## Locked Review Outcomes
 
