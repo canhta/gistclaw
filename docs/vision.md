@@ -76,8 +76,8 @@ That means the next implementation work favors:
 - the local host can now request a controlled retry for terminal deliveries through the same session-scoped control plane, instead of requiring direct database intervention
 - session-scoped delivery failures on the local host are now filtered down to actionable failures, so a successful redrive clears the active failure view without erasing the underlying run audit trail
 - the local host now authenticates server-rendered operator writes through an HttpOnly host session with same-origin checks, so HTML control-plane forms no longer depend on manual bearer-header injection
-- the local host now has a server-rendered control page for route bindings and delivery pressure, with shared query filters that let operators narrow the same route and delivery directories exposed over JSON
-- the local host now also has server-rendered session directory and session detail pages, and the session directory now speaks the same queryable filter model as the control-plane APIs so sessions can remain the primary operator object as the runtime grows
+- the local host now has a server-rendered control page for route bindings and delivery pressure, with shared query filters and cursor pagination that mirror the route and delivery directories exposed over JSON
+- the local host now also has server-rendered session directory and session detail pages, and the session directory now speaks the same queryable filter and cursor-pagination model as the control-plane APIs so sessions can remain the primary operator object as the runtime grows
 - explicit session send/wake behavior should flow through the runtime so the same session contract can back both local tools and future channel recovery
 - external channel recovery should keep reusing the same inbound-message runtime contract rather than teaching each connector its own session-start logic
 - external retries and redeliveries should be absorbed by one runtime-owned inbound receipt model, so connectors stay thin and duplicate delivery does not fork extra runs

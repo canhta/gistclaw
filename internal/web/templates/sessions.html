@@ -73,6 +73,12 @@
       {{end}}
     </tbody>
   </table>
+  {{if or .Paging.HasPrev .Paging.HasNext}}
+  <div style="margin-top:12px; display:flex; gap:12px">
+    {{if .Paging.HasPrev}}<a href="{{.Paging.PrevURL}}">Previous</a>{{end}}
+    {{if .Paging.HasNext}}<a href="{{.Paging.NextURL}}">Next</a>{{end}}
+  </div>
+  {{end}}
   {{else}}
   <p class="muted">No sessions yet.</p>
   {{end}}

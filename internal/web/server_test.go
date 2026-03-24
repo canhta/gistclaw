@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -992,6 +993,87 @@ func TestSessionAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("list paginates sessions with next and previous cursors", func(t *testing.T) {
+		h := newServerHarness(t)
+		svc := sessions.NewService(h.db, conversations.NewConversationStore(h.db))
+		base := time.Date(2026, 3, 25, 8, 0, 0, 0, time.UTC)
+
+		runs := make([]model.Run, 0, 3)
+		for i, key := range []conversations.ConversationKey{
+			{ConnectorID: "web", AccountID: "local", ExternalID: "assistant-1", ThreadID: "main-1"},
+			{ConnectorID: "web", AccountID: "local", ExternalID: "assistant-2", ThreadID: "main-2"},
+			{ConnectorID: "web", AccountID: "local", ExternalID: "assistant-3", ThreadID: "main-3"},
+		} {
+			run, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+				ConversationKey: key,
+				FrontAgentID:    "assistant",
+				InitialPrompt:   "Inspect the repo.",
+				WorkspaceRoot:   h.workspaceRoot,
+			})
+			if err != nil {
+				t.Fatalf("StartFrontSession %d failed: %v", i, err)
+			}
+			if err := svc.AppendMessage(context.Background(), model.SessionMessage{
+				ID:        "msg-page-" + run.SessionID,
+				SessionID: run.SessionID,
+				Kind:      model.MessageAssistant,
+				Body:      "page marker",
+				CreatedAt: base.Add(time.Duration(i) * time.Minute),
+			}); err != nil {
+				t.Fatalf("AppendMessage %d failed: %v", i, err)
+			}
+			runs = append(runs, run)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=1", nil)
+		h.server.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var first struct {
+			Sessions   []model.Session `json:"sessions"`
+			NextCursor string          `json:"next_cursor"`
+			PrevCursor string          `json:"prev_cursor"`
+			HasNext    bool            `json:"has_next"`
+			HasPrev    bool            `json:"has_prev"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &first); err != nil {
+			t.Fatalf("decode first page: %v", err)
+		}
+		if len(first.Sessions) != 1 || first.Sessions[0].ID != runs[2].SessionID {
+			t.Fatalf("expected newest session first, got %+v", first.Sessions)
+		}
+		if !first.HasNext || first.NextCursor == "" || first.HasPrev || first.PrevCursor != "" {
+			t.Fatalf("unexpected first page metadata: %+v", first)
+		}
+
+		rr = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/api/sessions?limit=1&cursor="+url.QueryEscape(first.NextCursor)+"&direction=next", nil)
+		h.server.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var second struct {
+			Sessions   []model.Session `json:"sessions"`
+			NextCursor string          `json:"next_cursor"`
+			PrevCursor string          `json:"prev_cursor"`
+			HasNext    bool            `json:"has_next"`
+			HasPrev    bool            `json:"has_prev"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &second); err != nil {
+			t.Fatalf("decode second page: %v", err)
+		}
+		if len(second.Sessions) != 1 || second.Sessions[0].ID != runs[1].SessionID {
+			t.Fatalf("expected middle session second, got %+v", second.Sessions)
+		}
+		if !second.HasPrev || second.PrevCursor == "" {
+			t.Fatalf("expected previous cursor on second page, got %+v", second)
+		}
+	})
+
 	t.Run("detail returns session mailbox as JSON", func(t *testing.T) {
 		h := newServerHarness(t)
 		front := h.startFrontSession(t, "Inspect the repo.")
@@ -1400,6 +1482,74 @@ func TestControlPlanePage(t *testing.T) {
 		}
 	})
 
+	t.Run("GET /control renders section pagination links", func(t *testing.T) {
+		h := newServerHarness(t)
+		_, _, firstIntentID := h.seedControlPlaneRoute(t)
+		h.markOutboundIntentTerminal(t, firstIntentID)
+
+		secondRun, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-1",
+				ExternalID:  "chat-2",
+				ThreadID:    "thread-2",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Inspect Telegram 2.",
+			WorkspaceRoot: h.workspaceRoot,
+		})
+		if err != nil {
+			t.Fatalf("StartFrontSession second telegram failed: %v", err)
+		}
+
+		var secondIntentID string
+		if err := h.db.RawDB().QueryRow(
+			`SELECT id FROM outbound_intents WHERE run_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+			secondRun.ID,
+		).Scan(&secondIntentID); err != nil {
+			t.Fatalf("load second outbound intent: %v", err)
+		}
+		h.markOutboundIntentTerminal(t, secondIntentID)
+
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE session_bindings
+			 SET created_at = CASE external_id
+			 	WHEN 'chat-1' THEN '2026-03-25 08:00:00'
+			 	WHEN 'chat-2' THEN '2026-03-25 08:01:00'
+			 	ELSE created_at
+			 END
+			 WHERE connector_id = 'telegram'`,
+		); err != nil {
+			t.Fatalf("update route created_at values: %v", err)
+		}
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE outbound_intents
+			 SET created_at = CASE id
+			 	WHEN ? THEN '2026-03-25 08:00:00'
+			 	WHEN ? THEN '2026-03-25 08:01:00'
+			 	ELSE created_at
+			 END
+			 WHERE id IN (?, ?)`,
+			firstIntentID, secondIntentID, firstIntentID, secondIntentID,
+		); err != nil {
+			t.Fatalf("update outbound intent created_at values: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/control?connector_id=telegram&route_status=active&active_limit=1&delivery_status=terminal&delivery_limit=1", nil)
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		for _, want := range []string{"chat-2", "active_cursor=", "active_direction=next", "delivery_cursor=", "delivery_direction=next"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected paginated control page to contain %q:\n%s", want, body)
+			}
+		}
+	})
+
 	t.Run("POST /control/routes/{id}/messages wakes the bound session", func(t *testing.T) {
 		h := newServerHarness(t)
 		run, route, _ := h.seedControlPlaneRoute(t)
@@ -1566,6 +1716,53 @@ func TestSessionPages(t *testing.T) {
 		}
 		if strings.Contains(body, worker.SessionID) {
 			t.Fatalf("expected unbound worker session to be filtered out:\n%s", body)
+		}
+	})
+
+	t.Run("GET /sessions renders pagination links", func(t *testing.T) {
+		h := newServerHarness(t)
+		svc := sessions.NewService(h.db, conversations.NewConversationStore(h.db))
+		base := time.Date(2026, 3, 25, 8, 0, 0, 0, time.UTC)
+
+		runs := make([]model.Run, 0, 2)
+		for i, key := range []conversations.ConversationKey{
+			{ConnectorID: "web", AccountID: "local", ExternalID: "assistant-a", ThreadID: "main-a"},
+			{ConnectorID: "web", AccountID: "local", ExternalID: "assistant-b", ThreadID: "main-b"},
+		} {
+			run, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+				ConversationKey: key,
+				FrontAgentID:    "assistant",
+				InitialPrompt:   "Inspect the repo.",
+				WorkspaceRoot:   h.workspaceRoot,
+			})
+			if err != nil {
+				t.Fatalf("StartFrontSession %d failed: %v", i, err)
+			}
+			if err := svc.AppendMessage(context.Background(), model.SessionMessage{
+				ID:        "msg-page-ui-" + run.SessionID,
+				SessionID: run.SessionID,
+				Kind:      model.MessageAssistant,
+				Body:      "ui marker",
+				CreatedAt: base.Add(time.Duration(i) * time.Minute),
+			}); err != nil {
+				t.Fatalf("AppendMessage %d failed: %v", i, err)
+			}
+			runs = append(runs, run)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions?limit=1", nil)
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, runs[1].SessionID) || strings.Contains(body, runs[0].SessionID) {
+			t.Fatalf("expected first page to contain only newest session:\n%s", body)
+		}
+		if !strings.Contains(body, "cursor=") || !strings.Contains(body, "direction=next") || !strings.Contains(body, "Next") {
+			t.Fatalf("expected pagination link on sessions page:\n%s", body)
 		}
 	})
 

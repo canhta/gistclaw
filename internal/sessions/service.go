@@ -53,6 +53,8 @@ type DeliveryQueueFilter struct {
 	SessionID   string
 	Status      string
 	Query       string
+	Cursor      string
+	Direction   string
 	Limit       int
 }
 
@@ -60,6 +62,8 @@ type RouteListFilter struct {
 	ConnectorID string
 	Status      string
 	Query       string
+	Cursor      string
+	Direction   string
 	Limit       int
 }
 
@@ -71,6 +75,8 @@ type SessionListFilter struct {
 	ConnectorID    string
 	Query          string
 	BoundOnly      bool
+	Cursor         string
+	Direction      string
 	Limit          int
 }
 
@@ -207,28 +213,48 @@ func (s *Service) ListConversationSessions(ctx context.Context, conversationID s
 }
 
 func (s *Service) ListSessions(ctx context.Context, filter SessionListFilter) ([]model.Session, error) {
+	page, err := s.ListSessionsPage(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+func (s *Service) ListSessionsPage(ctx context.Context, filter SessionListFilter) (PageResult[model.Session], error) {
 	if filter.Limit <= 0 {
 		filter.Limit = 100
 	}
 
+	createdMicrosExpr := sqliteMicros("sess.created_at")
+	updatedMicrosExpr := "COALESCE(activity.updated_at_micros, " + createdMicrosExpr + ")"
+	roleRankExpr := `CASE sess.role WHEN 'front' THEN 0 ELSE 1 END`
+	orderUpdated := "DESC"
+	orderRole := "ASC"
+	orderCreated := "DESC"
+	orderID := "DESC"
+	reverseResults := false
+
 	query := `SELECT sess.id, sess.conversation_id, sess.key, sess.agent_id, sess.role,
 		        COALESCE(sess.parent_session_id, ''), COALESCE(sess.controller_session_id, ''),
-		        sess.status, sess.created_at, COALESCE(activity.updated_at, sess.created_at) AS updated_at
+		        sess.status, sess.created_at,
+		        ` + updatedMicrosExpr + ` AS updated_at_micros,
+		        ` + roleRankExpr + ` AS role_rank,
+		        ` + createdMicrosExpr + ` AS created_at_micros
 		 FROM sessions sess
 		 LEFT JOIN (
-		     SELECT session_id, MAX(activity_at) AS updated_at
+		     SELECT session_id, MAX(activity_at_micros) AS updated_at_micros
 		     FROM (
-		         SELECT session_id, created_at AS activity_at
+		         SELECT session_id, ` + sqliteMicros("created_at") + ` AS activity_at_micros
 		         FROM session_messages
 		         UNION ALL
-		         SELECT session_id, updated_at AS activity_at
+		         SELECT session_id, ` + sqliteMicros("updated_at") + ` AS activity_at_micros
 		         FROM runs
 		         WHERE session_id IS NOT NULL AND session_id != ''
 		     )
 		     GROUP BY session_id
 		 ) activity ON activity.session_id = sess.id
 		 WHERE 1 = 1`
-	args := make([]any, 0, 16)
+	args := make([]any, 0, 24)
 	if filter.ConversationID != "" {
 		query += `
 		   AND sess.conversation_id = ?`
@@ -287,22 +313,75 @@ func (s *Service) ListSessions(ctx context.Context, filter SessionListFilter) ([
 		   )`
 		args = append(args, q, q, q, q, q, q, q, q)
 	}
+
+	direction := normalizePageDirection(filter.Direction)
+	if strings.TrimSpace(filter.Cursor) != "" {
+		var cursor sessionPageCursor
+		if err := decodePageCursor(filter.Cursor, &cursor); err != nil {
+			return PageResult[model.Session]{}, fmt.Errorf("list sessions page: %w", err)
+		}
+		if direction == "prev" {
+			query += `
+		   AND (
+		       ` + updatedMicrosExpr + ` > ?
+		       OR (` + updatedMicrosExpr + ` = ? AND ` + roleRankExpr + ` < ?)
+		       OR (` + updatedMicrosExpr + ` = ? AND ` + roleRankExpr + ` = ? AND ` + createdMicrosExpr + ` > ?)
+		       OR (` + updatedMicrosExpr + ` = ? AND ` + roleRankExpr + ` = ? AND ` + createdMicrosExpr + ` = ? AND sess.id > ?)
+		   )`
+			args = append(args,
+				cursor.UpdatedAtMicros,
+				cursor.UpdatedAtMicros, cursor.RoleRank,
+				cursor.UpdatedAtMicros, cursor.RoleRank, cursor.CreatedAtMicros,
+				cursor.UpdatedAtMicros, cursor.RoleRank, cursor.CreatedAtMicros, cursor.ID,
+			)
+			orderUpdated = "ASC"
+			orderRole = "DESC"
+			orderCreated = "ASC"
+			orderID = "ASC"
+			reverseResults = true
+		} else {
+			query += `
+		   AND (
+		       ` + updatedMicrosExpr + ` < ?
+		       OR (` + updatedMicrosExpr + ` = ? AND ` + roleRankExpr + ` > ?)
+		       OR (` + updatedMicrosExpr + ` = ? AND ` + roleRankExpr + ` = ? AND ` + createdMicrosExpr + ` < ?)
+		       OR (` + updatedMicrosExpr + ` = ? AND ` + roleRankExpr + ` = ? AND ` + createdMicrosExpr + ` = ? AND sess.id < ?)
+		   )`
+			args = append(args,
+				cursor.UpdatedAtMicros,
+				cursor.UpdatedAtMicros, cursor.RoleRank,
+				cursor.UpdatedAtMicros, cursor.RoleRank, cursor.CreatedAtMicros,
+				cursor.UpdatedAtMicros, cursor.RoleRank, cursor.CreatedAtMicros, cursor.ID,
+			)
+		}
+	}
+
 	query += `
-		 ORDER BY updated_at DESC, sess.created_at DESC, sess.id DESC
+		 ORDER BY ` + updatedMicrosExpr + ` ` + orderUpdated + `,
+		          ` + roleRankExpr + ` ` + orderRole + `,
+		          ` + createdMicrosExpr + ` ` + orderCreated + `,
+		          sess.id ` + orderID + `
 		 LIMIT ?`
-	args = append(args, filter.Limit)
+	args = append(args, filter.Limit+1)
 
 	rows, err := s.db.RawDB().QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list sessions: %w", err)
+		return PageResult[model.Session]{}, fmt.Errorf("list sessions page: %w", err)
 	}
 	defer rows.Close()
 
-	list := make([]model.Session, 0)
+	type sessionRow struct {
+		session model.Session
+		cursor  sessionPageCursor
+	}
+
+	list := make([]sessionRow, 0, filter.Limit+1)
 	for rows.Next() {
 		var session model.Session
 		var role string
-		var updatedAt string
+		var updatedAtMicros int64
+		var roleRank int
+		var createdAtMicros int64
 		if err := rows.Scan(
 			&session.ID,
 			&session.ConversationID,
@@ -313,22 +392,74 @@ func (s *Service) ListSessions(ctx context.Context, filter SessionListFilter) ([
 			&session.ControllerSessionID,
 			&session.Status,
 			&session.CreatedAt,
-			&updatedAt,
+			&updatedAtMicros,
+			&roleRank,
+			&createdAtMicros,
 		); err != nil {
-			return nil, fmt.Errorf("scan conversation session: %w", err)
+			return PageResult[model.Session]{}, fmt.Errorf("scan conversation session: %w", err)
 		}
-		parsedUpdatedAt, err := parseActivityTime(updatedAt)
-		if err != nil {
-			return nil, fmt.Errorf("parse conversation session updated_at: %w", err)
-		}
-		session.UpdatedAt = parsedUpdatedAt
+		session.UpdatedAt = time.UnixMicro(updatedAtMicros).UTC()
 		session.Role = model.SessionRole(role)
-		list = append(list, session)
+		list = append(list, sessionRow{
+			session: session,
+			cursor: sessionPageCursor{
+				UpdatedAtMicros: updatedAtMicros,
+				RoleRank:        roleRank,
+				CreatedAtMicros: createdAtMicros,
+				ID:              session.ID,
+			},
+		})
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate sessions: %w", err)
+		return PageResult[model.Session]{}, fmt.Errorf("iterate sessions: %w", err)
 	}
-	return list, nil
+
+	hasMore := len(list) > filter.Limit
+	if hasMore {
+		list = list[:filter.Limit]
+	}
+	if reverseResults {
+		reverseSlice(list)
+	}
+
+	page := PageResult[model.Session]{
+		Items: make([]model.Session, 0, len(list)),
+	}
+	for _, item := range list {
+		page.Items = append(page.Items, item.session)
+	}
+	if len(list) == 0 {
+		return page, nil
+	}
+
+	if strings.TrimSpace(filter.Cursor) != "" {
+		if direction == "prev" {
+			page.HasNext = true
+		} else {
+			page.HasPrev = true
+		}
+	}
+	if hasMore {
+		if direction == "prev" {
+			page.HasPrev = true
+		} else {
+			page.HasNext = true
+		}
+	}
+	if page.HasPrev {
+		page.PrevCursor, err = encodePageCursor(list[0].cursor)
+		if err != nil {
+			return PageResult[model.Session]{}, fmt.Errorf("encode previous session cursor: %w", err)
+		}
+	}
+	if page.HasNext {
+		page.NextCursor, err = encodePageCursor(list[len(list)-1].cursor)
+		if err != nil {
+			return PageResult[model.Session]{}, fmt.Errorf("encode next session cursor: %w", err)
+		}
+	}
+
+	return page, nil
 }
 
 func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (model.SessionRoute, error) {
@@ -409,17 +540,33 @@ func (s *Service) LoadRoute(ctx context.Context, routeID string) (model.RouteDir
 }
 
 func (s *Service) ListRoutes(ctx context.Context, filter RouteListFilter) ([]model.RouteDirectoryItem, error) {
+	page, err := s.ListRoutesPage(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+func (s *Service) ListRoutesPage(ctx context.Context, filter RouteListFilter) (PageResult[model.RouteDirectoryItem], error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 100
+	}
+
+	createdMicrosExpr := sqliteMicros("bind.created_at")
+	orderDirection := "DESC"
+	reverseResults := false
+
 	query := strings.Builder{}
 	query.WriteString(
 		`SELECT bind.id, bind.session_id, bind.thread_id, bind.connector_id, bind.account_id, bind.external_id,
 		        bind.status, bind.created_at, bind.deactivated_at, bind.deactivation_reason, bind.replaced_by_route_id,
-		        bind.conversation_id, sess.agent_id, sess.role
+		        bind.conversation_id, sess.agent_id, sess.role, ` + createdMicrosExpr + ` AS created_at_micros
 		 FROM session_bindings bind
 		 JOIN sessions sess ON sess.id = bind.session_id
 		 WHERE 1 = 1`,
 	)
 
-	args := make([]any, 0, 2)
+	args := make([]any, 0, 12)
 	if filter.ConnectorID != "" {
 		query.WriteString(" AND bind.connector_id = ?")
 		args = append(args, filter.ConnectorID)
@@ -446,32 +593,103 @@ func (s *Service) ListRoutes(ctx context.Context, filter RouteListFilter) ([]mod
 		)`)
 		args = append(args, q, q, q, q, q, q, q, q)
 	}
-	query.WriteString(`
-		 ORDER BY bind.created_at DESC, bind.id DESC`)
-	if filter.Limit > 0 {
-		query.WriteString(" LIMIT ?")
-		args = append(args, filter.Limit)
+	direction := normalizePageDirection(filter.Direction)
+	if strings.TrimSpace(filter.Cursor) != "" {
+		var cursor routePageCursor
+		if err := decodePageCursor(filter.Cursor, &cursor); err != nil {
+			return PageResult[model.RouteDirectoryItem]{}, fmt.Errorf("list routes page: %w", err)
+		}
+		if direction == "prev" {
+			query.WriteString(` AND (` + createdMicrosExpr + ` > ? OR (` + createdMicrosExpr + ` = ? AND bind.id > ?))`)
+			args = append(args, cursor.CreatedAtMicros, cursor.CreatedAtMicros, cursor.ID)
+			orderDirection = "ASC"
+			reverseResults = true
+		} else {
+			query.WriteString(` AND (` + createdMicrosExpr + ` < ? OR (` + createdMicrosExpr + ` = ? AND bind.id < ?))`)
+			args = append(args, cursor.CreatedAtMicros, cursor.CreatedAtMicros, cursor.ID)
+		}
 	}
+	query.WriteString(`
+		 ORDER BY ` + createdMicrosExpr + ` ` + orderDirection + `, bind.id ` + orderDirection + `
+		 LIMIT ?`)
+	args = append(args, filter.Limit+1)
 
 	rows, err := s.db.RawDB().QueryContext(ctx, query.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("list routes: %w", err)
+		return PageResult[model.RouteDirectoryItem]{}, fmt.Errorf("list routes page: %w", err)
 	}
 	defer rows.Close()
 
-	routes := make([]model.RouteDirectoryItem, 0)
-	for rows.Next() {
-		route, err := scanRouteDirectoryItem(rows)
-		if err != nil {
-			return nil, err
-		}
-		routes = append(routes, route)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate routes: %w", err)
+	type routeRow struct {
+		route  model.RouteDirectoryItem
+		cursor routePageCursor
 	}
 
-	return routes, nil
+	routes := make([]routeRow, 0, filter.Limit+1)
+	for rows.Next() {
+		var createdAtMicros int64
+		route, err := scanRouteDirectoryItemWithCursor(rows, &createdAtMicros)
+		if err != nil {
+			return PageResult[model.RouteDirectoryItem]{}, err
+		}
+		routes = append(routes, routeRow{
+			route: route,
+			cursor: routePageCursor{
+				CreatedAtMicros: createdAtMicros,
+				ID:              route.ID,
+			},
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return PageResult[model.RouteDirectoryItem]{}, fmt.Errorf("iterate routes: %w", err)
+	}
+
+	hasMore := len(routes) > filter.Limit
+	if hasMore {
+		routes = routes[:filter.Limit]
+	}
+	if reverseResults {
+		reverseSlice(routes)
+	}
+
+	page := PageResult[model.RouteDirectoryItem]{
+		Items: make([]model.RouteDirectoryItem, 0, len(routes)),
+	}
+	for _, item := range routes {
+		page.Items = append(page.Items, item.route)
+	}
+	if len(routes) == 0 {
+		return page, nil
+	}
+
+	if strings.TrimSpace(filter.Cursor) != "" {
+		if direction == "prev" {
+			page.HasNext = true
+		} else {
+			page.HasPrev = true
+		}
+	}
+	if hasMore {
+		if direction == "prev" {
+			page.HasPrev = true
+		} else {
+			page.HasNext = true
+		}
+	}
+	if page.HasPrev {
+		page.PrevCursor, err = encodePageCursor(routes[0].cursor)
+		if err != nil {
+			return PageResult[model.RouteDirectoryItem]{}, fmt.Errorf("encode previous route cursor: %w", err)
+		}
+	}
+	if page.HasNext {
+		page.NextCursor, err = encodePageCursor(routes[len(routes)-1].cursor)
+		if err != nil {
+			return PageResult[model.RouteDirectoryItem]{}, fmt.Errorf("encode next route cursor: %w", err)
+		}
+	}
+
+	return page, nil
 }
 
 func (s *Service) LoadSessionOutboundIntent(ctx context.Context, sessionID string, intentID string) (model.OutboundIntent, error) {
@@ -584,11 +802,35 @@ func (s *Service) ListSessionOutboundIntents(ctx context.Context, sessionID stri
 }
 
 func (s *Service) ListDeliveryQueue(ctx context.Context, filter DeliveryQueueFilter) ([]model.DeliveryQueueItem, error) {
+	page, err := s.ListDeliveryQueuePage(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+func (s *Service) ListDeliveryQueuePage(ctx context.Context, filter DeliveryQueueFilter) (PageResult[model.DeliveryQueueItem], error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 100
+	}
+
+	statusRankExpr := `CASE oi.status
+	         WHEN 'retrying' THEN 0
+	         WHEN 'pending' THEN 1
+	         WHEN 'terminal' THEN 2
+	         ELSE 3
+	     END`
+	createdMicrosExpr := sqliteMicros("oi.created_at")
+	orderDirection := "ASC"
+	reverseResults := false
+
 	query := strings.Builder{}
 	query.WriteString(
 		`SELECT oi.id, COALESCE(oi.run_id, ''), r.session_id, r.conversation_id,
 		        oi.connector_id, oi.chat_id, oi.message_text, COALESCE(oi.dedupe_key, ''),
-		        oi.status, oi.attempts, oi.created_at, oi.last_attempt_at
+		        oi.status, oi.attempts, oi.created_at, oi.last_attempt_at,
+		        ` + statusRankExpr + ` AS status_rank,
+		        ` + createdMicrosExpr + ` AS created_at_micros
 		 FROM outbound_intents oi
 		 JOIN runs r ON r.id = oi.run_id`,
 	)
@@ -614,43 +856,120 @@ func (s *Service) ListDeliveryQueue(ctx context.Context, filter DeliveryQueueFil
 		conditions = append(conditions, `(LOWER(oi.id) LIKE ? OR LOWER(COALESCE(oi.run_id, '')) LIKE ? OR LOWER(r.session_id) LIKE ? OR LOWER(r.conversation_id) LIKE ? OR LOWER(oi.connector_id) LIKE ? OR LOWER(oi.chat_id) LIKE ? OR LOWER(oi.message_text) LIKE ?)`)
 		args = append(args, q, q, q, q, q, q, q)
 	}
+	direction := normalizePageDirection(filter.Direction)
+	if strings.TrimSpace(filter.Cursor) != "" {
+		var cursor deliveryPageCursor
+		if err := decodePageCursor(filter.Cursor, &cursor); err != nil {
+			return PageResult[model.DeliveryQueueItem]{}, fmt.Errorf("list delivery queue page: %w", err)
+		}
+		if direction == "prev" {
+			conditions = append(conditions, `(`+statusRankExpr+` < ? OR (`+statusRankExpr+` = ? AND `+createdMicrosExpr+` < ?) OR (`+statusRankExpr+` = ? AND `+createdMicrosExpr+` = ? AND oi.id < ?))`)
+			args = append(args,
+				cursor.StatusRank,
+				cursor.StatusRank, cursor.CreatedAtMicros,
+				cursor.StatusRank, cursor.CreatedAtMicros, cursor.ID,
+			)
+			orderDirection = "DESC"
+			reverseResults = true
+		} else {
+			conditions = append(conditions, `(`+statusRankExpr+` > ? OR (`+statusRankExpr+` = ? AND `+createdMicrosExpr+` > ?) OR (`+statusRankExpr+` = ? AND `+createdMicrosExpr+` = ? AND oi.id > ?))`)
+			args = append(args,
+				cursor.StatusRank,
+				cursor.StatusRank, cursor.CreatedAtMicros,
+				cursor.StatusRank, cursor.CreatedAtMicros, cursor.ID,
+			)
+		}
+	}
 	if len(conditions) > 0 {
 		query.WriteString(" WHERE ")
 		query.WriteString(strings.Join(conditions, " AND "))
 	}
 	query.WriteString(`
 		 ORDER BY
-		     CASE oi.status
-		         WHEN 'retrying' THEN 0
-		         WHEN 'pending' THEN 1
-		         WHEN 'terminal' THEN 2
-		         ELSE 3
-		     END,
-		     oi.created_at ASC, oi.id ASC`)
-	if filter.Limit > 0 {
-		query.WriteString(" LIMIT ?")
-		args = append(args, filter.Limit)
-	}
+		     ` + statusRankExpr + ` ` + orderDirection + `,
+		     ` + createdMicrosExpr + ` ` + orderDirection + `,
+		     oi.id ` + orderDirection + `
+		 LIMIT ?`)
+	args = append(args, filter.Limit+1)
 
 	rows, err := s.db.RawDB().QueryContext(ctx, query.String(), args...)
 	if err != nil {
-		return nil, fmt.Errorf("list delivery queue: %w", err)
+		return PageResult[model.DeliveryQueueItem]{}, fmt.Errorf("list delivery queue page: %w", err)
 	}
 	defer rows.Close()
 
-	items := make([]model.DeliveryQueueItem, 0)
-	for rows.Next() {
-		item, err := scanDeliveryQueueItem(rows)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate delivery queue: %w", err)
+	type deliveryRow struct {
+		item   model.DeliveryQueueItem
+		cursor deliveryPageCursor
 	}
 
-	return items, nil
+	items := make([]deliveryRow, 0, filter.Limit+1)
+	for rows.Next() {
+		var statusRank int
+		var createdAtMicros int64
+		item, err := scanDeliveryQueueItemWithCursor(rows, &statusRank, &createdAtMicros)
+		if err != nil {
+			return PageResult[model.DeliveryQueueItem]{}, err
+		}
+		items = append(items, deliveryRow{
+			item: item,
+			cursor: deliveryPageCursor{
+				StatusRank:      statusRank,
+				CreatedAtMicros: createdAtMicros,
+				ID:              item.ID,
+			},
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return PageResult[model.DeliveryQueueItem]{}, fmt.Errorf("iterate delivery queue: %w", err)
+	}
+
+	hasMore := len(items) > filter.Limit
+	if hasMore {
+		items = items[:filter.Limit]
+	}
+	if reverseResults {
+		reverseSlice(items)
+	}
+
+	page := PageResult[model.DeliveryQueueItem]{
+		Items: make([]model.DeliveryQueueItem, 0, len(items)),
+	}
+	for _, item := range items {
+		page.Items = append(page.Items, item.item)
+	}
+	if len(items) == 0 {
+		return page, nil
+	}
+
+	if strings.TrimSpace(filter.Cursor) != "" {
+		if direction == "prev" {
+			page.HasNext = true
+		} else {
+			page.HasPrev = true
+		}
+	}
+	if hasMore {
+		if direction == "prev" {
+			page.HasPrev = true
+		} else {
+			page.HasNext = true
+		}
+	}
+	if page.HasPrev {
+		page.PrevCursor, err = encodePageCursor(items[0].cursor)
+		if err != nil {
+			return PageResult[model.DeliveryQueueItem]{}, fmt.Errorf("encode previous delivery cursor: %w", err)
+		}
+	}
+	if page.HasNext {
+		page.NextCursor, err = encodePageCursor(items[len(items)-1].cursor)
+		if err != nil {
+			return PageResult[model.DeliveryQueueItem]{}, fmt.Errorf("encode next delivery cursor: %w", err)
+		}
+	}
+
+	return page, nil
 }
 
 func (s *Service) ListSessionDeliveryFailures(ctx context.Context, sessionID string, limit int) ([]model.DeliveryFailure, error) {
@@ -831,12 +1150,18 @@ func (s *Service) LoadDeliveryQueueItem(ctx context.Context, intentID string) (m
 func scanRouteDirectoryItem(scanner interface {
 	Scan(dest ...any) error
 }) (model.RouteDirectoryItem, error) {
+	return scanRouteDirectoryItemWithCursor(scanner, nil)
+}
+
+func scanRouteDirectoryItemWithCursor(scanner interface {
+	Scan(dest ...any) error
+}, createdAtMicros *int64) (model.RouteDirectoryItem, error) {
 	var route model.RouteDirectoryItem
 	var role string
 	var deactivatedAt sql.NullString
 	var deactivationReason string
 	var replacedByRouteID string
-	if err := scanner.Scan(
+	dest := []any{
 		&route.ID,
 		&route.SessionID,
 		&route.ThreadID,
@@ -851,7 +1176,11 @@ func scanRouteDirectoryItem(scanner interface {
 		&route.ConversationID,
 		&route.AgentID,
 		&role,
-	); err != nil {
+	}
+	if createdAtMicros != nil {
+		dest = append(dest, createdAtMicros)
+	}
+	if err := scanner.Scan(dest...); err != nil {
 		return model.RouteDirectoryItem{}, fmt.Errorf("scan route directory item: %w", err)
 	}
 	route.Role = model.SessionRole(role)
@@ -885,9 +1214,15 @@ func (s *Service) loadOutboundIntentStatus(ctx context.Context, intentID string)
 func scanDeliveryQueueItem(scanner interface {
 	Scan(dest ...any) error
 }) (model.DeliveryQueueItem, error) {
+	return scanDeliveryQueueItemWithCursor(scanner, nil, nil)
+}
+
+func scanDeliveryQueueItemWithCursor(scanner interface {
+	Scan(dest ...any) error
+}, statusRank *int, createdAtMicros *int64) (model.DeliveryQueueItem, error) {
 	var item model.DeliveryQueueItem
 	var lastAttempt sql.NullString
-	if err := scanner.Scan(
+	dest := []any{
 		&item.ID,
 		&item.RunID,
 		&item.SessionID,
@@ -900,7 +1235,14 @@ func scanDeliveryQueueItem(scanner interface {
 		&item.Attempts,
 		&item.CreatedAt,
 		&lastAttempt,
-	); err != nil {
+	}
+	if statusRank != nil {
+		dest = append(dest, statusRank)
+	}
+	if createdAtMicros != nil {
+		dest = append(dest, createdAtMicros)
+	}
+	if err := scanner.Scan(dest...); err != nil {
 		return model.DeliveryQueueItem{}, fmt.Errorf("scan delivery queue item: %w", err)
 	}
 	if lastAttempt.Valid && lastAttempt.String != "" {

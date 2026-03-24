@@ -12,12 +12,15 @@ import (
 )
 
 type controlPageData struct {
-	Health       []model.ConnectorDeliveryHealth
-	ActiveRoutes []model.RouteDirectoryItem
-	RouteHistory []model.RouteDirectoryItem
-	Deliveries   []model.DeliveryQueueItem
-	Filters      controlPageFilters
-	Error        string
+	Health         []model.ConnectorDeliveryHealth
+	ActiveRoutes   []model.RouteDirectoryItem
+	ActivePaging   pageLinks
+	RouteHistory   []model.RouteDirectoryItem
+	HistoryPaging  pageLinks
+	Deliveries     []model.DeliveryQueueItem
+	DeliveryPaging pageLinks
+	Filters        controlPageFilters
+	Error          string
 }
 
 type controlPageFilters struct {
@@ -25,6 +28,9 @@ type controlPageFilters struct {
 	ConnectorID    string
 	RouteStatus    string
 	DeliveryStatus string
+	ActiveLimit    int
+	HistoryLimit   int
+	DeliveryLimit  int
 }
 
 func (s *Server) handleControlPage(w http.ResponseWriter, r *http.Request) {
@@ -134,17 +140,18 @@ func (s *Server) loadControlPageData(r *http.Request) (controlPageData, error) {
 		ConnectorID:    strings.TrimSpace(r.URL.Query().Get("connector_id")),
 		RouteStatus:    normalizeControlStatus(r.URL.Query().Get("route_status")),
 		DeliveryStatus: normalizeControlStatus(r.URL.Query().Get("delivery_status")),
+		ActiveLimit:    requestNamedLimit(r, "active_limit", 50),
+		HistoryLimit:   requestNamedLimit(r, "history_limit", 25),
+		DeliveryLimit:  requestNamedLimit(r, "delivery_limit", 50),
 	}
-	routeFilter := sessions.RouteListFilter{
+	baseRouteFilter := sessions.RouteListFilter{
 		ConnectorID: filters.ConnectorID,
 		Query:       filters.Query,
-		Limit:       50,
 	}
-	deliveryFilter := sessions.DeliveryQueueFilter{
+	baseDeliveryFilter := sessions.DeliveryQueueFilter{
 		ConnectorID: filters.ConnectorID,
 		Status:      filters.DeliveryStatus,
 		Query:       filters.Query,
-		Limit:       50,
 	}
 
 	health, err := s.rt.ConnectorDeliveryHealth(r.Context())
@@ -154,47 +161,69 @@ func (s *Server) loadControlPageData(r *http.Request) (controlPageData, error) {
 	health = filterConnectorHealth(health, filters)
 
 	var (
-		activeRoutes []model.RouteDirectoryItem
-		routeHistory []model.RouteDirectoryItem
+		activeRoutes  []model.RouteDirectoryItem
+		activePaging  pageLinks
+		routeHistory  []model.RouteDirectoryItem
+		historyPaging pageLinks
 	)
 	switch filters.RouteStatus {
 	case "inactive":
-		historyFilter := routeFilter
+		historyFilter := baseRouteFilter
 		historyFilter.Status = "inactive"
-		historyFilter.Limit = 25
-		routeHistory, err = s.rt.ListRoutes(r.Context(), historyFilter)
+		historyFilter.Limit = filters.HistoryLimit
+		historyFilter.Cursor = strings.TrimSpace(r.URL.Query().Get("history_cursor"))
+		historyFilter.Direction = strings.TrimSpace(r.URL.Query().Get("history_direction"))
+		historyPage, err := s.rt.ListRoutesPage(r.Context(), historyFilter)
 		if err != nil {
 			return controlPageData{}, errors.New("failed to load route history")
 		}
+		routeHistory = historyPage.Items
+		historyPaging = buildPageLinks("/control", cloneQuery(r.URL.Query()), "history_cursor", "history_direction", historyPage.NextCursor, historyPage.PrevCursor, historyPage.HasNext, historyPage.HasPrev)
 	default:
-		activeFilter := routeFilter
+		activeFilter := baseRouteFilter
 		activeFilter.Status = "active"
-		activeRoutes, err = s.rt.ListRoutes(r.Context(), activeFilter)
+		activeFilter.Limit = filters.ActiveLimit
+		activeFilter.Cursor = strings.TrimSpace(r.URL.Query().Get("active_cursor"))
+		activeFilter.Direction = strings.TrimSpace(r.URL.Query().Get("active_direction"))
+		activePage, err := s.rt.ListRoutesPage(r.Context(), activeFilter)
 		if err != nil {
 			return controlPageData{}, errors.New("failed to load active routes")
 		}
+		activeRoutes = activePage.Items
+		activePaging = buildPageLinks("/control", cloneQuery(r.URL.Query()), "active_cursor", "active_direction", activePage.NextCursor, activePage.PrevCursor, activePage.HasNext, activePage.HasPrev)
 		if filters.RouteStatus == "all" {
-			historyFilter := routeFilter
+			historyFilter := baseRouteFilter
 			historyFilter.Status = "inactive"
-			historyFilter.Limit = 25
-			routeHistory, err = s.rt.ListRoutes(r.Context(), historyFilter)
+			historyFilter.Limit = filters.HistoryLimit
+			historyFilter.Cursor = strings.TrimSpace(r.URL.Query().Get("history_cursor"))
+			historyFilter.Direction = strings.TrimSpace(r.URL.Query().Get("history_direction"))
+			historyPage, err := s.rt.ListRoutesPage(r.Context(), historyFilter)
 			if err != nil {
 				return controlPageData{}, errors.New("failed to load route history")
 			}
+			routeHistory = historyPage.Items
+			historyPaging = buildPageLinks("/control", cloneQuery(r.URL.Query()), "history_cursor", "history_direction", historyPage.NextCursor, historyPage.PrevCursor, historyPage.HasNext, historyPage.HasPrev)
 		}
 	}
 
-	deliveries, err := s.rt.ListDeliveries(r.Context(), deliveryFilter)
+	deliveryFilter := baseDeliveryFilter
+	deliveryFilter.Limit = filters.DeliveryLimit
+	deliveryFilter.Cursor = strings.TrimSpace(r.URL.Query().Get("delivery_cursor"))
+	deliveryFilter.Direction = strings.TrimSpace(r.URL.Query().Get("delivery_direction"))
+	deliveryPage, err := s.rt.ListDeliveriesPage(r.Context(), deliveryFilter)
 	if err != nil {
 		return controlPageData{}, errors.New("failed to load delivery queue")
 	}
 
 	return controlPageData{
-		Health:       health,
-		ActiveRoutes: activeRoutes,
-		RouteHistory: routeHistory,
-		Deliveries:   deliveries,
-		Filters:      filters,
+		Health:         health,
+		ActiveRoutes:   activeRoutes,
+		ActivePaging:   activePaging,
+		RouteHistory:   routeHistory,
+		HistoryPaging:  historyPaging,
+		Deliveries:     deliveryPage.Items,
+		DeliveryPaging: buildPageLinks("/control", cloneQuery(r.URL.Query()), "delivery_cursor", "delivery_direction", deliveryPage.NextCursor, deliveryPage.PrevCursor, deliveryPage.HasNext, deliveryPage.HasPrev),
+		Filters:        filters,
 	}, nil
 }
 

@@ -14,7 +14,11 @@ import (
 )
 
 type sessionListResponse struct {
-	Sessions []model.Session `json:"sessions"`
+	Sessions   []model.Session `json:"sessions"`
+	NextCursor string          `json:"next_cursor,omitempty"`
+	PrevCursor string          `json:"prev_cursor,omitempty"`
+	HasNext    bool            `json:"has_next"`
+	HasPrev    bool            `json:"has_prev"`
 }
 
 type connectorDeliveryHealthResponse struct {
@@ -22,7 +26,11 @@ type connectorDeliveryHealthResponse struct {
 }
 
 type routeDirectoryResponse struct {
-	Routes []model.RouteDirectoryItem `json:"routes"`
+	Routes     []model.RouteDirectoryItem `json:"routes"`
+	NextCursor string                     `json:"next_cursor,omitempty"`
+	PrevCursor string                     `json:"prev_cursor,omitempty"`
+	HasNext    bool                       `json:"has_next"`
+	HasPrev    bool                       `json:"has_prev"`
 }
 
 type routeCreateRequest struct {
@@ -43,6 +51,10 @@ type routeDeactivateResponse struct {
 
 type deliveryQueueResponse struct {
 	Deliveries []model.DeliveryQueueItem `json:"deliveries"`
+	NextCursor string                    `json:"next_cursor,omitempty"`
+	PrevCursor string                    `json:"prev_cursor,omitempty"`
+	HasNext    bool                      `json:"has_next"`
+	HasPrev    bool                      `json:"has_prev"`
 }
 
 type sessionMailboxResponse struct {
@@ -72,13 +84,19 @@ func (s *Server) handleSessionsIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	list, err := s.rt.ListAllSessions(r.Context(), sessionListFilterFromRequest(r, 50))
+	page, err := s.rt.ListAllSessionsPage(r.Context(), sessionListFilterFromRequest(r, 50))
 	if err != nil {
 		http.Error(w, "failed to load sessions", http.StatusInternalServerError)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, sessionListResponse{Sessions: list})
+	writeJSON(w, http.StatusOK, sessionListResponse{
+		Sessions:   page.Items,
+		NextCursor: page.NextCursor,
+		PrevCursor: page.PrevCursor,
+		HasNext:    page.HasNext,
+		HasPrev:    page.HasPrev,
+	})
 }
 
 func (s *Server) handleDeliveryHealth(w http.ResponseWriter, r *http.Request) {
@@ -102,13 +120,19 @@ func (s *Server) handleRoutesIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	routes, err := s.rt.ListRoutes(r.Context(), routeListFilterFromRequest(r, 50))
+	page, err := s.rt.ListRoutesPage(r.Context(), routeListFilterFromRequest(r, 50))
 	if err != nil {
 		http.Error(w, "failed to load routes", http.StatusInternalServerError)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, routeDirectoryResponse{Routes: routes})
+	writeJSON(w, http.StatusOK, routeDirectoryResponse{
+		Routes:     page.Items,
+		NextCursor: page.NextCursor,
+		PrevCursor: page.PrevCursor,
+		HasNext:    page.HasNext,
+		HasPrev:    page.HasPrev,
+	})
 }
 
 func (s *Server) handleRouteCreate(w http.ResponseWriter, r *http.Request) {
@@ -154,13 +178,19 @@ func (s *Server) handleDeliveryIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	list, err := s.rt.ListDeliveries(r.Context(), deliveryQueueFilterFromRequest(r, 50))
+	page, err := s.rt.ListDeliveriesPage(r.Context(), deliveryQueueFilterFromRequest(r, 50))
 	if err != nil {
 		http.Error(w, "failed to load deliveries", http.StatusInternalServerError)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, deliveryQueueResponse{Deliveries: list})
+	writeJSON(w, http.StatusOK, deliveryQueueResponse{
+		Deliveries: page.Items,
+		NextCursor: page.NextCursor,
+		PrevCursor: page.PrevCursor,
+		HasNext:    page.HasNext,
+		HasPrev:    page.HasPrev,
+	})
 }
 
 func (s *Server) handleRouteDeactivate(w http.ResponseWriter, r *http.Request) {
@@ -384,6 +414,8 @@ func sessionListFilterFromRequest(r *http.Request, fallbackLimit int) sessions.S
 		ConnectorID:    strings.TrimSpace(r.URL.Query().Get("connector_id")),
 		Query:          strings.TrimSpace(r.URL.Query().Get("q")),
 		BoundOnly:      requestBool(r, "bound_only"),
+		Cursor:         strings.TrimSpace(r.URL.Query().Get("cursor")),
+		Direction:      strings.TrimSpace(r.URL.Query().Get("direction")),
 		Limit:          requestLimit(r, fallbackLimit),
 	}
 }
@@ -393,6 +425,8 @@ func routeListFilterFromRequest(r *http.Request, fallbackLimit int) sessions.Rou
 		ConnectorID: strings.TrimSpace(r.URL.Query().Get("connector_id")),
 		Status:      strings.TrimSpace(r.URL.Query().Get("status")),
 		Query:       strings.TrimSpace(r.URL.Query().Get("q")),
+		Cursor:      strings.TrimSpace(r.URL.Query().Get("cursor")),
+		Direction:   strings.TrimSpace(r.URL.Query().Get("direction")),
 		Limit:       requestLimit(r, fallbackLimit),
 	}
 }
@@ -403,6 +437,8 @@ func deliveryQueueFilterFromRequest(r *http.Request, fallbackLimit int) sessions
 		SessionID:   strings.TrimSpace(r.URL.Query().Get("session_id")),
 		Status:      strings.TrimSpace(r.URL.Query().Get("status")),
 		Query:       strings.TrimSpace(r.URL.Query().Get("q")),
+		Cursor:      strings.TrimSpace(r.URL.Query().Get("cursor")),
+		Direction:   strings.TrimSpace(r.URL.Query().Get("direction")),
 		Limit:       requestLimit(r, fallbackLimit),
 	}
 }

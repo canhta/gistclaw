@@ -864,3 +864,255 @@ func TestService_ListSessionsAppliesDirectoryFilters(t *testing.T) {
 		t.Fatalf("expected only archived session, got %+v", list)
 	}
 }
+
+func TestService_ListSessionsPageSupportsCursorPagination(t *testing.T) {
+	svc := newTestSessionService(t)
+	ctx := context.Background()
+
+	first, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-1",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession first failed: %v", err)
+	}
+	second, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-2",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession second failed: %v", err)
+	}
+	third, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-3",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession third failed: %v", err)
+	}
+
+	base := time.Date(2026, 3, 25, 8, 0, 0, 0, time.UTC)
+	for _, item := range []struct {
+		sessionID string
+		messageID string
+		body      string
+		at        time.Time
+	}{
+		{sessionID: first.ID, messageID: "msg-1", body: "older", at: base},
+		{sessionID: second.ID, messageID: "msg-2", body: "middle", at: base.Add(time.Minute)},
+		{sessionID: third.ID, messageID: "msg-3", body: "newest", at: base.Add(2 * time.Minute)},
+	} {
+		if err := svc.AppendMessage(ctx, model.SessionMessage{
+			ID:        item.messageID,
+			SessionID: item.sessionID,
+			Kind:      model.MessageAssistant,
+			Body:      item.body,
+			CreatedAt: item.at,
+		}); err != nil {
+			t.Fatalf("AppendMessage %s failed: %v", item.sessionID, err)
+		}
+	}
+
+	page, err := svc.ListSessionsPage(ctx, SessionListFilter{Limit: 1})
+	if err != nil {
+		t.Fatalf("ListSessionsPage first failed: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != third.ID {
+		t.Fatalf("expected newest third session on first page, got %+v", page.Items)
+	}
+	if !page.HasNext || page.NextCursor == "" || page.HasPrev || page.PrevCursor != "" {
+		t.Fatalf("unexpected first page cursors: %+v", page)
+	}
+
+	page, err = svc.ListSessionsPage(ctx, SessionListFilter{
+		Limit:     1,
+		Cursor:    page.NextCursor,
+		Direction: "next",
+	})
+	if err != nil {
+		t.Fatalf("ListSessionsPage second failed: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != second.ID {
+		t.Fatalf("expected middle second session on next page, got %+v", page.Items)
+	}
+	if !page.HasNext || page.NextCursor == "" || !page.HasPrev || page.PrevCursor == "" {
+		t.Fatalf("unexpected second page cursors: %+v", page)
+	}
+
+	page, err = svc.ListSessionsPage(ctx, SessionListFilter{
+		Limit:     1,
+		Cursor:    page.PrevCursor,
+		Direction: "prev",
+	})
+	if err != nil {
+		t.Fatalf("ListSessionsPage previous failed: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != third.ID {
+		t.Fatalf("expected to page back to newest third session, got %+v", page.Items)
+	}
+}
+
+func TestService_ListRoutesPageSupportsCursorPagination(t *testing.T) {
+	svc := newTestSessionService(t)
+	ctx := context.Background()
+
+	frontOne, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-1",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession first failed: %v", err)
+	}
+	frontTwo, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-2",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession second failed: %v", err)
+	}
+	frontThree, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-3",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession third failed: %v", err)
+	}
+
+	for i, item := range []struct {
+		sessionID      string
+		conversationID string
+		threadID       string
+		externalID     string
+		at             string
+	}{
+		{sessionID: frontOne.ID, conversationID: frontOne.ConversationID, threadID: "thread-1", externalID: "chat-1", at: "2026-03-25 08:00:00"},
+		{sessionID: frontTwo.ID, conversationID: frontTwo.ConversationID, threadID: "thread-2", externalID: "chat-2", at: "2026-03-25 08:01:00"},
+		{sessionID: frontThree.ID, conversationID: frontThree.ConversationID, threadID: "thread-3", externalID: "chat-3", at: "2026-03-25 08:02:00"},
+	} {
+		if err := svc.BindFollowUp(ctx, BindFollowUp{
+			ConversationID: item.conversationID,
+			ThreadID:       item.threadID,
+			SessionID:      item.sessionID,
+			ConnectorID:    "telegram",
+			AccountID:      "acct-1",
+			ExternalID:     item.externalID,
+		}); err != nil {
+			t.Fatalf("BindFollowUp %d failed: %v", i, err)
+		}
+		if _, err := svc.db.RawDB().ExecContext(ctx,
+			`UPDATE session_bindings SET created_at = ? WHERE session_id = ? AND external_id = ?`,
+			item.at, item.sessionID, item.externalID,
+		); err != nil {
+			t.Fatalf("update route created_at %d: %v", i, err)
+		}
+	}
+
+	page, err := svc.ListRoutesPage(ctx, RouteListFilter{
+		ConnectorID: "telegram",
+		Status:      "active",
+		Limit:       1,
+	})
+	if err != nil {
+		t.Fatalf("ListRoutesPage first failed: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].SessionID != frontThree.ID {
+		t.Fatalf("expected newest route first, got %+v", page.Items)
+	}
+	if !page.HasNext || page.NextCursor == "" || page.HasPrev || page.PrevCursor != "" {
+		t.Fatalf("unexpected first route page cursors: %+v", page)
+	}
+
+	page, err = svc.ListRoutesPage(ctx, RouteListFilter{
+		ConnectorID: "telegram",
+		Status:      "active",
+		Limit:       1,
+		Cursor:      page.NextCursor,
+		Direction:   "next",
+	})
+	if err != nil {
+		t.Fatalf("ListRoutesPage second failed: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].SessionID != frontTwo.ID {
+		t.Fatalf("expected middle route second, got %+v", page.Items)
+	}
+	if !page.HasPrev || page.PrevCursor == "" {
+		t.Fatalf("expected previous cursor on second route page, got %+v", page)
+	}
+}
+
+func TestService_ListDeliveryQueuePageSupportsCursorPagination(t *testing.T) {
+	svc := newTestSessionService(t)
+	ctx := context.Background()
+
+	front := openFrontSession(t, svc)
+	if _, err := svc.db.RawDB().ExecContext(
+		ctx,
+		`INSERT INTO runs
+		 (id, conversation_id, agent_id, session_id, team_id, objective, workspace_root, status, created_at, updated_at)
+		 VALUES
+		 ('run-retrying', ?, 'assistant', ?, 'team-a', 'Retrying', ?, 'completed', datetime('now'), datetime('now')),
+		 ('run-pending', ?, 'assistant', ?, 'team-a', 'Pending', ?, 'completed', datetime('now'), datetime('now')),
+		 ('run-terminal', ?, 'assistant', ?, 'team-a', 'Terminal', ?, 'completed', datetime('now'), datetime('now'))`,
+		front.ConversationID,
+		front.ID,
+		t.TempDir(),
+		front.ConversationID,
+		front.ID,
+		t.TempDir(),
+		front.ConversationID,
+		front.ID,
+		t.TempDir(),
+	); err != nil {
+		t.Fatalf("insert runs: %v", err)
+	}
+
+	if _, err := svc.db.RawDB().ExecContext(
+		ctx,
+		`INSERT INTO outbound_intents
+		 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at)
+		 VALUES
+		 ('intent-retrying', 'run-retrying', 'telegram', 'chat-1', 'retry first', 'dedupe-1', 'retrying', 2, '2026-03-25 08:00:00'),
+		 ('intent-pending', 'run-pending', 'telegram', 'chat-2', 'pending second', 'dedupe-2', 'pending', 0, '2026-03-25 08:01:00'),
+		 ('intent-terminal', 'run-terminal', 'telegram', 'chat-3', 'terminal third', 'dedupe-3', 'terminal', 5, '2026-03-25 08:02:00')`,
+	); err != nil {
+		t.Fatalf("insert outbound intents: %v", err)
+	}
+
+	page, err := svc.ListDeliveryQueuePage(ctx, DeliveryQueueFilter{
+		ConnectorID: "telegram",
+		Status:      "all",
+		Limit:       1,
+	})
+	if err != nil {
+		t.Fatalf("ListDeliveryQueuePage first failed: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != "intent-retrying" {
+		t.Fatalf("expected retrying delivery first, got %+v", page.Items)
+	}
+	if !page.HasNext || page.NextCursor == "" || page.HasPrev || page.PrevCursor != "" {
+		t.Fatalf("unexpected first delivery page cursors: %+v", page)
+	}
+
+	page, err = svc.ListDeliveryQueuePage(ctx, DeliveryQueueFilter{
+		ConnectorID: "telegram",
+		Status:      "all",
+		Limit:       1,
+		Cursor:      page.NextCursor,
+		Direction:   "next",
+	})
+	if err != nil {
+		t.Fatalf("ListDeliveryQueuePage second failed: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != "intent-pending" {
+		t.Fatalf("expected pending delivery second, got %+v", page.Items)
+	}
+	if !page.HasPrev || page.PrevCursor == "" {
+		t.Fatalf("expected previous cursor on second delivery page, got %+v", page)
+	}
+}

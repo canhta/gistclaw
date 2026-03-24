@@ -33,8 +33,16 @@ func (r *Runtime) ListAllSessions(ctx context.Context, filter sessions.SessionLi
 	return sessions.NewService(r.store, r.convStore).ListSessions(ctx, filter)
 }
 
+func (r *Runtime) ListAllSessionsPage(ctx context.Context, filter sessions.SessionListFilter) (sessions.PageResult[model.Session], error) {
+	return sessions.NewService(r.store, r.convStore).ListSessionsPage(ctx, filter)
+}
+
 func (r *Runtime) ListRoutes(ctx context.Context, filter sessions.RouteListFilter) ([]model.RouteDirectoryItem, error) {
 	return sessions.NewService(r.store, r.convStore).ListRoutes(ctx, filter)
+}
+
+func (r *Runtime) ListRoutesPage(ctx context.Context, filter sessions.RouteListFilter) (sessions.PageResult[model.RouteDirectoryItem], error) {
+	return sessions.NewService(r.store, r.convStore).ListRoutesPage(ctx, filter)
 }
 
 func (r *Runtime) SessionHistory(ctx context.Context, sessionID string, limit int) (model.Session, []model.SessionMessage, error) {
@@ -47,6 +55,10 @@ func (r *Runtime) ConnectorDeliveryHealth(ctx context.Context) ([]model.Connecto
 
 func (r *Runtime) ListDeliveries(ctx context.Context, filter sessions.DeliveryQueueFilter) ([]model.DeliveryQueueItem, error) {
 	return sessions.NewService(r.store, r.convStore).ListDeliveryQueue(ctx, filter)
+}
+
+func (r *Runtime) ListDeliveriesPage(ctx context.Context, filter sessions.DeliveryQueueFilter) (sessions.PageResult[model.DeliveryQueueItem], error) {
+	return sessions.NewService(r.store, r.convStore).ListDeliveryQueuePage(ctx, filter)
 }
 
 func (r *Runtime) SessionDeliveryState(ctx context.Context, sessionID string, limit int) ([]model.OutboundIntent, []model.DeliveryFailure, error) {

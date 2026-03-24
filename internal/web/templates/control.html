@@ -94,6 +94,12 @@
       {{end}}
     </tbody>
   </table>
+  {{if or .ActivePaging.HasPrev .ActivePaging.HasNext}}
+  <div style="margin-top:12px; display:flex; gap:12px">
+    {{if .ActivePaging.HasPrev}}<a href="{{.ActivePaging.PrevURL}}">Previous</a>{{end}}
+    {{if .ActivePaging.HasNext}}<a href="{{.ActivePaging.NextURL}}">Next</a>{{end}}
+  </div>
+  {{end}}
   {{else}}
   <p class="muted">No active routes.</p>
   {{end}}
@@ -140,6 +146,12 @@
       {{end}}
     </tbody>
   </table>
+  {{if or .DeliveryPaging.HasPrev .DeliveryPaging.HasNext}}
+  <div style="margin-top:12px; display:flex; gap:12px">
+    {{if .DeliveryPaging.HasPrev}}<a href="{{.DeliveryPaging.PrevURL}}">Previous</a>{{end}}
+    {{if .DeliveryPaging.HasNext}}<a href="{{.DeliveryPaging.NextURL}}">Next</a>{{end}}
+  </div>
+  {{end}}
   {{else}}
   <p class="muted">No queued deliveries.</p>
   {{end}}
@@ -183,6 +195,12 @@
       {{end}}
     </tbody>
   </table>
+  {{if or .HistoryPaging.HasPrev .HistoryPaging.HasNext}}
+  <div style="margin-top:12px; display:flex; gap:12px">
+    {{if .HistoryPaging.HasPrev}}<a href="{{.HistoryPaging.PrevURL}}">Previous</a>{{end}}
+    {{if .HistoryPaging.HasNext}}<a href="{{.HistoryPaging.NextURL}}">Next</a>{{end}}
+  </div>
+  {{end}}
   {{else}}
   <p class="muted">No inactive route history yet.</p>
   {{end}}
