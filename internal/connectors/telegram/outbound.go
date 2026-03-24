@@ -19,9 +19,9 @@ import (
 
 // outboundAllowedKinds is the set of event kinds that trigger an outbound message.
 var outboundAllowedKinds = map[string]bool{
-	"run_started":   true,
-	"run_blocked":   true,
-	"run_completed": true,
+	"run_started":     true,
+	"run_blocked":     true,
+	"run_completed":   true,
 	"run_interrupted": true,
 	"approval_needed": true,
 }
@@ -196,7 +196,9 @@ func (d *OutboundDispatcher) sendMessage(ctx context.Context, chatID, text strin
 		return fmt.Errorf("telegram: sendMessage status %d: %s", resp.StatusCode, body)
 	}
 
-	var result struct{ OK bool `json:"ok"` }
+	var result struct {
+		OK bool `json:"ok"`
+	}
 	if err := json.Unmarshal(body, &result); err != nil || !result.OK {
 		return fmt.Errorf("telegram: sendMessage not ok: %s", body)
 	}

@@ -29,8 +29,8 @@ type RunStarter interface {
 //	     ├── convStore.Resolve(key) → conversationID
 //	     └── rt.Start(StartRun{ConversationID, Objective, ...})
 type InboundDispatcher struct {
-	cs            *conversations.ConversationStore
-	rt            RunStarter
+	cs             *conversations.ConversationStore
+	rt             RunStarter
 	defaultAgentID string
 	workspaceRoot  string
 }

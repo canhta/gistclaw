@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	defaultEndpoint   = "https://api.anthropic.com/v1/messages"
-	anthropicVersion  = "2023-06-01"
-	defaultMaxTokens  = 8096
+	defaultEndpoint  = "https://api.anthropic.com/v1/messages"
+	anthropicVersion = "2023-06-01"
+	defaultMaxTokens = 8096
 )
 
 // Provider calls the Anthropic Messages API using stdlib net/http.

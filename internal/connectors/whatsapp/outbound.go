@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	defaultAPIBase  = "https://graph.facebook.com"
-	defaultAPIVer   = "v17.0"
+	defaultAPIBase = "https://graph.facebook.com"
+	defaultAPIVer  = "v17.0"
 )
 
 // outboundAllowedKinds mirrors the same filter used by the Telegram connector.

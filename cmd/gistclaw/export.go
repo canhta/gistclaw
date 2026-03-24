@@ -13,10 +13,10 @@ import (
 )
 
 type exportEnvelope struct {
-	SchemaVersion string        `json:"schema_version"`
-	ExportedAt    time.Time     `json:"exported_at"`
-	Runs          []exportRun   `json:"runs"`
-	Receipts      []exportReceipt `json:"receipts"`
+	SchemaVersion string           `json:"schema_version"`
+	ExportedAt    time.Time        `json:"exported_at"`
+	Runs          []exportRun      `json:"runs"`
+	Receipts      []exportReceipt  `json:"receipts"`
 	Approvals     []exportApproval `json:"approvals"`
 }
 
