@@ -273,6 +273,37 @@ func TestSettingsUpdate(t *testing.T) {
 	})
 }
 
+func TestSettingsBudget(t *testing.T) {
+	t.Run("settings page shows budget fields", func(t *testing.T) {
+		h := newServerHarness(t)
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+		h.server.ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+		body := rr.Body.String()
+		for _, want := range []string{"per_run_token_budget", "daily_cost_cap_usd"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("settings page missing %q field", want)
+			}
+		}
+	})
+
+	t.Run("update budget settings redirects to settings", func(t *testing.T) {
+		h := newServerHarness(t)
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/settings",
+			strings.NewReader("per_run_token_budget=100000&daily_cost_cap_usd=5.0"))
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		h.server.ServeHTTP(rr, req)
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+}
+
 func TestAdminToken(t *testing.T) {
 	t.Run("authorized run submit starts a run and redirects", func(t *testing.T) {
 		h := newServerHarness(t)

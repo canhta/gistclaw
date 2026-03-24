@@ -14,6 +14,16 @@
       <input type="text" id="workspace_root" name="workspace_root" value="{{.WorkspaceRoot}}">
     </div>
     <div class="field">
+      <label for="per_run_token_budget">Per-Run Token Budget</label>
+      <input type="number" id="per_run_token_budget" name="per_run_token_budget" value="{{.PerRunTokenBudget}}" min="0">
+      <span class="muted">tokens (0 = unlimited)</span>
+    </div>
+    <div class="field">
+      <label for="daily_cost_cap_usd">Daily Cost Cap (USD)</label>
+      <input type="number" id="daily_cost_cap_usd" name="daily_cost_cap_usd" value="{{.DailyCostCapUSD}}" min="0" step="0.01">
+      <span class="muted">0 = unlimited &mdash; rolling 24-hour usage: ${{printf "%.4f" .RollingCostUSD}}</span>
+    </div>
+    <div class="field">
       <button type="submit">Save</button>
     </div>
   </form>

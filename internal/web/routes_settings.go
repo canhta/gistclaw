@@ -6,17 +6,29 @@ import (
 )
 
 type settingsPageData struct {
-	TeamName      string
-	WorkspaceRoot string
-	AdminToken    string // masked for display only
-	Error         string
+	TeamName          string
+	WorkspaceRoot     string
+	AdminToken        string  // masked for display only
+	PerRunTokenBudget string
+	DailyCostCapUSD   string
+	RollingCostUSD    float64
+	Error             string
 }
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	data := settingsPageData{
-		TeamName:      lookupSetting(s.db, "team_name"),
-		WorkspaceRoot: lookupSetting(s.db, "workspace_root"),
+		TeamName:          lookupSetting(s.db, "team_name"),
+		WorkspaceRoot:     lookupSetting(s.db, "workspace_root"),
+		PerRunTokenBudget: lookupSetting(s.db, "per_run_token_budget"),
+		DailyCostCapUSD:   lookupSetting(s.db, "daily_cost_cap_usd"),
 	}
+
+	// Read rolling 24-hour cost from receipts.
+	var rolling float64
+	_ = s.db.RawDB().QueryRow(
+		`SELECT COALESCE(SUM(cost_usd), 0) FROM receipts WHERE created_at >= datetime('now', '-24 hours')`,
+	).Scan(&rolling)
+	data.RollingCostUSD = rolling
 
 	// Mask admin token: show first 8 chars then asterisks
 	raw := lookupSetting(s.db, "admin_token")
@@ -41,7 +53,7 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updates := make(map[string]string)
-	for _, key := range []string{"team_name", "workspace_root"} {
+	for _, key := range []string{"team_name", "workspace_root", "per_run_token_budget", "daily_cost_cap_usd"} {
 		if v := strings.TrimSpace(r.FormValue(key)); v != "" {
 			updates[key] = v
 		}

@@ -209,18 +209,32 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 	var cumulativeInput int
 	var cumulativeOutput int
 
+	budgetStopped := false
 	for turn := 0; turn < 10; turn++ {
 		if err := r.budget.BeforeTurn(ctx, model.RunProfile{
 			RunID:        runID,
 			InputTokens:  cumulativeInput,
 			OutputTokens: cumulativeOutput,
 		}); err != nil {
+			stopPayload, _ := json.Marshal(map[string]any{
+				"limit_type":    "per_run_tokens",
+				"tokens_used":   cumulativeInput + cumulativeOutput,
+				"token_cap":     r.budget.PerRunTokenCap,
+			})
 			_ = r.convStore.AppendEvent(ctx, model.Event{
 				ID:             generateID(),
 				ConversationID: conversationID,
 				RunID:          runID,
-				Kind:           "budget_exhausted",
+				Kind:           "budget_stop",
+				PayloadJSON:    stopPayload,
 			})
+			_ = r.convStore.AppendEvent(ctx, model.Event{
+				ID:             generateID(),
+				ConversationID: conversationID,
+				RunID:          runID,
+				Kind:           "run_interrupted",
+			})
+			budgetStopped = true
 			break
 		}
 
@@ -311,6 +325,12 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 		if result.StopReason == "end_turn" || result.StopReason == "" {
 			break
 		}
+	}
+
+	// If the budget guard stopped the run, it has already been marked
+	// interrupted — do not emit run_completed.
+	if budgetStopped {
+		return r.loadRun(ctx, runID)
 	}
 
 	completedPayload, err := json.Marshal(map[string]any{

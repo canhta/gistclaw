@@ -110,6 +110,16 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Conservative default budget limits. Raising or disabling any cap requires
+-- an explicit operator action via the settings page.
+-- per_run_token_budget: 50,000 tokens per run
+-- per_run_cost_cap_usd: $0.50 USD per run
+-- daily_cost_cap_usd: $5.00 USD rolling 24-hour window
+INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES
+    ('per_run_token_budget', '50000',  datetime('now')),
+    ('per_run_cost_cap_usd', '0.50',   datetime('now')),
+    ('daily_cost_cap_usd',   '5.00',   datetime('now'));
+
 CREATE TABLE IF NOT EXISTS run_summaries (
     id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL UNIQUE,
