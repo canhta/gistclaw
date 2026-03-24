@@ -75,6 +75,20 @@ func ResolveTicket(ctx context.Context, db *store.DB, ticketID string, decision 
 	return nil
 }
 
+// LoadTicket fetches the current state of an approval ticket from the database.
+func LoadTicket(ctx context.Context, db *store.DB, ticketID string) (model.ApprovalTicket, error) {
+	var t model.ApprovalTicket
+	err := db.RawDB().QueryRowContext(ctx,
+		`SELECT id, run_id, tool_name, args_json, COALESCE(target_path,''), fingerprint, status, created_at
+		 FROM approvals WHERE id = ?`,
+		ticketID,
+	).Scan(&t.ID, &t.RunID, &t.ToolName, &t.ArgsJSON, &t.TargetPath, &t.Fingerprint, &t.Status, &t.CreatedAt)
+	if err != nil {
+		return model.ApprovalTicket{}, fmt.Errorf("load ticket: %w", err)
+	}
+	return t, nil
+}
+
 func VerifyTicket(ctx context.Context, db *store.DB, ticketID string, currentFingerprint string) error {
 	var storedFingerprint string
 	var status string
@@ -85,7 +99,8 @@ func VerifyTicket(ctx context.Context, db *store.DB, ticketID string, currentFin
 	if err != nil {
 		return fmt.Errorf("verify ticket: %w", err)
 	}
-	if status != "pending" || storedFingerprint != currentFingerprint {
+	// An approved ticket must have status "approved" and a matching fingerprint.
+	if status != "approved" || storedFingerprint != currentFingerprint {
 		return ErrTicketExpired
 	}
 	return nil

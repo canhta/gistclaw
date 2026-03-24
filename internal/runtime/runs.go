@@ -26,6 +26,12 @@ type StartRun struct {
 	WorkspaceRoot         string
 	AccountID             string
 	ExecutionSnapshotJSON []byte
+	// PreviewOnly instructs the run engine to skip workspace apply calls and
+	// emit a preview_completed event instead of mutating any files.
+	PreviewOnly bool
+	// VerificationAgent marks this run as a verification agent turn; on
+	// completion the engine emits a verification_completed event.
+	VerificationAgent bool
 }
 
 type ContinueRun struct {
@@ -176,10 +182,30 @@ func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
 		})
 	}
 
-	return r.executeRunLoop(ctx, runID, cmd.ConversationID, cmd.AgentID, cmd.Objective)
+	return r.executeRunLoop(ctx, runLoopOpts{
+		runID:             runID,
+		conversationID:    cmd.ConversationID,
+		agentID:           cmd.AgentID,
+		objective:         cmd.Objective,
+		previewOnly:       cmd.PreviewOnly,
+		verificationAgent: cmd.VerificationAgent,
+	})
 }
 
-func (r *Runtime) executeRunLoop(ctx context.Context, runID, conversationID, agentID, objective string) (model.Run, error) {
+type runLoopOpts struct {
+	runID             string
+	conversationID    string
+	agentID           string
+	objective         string
+	previewOnly       bool
+	verificationAgent bool
+}
+
+func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.Run, error) {
+	runID := opts.runID
+	conversationID := opts.conversationID
+	agentID := opts.agentID
+	objective := opts.objective
 	var cumulativeInput int
 	var cumulativeOutput int
 
@@ -311,6 +337,24 @@ func (r *Runtime) executeRunLoop(ctx context.Context, runID, conversationID, age
 			RunID:      runID,
 			Kind:       "run_completed",
 			OccurredAt: time.Now().UTC(),
+		})
+	}
+
+	// Emit supplementary events based on run mode.
+	if opts.previewOnly {
+		_ = r.convStore.AppendEvent(ctx, model.Event{
+			ID:             generateID(),
+			ConversationID: conversationID,
+			RunID:          runID,
+			Kind:           "preview_completed",
+		})
+	}
+	if opts.verificationAgent {
+		_ = r.convStore.AppendEvent(ctx, model.Event{
+			ID:             generateID(),
+			ConversationID: conversationID,
+			RunID:          runID,
+			Kind:           "verification_completed",
 		})
 	}
 
