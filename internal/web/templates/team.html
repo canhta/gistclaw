@@ -1,0 +1,110 @@
+{{define "teams_list_body"}}
+<section class="panel">
+  <h1>Teams</h1>
+  {{range .Teams}}
+  <div class="panel" style="margin-bottom:8px">
+    <strong class="mono">{{.ID}}</strong> — {{.Name}}
+    <span class="muted">({{.AgentCount}} agents)</span>
+    <a href="/teams/{{.ID}}/composer">Composer</a>
+  </div>
+  {{end}}
+</section>
+{{end}}
+
+{{define "soul_editor_body"}}
+<section class="panel">
+  <h1>Soul Editor — <span class="mono">{{.AgentID}}</span></h1>
+  {{if .Error}}
+    <p class="error">{{.Error}}</p>
+  {{end}}
+
+  <form method="POST" action="/teams/{{.TeamID}}/soul/{{.AgentID}}">
+    <input type="hidden" name="field" value="role">
+    <div class="field">
+      <label for="f_role">role</label>
+      <textarea id="f_role" name="value" rows="2">{{.Soul.Role}}</textarea>
+    </div>
+    <button type="submit">Save role</button>
+  </form>
+
+  <form method="POST" action="/teams/{{.TeamID}}/soul/{{.AgentID}}">
+    <input type="hidden" name="field" value="tone">
+    <div class="field">
+      <label for="f_tone">tone</label>
+      <textarea id="f_tone" name="value" rows="2">{{.Soul.Tone}}</textarea>
+    </div>
+    <button type="submit">Save tone</button>
+  </form>
+
+  <form method="POST" action="/teams/{{.TeamID}}/soul/{{.AgentID}}">
+    <input type="hidden" name="field" value="posture">
+    <div class="field">
+      <label for="f_posture">posture</label>
+      <textarea id="f_posture" name="value" rows="2">{{.Soul.Posture}}</textarea>
+    </div>
+    <button type="submit">Save posture</button>
+  </form>
+
+  <form method="POST" action="/teams/{{.TeamID}}/soul/{{.AgentID}}">
+    <input type="hidden" name="field" value="collaboration_style">
+    <div class="field">
+      <label for="f_cs">collaboration_style</label>
+      <textarea id="f_cs" name="value" rows="2">{{.Soul.CollaborationStyle}}</textarea>
+    </div>
+    <button type="submit">Save collaboration_style</button>
+  </form>
+
+  <form method="POST" action="/teams/{{.TeamID}}/soul/{{.AgentID}}">
+    <input type="hidden" name="field" value="escalation_rules">
+    <div class="field">
+      <label for="f_er">escalation_rules <span class="muted">(one per line)</span></label>
+      <textarea id="f_er" name="value" rows="4">{{range .Soul.EscalationRules}}{{.}}
+{{end}}</textarea>
+    </div>
+    <button type="submit">Save escalation_rules</button>
+  </form>
+
+  <form method="POST" action="/teams/{{.TeamID}}/soul/{{.AgentID}}">
+    <input type="hidden" name="field" value="decision_boundaries">
+    <div class="field">
+      <label for="f_db">decision_boundaries <span class="muted">(one per line)</span></label>
+      <textarea id="f_db" name="value" rows="4">{{range .Soul.DecisionBoundaries}}{{.}}
+{{end}}</textarea>
+    </div>
+    <button type="submit">Save decision_boundaries</button>
+  </form>
+
+  <form method="POST" action="/teams/{{.TeamID}}/soul/{{.AgentID}}">
+    <input type="hidden" name="field" value="tool_posture">
+    <div class="field">
+      <label for="f_tp">tool_posture</label>
+      <select id="f_tp" name="value">
+        <option{{if eq .Soul.ToolPosture "operator_facing"}} selected{{end}}>operator_facing</option>
+        <option{{if eq .Soul.ToolPosture "workspace_write"}} selected{{end}}>workspace_write</option>
+        <option{{if eq .Soul.ToolPosture "read_heavy"}} selected{{end}}>read_heavy</option>
+        <option{{if eq .Soul.ToolPosture "propose_only"}} selected{{end}}>propose_only</option>
+      </select>
+    </div>
+    <button type="submit">Save tool_posture</button>
+  </form>
+
+  <form method="POST" action="/teams/{{.TeamID}}/soul/{{.AgentID}}">
+    <input type="hidden" name="field" value="prohibitions">
+    <div class="field">
+      <label for="f_pr">prohibitions <span class="muted">(one per line)</span></label>
+      <textarea id="f_pr" name="value" rows="4">{{range .Soul.Prohibitions}}{{.}}
+{{end}}</textarea>
+    </div>
+    <button type="submit">Save prohibitions</button>
+  </form>
+
+  <form method="POST" action="/teams/{{.TeamID}}/soul/{{.AgentID}}">
+    <input type="hidden" name="field" value="notes">
+    <div class="field">
+      <label for="f_notes">notes</label>
+      <textarea id="f_notes" name="value" rows="2">{{.Soul.Notes}}</textarea>
+    </div>
+    <button type="submit">Save notes</button>
+  </form>
+</section>
+{{end}}

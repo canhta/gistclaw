@@ -22,6 +22,7 @@ type Options struct {
 	Replay      *replay.Service
 	Broadcaster *SSEBroadcaster
 	Runtime     *runtime.Runtime
+	TeamDir     string
 }
 
 type Server struct {
@@ -29,6 +30,7 @@ type Server struct {
 	replay      *replay.Service
 	broadcaster *SSEBroadcaster
 	rt          *runtime.Runtime
+	teamDir     string
 	templates   *template.Template
 	mux         *http.ServeMux
 }
@@ -59,6 +61,7 @@ func NewServer(opts Options) (*Server, error) {
 		replay:      opts.Replay,
 		broadcaster: opts.Broadcaster,
 		rt:          opts.Runtime,
+		teamDir:     opts.TeamDir,
 		templates:   tpls,
 		mux:         http.NewServeMux(),
 	}
@@ -91,6 +94,11 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /onboarding/step/3", s.handleOnboardingStep3)
 	s.mux.HandleFunc("POST /onboarding/step/3", s.handleOnboardingStep3Submit)
 	s.mux.HandleFunc("GET /onboarding/step/4/{id}", s.handleOnboardingStep4)
+	s.mux.HandleFunc("GET /teams", s.handleTeamsList)
+	s.mux.HandleFunc("GET /teams/{id}/soul/{agent}", s.handleSoulEditor)
+	s.mux.HandleFunc("POST /teams/{id}/soul/{agent}", s.handleSoulUpdate)
+	s.mux.HandleFunc("GET /teams/{id}/composer", s.handleComposer)
+	s.mux.HandleFunc("POST /teams/{id}/composer", s.handleComposerMutate)
 }
 
 func (s *Server) renderTemplate(w http.ResponseWriter, title, bodyTemplate string, data any) {
@@ -169,6 +177,8 @@ func loadTemplates() (*template.Template, error) {
 		filepath.Join(templateDir, "approvals.html"),
 		filepath.Join(templateDir, "settings.html"),
 		filepath.Join(templateDir, "onboarding.html"),
+		filepath.Join(templateDir, "team.html"),
+		filepath.Join(templateDir, "team_composer.html"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("web: parse templates: %w", err)
