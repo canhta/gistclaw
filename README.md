@@ -1,115 +1,59 @@
 # GistClaw
 
-GistClaw is a local AI team for software projects.
+GistClaw is a personal assistant platform built on a local-first multi-agent runtime.
 
-You give it a repo task. It coordinates multiple agents to plan the work, prepare a change, ask before doing anything risky, verify the result, and leave a clear record of what happened.
+One front agent owns the user relationship. It can spawn worker agents behind the scenes, coordinate them through explicit runtime sessions, ask before risky actions, and keep a replayable record of what happened.
 
-It is the focused follow-through on what OpenClaw taught us: keep the power, cut the sprawl.
+## Product Shape
 
-## Why It Matters
+- assistant-first at the surface
+- multi-agent under the hood
+- local-first state and control
+- approvals before risky side effects
+- replayable runtime history
 
-- less babysitting
-- clearer handoffs
-- safer changes
-- a calmer system you can actually trust with real repo work
+GistClaw is not repo-task software with some agents attached. Repo work is one important workflow on the platform, not the platform's identity.
 
-GistClaw narrows OpenClaw into one sharper promise: local-first repo work with approvals, verification, and a clear audit trail.
+## Current Status
 
-## How It Works
+The repository is in an active reset.
 
-1. You give GistClaw a repo task.
-2. The runtime fans the work out across a configurable agent team.
-3. Agents hand work off, share context, and stay inside one run boundary.
-4. You approve risky actions before they happen.
-5. GistClaw verifies the result and records what happened.
+Current work is focused on:
 
-```mermaid
-flowchart LR
-    Ask["Repo task"] --> Team["Configurable agent team coordinates the work"]
-    Team --> Approval["Approve risky actions"]
-    Approval --> Result["Verified result + record"]
-```
+- deleting the old mixed doc set
+- replacing rigid delegation with session-based collaboration
+- rewriting the runtime around one front agent plus spawned worker sessions
+- keeping the extension story explicit without rebuilding OpenClaw breadth all at once
 
-## Multi-Agent Infrastructure
+Read these docs in order:
 
-- one local runtime coordinates multiple agents around the same task
-- agents share context, boundaries, and the same audit trail
-- handoffs stay explicit so the work is easier to inspect
-- the runtime cares about capabilities and handoffs, not fixed job titles
+1. [docs/vision.md](/Users/canh/Projects/OSS/gistclaw/docs/vision.md)
+2. [docs/kernel.md](/Users/canh/Projects/OSS/gistclaw/docs/kernel.md)
+3. [docs/roadmap.md](/Users/canh/Projects/OSS/gistclaw/docs/roadmap.md)
+4. [docs/extensions.md](/Users/canh/Projects/OSS/gistclaw/docs/extensions.md)
 
-## Status
-
-Milestones 1 through 4 are complete. The binary is production-ready for local use.
-
-| Milestone | Description | Status |
-|-----------|-------------|--------|
-| 1 — Kernel Proof | Single-repo task execution, durable event journal, run receipts, interrupted-run recovery | complete |
-| 2 — Web UI and SSE | Live run stream via SSE, web UI for runs and approvals | complete |
-| 3 — Public Beta | Telegram approval integration, budget guard, multi-repo support | complete |
-| 4 — Stable 1.0 | Recovery hardening, doctor/backup/export operator tooling, onboarding and approval UX polish | complete |
-
-Phase 5 features (sharing, groups, publish-back, node-level control, compare view) are not yet scoped.
-
-## Installation
-
-Build from source:
+## Build
 
 ```bash
 go build -o bin/gistclaw ./cmd/gistclaw
-```
-
-Config file: `~/.config/gistclaw/config.yaml`
-
-## Usage
-
-```
-gistclaw <subcommand> [options]
-
-Subcommands:
-  serve      Start the GistClaw daemon
-  run        Submit a task directly
-  inspect    Inspect daemon state
-  doctor     Run health checks (config, database, provider, workspace, disk)
-  backup     Back up the SQLite database to a timestamped .db.bak file
-  export     Export runs, receipts, and approvals to a JSON file
+go test ./...
+go test -cover ./...
+go vet ./...
 ```
 
 ## Development
 
-Bootstrap the repo-local developer tools first:
-
 ```bash
 make dev
 make hooks-install
-```
-
-Day-to-day workflow:
-
-```bash
 make fmt
-make lint
 make test
 make coverage
-make run
 ```
-
-Targets:
-
-- `make dev` bootstraps repo-required developer tools
-- `make fmt` runs `goimports -w` over tracked `.go` files
-- `make lint` runs `golangci-lint`
-- `make test` runs `go test ./...`
-- `make coverage` runs the full Go test suite with a repo-wide minimum coverage gate of `70%`
-- `make run` starts `./cmd/gistclaw`
-- `make hooks-install` runs `lefthook install`
-
-## Contributing
-
-Issues, questions, and focused doc improvements are welcome. The most useful contributions right now are clarity improvements, architecture feedback, and review of the v1 plan.
 
 ## Related Project
 
-GistClaw grows out of lessons from [OpenClaw](https://github.com/openclaw/openclaw).
+GistClaw grows out of lessons from [OpenClaw](https://github.com/openclaw/openclaw), but the current rewrite is intentionally choosing a cleaner kernel and a narrower immediate scope.
 
 ## License
 
