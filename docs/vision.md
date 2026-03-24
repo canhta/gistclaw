@@ -62,3 +62,4 @@ That means the next implementation work favors:
 - durable route state on the session/thread path instead of connector-specific delivery guesses
 - provider input assembled from session-local context instead of the whole conversation log
 - a real host process, where `serve` owns the local web control plane instead of only background preparation
+- operator-facing session visibility starts with the local session directory and mailbox APIs, and can grow into richer control-plane tools later

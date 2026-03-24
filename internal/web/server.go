@@ -76,6 +76,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/runs", http.StatusSeeOther)
 	})
+	s.mux.HandleFunc("GET /api/sessions", s.handleSessionsIndex)
+	s.mux.HandleFunc("GET /api/sessions/{id}", s.handleSessionDetail)
 	s.mux.HandleFunc("GET /runs", s.handleRunsIndex)
 	s.mux.HandleFunc("GET /runs/{id}", s.handleRunDetail)
 	s.mux.HandleFunc("GET /runs/{id}/events", s.handleRunEvents)

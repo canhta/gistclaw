@@ -172,12 +172,19 @@ func (s *Service) LoadSession(ctx context.Context, sessionID string) (model.Sess
 }
 
 func (s *Service) ListConversationSessions(ctx context.Context, conversationID string, limit int) ([]model.Session, error) {
+	return s.listSessions(ctx, conversationID, limit)
+}
+
+func (s *Service) ListSessions(ctx context.Context, limit int) ([]model.Session, error) {
+	return s.listSessions(ctx, "", limit)
+}
+
+func (s *Service) listSessions(ctx context.Context, conversationID string, limit int) ([]model.Session, error) {
 	if limit <= 0 {
 		limit = 100
 	}
 
-	rows, err := s.db.RawDB().QueryContext(ctx,
-		`SELECT sess.id, sess.conversation_id, sess.key, sess.agent_id, sess.role,
+	query := `SELECT sess.id, sess.conversation_id, sess.key, sess.agent_id, sess.role,
 		        COALESCE(sess.parent_session_id, ''), COALESCE(sess.controller_session_id, ''),
 		        sess.status, sess.created_at, COALESCE(activity.updated_at, sess.created_at) AS updated_at
 		 FROM sessions sess
@@ -192,15 +199,20 @@ func (s *Service) ListConversationSessions(ctx context.Context, conversationID s
 		         WHERE session_id IS NOT NULL AND session_id != ''
 		     )
 		     GROUP BY session_id
-		 ) activity ON activity.session_id = sess.id
-		 WHERE sess.conversation_id = ?
+		 ) activity ON activity.session_id = sess.id`
+	args := []any{limit}
+	if conversationID != "" {
+		query += `
+		 WHERE sess.conversation_id = ?`
+		args = []any{conversationID, limit}
+	}
+	query += `
 		 ORDER BY updated_at DESC, sess.created_at DESC, sess.id DESC
-		 LIMIT ?`,
-		conversationID,
-		limit,
-	)
+		 LIMIT ?`
+
+	rows, err := s.db.RawDB().QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("list conversation sessions: %w", err)
+		return nil, fmt.Errorf("list sessions: %w", err)
 	}
 	defer rows.Close()
 
@@ -232,7 +244,7 @@ func (s *Service) ListConversationSessions(ctx context.Context, conversationID s
 		list = append(list, session)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate conversation sessions: %w", err)
+		return nil, fmt.Errorf("iterate sessions: %w", err)
 	}
 	return list, nil
 }

@@ -260,3 +260,56 @@ func TestService_ListConversationSessionsOrdersByLatestActivity(t *testing.T) {
 		t.Fatalf("expected front session updated_at %v to be after worker %v", list[0].UpdatedAt, list[1].UpdatedAt)
 	}
 }
+
+func TestService_ListSessionsOrdersByLatestActivityAcrossConversations(t *testing.T) {
+	svc := newTestSessionService(t)
+	ctx := context.Background()
+
+	first, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-1",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession first failed: %v", err)
+	}
+	second, err := svc.OpenFrontSession(ctx, OpenFrontSession{
+		ConversationID: "conv-2",
+		AgentID:        "assistant",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession second failed: %v", err)
+	}
+
+	base := time.Now().UTC().Add(time.Minute)
+	if err := svc.AppendMessage(ctx, model.SessionMessage{
+		ID:        "msg-first",
+		SessionID: first.ID,
+		Kind:      model.MessageAssistant,
+		Body:      "older activity",
+		CreatedAt: base,
+	}); err != nil {
+		t.Fatalf("AppendMessage first failed: %v", err)
+	}
+	if err := svc.AppendMessage(ctx, model.SessionMessage{
+		ID:        "msg-second",
+		SessionID: second.ID,
+		Kind:      model.MessageAssistant,
+		Body:      "newer activity",
+		CreatedAt: base.Add(time.Minute),
+	}); err != nil {
+		t.Fatalf("AppendMessage second failed: %v", err)
+	}
+
+	list, err := svc.ListSessions(ctx, 10)
+	if err != nil {
+		t.Fatalf("ListSessions failed: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("expected 2 sessions, got %d", len(list))
+	}
+	if list[0].ID != second.ID || list[1].ID != first.ID {
+		t.Fatalf("expected newer session first, got %q then %q", list[0].ID, list[1].ID)
+	}
+}

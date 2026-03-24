@@ -3,6 +3,7 @@ package web
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -457,6 +458,98 @@ func TestSSE(t *testing.T) {
 	waitForSubscribers(t, h.broadcaster, "run-sse", 0)
 }
 
+func TestSessionAPI(t *testing.T) {
+	t.Run("list returns recent sessions as JSON", func(t *testing.T) {
+		h := newServerHarness(t)
+		front := h.startFrontSession(t, "Inspect the repo.")
+		worker := h.spawnWorkerSession(t, front.SessionID, "researcher", "Inspect docs.")
+		if err := h.rt.Announce(context.Background(), runtime.AnnounceCommand{
+			WorkerSessionID: worker.SessionID,
+			TargetSessionID: front.SessionID,
+			Body:            "Docs inspected.",
+		}); err != nil {
+			t.Fatalf("Announce failed: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if got := rr.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+			t.Fatalf("expected JSON content type, got %q", got)
+		}
+
+		var resp struct {
+			Sessions []model.Session `json:"sessions"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if len(resp.Sessions) != 2 {
+			t.Fatalf("expected 2 sessions, got %d", len(resp.Sessions))
+		}
+		if resp.Sessions[0].ID != front.SessionID || resp.Sessions[1].ID != worker.SessionID {
+			t.Fatalf("expected front session first and worker second, got %q then %q", resp.Sessions[0].ID, resp.Sessions[1].ID)
+		}
+	})
+
+	t.Run("detail returns session mailbox as JSON", func(t *testing.T) {
+		h := newServerHarness(t)
+		front := h.startFrontSession(t, "Inspect the repo.")
+		worker := h.spawnWorkerSession(t, front.SessionID, "researcher", "Inspect docs.")
+		if err := h.rt.Announce(context.Background(), runtime.AnnounceCommand{
+			WorkerSessionID: worker.SessionID,
+			TargetSessionID: front.SessionID,
+			Body:            "Docs inspected.",
+		}); err != nil {
+			t.Fatalf("Announce failed: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+front.SessionID, nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			Session  model.Session          `json:"session"`
+			Messages []model.SessionMessage `json:"messages"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if resp.Session.ID != front.SessionID {
+			t.Fatalf("expected session %q, got %q", front.SessionID, resp.Session.ID)
+		}
+		if len(resp.Messages) != 3 {
+			t.Fatalf("expected 3 mailbox messages, got %d", len(resp.Messages))
+		}
+		if resp.Messages[0].Body != "Inspect the repo." || resp.Messages[1].Body != "mock response" || resp.Messages[2].Body != "Docs inspected." {
+			t.Fatalf("unexpected mailbox bodies: %q / %q / %q", resp.Messages[0].Body, resp.Messages[1].Body, resp.Messages[2].Body)
+		}
+	})
+
+	t.Run("detail missing session returns not found", func(t *testing.T) {
+		h := newServerHarness(t)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions/missing", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d", rr.Code)
+		}
+	})
+}
+
 type serverHarness struct {
 	db            *store.DB
 	server        *Server
@@ -574,6 +667,40 @@ func (h *serverHarness) insertEvent(t *testing.T, eventID, conversationID, runID
 	if err != nil {
 		t.Fatalf("insert event: %v", err)
 	}
+}
+
+func (h *serverHarness) startFrontSession(t *testing.T, prompt string) model.Run {
+	t.Helper()
+
+	run, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: prompt,
+		WorkspaceRoot: h.workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+	return run
+}
+
+func (h *serverHarness) spawnWorkerSession(t *testing.T, controllerSessionID, agentID, prompt string) model.Run {
+	t.Helper()
+
+	run, err := h.rt.Spawn(context.Background(), runtime.SpawnCommand{
+		ControllerSessionID: controllerSessionID,
+		AgentID:             agentID,
+		Prompt:              prompt,
+	})
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+	return run
 }
 
 func subscribeSSE(t *testing.T, url string) (*http.Response, *bufio.Reader) {
