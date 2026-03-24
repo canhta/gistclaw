@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 
@@ -47,10 +48,16 @@ func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) 
 		return model.Run{}, fmt.Errorf("resolve conversation: %w", err)
 	}
 
+	sessionID, createSession, err := r.resolveFrontSession(ctx, conv.ID)
+	if err != nil {
+		return model.Run{}, err
+	}
+
 	runID := generateID()
 	start := StartRun{
 		ConversationID: conv.ID,
 		AgentID:        cmd.FrontAgentID,
+		SessionID:      sessionID,
 		Objective:      cmd.InitialPrompt,
 		WorkspaceRoot:  cmd.WorkspaceRoot,
 		AccountID:      cmd.ConversationKey.AccountID,
@@ -58,10 +65,12 @@ func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) 
 	if err := r.createRun(ctx, runID, "", start); err != nil {
 		return model.Run{}, err
 	}
-	if err := r.openSession(ctx, conv.ID, runID, "", cmd.FrontAgentID, model.SessionRoleFront, "", ""); err != nil {
-		return model.Run{}, err
+	if createSession {
+		if err := r.openSession(ctx, conv.ID, runID, "", sessionID, cmd.FrontAgentID, model.SessionRoleFront, "", ""); err != nil {
+			return model.Run{}, err
+		}
 	}
-	if err := r.appendSessionMessage(ctx, conv.ID, runID, runID, "", model.MessageUser, cmd.InitialPrompt); err != nil {
+	if err := r.appendSessionMessage(ctx, conv.ID, runID, sessionID, "", model.MessageUser, cmd.InitialPrompt); err != nil {
 		return model.Run{}, err
 	}
 
@@ -80,9 +89,11 @@ func (r *Runtime) Spawn(ctx context.Context, cmd SpawnCommand) (model.Run, error
 	}
 
 	runID := generateID()
+	workerSessionID := generateID()
 	start := StartRun{
 		ConversationID: controller.ConversationID,
 		AgentID:        cmd.AgentID,
+		SessionID:      workerSessionID,
 		Objective:      cmd.Prompt,
 		WorkspaceRoot:  controller.WorkspaceRoot,
 	}
@@ -94,10 +105,11 @@ func (r *Runtime) Spawn(ctx context.Context, cmd SpawnCommand) (model.Run, error
 		controller.ConversationID,
 		runID,
 		controller.ID,
+		workerSessionID,
 		cmd.AgentID,
 		model.SessionRoleWorker,
-		controller.ID,
-		controller.ID,
+		controller.SessionID,
+		controller.SessionID,
 	); err != nil {
 		return model.Run{}, err
 	}
@@ -105,8 +117,8 @@ func (r *Runtime) Spawn(ctx context.Context, cmd SpawnCommand) (model.Run, error
 		ctx,
 		controller.ConversationID,
 		runID,
-		runID,
-		controller.ID,
+		workerSessionID,
+		controller.SessionID,
 		model.MessageSpawn,
 		cmd.Prompt,
 	); err != nil {
@@ -151,12 +163,15 @@ func (r *Runtime) directSessionMessage(
 	if sourceRun.ConversationID != targetRun.ConversationID {
 		return fmt.Errorf("runtime: run %s cannot message run %s across conversations", sourceRunID, targetRunID)
 	}
+	if sourceRun.SessionID == "" || targetRun.SessionID == "" {
+		return fmt.Errorf("runtime: run %s cannot message run %s without session identities", sourceRunID, targetRunID)
+	}
 	return r.appendSessionMessage(
 		ctx,
 		targetRun.ConversationID,
 		targetRun.ID,
-		targetRunID,
-		sourceRunID,
+		targetRun.SessionID,
+		sourceRun.SessionID,
 		kind,
 		body,
 	)
@@ -167,6 +182,7 @@ func (r *Runtime) openSession(
 	conversationID string,
 	runID string,
 	parentRunID string,
+	sessionID string,
 	agentID string,
 	role model.SessionRole,
 	parentSessionID string,
@@ -178,7 +194,7 @@ func (r *Runtime) openSession(
 	}
 
 	payload, err := json.Marshal(map[string]any{
-		"session_id":            runID,
+		"session_id":            sessionID,
 		"key":                   key,
 		"agent_id":              agentID,
 		"role":                  role,
@@ -202,6 +218,24 @@ func (r *Runtime) openSession(
 	}
 
 	return nil
+}
+
+func (r *Runtime) resolveFrontSession(ctx context.Context, conversationID string) (string, bool, error) {
+	key := sessionkeys.BuildFrontSessionKey(conversationID)
+
+	var sessionID string
+	err := r.store.RawDB().QueryRowContext(ctx,
+		"SELECT id FROM sessions WHERE key = ?",
+		key,
+	).Scan(&sessionID)
+	if err == nil {
+		return sessionID, false, nil
+	}
+	if err != sql.ErrNoRows {
+		return "", false, fmt.Errorf("runtime: load front session: %w", err)
+	}
+
+	return generateID(), true, nil
 }
 
 func (r *Runtime) appendSessionMessage(

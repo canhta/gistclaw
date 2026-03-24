@@ -21,6 +21,7 @@ var ErrDailyCap = fmt.Errorf("runtime: daily cost cap exceeded")
 type StartRun struct {
 	ConversationID        string
 	AgentID               string
+	SessionID             string
 	TeamID                string
 	Objective             string
 	WorkspaceRoot         string
@@ -168,6 +169,7 @@ func (r *Runtime) createRun(ctx context.Context, runID, parentRunID string, cmd 
 
 	payload, err := json.Marshal(map[string]any{
 		"agent_id":                cmd.AgentID,
+		"session_id":              cmd.SessionID,
 		"team_id":                 cmd.TeamID,
 		"objective":               cmd.Objective,
 		"workspace_root":          cmd.WorkspaceRoot,
@@ -462,7 +464,7 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 	var run model.Run
 	var status string
 	err := r.store.RawDB().QueryRowContext(ctx,
-		`SELECT id, conversation_id, agent_id, COALESCE(team_id, ''), COALESCE(parent_run_id, ''),
+		`SELECT id, conversation_id, agent_id, COALESCE(session_id, ''), COALESCE(team_id, ''), COALESCE(parent_run_id, ''),
 		 COALESCE(objective, ''), COALESCE(workspace_root, ''), status,
 		 input_tokens, output_tokens, created_at, updated_at
 		 FROM runs WHERE id = ?`,
@@ -471,6 +473,7 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 		&run.ID,
 		&run.ConversationID,
 		&run.AgentID,
+		&run.SessionID,
 		&run.TeamID,
 		&run.ParentRunID,
 		&run.Objective,

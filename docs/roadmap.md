@@ -27,3 +27,23 @@ These are explicitly out of scope for the current rewrite:
 4. Runtime collaboration rewrite
 5. Replay, tools, and web surface alignment
 6. Removal of deferred breadth from the active build
+
+## Remaining Gap To OpenClaw-Like Behavior
+
+The reset kernel is in place, but the product still does not fully behave like OpenClaw yet.
+
+Remaining gaps:
+
+- front-agent identity is still too run-shaped instead of conversation-shaped
+- worker collaboration exists, but the runtime still lacks a fuller mailbox and routing model
+- channels and connectors are no longer core to the active build
+- plugins and extension seams are documented, not operational
+- teams are still mostly designed ahead of time, not created dynamically by the user
+
+## Next Slice
+
+The next implementation slice should make the assistant more OpenClaw-like without reopening platform sprawl:
+
+1. make the front agent durable across multiple runs in the same conversation
+2. route worker messages through that durable assistant session instead of treating each run as its own front identity
+3. prepare the runtime for richer mailbox, routing, and channel work after the assistant session model is stable

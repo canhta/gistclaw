@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL,
     agent_id TEXT NOT NULL,
+    session_id TEXT,
     team_id TEXT,
     parent_run_id TEXT,
     objective TEXT,

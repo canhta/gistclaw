@@ -239,7 +239,7 @@ func TestStarterWorkflow_RepoPatchRunsAsWorkerFlow(t *testing.T) {
 	var announceCount int
 	if err := db.RawDB().QueryRow(
 		"SELECT count(*) FROM session_messages WHERE session_id = ? AND kind = 'announce'",
-		front.ID,
+		front.SessionID,
 	).Scan(&announceCount); err != nil {
 		t.Fatalf("query announce messages: %v", err)
 	}

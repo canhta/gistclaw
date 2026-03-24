@@ -257,7 +257,7 @@ func TestAcceptance_FrontSessionCanSpawnAndReceiveAnnounce(t *testing.T) {
 	var announceCount int
 	err = db.RawDB().QueryRow(
 		"SELECT count(*) FROM session_messages WHERE session_id = ? AND kind = 'announce'",
-		front.ID,
+		front.SessionID,
 	).Scan(&announceCount)
 	if err != nil {
 		t.Fatalf("query announce messages: %v", err)

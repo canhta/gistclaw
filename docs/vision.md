@@ -37,3 +37,16 @@ The near-term goal is to earn the new runtime contract first:
 - runtime-mediated collaboration
 - strict authority boundaries
 - local-first replay and approvals
+
+## What Is Still Missing
+
+The current reset is closer to OpenClaw in kernel direction than in product breadth.
+
+What is still not earned yet:
+
+- a durable assistant identity that persists across multiple runs in the same conversation
+- runtime-owned session routing and mailbox behavior instead of mostly run-scoped coordination
+- dynamic user-created teams at runtime instead of config-defined team shape only
+- restored channel/gateway surfaces on top of the new kernel
+- real extension contracts for providers, connectors, tools, and plugins
+- a broader control-plane style collaboration model that feels like OpenClaw instead of just a better run engine

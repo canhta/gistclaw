@@ -180,6 +180,7 @@ type Run struct {
 	ID                    string
 	ConversationID        string
 	AgentID               string
+	SessionID             string
 	TeamID                string
 	ParentRunID           string
 	Objective             string

@@ -116,6 +116,34 @@ func TestRuntime_StartFrontSessionCreatesFrontRunAndSession(t *testing.T) {
 	}
 }
 
+func TestRuntime_StartFrontSessionReusesExistingAssistantSession(t *testing.T) {
+	rt, db := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "First pass complete.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+		{Content: "Second pass complete.", InputTokens: 11, OutputTokens: 13, StopReason: "end_turn"},
+	})
+
+	first := startFrontRun(t, rt, "Inspect the repo")
+	second := startFrontRun(t, rt, "Summarize the repo")
+
+	if first.SessionID == "" || second.SessionID == "" {
+		t.Fatal("expected front runs to carry a durable session ID")
+	}
+	if second.SessionID != first.SessionID {
+		t.Fatalf("expected assistant session reuse, got %s then %s", first.SessionID, second.SessionID)
+	}
+
+	var count int
+	err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM sessions WHERE agent_id = 'assistant' AND role = 'front'",
+	).Scan(&count)
+	if err != nil {
+		t.Fatalf("count front sessions: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 durable front session, got %d", count)
+	}
+}
+
 func TestRuntime_SpawnCreatesWorkerRunAndSession(t *testing.T) {
 	rt, db := newCollaborationRuntime(t, []GenerateResult{
 		{Content: "I inspected the repo.", InputTokens: 12, OutputTokens: 18, StopReason: "end_turn"},

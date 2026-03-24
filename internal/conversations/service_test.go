@@ -390,6 +390,44 @@ func TestConversationStore_AppendEventProjectsSessions(t *testing.T) {
 	}
 }
 
+func TestConversationStore_AppendEventProjectsRunSessionID(t *testing.T) {
+	db := setupTestStore(t)
+	cs := NewConversationStore(db)
+	ctx := context.Background()
+
+	startPayload, err := json.Marshal(map[string]any{
+		"agent_id":       "assistant",
+		"objective":      "Help with the repo",
+		"workspace_root": "/tmp/work",
+		"session_id":     "sess-front",
+	})
+	if err != nil {
+		t.Fatalf("marshal start payload: %v", err)
+	}
+
+	err = cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-run-start",
+		ConversationID: "conv-session-run",
+		RunID:          "run-front",
+		Kind:           "run_started",
+		PayloadJSON:    startPayload,
+	})
+	if err != nil {
+		t.Fatalf("AppendEvent run_started failed: %v", err)
+	}
+
+	var sessionID string
+	err = db.RawDB().QueryRowContext(ctx,
+		"SELECT session_id FROM runs WHERE id = 'run-front'",
+	).Scan(&sessionID)
+	if err != nil {
+		t.Fatalf("query projected run session_id: %v", err)
+	}
+	if sessionID != "sess-front" {
+		t.Fatalf("expected run session_id %q, got %q", "sess-front", sessionID)
+	}
+}
+
 func TestConversationStore_AppendEventProjectsFailureAndInterruption(t *testing.T) {
 	db := setupTestStore(t)
 	cs := NewConversationStore(db)
