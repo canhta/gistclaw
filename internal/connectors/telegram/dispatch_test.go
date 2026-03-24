@@ -74,6 +74,9 @@ func TestInboundDispatcher_DispatchesEnvelopeToRuntime(t *testing.T) {
 	if call.ConversationKey.ThreadID != env.ThreadID {
 		t.Errorf("ThreadID: expected %q, got %q", env.ThreadID, call.ConversationKey.ThreadID)
 	}
+	if call.SourceMessageID != env.MessageID {
+		t.Errorf("SourceMessageID: expected %q, got %q", env.MessageID, call.SourceMessageID)
+	}
 }
 
 func TestInboundDispatcher_EmptyTextIsRejected(t *testing.T) {

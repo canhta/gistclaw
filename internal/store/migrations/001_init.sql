@@ -66,6 +66,19 @@ CREATE TABLE IF NOT EXISTS session_bindings (
     created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS inbound_receipts (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    connector_id TEXT NOT NULL,
+    account_id TEXT NOT NULL DEFAULT '',
+    thread_id TEXT NOT NULL,
+    source_message_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    session_message_id TEXT NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS tool_calls (
     id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL,
@@ -161,6 +174,8 @@ CREATE INDEX IF NOT EXISTS idx_sessions_conversation_id_status ON sessions(conve
 CREATE INDEX IF NOT EXISTS idx_session_messages_session_id_created_at ON session_messages(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_session_bindings_conversation_id_thread_id_status ON session_bindings(conversation_id, thread_id, status);
 CREATE INDEX IF NOT EXISTS idx_session_bindings_session_id_status_created_at ON session_bindings(session_id, status, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inbound_receipts_conversation_source_message
+    ON inbound_receipts(conversation_id, connector_id, account_id, thread_id, source_message_id);
 CREATE INDEX IF NOT EXISTS idx_approvals_run_id_status ON approvals(run_id, status);
 CREATE INDEX IF NOT EXISTS idx_memory_items_agent_id_scope ON memory_items(agent_id, scope);
 CREATE INDEX IF NOT EXISTS idx_runs_session_id_status_updated_at ON runs(session_id, status, updated_at);

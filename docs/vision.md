@@ -66,3 +66,4 @@ That means the next implementation work favors:
 - operator-facing session visibility starts with the local session directory and mailbox APIs, and can grow into richer control-plane tools later
 - explicit session send/wake behavior should flow through the runtime so the same session contract can back both local tools and future channel recovery
 - external channel recovery should keep reusing the same inbound-message runtime contract rather than teaching each connector its own session-start logic
+- external retries and redeliveries should be absorbed by one runtime-owned inbound receipt model, so connectors stay thin and duplicate delivery does not fork extra runs

@@ -28,6 +28,24 @@ func IsSQLiteFull(err error) bool {
 	return errors.As(err, &ce) && ce.Code() == 13 // SQLITE_FULL
 }
 
+// IsSQLiteConstraintUnique reports whether err (or any wrapped error in its
+// chain) is a SQLite uniqueness constraint violation.
+func IsSQLiteConstraintUnique(err error) bool {
+	if err == nil {
+		return false
+	}
+	var ce sqliteCodeErr
+	if !errors.As(err, &ce) {
+		return false
+	}
+	switch ce.Code() {
+	case 19, 1555, 2067:
+		return true
+	default:
+		return false
+	}
+}
+
 type DB struct {
 	db *sql.DB
 }

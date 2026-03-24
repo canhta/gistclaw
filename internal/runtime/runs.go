@@ -157,40 +157,21 @@ func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
 }
 
 func (r *Runtime) createRun(ctx context.Context, runID, parentRunID string, cmd StartRun) error {
-	if err := r.budget.CheckDailyCap(ctx, cmd.AccountID); err != nil {
+	now := time.Now().UTC()
+	return r.createRunAt(ctx, runID, parentRunID, cmd, now)
+}
+
+func (r *Runtime) createRunAt(ctx context.Context, runID, parentRunID string, cmd StartRun, now time.Time) error {
+	if err := r.prepareRunStart(ctx, parentRunID, cmd); err != nil {
 		return err
 	}
-	if parentRunID == "" {
-		if active, err := r.convStore.ActiveRootRun(ctx, cmd.ConversationID); err != nil {
-			return err
-		} else if active.ID != "" {
-			return conversations.ErrConversationBusy
-		}
-	}
 
-	now := time.Now().UTC()
-
-	payload, err := json.Marshal(map[string]any{
-		"agent_id":                cmd.AgentID,
-		"session_id":              cmd.SessionID,
-		"team_id":                 cmd.TeamID,
-		"objective":               cmd.Objective,
-		"workspace_root":          cmd.WorkspaceRoot,
-		"execution_snapshot_json": cmd.ExecutionSnapshotJSON,
-	})
+	event, err := newRunStartedEvent(cmd.ConversationID, runID, parentRunID, cmd, now)
 	if err != nil {
-		return fmt.Errorf("marshal run_started payload: %w", err)
+		return err
 	}
 
-	err = r.convStore.AppendEvent(ctx, model.Event{
-		ID:             generateID(),
-		ConversationID: cmd.ConversationID,
-		RunID:          runID,
-		ParentRunID:    parentRunID,
-		Kind:           "run_started",
-		PayloadJSON:    payload,
-		CreatedAt:      now,
-	})
+	err = r.convStore.AppendEvent(ctx, event)
 	if err != nil {
 		return fmt.Errorf("journal run_started: %w", err)
 	}
@@ -204,6 +185,44 @@ func (r *Runtime) createRun(ctx context.Context, runID, parentRunID string, cmd 
 	}
 
 	return nil
+}
+
+func (r *Runtime) prepareRunStart(ctx context.Context, parentRunID string, cmd StartRun) error {
+	if err := r.budget.CheckDailyCap(ctx, cmd.AccountID); err != nil {
+		return err
+	}
+	if parentRunID == "" {
+		if active, err := r.convStore.ActiveRootRun(ctx, cmd.ConversationID); err != nil {
+			return err
+		} else if active.ID != "" {
+			return conversations.ErrConversationBusy
+		}
+	}
+	return nil
+}
+
+func newRunStartedEvent(conversationID, runID, parentRunID string, cmd StartRun, now time.Time) (model.Event, error) {
+	payload, err := json.Marshal(map[string]any{
+		"agent_id":                cmd.AgentID,
+		"session_id":              cmd.SessionID,
+		"team_id":                 cmd.TeamID,
+		"objective":               cmd.Objective,
+		"workspace_root":          cmd.WorkspaceRoot,
+		"execution_snapshot_json": cmd.ExecutionSnapshotJSON,
+	})
+	if err != nil {
+		return model.Event{}, fmt.Errorf("marshal run_started payload: %w", err)
+	}
+
+	return model.Event{
+		ID:             generateID(),
+		ConversationID: conversationID,
+		RunID:          runID,
+		ParentRunID:    parentRunID,
+		Kind:           "run_started",
+		PayloadJSON:    payload,
+		CreatedAt:      now,
+	}, nil
 }
 
 type runLoopOpts struct {

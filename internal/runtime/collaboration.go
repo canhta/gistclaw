@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
@@ -23,6 +25,7 @@ type InboundMessageCommand struct {
 	ConversationKey conversations.ConversationKey
 	FrontAgentID    string
 	Body            string
+	SourceMessageID string
 	WorkspaceRoot   string
 }
 
@@ -123,29 +126,50 @@ func (r *Runtime) ReceiveInboundMessage(ctx context.Context, cmd InboundMessageC
 	}
 
 	threadID := normalizeThreadID(cmd.ConversationKey.ThreadID)
+	if cmd.SourceMessageID != "" {
+		existing, err := r.loadInboundReceiptRun(
+			ctx,
+			conv.ID,
+			cmd.ConversationKey.ConnectorID,
+			cmd.ConversationKey.AccountID,
+			threadID,
+			cmd.SourceMessageID,
+		)
+		if err == nil {
+			return existing, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return model.Run{}, err
+		}
+	}
 	sessionID, createSession, createBinding, err := r.resolveFrontSession(ctx, conv.ID, threadID)
 	if err != nil {
 		return model.Run{}, err
 	}
-	if createSession || createBinding {
-		return r.StartFrontSession(ctx, StartFrontSession{
-			ConversationKey: cmd.ConversationKey,
-			FrontAgentID:    cmd.FrontAgentID,
-			InitialPrompt:   cmd.Body,
-			WorkspaceRoot:   cmd.WorkspaceRoot,
-		})
-	}
 
-	return r.sendSession(ctx, sendSessionOptions{
-		toSessionID: sessionID,
-		body:        cmd.Body,
-		kind:        model.MessageUser,
-		provenance: model.SessionMessageProvenance{
-			Kind:              model.MessageProvenanceInbound,
-			SourceConnectorID: cmd.ConversationKey.ConnectorID,
-			SourceThreadID:    threadID,
-		},
+	run, err := r.startInboundRun(ctx, inboundRunOptions{
+		conversationID:  conv.ID,
+		sessionID:       sessionID,
+		createSession:   createSession,
+		createBinding:   createBinding,
+		agentID:         cmd.FrontAgentID,
+		body:            cmd.Body,
+		workspaceRoot:   cmd.WorkspaceRoot,
+		key:             cmd.ConversationKey,
+		threadID:        threadID,
+		sourceMessageID: cmd.SourceMessageID,
 	})
+	if errors.Is(err, conversations.ErrDuplicateInboundMessage) && cmd.SourceMessageID != "" {
+		return r.loadInboundReceiptRun(
+			ctx,
+			conv.ID,
+			cmd.ConversationKey.ConnectorID,
+			cmd.ConversationKey.AccountID,
+			threadID,
+			cmd.SourceMessageID,
+		)
+	}
+	return run, err
 }
 
 func (r *Runtime) Spawn(ctx context.Context, cmd SpawnCommand) (model.Run, error) {
@@ -425,32 +449,22 @@ func (r *Runtime) openSession(
 	parentSessionID string,
 	controllerSessionID string,
 ) error {
-	key := sessionkeys.BuildFrontSessionKey(conversationID)
-	if role == model.SessionRoleWorker {
-		key = sessionkeys.BuildWorkerSessionKey(parentSessionID, agentID)
-	}
-
-	payload, err := json.Marshal(map[string]any{
-		"session_id":            sessionID,
-		"key":                   key,
-		"agent_id":              agentID,
-		"role":                  role,
-		"parent_session_id":     parentSessionID,
-		"controller_session_id": controllerSessionID,
-		"status":                "active",
-	})
+	event, err := newSessionOpenedEvent(
+		conversationID,
+		runID,
+		parentRunID,
+		sessionID,
+		agentID,
+		role,
+		parentSessionID,
+		controllerSessionID,
+		time.Time{},
+	)
 	if err != nil {
-		return fmt.Errorf("marshal session_opened payload: %w", err)
+		return err
 	}
 
-	if err := r.convStore.AppendEvent(ctx, model.Event{
-		ID:             generateID(),
-		ConversationID: conversationID,
-		RunID:          runID,
-		ParentRunID:    parentRunID,
-		Kind:           "session_opened",
-		PayloadJSON:    payload,
-	}); err != nil {
+	if err := r.convStore.AppendEvent(ctx, event); err != nil {
 		return fmt.Errorf("journal session_opened: %w", err)
 	}
 
@@ -497,25 +511,12 @@ func (r *Runtime) bindSession(
 	key conversations.ConversationKey,
 	sessionID string,
 ) error {
-	payload, err := json.Marshal(map[string]any{
-		"thread_id":    normalizeThreadID(key.ThreadID),
-		"session_id":   sessionID,
-		"connector_id": key.ConnectorID,
-		"account_id":   key.AccountID,
-		"external_id":  key.ExternalID,
-		"status":       "active",
-	})
+	event, err := newSessionBoundEvent(conversationID, runID, key, sessionID, time.Time{})
 	if err != nil {
-		return fmt.Errorf("marshal session_bound payload: %w", err)
+		return err
 	}
 
-	if err := r.convStore.AppendEvent(ctx, model.Event{
-		ID:             generateID(),
-		ConversationID: conversationID,
-		RunID:          runID,
-		Kind:           "session_bound",
-		PayloadJSON:    payload,
-	}); err != nil {
+	if err := r.convStore.AppendEvent(ctx, event); err != nil {
 		return fmt.Errorf("journal session_bound: %w", err)
 	}
 
@@ -529,6 +530,159 @@ func normalizeThreadID(threadID string) string {
 	return threadID
 }
 
+type inboundRunOptions struct {
+	conversationID  string
+	sessionID       string
+	createSession   bool
+	createBinding   bool
+	agentID         string
+	body            string
+	workspaceRoot   string
+	key             conversations.ConversationKey
+	threadID        string
+	sourceMessageID string
+}
+
+func (r *Runtime) startInboundRun(ctx context.Context, opts inboundRunOptions) (model.Run, error) {
+	now := time.Now().UTC()
+	runID := generateID()
+	start := StartRun{
+		ConversationID: opts.conversationID,
+		AgentID:        opts.agentID,
+		SessionID:      opts.sessionID,
+		Objective:      opts.body,
+		WorkspaceRoot:  opts.workspaceRoot,
+		AccountID:      opts.key.AccountID,
+	}
+	if err := r.prepareRunStart(ctx, "", start); err != nil {
+		return model.Run{}, err
+	}
+
+	events := make([]model.Event, 0, 5)
+	runEvent, err := newRunStartedEvent(opts.conversationID, runID, "", start, now)
+	if err != nil {
+		return model.Run{}, err
+	}
+	events = append(events, runEvent)
+	if opts.createSession {
+		event, err := newSessionOpenedEvent(
+			opts.conversationID,
+			runID,
+			"",
+			opts.sessionID,
+			opts.agentID,
+			model.SessionRoleFront,
+			"",
+			"",
+			now,
+		)
+		if err != nil {
+			return model.Run{}, err
+		}
+		events = append(events, event)
+	}
+	if opts.createBinding {
+		event, err := newSessionBoundEvent(opts.conversationID, runID, opts.key, opts.sessionID, now)
+		if err != nil {
+			return model.Run{}, err
+		}
+		events = append(events, event)
+	}
+
+	provenance := model.SessionMessageProvenance{
+		Kind:              model.MessageProvenanceInbound,
+		SourceConnectorID: opts.key.ConnectorID,
+		SourceThreadID:    opts.threadID,
+		SourceMessageID:   opts.sourceMessageID,
+	}
+	messageID := generateID()
+	messageEvent, err := newSessionMessageAddedEvent(
+		opts.conversationID,
+		runID,
+		opts.sessionID,
+		"",
+		model.MessageUser,
+		opts.body,
+		provenance,
+		messageID,
+		now,
+	)
+	if err != nil {
+		return model.Run{}, err
+	}
+	events = append(events, messageEvent)
+	if opts.sourceMessageID != "" {
+		event, err := newInboundMessageRecordedEvent(
+			opts.conversationID,
+			runID,
+			opts.key.ConnectorID,
+			opts.key.AccountID,
+			opts.threadID,
+			opts.sourceMessageID,
+			opts.sessionID,
+			messageID,
+			now,
+		)
+		if err != nil {
+			return model.Run{}, err
+		}
+		events = append(events, event)
+	}
+
+	if err := r.convStore.AppendEvents(ctx, events); err != nil {
+		return model.Run{}, err
+	}
+	if r.eventSink != nil {
+		_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
+			RunID:      runID,
+			Kind:       "run_started",
+			OccurredAt: now,
+		})
+	}
+
+	return r.executeRunLoop(ctx, runLoopOpts{
+		runID:          runID,
+		conversationID: opts.conversationID,
+		agentID:        opts.agentID,
+		sessionID:      opts.sessionID,
+		objective:      opts.body,
+	})
+}
+
+func (r *Runtime) loadInboundReceiptRun(
+	ctx context.Context,
+	conversationID string,
+	connectorID string,
+	accountID string,
+	threadID string,
+	sourceMessageID string,
+) (model.Run, error) {
+	var runID string
+	err := r.store.RawDB().QueryRowContext(ctx,
+		`SELECT run_id
+		 FROM inbound_receipts
+		 WHERE conversation_id = ? AND connector_id = ? AND account_id = ? AND thread_id = ? AND source_message_id = ?
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		conversationID,
+		connectorID,
+		accountID,
+		threadID,
+		sourceMessageID,
+	).Scan(&runID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return model.Run{}, sql.ErrNoRows
+		}
+		return model.Run{}, fmt.Errorf("runtime: load inbound receipt: %w", err)
+	}
+	run, err := r.loadRun(ctx, runID)
+	if err != nil {
+		return model.Run{}, fmt.Errorf("runtime: load inbound receipt run: %w", err)
+	}
+	return run, nil
+}
+
 func (r *Runtime) appendSessionMessage(
 	ctx context.Context,
 	conversationID string,
@@ -540,6 +694,108 @@ func (r *Runtime) appendSessionMessage(
 	provenance model.SessionMessageProvenance,
 ) (string, error) {
 	messageID := generateID()
+	event, err := newSessionMessageAddedEvent(
+		conversationID,
+		runID,
+		sessionID,
+		senderSessionID,
+		kind,
+		body,
+		provenance,
+		messageID,
+		time.Time{},
+	)
+	if err != nil {
+		return "", err
+	}
+
+	if err := r.convStore.AppendEvent(ctx, event); err != nil {
+		return "", fmt.Errorf("journal session_message_added: %w", err)
+	}
+
+	return messageID, nil
+}
+
+func newSessionOpenedEvent(
+	conversationID string,
+	runID string,
+	parentRunID string,
+	sessionID string,
+	agentID string,
+	role model.SessionRole,
+	parentSessionID string,
+	controllerSessionID string,
+	now time.Time,
+) (model.Event, error) {
+	key := sessionkeys.BuildFrontSessionKey(conversationID)
+	if role == model.SessionRoleWorker {
+		key = sessionkeys.BuildWorkerSessionKey(parentSessionID, agentID)
+	}
+
+	payload, err := json.Marshal(map[string]any{
+		"session_id":            sessionID,
+		"key":                   key,
+		"agent_id":              agentID,
+		"role":                  role,
+		"parent_session_id":     parentSessionID,
+		"controller_session_id": controllerSessionID,
+		"status":                "active",
+	})
+	if err != nil {
+		return model.Event{}, fmt.Errorf("marshal session_opened payload: %w", err)
+	}
+
+	return model.Event{
+		ID:             generateID(),
+		ConversationID: conversationID,
+		RunID:          runID,
+		ParentRunID:    parentRunID,
+		Kind:           "session_opened",
+		PayloadJSON:    payload,
+		CreatedAt:      now,
+	}, nil
+}
+
+func newSessionBoundEvent(
+	conversationID string,
+	runID string,
+	key conversations.ConversationKey,
+	sessionID string,
+	now time.Time,
+) (model.Event, error) {
+	payload, err := json.Marshal(map[string]any{
+		"thread_id":    normalizeThreadID(key.ThreadID),
+		"session_id":   sessionID,
+		"connector_id": key.ConnectorID,
+		"account_id":   key.AccountID,
+		"external_id":  key.ExternalID,
+		"status":       "active",
+	})
+	if err != nil {
+		return model.Event{}, fmt.Errorf("marshal session_bound payload: %w", err)
+	}
+
+	return model.Event{
+		ID:             generateID(),
+		ConversationID: conversationID,
+		RunID:          runID,
+		Kind:           "session_bound",
+		PayloadJSON:    payload,
+		CreatedAt:      now,
+	}, nil
+}
+
+func newSessionMessageAddedEvent(
+	conversationID string,
+	runID string,
+	sessionID string,
+	senderSessionID string,
+	kind model.SessionMessageKind,
+	body string,
+	provenance model.SessionMessageProvenance,
+	messageID string,
+	now time.Time,
+) (model.Event, error) {
 	payload, err := json.Marshal(map[string]any{
 		"message_id":        messageID,
 		"session_id":        sessionID,
@@ -549,18 +805,49 @@ func (r *Runtime) appendSessionMessage(
 		"provenance":        provenance,
 	})
 	if err != nil {
-		return "", fmt.Errorf("marshal session_message_added payload: %w", err)
+		return model.Event{}, fmt.Errorf("marshal session_message_added payload: %w", err)
 	}
 
-	if err := r.convStore.AppendEvent(ctx, model.Event{
+	return model.Event{
 		ID:             generateID(),
 		ConversationID: conversationID,
 		RunID:          runID,
 		Kind:           "session_message_added",
 		PayloadJSON:    payload,
-	}); err != nil {
-		return "", fmt.Errorf("journal session_message_added: %w", err)
+		CreatedAt:      now,
+	}, nil
+}
+
+func newInboundMessageRecordedEvent(
+	conversationID string,
+	runID string,
+	connectorID string,
+	accountID string,
+	threadID string,
+	sourceMessageID string,
+	sessionID string,
+	sessionMessageID string,
+	now time.Time,
+) (model.Event, error) {
+	payload, err := json.Marshal(map[string]any{
+		"connector_id":       connectorID,
+		"account_id":         accountID,
+		"thread_id":          threadID,
+		"source_message_id":  sourceMessageID,
+		"run_id":             runID,
+		"session_id":         sessionID,
+		"session_message_id": sessionMessageID,
+	})
+	if err != nil {
+		return model.Event{}, fmt.Errorf("marshal inbound_message_recorded payload: %w", err)
 	}
 
-	return messageID, nil
+	return model.Event{
+		ID:             generateID(),
+		ConversationID: conversationID,
+		RunID:          runID,
+		Kind:           "inbound_message_recorded",
+		PayloadJSON:    payload,
+		CreatedAt:      now,
+	}, nil
 }

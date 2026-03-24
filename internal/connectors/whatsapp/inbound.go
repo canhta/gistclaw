@@ -85,9 +85,10 @@ func (h *WebhookHandler) handleMessage(w http.ResponseWriter, r *http.Request) {
 				ExternalID:  env.ConversationID,
 				ThreadID:    env.ThreadID,
 			},
-			FrontAgentID:  h.defaultAgent,
-			Body:          env.Text,
-			WorkspaceRoot: h.workspaceRoot,
+			FrontAgentID:    h.defaultAgent,
+			Body:            env.Text,
+			SourceMessageID: env.MessageID,
+			WorkspaceRoot:   h.workspaceRoot,
 		})
 		if err != nil {
 			http.Error(w, fmt.Sprintf("dispatch inbound message: %v", err), http.StatusInternalServerError)

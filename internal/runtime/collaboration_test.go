@@ -386,9 +386,10 @@ func TestRuntime_ReceiveInboundMessageReusesBoundFrontSessionWithConnectorProven
 			ExternalID:  "chat-1",
 			ThreadID:    "thread-1",
 		},
-		FrontAgentID:  "assistant",
-		Body:          "Inspect the repo.",
-		WorkspaceRoot: t.TempDir(),
+		FrontAgentID:    "assistant",
+		Body:            "Inspect the repo.",
+		SourceMessageID: "tg-1",
+		WorkspaceRoot:   t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("first ReceiveInboundMessage failed: %v", err)
@@ -401,9 +402,10 @@ func TestRuntime_ReceiveInboundMessageReusesBoundFrontSessionWithConnectorProven
 			ExternalID:  "chat-1",
 			ThreadID:    "thread-1",
 		},
-		FrontAgentID:  "assistant",
-		Body:          "What changed?",
-		WorkspaceRoot: t.TempDir(),
+		FrontAgentID:    "assistant",
+		Body:            "What changed?",
+		SourceMessageID: "tg-2",
+		WorkspaceRoot:   t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("second ReceiveInboundMessage failed: %v", err)
@@ -429,7 +431,81 @@ func TestRuntime_ReceiveInboundMessageReusesBoundFrontSessionWithConnectorProven
 	if history[2].Provenance.SourceConnectorID != "telegram" || history[2].Provenance.SourceThreadID != "thread-1" {
 		t.Fatalf("expected telegram provenance on inbound follow-up, got %+v", history[2].Provenance)
 	}
+	if history[2].Provenance.SourceMessageID != "tg-2" {
+		t.Fatalf("expected source message ID tg-2 on inbound follow-up, got %+v", history[2].Provenance)
+	}
 	if history[3].Kind != model.MessageAssistant || history[3].Body != "Telegram follow-up." {
 		t.Fatalf("expected assistant follow-up reply, got kind=%q body=%q", history[3].Kind, history[3].Body)
+	}
+}
+
+func TestRuntime_ReceiveInboundMessageDedupesDuplicateSourceMessageID(t *testing.T) {
+	rt, db := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "Front ready.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+		{Content: "duplicate should not trigger", InputTokens: 1, OutputTokens: 1, StopReason: "end_turn"},
+	})
+
+	cmd := InboundMessageCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		FrontAgentID:    "assistant",
+		Body:            "Inspect the repo.",
+		SourceMessageID: "tg-42",
+		WorkspaceRoot:   t.TempDir(),
+	}
+
+	first, err := rt.ReceiveInboundMessage(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("first ReceiveInboundMessage failed: %v", err)
+	}
+	second, err := rt.ReceiveInboundMessage(context.Background(), cmd)
+	if err != nil {
+		t.Fatalf("second ReceiveInboundMessage failed: %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("expected duplicate inbound to return original run %q, got %q", first.ID, second.ID)
+	}
+	if second.SessionID != first.SessionID {
+		t.Fatalf("expected duplicate inbound to reuse original session %q, got %q", first.SessionID, second.SessionID)
+	}
+
+	svc := sessions.NewService(db, conversations.NewConversationStore(db))
+	_, history, err := svc.LoadSessionMailbox(context.Background(), first.SessionID, 10)
+	if err != nil {
+		t.Fatalf("LoadSessionMailbox failed: %v", err)
+	}
+	if len(history) != 2 {
+		t.Fatalf("expected 2 mailbox messages after duplicate delivery, got %d", len(history))
+	}
+	if history[0].Provenance.SourceMessageID != "tg-42" {
+		t.Fatalf("expected source message ID to round-trip, got %+v", history[0].Provenance)
+	}
+
+	var runCount int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM runs WHERE session_id = ?",
+		first.SessionID,
+	).Scan(&runCount); err != nil {
+		t.Fatalf("count runs: %v", err)
+	}
+	if runCount != 1 {
+		t.Fatalf("expected 1 run after duplicate delivery, got %d", runCount)
+	}
+
+	var receiptCount int
+	if err := db.RawDB().QueryRow(
+		`SELECT count(*) FROM inbound_receipts
+		 WHERE conversation_id = ? AND source_message_id = ?`,
+		first.ConversationID,
+		"tg-42",
+	).Scan(&receiptCount); err != nil {
+		t.Fatalf("count inbound receipts: %v", err)
+	}
+	if receiptCount != 1 {
+		t.Fatalf("expected 1 inbound receipt after duplicate delivery, got %d", receiptCount)
 	}
 }

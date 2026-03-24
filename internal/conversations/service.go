@@ -14,6 +14,7 @@ import (
 )
 
 var ErrConversationBusy = fmt.Errorf("conversation: competing root run active")
+var ErrDuplicateInboundMessage = fmt.Errorf("conversation: duplicate inbound message")
 
 type ConversationStore struct {
 	db *store.DB
@@ -60,25 +61,30 @@ func (s *ConversationStore) Resolve(ctx context.Context, key ConversationKey) (m
 }
 
 func (s *ConversationStore) AppendEvent(ctx context.Context, evt model.Event) error {
+	return s.AppendEvents(ctx, []model.Event{evt})
+}
+
+func (s *ConversationStore) AppendEvents(ctx context.Context, events []model.Event) error {
 	return s.db.Tx(ctx, func(tx *sql.Tx) error {
-		if evt.CreatedAt.IsZero() {
-			evt.CreatedAt = time.Now().UTC()
-		}
+		for _, evt := range events {
+			if evt.CreatedAt.IsZero() {
+				evt.CreatedAt = time.Now().UTC()
+			}
 
-		_, err := tx.ExecContext(ctx,
-			`INSERT INTO events (id, conversation_id, run_id, parent_run_id, kind, payload_json, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			evt.ID, evt.ConversationID, evt.RunID, evt.ParentRunID, evt.Kind, evt.PayloadJSON, evt.CreatedAt,
-		)
-		if err != nil {
-			return fmt.Errorf("append event: %w", err)
-		}
+			_, err := tx.ExecContext(ctx,
+				`INSERT INTO events (id, conversation_id, run_id, parent_run_id, kind, payload_json, created_at)
+				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				evt.ID, evt.ConversationID, evt.RunID, evt.ParentRunID, evt.Kind, evt.PayloadJSON, evt.CreatedAt,
+			)
+			if err != nil {
+				return fmt.Errorf("append event: %w", err)
+			}
 
-		err = s.applyProjection(ctx, tx, evt)
-		if err != nil {
-			return fmt.Errorf("update projection: %w", err)
+			err = s.applyProjection(ctx, tx, evt)
+			if err != nil {
+				return fmt.Errorf("update projection: %w", err)
+			}
 		}
-
 		return nil
 	})
 }
@@ -139,6 +145,16 @@ type sessionBoundPayload struct {
 	AccountID   string `json:"account_id"`
 	ExternalID  string `json:"external_id"`
 	Status      string `json:"status"`
+}
+
+type inboundMessageRecordedPayload struct {
+	ConnectorID      string `json:"connector_id"`
+	AccountID        string `json:"account_id"`
+	ThreadID         string `json:"thread_id"`
+	SourceMessageID  string `json:"source_message_id"`
+	RunID            string `json:"run_id"`
+	SessionID        string `json:"session_id"`
+	SessionMessageID string `json:"session_message_id"`
 }
 
 func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt model.Event) error {
@@ -292,6 +308,30 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 			status,
 			evt.CreatedAt,
 		)
+		return err
+	case "inbound_message_recorded":
+		var payload inboundMessageRecordedPayload
+		if err := decodePayload(evt.PayloadJSON, &payload); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO inbound_receipts
+			 (id, conversation_id, connector_id, account_id, thread_id, source_message_id, run_id, session_id, session_message_id, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			evt.ID,
+			evt.ConversationID,
+			payload.ConnectorID,
+			payload.AccountID,
+			payload.ThreadID,
+			payload.SourceMessageID,
+			payload.RunID,
+			payload.SessionID,
+			payload.SessionMessageID,
+			evt.CreatedAt,
+		)
+		if store.IsSQLiteConstraintUnique(err) {
+			return ErrDuplicateInboundMessage
+		}
 		return err
 	default:
 		return nil

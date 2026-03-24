@@ -150,4 +150,7 @@ func TestWebhookHandler_DispatchesInboundTextMessages(t *testing.T) {
 	}) {
 		t.Fatalf("unexpected conversation key: %+v", call.ConversationKey)
 	}
+	if call.SourceMessageID != "wamid.42" {
+		t.Fatalf("expected source message ID to pass through, got %q", call.SourceMessageID)
+	}
 }

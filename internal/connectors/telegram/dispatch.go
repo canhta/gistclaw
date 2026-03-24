@@ -58,9 +58,10 @@ func (d *InboundDispatcher) Dispatch(ctx context.Context, env model.Envelope) er
 			ExternalID:  env.ConversationID,
 			ThreadID:    env.ThreadID,
 		},
-		FrontAgentID:  d.defaultAgentID,
-		Body:          env.Text,
-		WorkspaceRoot: d.workspaceRoot,
+		FrontAgentID:    d.defaultAgentID,
+		Body:            env.Text,
+		SourceMessageID: env.MessageID,
+		WorkspaceRoot:   d.workspaceRoot,
 	})
 	if err != nil {
 		return fmt.Errorf("telegram: inbound dispatch: receive inbound message: %w", err)

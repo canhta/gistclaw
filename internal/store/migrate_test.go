@@ -40,7 +40,7 @@ func TestMigrate_FreshDB(t *testing.T) {
 
 	tables := []string{
 		"conversations", "events", "runs", "sessions", "session_messages",
-		"session_bindings", "tool_calls", "approvals", "receipts",
+		"session_bindings", "inbound_receipts", "tool_calls", "approvals", "receipts",
 		"memory_items", "outbound_intents", "settings", "run_summaries",
 	}
 	for _, table := range tables {
@@ -61,6 +61,7 @@ func TestMigrate_FreshDB(t *testing.T) {
 		"idx_session_messages_session_id_created_at",
 		"idx_session_bindings_conversation_id_thread_id_status",
 		"idx_session_bindings_session_id_status_created_at",
+		"idx_inbound_receipts_conversation_source_message",
 		"idx_approvals_run_id_status",
 		"idx_memory_items_agent_id_scope",
 		"idx_runs_session_id_status_updated_at",
@@ -170,6 +171,7 @@ func TestMigrateCreatesSessionRuntimeTables(t *testing.T) {
 		"sessions",
 		"session_messages",
 		"session_bindings",
+		"inbound_receipts",
 		"tool_calls",
 		"approvals",
 		"receipts",
