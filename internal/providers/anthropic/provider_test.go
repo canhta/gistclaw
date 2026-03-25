@@ -83,8 +83,19 @@ func TestProvider_SystemInstructionsPassedAsSystem(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 
-	if capturedBody["system"] != "You are a code reviewer." {
-		t.Errorf("system: got %v, want %q", capturedBody["system"], "You are a code reviewer.")
+	systemBlocks, ok := capturedBody["system"].([]any)
+	if !ok || len(systemBlocks) != 1 {
+		t.Fatalf("expected one system block, got %v", capturedBody["system"])
+	}
+	systemBlock, ok := systemBlocks[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected system block object, got %T", systemBlocks[0])
+	}
+	if systemBlock["type"] != "text" {
+		t.Fatalf("system block type: got %v, want text", systemBlock["type"])
+	}
+	if systemBlock["text"] != "You are a code reviewer." {
+		t.Errorf("system text: got %v, want %q", systemBlock["text"], "You are a code reviewer.")
 	}
 }
 
@@ -122,16 +133,24 @@ func TestProvider_ConversationEventsConvertedToMessages(t *testing.T) {
 	if m0["role"] != "user" {
 		t.Errorf("first message role: got %v, want user", m0["role"])
 	}
-	if m0["content"] != "fix the bug" {
-		t.Errorf("first message content: got %v, want 'fix the bug'", m0["content"])
+	content0, ok := m0["content"].([]any)
+	if !ok || len(content0) != 1 {
+		t.Fatalf("expected one content block in first message, got %v", m0["content"])
+	}
+	if content0[0].(map[string]any)["text"] != "fix the bug" {
+		t.Errorf("first message text: got %v, want 'fix the bug'", content0[0].(map[string]any)["text"])
 	}
 
 	m1 := msgs[1].(map[string]any)
 	if m1["role"] != "assistant" {
 		t.Errorf("second message role: got %v, want assistant", m1["role"])
 	}
-	if m1["content"] != "I found the bug" {
-		t.Errorf("second message content: got %v, want 'I found the bug'", m1["content"])
+	content1, ok := m1["content"].([]any)
+	if !ok || len(content1) != 1 {
+		t.Fatalf("expected one content block in second message, got %v", m1["content"])
+	}
+	if content1[0].(map[string]any)["text"] != "I found the bug" {
+		t.Errorf("second message text: got %v, want 'I found the bug'", content1[0].(map[string]any)["text"])
 	}
 }
 
@@ -164,10 +183,14 @@ func TestProvider_SessionMessageEventsConvertedToMessages(t *testing.T) {
 	if !ok || len(msgs) != 2 {
 		t.Fatalf("expected 2 session messages, got %v", capturedBody["messages"])
 	}
-	if msgs[0].(map[string]any)["role"] != "user" || msgs[0].(map[string]any)["content"] != "front prompt" {
+	userMsg := msgs[0].(map[string]any)
+	userContent, ok := userMsg["content"].([]any)
+	if userMsg["role"] != "user" || !ok || len(userContent) != 1 || userContent[0].(map[string]any)["text"] != "front prompt" {
 		t.Fatalf("unexpected user mailbox message: %v", msgs[0])
 	}
-	if msgs[1].(map[string]any)["role"] != "assistant" || msgs[1].(map[string]any)["content"] != "front reply" {
+	assistantMsg := msgs[1].(map[string]any)
+	assistantContent, ok := assistantMsg["content"].([]any)
+	if assistantMsg["role"] != "assistant" || !ok || len(assistantContent) != 1 || assistantContent[0].(map[string]any)["text"] != "front reply" {
 		t.Fatalf("unexpected assistant mailbox message: %v", msgs[1])
 	}
 }
@@ -314,5 +337,68 @@ func TestProvider_IDReturnsAnthropic(t *testing.T) {
 	p := New("key", "claude-3-5-sonnet-20241022")
 	if p.ID() != "anthropic" {
 		t.Errorf("ID: got %q, want %q", p.ID(), "anthropic")
+	}
+}
+
+func TestProvider_BaseURLWithV1SuffixDoesNotDuplicateSegment(t *testing.T) {
+	var requestPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(successResponse("ok", 1, 1))
+	}))
+	defer srv.Close()
+
+	p := newWithEndpoint("test-key", "claude-3-5-sonnet-20241022", srv.URL+"/v1")
+	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "You are helpful.",
+		MaxTokens:    128,
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	if requestPath != "/v1/messages" {
+		t.Fatalf("request path: got %q, want %q", requestPath, "/v1/messages")
+	}
+}
+
+func TestProvider_InvalidToolSchemaFallsBackToEmptyObject(t *testing.T) {
+	var capturedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			t.Fatalf("Decode: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(successResponse("ok", 1, 1))
+	}))
+	defer srv.Close()
+
+	p := newWithEndpoint("test-key", "claude-3-5-sonnet-20241022", srv.URL)
+	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "Use tools when needed.",
+		MaxTokens:    64,
+		ToolSpecs: []model.ToolSpec{
+			{
+				Name:            "read_file",
+				Description:     "Read a file.",
+				InputSchemaJSON: `{"type":"object",`,
+			},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	tools, ok := capturedBody["tools"].([]any)
+	if !ok || len(tools) != 1 {
+		t.Fatalf("expected one tool definition, got %v", capturedBody["tools"])
+	}
+	inputSchema, ok := tools[0].(map[string]any)["input_schema"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected input_schema object fallback, got %T", tools[0].(map[string]any)["input_schema"])
+	}
+	if inputSchema["type"] != "object" {
+		t.Fatalf("input_schema.type: got %v, want object", inputSchema["type"])
 	}
 }

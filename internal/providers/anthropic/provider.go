@@ -1,29 +1,43 @@
 package anthropic
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
+	"strings"
 
+	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/providers/providerutil"
 	"github.com/canhta/gistclaw/internal/runtime"
 )
 
 const (
-	defaultEndpoint  = "https://api.anthropic.com/v1/messages"
-	anthropicVersion = "2023-06-01"
+	defaultBaseURL   = "https://api.anthropic.com"
 	defaultMaxTokens = 8096
 )
 
-// Provider calls the Anthropic Messages API using stdlib net/http.
+// Provider calls the Anthropic Messages API.
 type Provider struct {
-	apiKey   string
-	modelID  string
-	endpoint string
-	client   *http.Client
+	apiKey  string
+	modelID string
+	baseURL string
+	client  *http.Client
+}
+
+type runStartedPayload struct {
+	Objective string `json:"objective"`
+}
+
+type turnCompletedPayload struct {
+	Content string `json:"content"`
+}
+
+type sessionMessagePayload struct {
+	Kind string `json:"kind"`
+	Body string `json:"body"`
 }
 
 // New creates a Provider for the given API key and default model ID.
@@ -31,21 +45,21 @@ type Provider struct {
 // base URL instead of the default. This allows test suites to point at an
 // httptest.Server without modifying production config.
 func New(apiKey, modelID string) *Provider {
-	endpoint := defaultEndpoint
+	endpoint := defaultBaseURL
 	if override := os.Getenv("ANTHROPIC_BASE_URL"); override != "" {
 		endpoint = override
 	}
 	return newWithEndpoint(apiKey, modelID, endpoint)
 }
 
-// newWithEndpoint is the internal constructor that accepts a custom endpoint
+// newWithEndpoint is the internal constructor that accepts a custom base URL
 // (used in tests to point at httptest.Server).
 func newWithEndpoint(apiKey, modelID, endpoint string) *Provider {
 	return &Provider{
-		apiKey:   apiKey,
-		modelID:  modelID,
-		endpoint: endpoint,
-		client:   &http.Client{},
+		apiKey:  apiKey,
+		modelID: modelID,
+		baseURL: normalizeBaseURL(endpoint),
+		client:  &http.Client{},
 	}
 }
 
@@ -53,7 +67,7 @@ func (p *Provider) ID() string { return "anthropic" }
 
 // Generate sends a request to the Anthropic Messages API and returns the result.
 // The StreamSink parameter is accepted for interface compliance but streaming is
-// not yet implemented — the full response is buffered and returned at once.
+// not yet implemented; the full response is buffered and returned at once.
 func (p *Provider) Generate(ctx context.Context, req runtime.GenerateRequest, _ runtime.StreamSink) (runtime.GenerateResult, error) {
 	modelID := req.ModelID
 	if modelID == "" {
@@ -64,230 +78,152 @@ func (p *Provider) Generate(ctx context.Context, req runtime.GenerateRequest, _ 
 		maxTokens = defaultMaxTokens
 	}
 
-	body := map[string]any{
-		"model":      modelID,
-		"max_tokens": maxTokens,
+	client := p.sdkClient()
+	apiResp, err := client.Messages.New(ctx, buildMessageParams(req, modelID, maxTokens))
+	if err != nil {
+		return runtime.GenerateResult{}, providerutil.ProviderError("anthropic", err)
+	}
+
+	return parseResponse(apiResp), nil
+}
+
+func (p *Provider) sdkClient() anthropicsdk.Client {
+	opts := []option.RequestOption{
+		option.WithBaseURL(p.baseURL),
+		option.WithHTTPClient(p.client),
+		option.WithMaxRetries(0),
+	}
+	if p.apiKey != "" {
+		opts = append(opts, option.WithAPIKey(p.apiKey))
+	}
+	return anthropicsdk.NewClient(opts...)
+}
+
+func normalizeBaseURL(baseURL string) string {
+	baseURL = strings.TrimRight(baseURL, "/")
+	baseURL = strings.TrimSuffix(baseURL, "/v1/messages")
+	baseURL = strings.TrimSuffix(baseURL, "/v1")
+	if baseURL == "" {
+		return defaultBaseURL
+	}
+	return baseURL
+}
+
+func buildMessageParams(req runtime.GenerateRequest, modelID string, maxTokens int) anthropicsdk.MessageNewParams {
+	messages := eventsToMessages(req.ConversationCtx)
+	if len(messages) == 0 {
+		messages = []anthropicsdk.MessageParam{
+			anthropicsdk.NewUserMessage(anthropicsdk.NewTextBlock("begin")),
+		}
+	}
+
+	params := anthropicsdk.MessageNewParams{
+		Model:     anthropicsdk.Model(modelID),
+		MaxTokens: int64(maxTokens),
+		Messages:  messages,
 	}
 	if req.Instructions != "" {
-		body["system"] = req.Instructions
+		params.System = []anthropicsdk.TextBlockParam{{Text: req.Instructions}}
 	}
-
-	msgs := eventsToMessages(req.ConversationCtx)
-	if len(msgs) == 0 {
-		// Anthropic requires at least one user message. Inject a minimal
-		// placeholder so the API call is valid even when no history exists.
-		msgs = []message{{Role: "user", Content: "begin"}}
-	}
-	body["messages"] = msgs
-
 	if len(req.ToolSpecs) > 0 {
-		body["tools"] = toolSpecsToAnthropicTools(req.ToolSpecs)
+		params.Tools = toolSpecsToAnthropicTools(req.ToolSpecs)
 	}
-
-	raw, err := json.Marshal(body)
-	if err != nil {
-		return runtime.GenerateResult{}, fmt.Errorf("anthropic: marshal request: %w", err)
-	}
-
-	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint, bytes.NewReader(raw))
-	if err != nil {
-		return runtime.GenerateResult{}, fmt.Errorf("anthropic: build request: %w", err)
-	}
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("x-api-key", p.apiKey)
-	httpReq.Header.Set("anthropic-version", anthropicVersion)
-
-	resp, err := p.client.Do(httpReq)
-	if err != nil {
-		return runtime.GenerateResult{}, fmt.Errorf("anthropic: http: %w", err)
-	}
-	defer resp.Body.Close()
-
-	var apiResp apiResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return runtime.GenerateResult{}, &model.ProviderError{
-			Code:      model.ErrMalformedResponse,
-			Message:   fmt.Sprintf("decode response (status %d): %v", resp.StatusCode, err),
-			Retryable: false,
-		}
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		errCode := model.ProviderErrorCode(apiResp.Error.Type)
-		if errCode == "" {
-			errCode = model.ErrMalformedResponse
-		}
-		retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
-		return runtime.GenerateResult{}, &model.ProviderError{
-			Code:      errCode,
-			Message:   apiResp.Error.Message,
-			Retryable: retryable,
-		}
-	}
-
-	return parseResponse(apiResp)
+	return params
 }
-
-// ── Internal types ─────────────────────────────────────────────────────────────
-
-type message struct {
-	Role    string `json:"role"`
-	Content any    `json:"content"`
-}
-
-type anthropicTool struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	InputSchema json.RawMessage `json:"input_schema"`
-}
-
-type apiResponse struct {
-	Content    []contentBlock `json:"content"`
-	StopReason string         `json:"stop_reason"`
-	Usage      struct {
-		InputTokens  int `json:"input_tokens"`
-		OutputTokens int `json:"output_tokens"`
-	} `json:"usage"`
-	Error struct {
-		Type    string `json:"type"`
-		Message string `json:"message"`
-	} `json:"error"`
-}
-
-type contentBlock struct {
-	Type  string          `json:"type"`
-	Text  string          `json:"text"`
-	ID    string          `json:"id"`
-	Name  string          `json:"name"`
-	Input json.RawMessage `json:"input"`
-}
-
-type toolCallRecordedPayload struct {
-	ToolCallID string          `json:"tool_call_id"`
-	ToolName   string          `json:"tool_name"`
-	InputJSON  json.RawMessage `json:"input_json"`
-	OutputJSON json.RawMessage `json:"output_json"`
-	Decision   string          `json:"decision"`
-}
-
-// ── Conversion helpers ──────────────────────────────────────────────────────────
 
 // eventsToMessages converts journal events into Anthropic message pairs.
-func eventsToMessages(events []model.Event) []message {
-	var msgs []message
+func eventsToMessages(events []model.Event) []anthropicsdk.MessageParam {
+	var messages []anthropicsdk.MessageParam
 	for _, ev := range events {
 		switch ev.Kind {
 		case "run_started":
-			var payload struct {
-				Objective string `json:"objective"`
-			}
-			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil {
+			var payload runStartedPayload
+			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil || payload.Objective == "" {
 				continue
 			}
-			if payload.Objective != "" {
-				msgs = append(msgs, message{Role: "user", Content: payload.Objective})
-			}
+			messages = append(messages, anthropicsdk.NewUserMessage(anthropicsdk.NewTextBlock(payload.Objective)))
 		case "turn_completed":
-			var payload struct {
-				Content string `json:"content"`
-			}
-			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil {
+			var payload turnCompletedPayload
+			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil || payload.Content == "" {
 				continue
 			}
-			if payload.Content != "" {
-				msgs = append(msgs, message{Role: "assistant", Content: payload.Content})
-			}
+			messages = append(messages, anthropicsdk.NewAssistantMessage(anthropicsdk.NewTextBlock(payload.Content)))
 		case "session_message_added":
-			var payload struct {
-				Kind string `json:"kind"`
-				Body string `json:"body"`
-			}
-			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil {
+			var payload sessionMessagePayload
+			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil || payload.Body == "" {
 				continue
 			}
-			if payload.Body == "" {
-				continue
-			}
-			role := "user"
 			if payload.Kind == "assistant" {
-				role = "assistant"
+				messages = append(messages, anthropicsdk.NewAssistantMessage(anthropicsdk.NewTextBlock(payload.Body)))
+				continue
 			}
-			msgs = append(msgs, message{Role: role, Content: payload.Body})
+			messages = append(messages, anthropicsdk.NewUserMessage(anthropicsdk.NewTextBlock(payload.Body)))
 		case "tool_call_recorded":
-			var payload toolCallRecordedPayload
+			var payload providerutil.ToolCallRecordedPayload
 			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil {
 				continue
 			}
 			if payload.ToolCallID == "" || payload.ToolName == "" {
 				continue
 			}
-			msgs = append(msgs,
-				message{
-					Role: "assistant",
-					Content: []map[string]any{
-						{
-							"type":  "tool_use",
-							"id":    payload.ToolCallID,
-							"name":  payload.ToolName,
-							"input": json.RawMessage(payload.InputJSON),
-						},
-					},
-				},
-				message{
-					Role: "user",
-					Content: []map[string]any{
-						{
-							"type":        "tool_result",
-							"tool_use_id": payload.ToolCallID,
-							"content":     renderToolResultContent(payload.OutputJSON),
-						},
-					},
-				},
+			messages = append(messages,
+				anthropicsdk.NewAssistantMessage(anthropicsdk.NewToolUseBlock(payload.ToolCallID, json.RawMessage(payload.InputJSON), payload.ToolName)),
+				anthropicsdk.NewUserMessage(anthropicsdk.NewToolResultBlock(payload.ToolCallID, providerutil.RenderToolResultContent(payload.OutputJSON), false)),
 			)
 		}
 	}
-	return msgs
+	return messages
 }
 
-func renderToolResultContent(raw json.RawMessage) string {
-	var result model.ToolResult
-	if err := json.Unmarshal(raw, &result); err == nil {
-		switch {
-		case result.Output != "" && result.Error != "":
-			return result.Output + "\n" + result.Error
-		case result.Output != "":
-			return result.Output
-		case result.Error != "":
-			return result.Error
+func toolSpecsToAnthropicTools(specs []model.ToolSpec) []anthropicsdk.ToolUnionParam {
+	tools := make([]anthropicsdk.ToolUnionParam, 0, len(specs))
+	for _, spec := range specs {
+		tool := anthropicsdk.ToolParam{
+			Name:        spec.Name,
+			InputSchema: toolInputSchema(spec.InputSchemaJSON),
 		}
-	}
-	if len(raw) == 0 {
-		return ""
-	}
-	return string(raw)
-}
-
-func toolSpecsToAnthropicTools(specs []model.ToolSpec) []anthropicTool {
-	tools := make([]anthropicTool, 0, len(specs))
-	for _, s := range specs {
-		schema := json.RawMessage(s.InputSchemaJSON)
-		if len(schema) == 0 {
-			schema = json.RawMessage(`{"type":"object","properties":{}}`)
+		if spec.Description != "" {
+			tool.Description = anthropicsdk.String(spec.Description)
 		}
-		tools = append(tools, anthropicTool{
-			Name:        s.Name,
-			Description: s.Description,
-			InputSchema: schema,
-		})
+		tools = append(tools, anthropicsdk.ToolUnionParam{OfTool: &tool})
 	}
 	return tools
 }
 
-func parseResponse(resp apiResponse) (runtime.GenerateResult, error) {
+func toolInputSchema(raw string) anthropicsdk.ToolInputSchemaParam {
+	schema := providerutil.SchemaObject(raw)
+	params := anthropicsdk.ToolInputSchemaParam{}
+
+	if properties, ok := schema["properties"]; ok {
+		params.Properties = properties
+		delete(schema, "properties")
+	}
+	if required, ok := schema["required"].([]any); ok {
+		params.Required = make([]string, 0, len(required))
+		for _, item := range required {
+			if value, ok := item.(string); ok && value != "" {
+				params.Required = append(params.Required, value)
+			}
+		}
+	}
+	delete(schema, "required")
+	delete(schema, "type")
+	if len(schema) > 0 {
+		params.ExtraFields = schema
+	}
+
+	return params
+}
+
+func parseResponse(resp *anthropicsdk.Message) runtime.GenerateResult {
 	var result runtime.GenerateResult
-	result.StopReason = resp.StopReason
-	result.InputTokens = resp.Usage.InputTokens
-	result.OutputTokens = resp.Usage.OutputTokens
+	if resp == nil {
+		return result
+	}
+
+	result.StopReason = string(resp.StopReason)
+	result.InputTokens = int(resp.Usage.InputTokens)
+	result.OutputTokens = int(resp.Usage.OutputTokens)
 
 	for _, block := range resp.Content {
 		switch block.Type {
@@ -302,5 +238,5 @@ func parseResponse(resp apiResponse) (runtime.GenerateResult, error) {
 			})
 		}
 	}
-	return result, nil
+	return result
 }

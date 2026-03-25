@@ -501,3 +501,47 @@ func TestProvider_ResponsesWireAPIToolCallEventsConvertedToInput(t *testing.T) {
 		t.Fatalf("expected second input item to be function_call_output, got %v", input[1])
 	}
 }
+
+func TestProvider_InvalidToolSchemaFallsBackToEmptyObject(t *testing.T) {
+	var capturedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			t.Fatalf("Decode: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(successResponse("ok", 1, 1))
+	}))
+	defer srv.Close()
+
+	p := New("test-key", "gpt-4o", srv.URL, "chat_completions")
+	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "Use tools when needed.",
+		MaxTokens:    64,
+		ToolSpecs: []model.ToolSpec{
+			{
+				Name:            "read_file",
+				Description:     "Read a file.",
+				InputSchemaJSON: `{"type":"object",`,
+			},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	tools, ok := capturedBody["tools"].([]any)
+	if !ok || len(tools) != 1 {
+		t.Fatalf("expected one tool definition, got %v", capturedBody["tools"])
+	}
+	function, ok := tools[0].(map[string]any)["function"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected function tool payload, got %v", tools[0])
+	}
+	parameters, ok := function["parameters"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected parameters object fallback, got %T", function["parameters"])
+	}
+	if parameters["type"] != "object" {
+		t.Fatalf("parameters.type: got %v, want object", parameters["type"])
+	}
+}
