@@ -73,7 +73,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func runServe(configPath string, stdout, stderr io.Writer) int {
-	application, err := loadApp(configPath)
+	application, err := loadPreparedApp(configPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
 		return 1
@@ -98,7 +98,7 @@ func runTask(configPath string, args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	application, err := loadApp(configPath)
+	application, err := loadPreparedApp(configPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
 		return 1
@@ -207,6 +207,14 @@ func loadApp(configPath string) (*app.App, error) {
 	}
 
 	application, err := app.Bootstrap(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return application, nil
+}
+
+func loadPreparedApp(configPath string) (*app.App, error) {
+	application, err := loadApp(configPath)
 	if err != nil {
 		return nil, err
 	}

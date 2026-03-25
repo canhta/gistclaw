@@ -150,3 +150,41 @@ provider:
 		t.Fatal("expected WhatsApp.AgentID to have a default value")
 	}
 }
+
+func TestConfig_OpenAIWireAPI(t *testing.T) {
+	dir := t.TempDir()
+	wsDir := filepath.Join(dir, "workspace")
+	if err := os.Mkdir(wsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(cfgPath, []byte(`
+workspace_root: `+wsDir+`
+provider:
+  name: openai
+  api_key: sk-test-1234
+  base_url: https://9router.quickdemo.site/v1
+  wire_api: responses
+  models:
+    cheap: cx/gpt-5.4
+    strong: cx/gpt-5.4
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.Provider.Name != "openai" {
+		t.Fatalf("expected provider name %q, got %q", "openai", cfg.Provider.Name)
+	}
+	if cfg.Provider.BaseURL != "https://9router.quickdemo.site/v1" {
+		t.Fatalf("expected base_url to round-trip, got %q", cfg.Provider.BaseURL)
+	}
+	if cfg.Provider.WireAPI != "responses" {
+		t.Fatalf("expected wire_api %q, got %q", "responses", cfg.Provider.WireAPI)
+	}
+}

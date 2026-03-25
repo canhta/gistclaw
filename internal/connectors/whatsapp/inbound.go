@@ -9,33 +9,44 @@ import (
 	"strings"
 	"time"
 
+	controlconnector "github.com/canhta/gistclaw/internal/connectors/control"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime"
 )
 
-type InboundMessageReceiver interface {
+type ConnectorRuntime interface {
 	ReceiveInboundMessage(ctx context.Context, req runtime.InboundMessageCommand) (model.Run, error)
+	InspectConversation(ctx context.Context, key conversations.ConversationKey) (runtime.ConversationStatus, error)
+}
+
+type MessageSender interface {
+	Send(ctx context.Context, chatID, text string) error
 }
 
 type WebhookHandler struct {
 	verifyToken   string
 	defaultAgent  string
 	workspaceRoot string
-	rt            InboundMessageReceiver
+	rt            ConnectorRuntime
+	sender        MessageSender
+	commands      *controlconnector.Dispatcher
 }
 
 func NewWebhookHandler(
 	verifyToken string,
 	defaultAgent string,
 	workspaceRoot string,
-	rt InboundMessageReceiver,
+	rt ConnectorRuntime,
+	sender MessageSender,
 ) *WebhookHandler {
 	return &WebhookHandler{
 		verifyToken:   verifyToken,
 		defaultAgent:  defaultAgent,
 		workspaceRoot: workspaceRoot,
 		rt:            rt,
+		sender:        sender,
+		commands:      controlconnector.NewDispatcher(rt),
 	}
 }
 
@@ -78,18 +89,7 @@ func (h *WebhookHandler) handleMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	for _, env := range envelopes {
-		_, err := h.rt.ReceiveInboundMessage(r.Context(), runtime.InboundMessageCommand{
-			ConversationKey: conversations.ConversationKey{
-				ConnectorID: env.ConnectorID,
-				AccountID:   env.AccountID,
-				ExternalID:  env.ConversationID,
-				ThreadID:    env.ThreadID,
-			},
-			FrontAgentID:    h.defaultAgent,
-			Body:            env.Text,
-			SourceMessageID: env.MessageID,
-			WorkspaceRoot:   h.workspaceRoot,
-		})
+		err := h.handleEnvelope(r.Context(), env)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("dispatch inbound message: %v", err), http.StatusInternalServerError)
 			return
@@ -98,6 +98,33 @@ func (h *WebhookHandler) handleMessage(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
+}
+
+func (h *WebhookHandler) handleEnvelope(ctx context.Context, env model.Envelope) error {
+	reply, handled, err := h.commands.Dispatch(ctx, env)
+	if err != nil {
+		return err
+	}
+	if handled {
+		if h.sender == nil {
+			return fmt.Errorf("whatsapp: native reply sender not configured")
+		}
+		return h.sender.Send(ctx, env.ConversationID, reply)
+	}
+
+	_, err = h.rt.ReceiveInboundMessage(ctx, runtime.InboundMessageCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: env.ConnectorID,
+			AccountID:   env.AccountID,
+			ExternalID:  env.ConversationID,
+			ThreadID:    env.ThreadID,
+		},
+		FrontAgentID:    h.defaultAgent,
+		Body:            env.Text,
+		SourceMessageID: env.MessageID,
+		WorkspaceRoot:   h.workspaceRoot,
+	})
+	return err
 }
 
 type webhookPayload struct {

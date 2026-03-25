@@ -2,6 +2,7 @@ package whatsapp
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -95,6 +96,41 @@ func TestOutboundDispatcher_NotifySendsToMetaAPI(t *testing.T) {
 	textBlock, _ := body["text"].(map[string]any)
 	if textBlock == nil || textBlock["body"] == "" {
 		t.Errorf("text.body: missing or empty")
+	}
+}
+
+func TestOutboundDispatcher_SendWritesControlReplyIntent(t *testing.T) {
+	var callCount int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"messages":[{"id":"wamid.control"}]}`))
+	}))
+	defer srv.Close()
+
+	db, cs := setupDB(t)
+	d := newWithBaseURL("phone-123", "test-token", db, cs, srv.URL)
+
+	if err := d.Send(context.Background(), "+1234567890", "native help reply"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	if callCount != 1 {
+		t.Fatalf("expected 1 API call, got %d", callCount)
+	}
+
+	var status string
+	var runID sql.NullString
+	if err := db.RawDB().QueryRowContext(context.Background(),
+		`SELECT status, run_id FROM outbound_intents WHERE chat_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+		"+1234567890",
+	).Scan(&status, &runID); err != nil {
+		t.Fatalf("query control reply intent: %v", err)
+	}
+	if status != "delivered" {
+		t.Fatalf("expected delivered control reply, got %q", status)
+	}
+	if runID.Valid {
+		t.Fatalf("expected control reply run_id to be NULL, got %q", runID.String)
 	}
 }
 

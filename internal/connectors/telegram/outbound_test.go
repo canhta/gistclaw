@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -80,6 +81,48 @@ func TestOutbound_StartedEventDelivers(t *testing.T) {
 
 	if delivered.Load() == 0 {
 		t.Fatal("expected sendMessage call for run_started event")
+	}
+}
+
+func TestOutbound_SendDeliversControlReply(t *testing.T) {
+	db := setupOutboundDB(t)
+	cs := conversations.NewConversationStore(db)
+
+	var delivered atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "sendMessage") {
+			delivered.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":11}}`))
+		}
+	}))
+	defer srv.Close()
+
+	dispatcher := NewOutboundDispatcher("testtoken", db, cs)
+	dispatcher.bot.apiBase = srv.URL + "/bot"
+
+	if err := dispatcher.Send(context.Background(), "999", "native help reply"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	if delivered.Load() != 1 {
+		t.Fatalf("expected 1 sendMessage call for control reply, got %d", delivered.Load())
+	}
+
+	var status string
+	var runID sql.NullString
+	err := db.RawDB().QueryRowContext(context.Background(),
+		`SELECT status, run_id FROM outbound_intents WHERE chat_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+		"999",
+	).Scan(&status, &runID)
+	if err != nil {
+		t.Fatalf("query control reply intent: %v", err)
+	}
+	if status != "delivered" {
+		t.Fatalf("expected delivered control reply, got %q", status)
+	}
+	if runID.Valid {
+		t.Fatalf("expected control reply run_id to be NULL, got %q", runID.String)
 	}
 }
 

@@ -1,6 +1,6 @@
-// Package openai implements a runtime.Provider that calls any OpenAI-compatible
-// Chat Completions API (/v1/chat/completions). This covers OpenAI, Azure OpenAI,
-// Groq, Together AI, Ollama, LM Studio, and any other compatible endpoint.
+// Package openai implements a runtime.Provider that calls OpenAI-compatible
+// Chat Completions or Responses APIs. This covers OpenAI, Azure OpenAI, Groq,
+// Together AI, Ollama, LM Studio, and other compatible endpoints.
 package openai
 
 import (
@@ -15,45 +15,62 @@ import (
 	"github.com/canhta/gistclaw/internal/runtime"
 )
 
-const defaultEndpoint = "https://api.openai.com"
+const (
+	defaultEndpoint         = "https://api.openai.com"
+	defaultMaxTokens        = 8096
+	wireAPIChatCompletions  = "chat_completions"
+	wireAPIResponses        = "responses"
+)
 
-// Provider calls any OpenAI-compatible Chat Completions API.
+// Provider calls any OpenAI-compatible Chat Completions or Responses API.
 // Set baseURL to a custom endpoint (e.g. "http://localhost:11434" for Ollama).
 type Provider struct {
 	apiKey  string
 	modelID string
 	baseURL string
+	wireAPI string
 	client  *http.Client
 }
 
 // New creates a Provider. baseURL overrides the default OpenAI endpoint when
 // non-empty, enabling use with compatible providers (Ollama, Groq, Together AI,
-// LM Studio, Azure OpenAI, etc.).
-func New(apiKey, modelID, baseURL string) *Provider {
+// LM Studio, Azure OpenAI, etc.). wireAPI selects the HTTP surface:
+// "chat_completions" (default) or "responses".
+func New(apiKey, modelID, baseURL, wireAPI string) *Provider {
 	if baseURL == "" {
 		baseURL = defaultEndpoint
+	}
+	if wireAPI == "" {
+		wireAPI = wireAPIChatCompletions
 	}
 	return &Provider{
 		apiKey:  apiKey,
 		modelID: modelID,
 		baseURL: strings.TrimRight(baseURL, "/"),
+		wireAPI: wireAPI,
 		client:  &http.Client{},
 	}
 }
 
 func (p *Provider) ID() string { return "openai" }
 
-// Generate sends a request to the OpenAI-compatible Chat Completions endpoint.
-// StreamSink is accepted for interface compliance but streaming is not yet
-// implemented — the full response is buffered.
 func (p *Provider) Generate(ctx context.Context, req runtime.GenerateRequest, _ runtime.StreamSink) (runtime.GenerateResult, error) {
+	switch p.wireAPI {
+	case wireAPIResponses:
+		return p.generateResponses(ctx, req)
+	default:
+		return p.generateChatCompletions(ctx, req)
+	}
+}
+
+func (p *Provider) generateChatCompletions(ctx context.Context, req runtime.GenerateRequest) (runtime.GenerateResult, error) {
 	modelID := req.ModelID
 	if modelID == "" {
 		modelID = p.modelID
 	}
 	maxTokens := req.MaxTokens
 	if maxTokens <= 0 {
-		maxTokens = 8096
+		maxTokens = defaultMaxTokens
 	}
 
 	var msgs []chatMessage
@@ -80,7 +97,7 @@ func (p *Provider) Generate(ctx context.Context, req runtime.GenerateRequest, _ 
 		return runtime.GenerateResult{}, fmt.Errorf("openai: marshal request: %w", err)
 	}
 
-	endpoint := p.baseURL + "/v1/chat/completions"
+	endpoint := p.endpoint("/chat/completions")
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
 	if err != nil {
 		return runtime.GenerateResult{}, fmt.Errorf("openai: build request: %w", err)
@@ -96,7 +113,7 @@ func (p *Provider) Generate(ctx context.Context, req runtime.GenerateRequest, _ 
 	}
 	defer resp.Body.Close()
 
-	var apiResp apiResponse
+	var apiResp chatCompletionsAPIResponse
 	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
 		return runtime.GenerateResult{}, &model.ProviderError{
 			Code:      model.ErrMalformedResponse,
@@ -106,19 +123,89 @@ func (p *Provider) Generate(ctx context.Context, req runtime.GenerateRequest, _ 
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		errCode := model.ProviderErrorCode(apiResp.Error.Type)
-		if errCode == "" {
-			errCode = model.ErrMalformedResponse
-		}
-		retryable := resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500
-		return runtime.GenerateResult{}, &model.ProviderError{
-			Code:      errCode,
-			Message:   apiResp.Error.Message,
-			Retryable: retryable,
+		return runtime.GenerateResult{}, apiError(resp.StatusCode, apiResp.Error)
+	}
+
+	return parseChatCompletionsResponse(apiResp)
+}
+
+func (p *Provider) generateResponses(ctx context.Context, req runtime.GenerateRequest) (runtime.GenerateResult, error) {
+	modelID := req.ModelID
+	if modelID == "" {
+		modelID = p.modelID
+	}
+	maxTokens := req.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultMaxTokens
+	}
+
+	input := responseInputFromMessages(eventsToMessages(req.ConversationCtx))
+	if len(input) == 0 {
+		input = []responseInputMessage{
+			{
+				Role: "user",
+				Content: []responseInputText{
+					{Type: "input_text", Text: "begin"},
+				},
+			},
 		}
 	}
 
-	return parseResponse(apiResp)
+	body := map[string]any{
+		"model":             modelID,
+		"input":             input,
+		"max_output_tokens": maxTokens,
+	}
+	if req.Instructions != "" {
+		body["instructions"] = req.Instructions
+	}
+	if len(req.ToolSpecs) > 0 {
+		body["tool_choice"] = "auto"
+		body["tools"] = toolSpecsToResponseTools(req.ToolSpecs)
+	}
+
+	raw, err := json.Marshal(body)
+	if err != nil {
+		return runtime.GenerateResult{}, fmt.Errorf("openai: marshal request: %w", err)
+	}
+
+	endpoint := p.endpoint("/responses")
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(raw))
+	if err != nil {
+		return runtime.GenerateResult{}, fmt.Errorf("openai: build request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	if p.apiKey != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
+
+	resp, err := p.client.Do(httpReq)
+	if err != nil {
+		return runtime.GenerateResult{}, fmt.Errorf("openai: http: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var apiResp responsesAPIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return runtime.GenerateResult{}, &model.ProviderError{
+			Code:      model.ErrMalformedResponse,
+			Message:   fmt.Sprintf("decode response (status %d): %v", resp.StatusCode, err),
+			Retryable: false,
+		}
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return runtime.GenerateResult{}, apiError(resp.StatusCode, apiResp.Error)
+	}
+
+	return parseResponsesResponse(apiResp), nil
+}
+
+func (p *Provider) endpoint(path string) string {
+	if strings.HasSuffix(p.baseURL, "/v1") {
+		return p.baseURL + path
+	}
+	return p.baseURL + "/v1" + path
 }
 
 // ── Internal types ─────────────────────────────────────────────────────────────
@@ -139,16 +226,25 @@ type toolFunction struct {
 	Parameters  json.RawMessage `json:"parameters"`
 }
 
-type apiResponse struct {
+type responseTool struct {
+	Type        string          `json:"type"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Parameters  json.RawMessage `json:"parameters"`
+}
+
+type providerErrorPayload struct {
+	Type    string `json:"type"`
+	Message string `json:"message"`
+}
+
+type chatCompletionsAPIResponse struct {
 	Choices []choice `json:"choices"`
 	Usage   struct {
 		PromptTokens     int `json:"prompt_tokens"`
 		CompletionTokens int `json:"completion_tokens"`
 	} `json:"usage"`
-	Error struct {
-		Type    string `json:"type"`
-		Message string `json:"message"`
-	} `json:"error"`
+	Error providerErrorPayload `json:"error"`
 }
 
 type choice struct {
@@ -169,6 +265,39 @@ type toolCall struct {
 		Name      string `json:"name"`
 		Arguments string `json:"arguments"`
 	} `json:"function"`
+}
+
+type responseInputMessage struct {
+	Role    string              `json:"role"`
+	Content []responseInputText `json:"content"`
+}
+
+type responseInputText struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+}
+
+type responsesAPIResponse struct {
+	Output []responseOutput `json:"output"`
+	Usage  struct {
+		InputTokens  int `json:"input_tokens"`
+		OutputTokens int `json:"output_tokens"`
+	} `json:"usage"`
+	Error providerErrorPayload `json:"error"`
+}
+
+type responseOutput struct {
+	Type      string                  `json:"type"`
+	ID        string                  `json:"id"`
+	CallID    string                  `json:"call_id"`
+	Name      string                  `json:"name"`
+	Arguments string                  `json:"arguments"`
+	Content   []responseOutputContent `json:"content"`
+}
+
+type responseOutputContent struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
 }
 
 // ── Conversion helpers ──────────────────────────────────────────────────────────
@@ -237,7 +366,40 @@ func toolSpecsToOpenAITools(specs []model.ToolSpec) []openAITool {
 	return tools
 }
 
-func parseResponse(resp apiResponse) (runtime.GenerateResult, error) {
+func toolSpecsToResponseTools(specs []model.ToolSpec) []responseTool {
+	tools := make([]responseTool, 0, len(specs))
+	for _, s := range specs {
+		params := json.RawMessage(s.InputSchemaJSON)
+		if len(params) == 0 {
+			params = json.RawMessage(`{"type":"object","properties":{}}`)
+		}
+		tools = append(tools, responseTool{
+			Type:        "function",
+			Name:        s.Name,
+			Description: s.Description,
+			Parameters:  params,
+		})
+	}
+	return tools
+}
+
+func responseInputFromMessages(msgs []chatMessage) []responseInputMessage {
+	input := make([]responseInputMessage, 0, len(msgs))
+	for _, msg := range msgs {
+		if msg.Content == "" {
+			continue
+		}
+		input = append(input, responseInputMessage{
+			Role: msg.Role,
+			Content: []responseInputText{
+				{Type: "input_text", Text: msg.Content},
+			},
+		})
+	}
+	return input
+}
+
+func parseChatCompletionsResponse(resp chatCompletionsAPIResponse) (runtime.GenerateResult, error) {
 	var result runtime.GenerateResult
 	result.InputTokens = resp.Usage.PromptTokens
 	result.OutputTokens = resp.Usage.CompletionTokens
@@ -248,6 +410,9 @@ func parseResponse(resp apiResponse) (runtime.GenerateResult, error) {
 
 	choice := resp.Choices[0]
 	result.StopReason = choice.FinishReason
+	if result.StopReason == "stop" {
+		result.StopReason = "end_turn"
+	}
 	if choice.Message.Content != nil {
 		result.Content = *choice.Message.Content
 	}
@@ -260,4 +425,51 @@ func parseResponse(resp apiResponse) (runtime.GenerateResult, error) {
 		})
 	}
 	return result, nil
+}
+
+func parseResponsesResponse(resp responsesAPIResponse) runtime.GenerateResult {
+	result := runtime.GenerateResult{
+		InputTokens:  resp.Usage.InputTokens,
+		OutputTokens: resp.Usage.OutputTokens,
+		StopReason:   "end_turn",
+	}
+
+	var textParts []string
+	for _, item := range resp.Output {
+		switch item.Type {
+		case "message":
+			for _, content := range item.Content {
+				if content.Type == "output_text" && content.Text != "" {
+					textParts = append(textParts, content.Text)
+				}
+			}
+		case "function_call":
+			id := item.CallID
+			if id == "" {
+				id = item.ID
+			}
+			result.ToolCalls = append(result.ToolCalls, model.ToolCallRequest{
+				ID:        id,
+				ToolName:  item.Name,
+				InputJSON: []byte(item.Arguments),
+			})
+		}
+	}
+	result.Content = strings.Join(textParts, "\n")
+	if len(result.ToolCalls) > 0 {
+		result.StopReason = "tool_calls"
+	}
+	return result
+}
+
+func apiError(statusCode int, payload providerErrorPayload) error {
+	errCode := model.ProviderErrorCode(payload.Type)
+	if errCode == "" {
+		errCode = model.ErrMalformedResponse
+	}
+	return &model.ProviderError{
+		Code:      errCode,
+		Message:   payload.Message,
+		Retryable: statusCode == http.StatusTooManyRequests || statusCode >= 500,
+	}
 }

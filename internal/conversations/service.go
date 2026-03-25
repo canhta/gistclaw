@@ -61,6 +61,23 @@ func (s *ConversationStore) Resolve(ctx context.Context, key ConversationKey) (m
 	return conv, nil
 }
 
+func (s *ConversationStore) Find(ctx context.Context, key ConversationKey) (model.Conversation, bool, error) {
+	normalized := key.Normalize()
+
+	var conv model.Conversation
+	err := s.db.RawDB().QueryRowContext(ctx,
+		"SELECT id, key, created_at FROM conversations WHERE key = ?",
+		normalized,
+	).Scan(&conv.ID, &conv.Key, &conv.CreatedAt)
+	if err == sql.ErrNoRows {
+		return model.Conversation{}, false, nil
+	}
+	if err != nil {
+		return model.Conversation{}, false, fmt.Errorf("find conversation: %w", err)
+	}
+	return conv, true, nil
+}
+
 func (s *ConversationStore) AppendEvent(ctx context.Context, evt model.Event) error {
 	return s.AppendEvents(ctx, []model.Event{evt})
 }

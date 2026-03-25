@@ -1,0 +1,107 @@
+package control
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/canhta/gistclaw/internal/conversations"
+	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/runtime"
+)
+
+type stubInspector struct {
+	status runtime.ConversationStatus
+	err    error
+	key    conversations.ConversationKey
+}
+
+func (s *stubInspector) InspectConversation(_ context.Context, key conversations.ConversationKey) (runtime.ConversationStatus, error) {
+	s.key = key
+	return s.status, s.err
+}
+
+func TestDispatcherDispatch(t *testing.T) {
+	tests := []struct {
+		name         string
+		env          model.Envelope
+		status       runtime.ConversationStatus
+		wantHandled  bool
+		wantContains []string
+		wantKey      conversations.ConversationKey
+	}{
+		{
+			name: "help command",
+			env: model.Envelope{
+				ConnectorID:    "telegram",
+				AccountID:      "acct-1",
+				ConversationID: "chat-1",
+				ThreadID:       "main",
+				Text:           "/help",
+			},
+			wantHandled:  true,
+			wantContains: []string{"Message me naturally", "/status"},
+		},
+		{
+			name: "status command",
+			env: model.Envelope{
+				ConnectorID:    "whatsapp",
+				AccountID:      "acct-2",
+				ConversationID: "chat-2",
+				ThreadID:       "main",
+				Text:           "/status",
+			},
+			status: runtime.ConversationStatus{
+				Exists: true,
+				ActiveRun: model.Run{
+					ID:        "run-active-1234",
+					Objective: "review the repo",
+					Status:    model.RunStatusActive,
+				},
+				PendingApprovals: 2,
+			},
+			wantHandled:  true,
+			wantContains: []string{"Active run", "run-acti", "2 pending approvals"},
+			wantKey: conversations.ConversationKey{
+				ConnectorID: "whatsapp",
+				AccountID:   "acct-2",
+				ExternalID:  "chat-2",
+				ThreadID:    "main",
+			},
+		},
+		{
+			name: "plain chat not handled",
+			env: model.Envelope{
+				ConnectorID:    "telegram",
+				AccountID:      "acct-3",
+				ConversationID: "chat-3",
+				ThreadID:       "main",
+				Text:           "review the repo",
+			},
+			wantHandled: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inspector := &stubInspector{status: tt.status}
+			dispatcher := NewDispatcher(inspector)
+
+			reply, handled, err := dispatcher.Dispatch(context.Background(), tt.env)
+			if err != nil {
+				t.Fatalf("Dispatch: %v", err)
+			}
+			if handled != tt.wantHandled {
+				t.Fatalf("handled = %v, want %v", handled, tt.wantHandled)
+			}
+			for _, want := range tt.wantContains {
+				if !strings.Contains(reply, want) {
+					t.Fatalf("expected reply to include %q, got:\n%s", want, reply)
+				}
+			}
+			if tt.wantKey != (conversations.ConversationKey{}) && inspector.key != tt.wantKey {
+				t.Fatalf("expected inspect key %+v, got %+v", tt.wantKey, inspector.key)
+			}
+		})
+	}
+}

@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/canhta/gistclaw/internal/conversations"
@@ -108,6 +107,7 @@ type Runtime struct {
 	eventSink         model.RunEventSink
 	budget            BudgetGuard
 	contextWindowSize int
+	contexts          ContextAssembler
 }
 
 func New(
@@ -131,6 +131,7 @@ func New(
 			DailyCostCapUSD: 10.0,
 		},
 		contextWindowSize: 200000,
+		contexts:          newDefaultContextAssembler(db, cs, nil),
 	}
 }
 
@@ -151,6 +152,7 @@ func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
 		agentID:           cmd.AgentID,
 		sessionID:         cmd.SessionID,
 		objective:         cmd.Objective,
+		workspaceRoot:     cmd.WorkspaceRoot,
 		previewOnly:       cmd.PreviewOnly,
 		verificationAgent: cmd.VerificationAgent,
 	})
@@ -231,6 +233,7 @@ type runLoopOpts struct {
 	agentID           string
 	sessionID         string
 	objective         string
+	workspaceRoot     string
 	previewOnly       bool
 	verificationAgent bool
 }
@@ -308,7 +311,13 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			return model.Run{}, fmt.Errorf("journal memory read: %w", err)
 		}
 
-		providerReq, err := r.buildProviderRequest(ctx, sessionID, agentID, objective, contextView)
+		providerReq, err := r.contexts.Assemble(ctx, ContextAssemblyInput{
+			SessionID:     sessionID,
+			AgentID:       agentID,
+			Objective:     objective,
+			WorkspaceRoot: opts.workspaceRoot,
+			MemoryView:    contextView,
+		})
 		if err != nil {
 			return model.Run{}, err
 		}
@@ -438,51 +447,6 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 	}
 
 	return r.loadRun(ctx, runID)
-}
-
-func (r *Runtime) buildProviderRequest(
-	ctx context.Context,
-	sessionID string,
-	agentID string,
-	objective string,
-	contextView memory.ContextView,
-) (GenerateRequest, error) {
-	req := GenerateRequest{
-		Instructions: composeInstructions(objective, contextView),
-	}
-	if sessionID == "" {
-		return req, nil
-	}
-
-	_, mailbox, err := sessions.NewService(r.store, r.convStore).LoadSessionMailbox(ctx, sessionID, 100)
-	if err == sessions.ErrSessionNotFound {
-		return req, nil
-	}
-	if err != nil {
-		return GenerateRequest{}, fmt.Errorf("load session mailbox: %w", err)
-	}
-	req.ConversationCtx = mailboxToEvents(mailbox)
-	return req, nil
-}
-
-func composeInstructions(objective string, contextView memory.ContextView) string {
-	parts := []string{objective}
-	if contextView.Summary.Content != "" {
-		parts = append(parts, "Working summary:\n"+contextView.Summary.Content)
-	}
-	if len(contextView.Items) > 0 {
-		facts := make([]string, 0, len(contextView.Items))
-		for _, item := range contextView.Items {
-			if item.Content == "" {
-				continue
-			}
-			facts = append(facts, "- "+item.Content)
-		}
-		if len(facts) > 0 {
-			parts = append(parts, "Memory facts:\n"+strings.Join(facts, "\n"))
-		}
-	}
-	return strings.Join(parts, "\n\n")
 }
 
 func mailboxToEvents(messages []model.SessionMessage) []model.Event {

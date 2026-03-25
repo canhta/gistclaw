@@ -9,21 +9,9 @@ import (
 	"github.com/canhta/gistclaw/internal/model"
 )
 
-// recognizedPrefixes are message patterns accepted as task submissions.
-// A message is accepted if it does not look like an unrecognized slash command
-// (i.e. it either has no leading slash, or it uses a recognized slash command).
-var recognizedCommands = map[string]bool{
-	"/start": true,
-	"/help":  true,
-	"/run":   true,
-	"/task":  true,
-}
-
 // NormalizeUpdate converts a raw Telegram Update into a model.Envelope.
 //
 // Returns an error with reason "DM only" if the chat is not private.
-// Returns an error with reason "unrecognized command" if the message looks
-// like a slash command that is not in the allowed set.
 func NormalizeUpdate(upd Update) (model.Envelope, error) {
 	if upd.Message == nil {
 		return model.Envelope{}, fmt.Errorf("telegram: update has no message")
@@ -34,14 +22,7 @@ func NormalizeUpdate(upd Update) (model.Envelope, error) {
 		return model.Envelope{}, fmt.Errorf("telegram: DM only — chat type %q is not allowed", msg.Chat.Type)
 	}
 
-	text := strings.TrimSpace(msg.Text)
-	if strings.HasPrefix(text, "/") {
-		// Extract the command word (up to first space).
-		cmd := strings.SplitN(text, " ", 2)[0]
-		if !recognizedCommands[cmd] {
-			return model.Envelope{}, fmt.Errorf("telegram: unrecognized command %q", cmd)
-		}
-	}
+	text := normalizeMessageText(msg.Text)
 
 	return model.Envelope{
 		ConnectorID:    "telegram",
@@ -53,4 +34,8 @@ func NormalizeUpdate(upd Update) (model.Envelope, error) {
 		Text:           text,
 		ReceivedAt:     time.Now().UTC(),
 	}, nil
+}
+
+func normalizeMessageText(raw string) string {
+	return strings.TrimSpace(raw)
 }

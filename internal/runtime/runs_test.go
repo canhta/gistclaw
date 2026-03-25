@@ -3,7 +3,9 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -489,6 +491,59 @@ func TestRunEngine_MemoryContextReadIsJournaled(t *testing.T) {
 	}
 	if readEvents == 0 {
 		t.Fatal("expected memory_context_loaded event")
+	}
+}
+
+func TestRunEngine_ProviderInstructionsIncludeWorkspaceSnapshot(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "done", InputTokens: 10, OutputTokens: 20, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	ctx := context.Background()
+
+	workspaceRoot := t.TempDir()
+	for path, body := range map[string]string{
+		"README.md":  "# Demo Repo\n\nThis repository is for runtime testing.\n",
+		"go.mod":     "module example.com/demo\n\ngo 1.24\n",
+		"cmd/app.go": "package main\n\nfunc main() {}\n",
+	} {
+		abs := filepath.Join(workspaceRoot, path)
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", abs, err)
+		}
+		if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", abs, err)
+		}
+	}
+
+	if _, err := rt.Start(ctx, StartRun{
+		ConversationID: "conv-workspace-context",
+		AgentID:        "agent-a",
+		Objective:      "review the repo",
+		WorkspaceRoot:  workspaceRoot,
+	}); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	if len(prov.Requests) != 1 {
+		t.Fatalf("expected 1 provider request, got %d", len(prov.Requests))
+	}
+
+	instructions := prov.Requests[0].Instructions
+	for _, want := range []string{
+		"review the repo",
+		"Workspace root:",
+		"README.md",
+		"go.mod",
+		"module example.com/demo",
+	} {
+		if !strings.Contains(instructions, want) {
+			t.Fatalf("expected provider instructions to include %q, got:\n%s", want, instructions)
+		}
 	}
 }
 

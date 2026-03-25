@@ -44,6 +44,16 @@ func (d *OutboundDispatcher) ID() string { return d.connectorID }
 // Start runs the bot's long-poll loop until ctx is cancelled.
 func (d *OutboundDispatcher) Start(ctx context.Context) error { return d.bot.Start(ctx) }
 
+// Send records and delivers a connector-owned outbound message that is not
+// attached to a run lifecycle event, such as a native control-command reply.
+func (d *OutboundDispatcher) Send(ctx context.Context, chatID, text string) error {
+	intentID, err := d.enqueueIntent(ctx, "", chatID, text, "")
+	if err != nil {
+		return err
+	}
+	return d.deliverWithRetry(ctx, intentID, chatID, text, "connector_command")
+}
+
 // NewOutboundDispatcher creates a dispatcher. token is the Telegram bot token.
 func NewOutboundDispatcher(token string, db *store.DB, cs *conversations.ConversationStore) *OutboundDispatcher {
 	return &OutboundDispatcher{
@@ -74,16 +84,9 @@ func (d *OutboundDispatcher) Notify(ctx context.Context, chatID string, delta mo
 	}
 
 	text := buildMessage(delta)
-	intentID := generateIntentID()
-
-	_, err := d.db.RawDB().ExecContext(ctx,
-		`INSERT INTO outbound_intents
-		 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, datetime('now'))`,
-		intentID, delta.RunID, d.connectorID, chatID, text, dedupeKey,
-	)
+	intentID, err := d.enqueueIntent(ctx, delta.RunID, chatID, text, dedupeKey)
 	if err != nil {
-		return fmt.Errorf("telegram: write intent: %w", err)
+		return err
 	}
 
 	return d.deliverWithRetry(ctx, intentID, chatID, text, delta.Kind)
@@ -117,6 +120,20 @@ func (d *OutboundDispatcher) Drain(ctx context.Context) error {
 		_ = d.deliverWithRetry(ctx, it.id, it.chatID, it.text, "")
 	}
 	return nil
+}
+
+func (d *OutboundDispatcher) enqueueIntent(ctx context.Context, runID, chatID, text, dedupeKey string) (string, error) {
+	intentID := generateIntentID()
+	_, err := d.db.RawDB().ExecContext(ctx,
+		`INSERT INTO outbound_intents
+		 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at)
+		 VALUES (?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), 'pending', 0, datetime('now'))`,
+		intentID, runID, d.connectorID, chatID, text, dedupeKey,
+	)
+	if err != nil {
+		return "", fmt.Errorf("telegram: write intent: %w", err)
+	}
+	return intentID, nil
 }
 
 // deliverWithRetry attempts delivery up to maxAttempts times with retryDelay between each.

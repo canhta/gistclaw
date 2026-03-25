@@ -116,6 +116,7 @@ func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) 
 		agentID:        cmd.FrontAgentID,
 		sessionID:      sessionID,
 		objective:      cmd.InitialPrompt,
+		workspaceRoot:  cmd.WorkspaceRoot,
 	})
 }
 
@@ -226,6 +227,7 @@ func (r *Runtime) Spawn(ctx context.Context, cmd SpawnCommand) (model.Run, error
 		agentID:        cmd.AgentID,
 		sessionID:      workerSessionID,
 		objective:      cmd.Prompt,
+		workspaceRoot:  controllerRun.WorkspaceRoot,
 	})
 }
 
@@ -341,6 +343,7 @@ func (r *Runtime) sendSession(ctx context.Context, opts sendSessionOptions) (mod
 		agentID:        targetSession.AgentID,
 		sessionID:      targetSession.ID,
 		objective:      opts.body,
+		workspaceRoot:  targetRun.WorkspaceRoot,
 	})
 }
 
@@ -646,6 +649,7 @@ func (r *Runtime) startInboundRun(ctx context.Context, opts inboundRunOptions) (
 		agentID:        opts.agentID,
 		sessionID:      opts.sessionID,
 		objective:      opts.body,
+		workspaceRoot:  opts.workspaceRoot,
 	})
 }
 

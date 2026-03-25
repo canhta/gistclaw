@@ -108,12 +108,12 @@ func TestLoadApp_InvalidConfig(t *testing.T) {
 	}
 }
 
-func TestLoadApp_PreparesInterruptedRuns(t *testing.T) {
+func TestLoadPreparedApp_PreparesInterruptedRuns(t *testing.T) {
 	cfgPath, dbPath := writeCLIConfig(t)
 
-	application, err := loadApp(cfgPath)
+	application, err := loadPreparedApp(cfgPath)
 	if err != nil {
-		t.Fatalf("initial loadApp failed: %v", err)
+		t.Fatalf("initial loadPreparedApp failed: %v", err)
 	}
 	if err := application.Stop(); err != nil {
 		t.Fatalf("initial Stop failed: %v", err)
@@ -133,9 +133,9 @@ func TestLoadApp_PreparesInterruptedRuns(t *testing.T) {
 		t.Fatalf("insert stale run: %v", err)
 	}
 
-	application, err = loadApp(cfgPath)
+	application, err = loadPreparedApp(cfgPath)
 	if err != nil {
-		t.Fatalf("second loadApp failed: %v", err)
+		t.Fatalf("second loadPreparedApp failed: %v", err)
 	}
 	defer func() { _ = application.Stop() }()
 
@@ -146,5 +146,49 @@ func TestLoadApp_PreparesInterruptedRuns(t *testing.T) {
 	}
 	if status != "interrupted" {
 		t.Fatalf("expected interrupted status, got %q", status)
+	}
+}
+
+func TestRun_InspectDoesNotInterruptActiveRuns(t *testing.T) {
+	cfgPath, dbPath := writeCLIConfig(t)
+
+	application, err := loadApp(cfgPath)
+	if err != nil {
+		t.Fatalf("loadApp failed: %v", err)
+	}
+	if err := application.Stop(); err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(
+		`INSERT INTO runs (id, conversation_id, agent_id, status, created_at, updated_at)
+		 VALUES ('cli-active-run', 'conv-cli-active', 'agent-a', 'active', datetime('now'), datetime('now'))`,
+	)
+	if err != nil {
+		t.Fatalf("insert active run: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := run([]string{"inspect", "--config", cfgPath, "status"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("inspect status failed with code %d:\n%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "active_runs: 1") {
+		t.Fatalf("inspect status should report the active run:\n%s", stdout.String())
+	}
+
+	var status string
+	err = db.QueryRow("SELECT status FROM runs WHERE id = 'cli-active-run'").Scan(&status)
+	if err != nil {
+		t.Fatalf("query active run: %v", err)
+	}
+	if status != "active" {
+		t.Fatalf("inspect should not mutate active run status, got %q", status)
 	}
 }

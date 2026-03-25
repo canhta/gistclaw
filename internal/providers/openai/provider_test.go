@@ -42,7 +42,7 @@ func TestProvider_GeneratesTextCompletion(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := New("test-key", "gpt-4o", srv.URL)
+	p := New("test-key", "gpt-4o", srv.URL, "")
 	result, err := p.Generate(context.Background(), runtime.GenerateRequest{
 		Instructions: "You are helpful.",
 		ModelID:      "gpt-4o",
@@ -61,8 +61,8 @@ func TestProvider_GeneratesTextCompletion(t *testing.T) {
 	if result.OutputTokens != 5 {
 		t.Errorf("OutputTokens: got %d, want 5", result.OutputTokens)
 	}
-	if result.StopReason != "stop" {
-		t.Errorf("StopReason: got %q, want %q", result.StopReason, "stop")
+	if result.StopReason != "end_turn" {
+		t.Errorf("StopReason: got %q, want %q", result.StopReason, "end_turn")
 	}
 }
 
@@ -75,7 +75,7 @@ func TestProvider_SystemInstructionsPassedAsSystemMessage(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := New("key", "gpt-4o-mini", srv.URL)
+	p := New("key", "gpt-4o-mini", srv.URL, "")
 	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
 		Instructions: "You are a code reviewer.",
 		MaxTokens:    100,
@@ -109,7 +109,7 @@ func TestProvider_ConversationEventsConvertedToMessages(t *testing.T) {
 	objPayload, _ := json.Marshal(map[string]any{"objective": "fix the bug", "agent_id": "coder"})
 	turnPayload, _ := json.Marshal(map[string]any{"content": "I found it", "input_tokens": 5, "output_tokens": 3})
 
-	p := New("key", "gpt-4o", srv.URL)
+	p := New("key", "gpt-4o", srv.URL, "")
 	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
 		Instructions: "system",
 		MaxTokens:    100,
@@ -161,7 +161,7 @@ func TestProvider_SessionMessageEventsConvertedToMessages(t *testing.T) {
 	userPayload, _ := json.Marshal(map[string]any{"kind": "user", "body": "front prompt"})
 	assistantPayload, _ := json.Marshal(map[string]any{"kind": "assistant", "body": "front reply"})
 
-	p := New("key", "gpt-4o", srv.URL)
+	p := New("key", "gpt-4o", srv.URL, "")
 	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
 		Instructions: "system",
 		MaxTokens:    100,
@@ -219,7 +219,7 @@ func TestProvider_ToolCallsInResponse(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := New("key", "gpt-4o", srv.URL)
+	p := New("key", "gpt-4o", srv.URL, "")
 	result, err := p.Generate(context.Background(), runtime.GenerateRequest{
 		Instructions: "system",
 		MaxTokens:    100,
@@ -250,7 +250,7 @@ func TestProvider_APIErrorMapped(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := New("bad-key", "gpt-4o", srv.URL)
+	p := New("bad-key", "gpt-4o", srv.URL, "")
 	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
 		Instructions: "system",
 		MaxTokens:    100,
@@ -261,8 +261,125 @@ func TestProvider_APIErrorMapped(t *testing.T) {
 }
 
 func TestProvider_IDReturnsOpenAI(t *testing.T) {
-	p := New("key", "gpt-4o", "")
+	p := New("key", "gpt-4o", "", "")
 	if p.ID() != "openai" {
 		t.Errorf("ID: got %q, want %q", p.ID(), "openai")
+	}
+}
+
+func TestProvider_BaseURLWithV1SuffixDoesNotDuplicateSegment(t *testing.T) {
+	var requestPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(successResponse("ok", 1, 1))
+	}))
+	defer srv.Close()
+
+	p := New("test-key", "gpt-4o", srv.URL+"/v1", "chat_completions")
+	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "You are helpful.",
+		MaxTokens:    128,
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	if requestPath != "/v1/chat/completions" {
+		t.Fatalf("request path: got %q, want %q", requestPath, "/v1/chat/completions")
+	}
+}
+
+func TestProvider_ResponsesWireAPIReturnsText(t *testing.T) {
+	var capturedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			t.Fatalf("request path: got %q, want %q", r.URL.Path, "/v1/responses")
+		}
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"resp_test",
+			"status":"completed",
+			"output":[
+				{
+					"type":"message",
+					"id":"msg_test",
+					"status":"completed",
+					"role":"assistant",
+					"content":[
+						{"type":"output_text","text":"Hello from Responses","annotations":[]}
+					]
+				}
+			],
+			"usage":{"input_tokens":11,"output_tokens":7}
+		}`))
+	}))
+	defer srv.Close()
+
+	p := New("test-key", "cx/gpt-5.4", srv.URL, "responses")
+	result, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "You are helpful.",
+		MaxTokens:    256,
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if result.Content != "Hello from Responses" {
+		t.Fatalf("Content: got %q, want %q", result.Content, "Hello from Responses")
+	}
+	if result.InputTokens != 11 || result.OutputTokens != 7 {
+		t.Fatalf("usage: got %d/%d, want 11/7", result.InputTokens, result.OutputTokens)
+	}
+	if capturedBody["instructions"] != "You are helpful." {
+		t.Fatalf("instructions: got %v, want %q", capturedBody["instructions"], "You are helpful.")
+	}
+	if capturedBody["max_output_tokens"] != float64(256) {
+		t.Fatalf("max_output_tokens: got %v, want 256", capturedBody["max_output_tokens"])
+	}
+}
+
+func TestProvider_ResponsesWireAPIParsesFunctionCalls(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			t.Fatalf("request path: got %q, want %q", r.URL.Path, "/v1/responses")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"resp_tool",
+			"status":"completed",
+			"output":[
+				{
+					"type":"function_call",
+					"id":"fc_123",
+					"call_id":"call_123",
+					"name":"read_file",
+					"arguments":"{\"path\":\"main.go\"}"
+				}
+			],
+			"usage":{"input_tokens":20,"output_tokens":10}
+		}`))
+	}))
+	defer srv.Close()
+
+	p := New("test-key", "cx/gpt-5.4", srv.URL, "responses")
+	result, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "Use tools when needed.",
+		MaxTokens:    256,
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if len(result.ToolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(result.ToolCalls))
+	}
+	if result.ToolCalls[0].ID != "call_123" {
+		t.Fatalf("tool call ID: got %q, want %q", result.ToolCalls[0].ID, "call_123")
+	}
+	if result.ToolCalls[0].ToolName != "read_file" {
+		t.Fatalf("tool call name: got %q, want %q", result.ToolCalls[0].ToolName, "read_file")
+	}
+	if string(result.ToolCalls[0].InputJSON) != `{"path":"main.go"}` {
+		t.Fatalf("tool call arguments: got %s", result.ToolCalls[0].InputJSON)
 	}
 }

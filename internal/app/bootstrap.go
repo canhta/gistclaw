@@ -65,7 +65,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		Replay:          rp,
 		Broadcaster:     broadcaster,
 		Runtime:         rt,
-		WhatsAppWebhook: buildWhatsAppWebhook(cfg, rt),
+		WhatsAppWebhook: buildWhatsAppWebhook(cfg, db, convStore, rt),
 	})
 	if err != nil {
 		_ = db.Close()
@@ -157,7 +157,7 @@ func buildProvider(cfg ProviderConfig) runtime.Provider {
 		if modelID == "" {
 			modelID = "gpt-4o"
 		}
-		return openaiprov.New(cfg.APIKey, modelID, cfg.BaseURL)
+		return openaiprov.New(cfg.APIKey, modelID, cfg.BaseURL, cfg.WireAPI)
 	default: // "anthropic" and anything unrecognised falls back to Anthropic
 		if modelID == "" {
 			modelID = "claude-3-5-sonnet-20241022"
@@ -210,14 +210,21 @@ func buildConnectors(
 	return connectors
 }
 
-func buildWhatsAppWebhook(cfg Config, rt *runtime.Runtime) http.Handler {
+func buildWhatsAppWebhook(cfg Config, db *store.DB, cs *conversations.ConversationStore, rt *runtime.Runtime) http.Handler {
 	if cfg.WhatsApp.VerifyToken == "" || cfg.WhatsApp.PhoneNumberID == "" || cfg.WhatsApp.AccessToken == "" {
 		return nil
 	}
+	sender := whatsappconnector.NewOutboundDispatcher(
+		cfg.WhatsApp.PhoneNumberID,
+		cfg.WhatsApp.AccessToken,
+		db,
+		cs,
+	)
 	return whatsappconnector.NewWebhookHandler(
 		cfg.WhatsApp.VerifyToken,
 		cfg.WhatsApp.AgentID,
 		cfg.WorkspaceRoot,
 		rt,
+		sender,
 	)
 }

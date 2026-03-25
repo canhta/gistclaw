@@ -62,28 +62,6 @@ func TestInbound_GroupChatRejected(t *testing.T) {
 	}
 }
 
-func TestInbound_UnrecognizedCommandRejected(t *testing.T) {
-	upd := Update{
-		UpdateID: 102,
-		Message: &Message{
-			MessageID: 11,
-			Chat: Chat{
-				ID:   99,
-				Type: "private",
-			},
-			Text: "/unknown_command",
-		},
-	}
-
-	_, err := NormalizeUpdate(upd)
-	if err == nil {
-		t.Fatal("expected error for unrecognized command, got nil")
-	}
-	if !strings.Contains(err.Error(), "unrecognized command") {
-		t.Errorf("expected 'unrecognized command' in error, got: %v", err)
-	}
-}
-
 func TestInbound_MessageTextVerbatim(t *testing.T) {
 	text := "explain the auth module in plain English"
 	upd := Update{
@@ -107,8 +85,8 @@ func TestInbound_MessageTextVerbatim(t *testing.T) {
 	}
 }
 
-func TestInbound_RecognizedCommandsPass(t *testing.T) {
-	for _, cmd := range []string{"/start", "/help", "/run", "/task"} {
+func TestInbound_SlashCommandsArePreserved(t *testing.T) {
+	for _, cmd := range []string{"/start", "/help", "/status"} {
 		upd := Update{
 			UpdateID: 200,
 			Message: &Message{
@@ -119,11 +97,96 @@ func TestInbound_RecognizedCommandsPass(t *testing.T) {
 		}
 		env, err := NormalizeUpdate(upd)
 		if err != nil {
-			t.Errorf("recognized command %q should not error: %v", cmd, err)
+			t.Errorf("slash-prefixed text %q should not error: %v", cmd, err)
 			continue
 		}
-		if env.ConnectorID != "telegram" {
-			t.Errorf("%q: expected ConnectorID telegram, got %q", cmd, env.ConnectorID)
+		if env.Text != cmd {
+			t.Errorf("%q: expected text to be preserved, got %q", cmd, env.Text)
 		}
+	}
+}
+
+func TestInbound_LegacyTaskAliasesArePreservedAsPlainText(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{
+			name: "run alias",
+			text: "/run review the repo",
+			want: "/run review the repo",
+		},
+		{
+			name: "task alias",
+			text: "/task review the repo",
+			want: "/task review the repo",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upd := Update{
+				UpdateID: 201,
+				Message: &Message{
+					MessageID: 201,
+					Chat:      Chat{ID: 1, Type: "private"},
+					Text:      tt.text,
+				},
+			}
+
+			env, err := NormalizeUpdate(upd)
+			if err != nil {
+				t.Fatalf("NormalizeUpdate: %v", err)
+			}
+			if env.Text != tt.want {
+				t.Fatalf("expected preserved text %q, got %q", tt.want, env.Text)
+			}
+		})
+	}
+}
+
+func TestInbound_SlashPrefixedChatPassesThrough(t *testing.T) {
+	tests := []struct {
+		name string
+		text string
+		want string
+	}{
+		{
+			name: "unknown command",
+			text: "/unknown_command",
+			want: "/unknown_command",
+		},
+		{
+			name: "filesystem-like path",
+			text: "/Users/canh/Projects/OSS/gistclaw",
+			want: "/Users/canh/Projects/OSS/gistclaw",
+		},
+		{
+			name: "slash note with spaces",
+			text: "/review the auth package",
+			want: "/review the auth package",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			upd := Update{
+				UpdateID: 202,
+				Message: &Message{
+					MessageID: 202,
+					Chat:      Chat{ID: 99, Type: "private"},
+					Text:      tt.text,
+				},
+			}
+
+			env, err := NormalizeUpdate(upd)
+			if err != nil {
+				t.Fatalf("NormalizeUpdate: %v", err)
+			}
+			if env.Text != tt.want {
+				t.Fatalf("expected text %q, got %q", tt.want, env.Text)
+			}
+		})
 	}
 }

@@ -170,6 +170,43 @@ func TestConversationStore_ResolveIdempotent(t *testing.T) {
 	}
 }
 
+func TestConversationStore_FindDoesNotCreateConversation(t *testing.T) {
+	db := setupTestStore(t)
+	cs := NewConversationStore(db)
+	ctx := context.Background()
+
+	key := ConversationKey{
+		ConnectorID: "telegram",
+		AccountID:   "acct-1",
+		ExternalID:  "chat-1",
+		ThreadID:    "main",
+	}
+
+	conv, found, err := cs.Find(ctx, key)
+	if err != nil {
+		t.Fatalf("Find missing conversation failed: %v", err)
+	}
+	if found {
+		t.Fatalf("expected missing conversation, got %+v", conv)
+	}
+
+	created, err := cs.Resolve(ctx, key)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	foundConv, found, err := cs.Find(ctx, key)
+	if err != nil {
+		t.Fatalf("Find existing conversation failed: %v", err)
+	}
+	if !found {
+		t.Fatal("expected existing conversation to be found")
+	}
+	if foundConv.ID != created.ID {
+		t.Fatalf("expected found conversation %q, got %q", created.ID, foundConv.ID)
+	}
+}
+
 func TestConversationStore_AppendEventProjectsRunLifecycle(t *testing.T) {
 	db := setupTestStore(t)
 	cs := NewConversationStore(db)

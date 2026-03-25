@@ -24,6 +24,7 @@ type ProviderConfig struct {
 	Name    string     `yaml:"name"`
 	APIKey  string     `yaml:"api_key"`
 	BaseURL string     `yaml:"base_url"` // optional; overrides the default endpoint (e.g. for Ollama, Groq, Azure)
+	WireAPI string     `yaml:"wire_api"`
 	Models  ModelLanes `yaml:"models"`
 }
 
@@ -113,6 +114,11 @@ func (c *Config) validate() error {
 	if c.Provider.APIKey == "" {
 		return fmt.Errorf("config validation: provider api_key is required")
 	}
+	if c.Provider.WireAPI != "" &&
+		c.Provider.WireAPI != "chat_completions" &&
+		c.Provider.WireAPI != "responses" {
+		return fmt.Errorf("config validation: unknown provider wire_api %q", c.Provider.WireAPI)
+	}
 
 	return nil
 }
@@ -129,6 +135,9 @@ func (c *Config) applyDefaults() {
 
 	if c.DatabasePath == "" {
 		c.DatabasePath = filepath.Join(c.StateDir, "runtime.db")
+	}
+	if c.Provider.Name == "openai" && c.Provider.WireAPI == "" {
+		c.Provider.WireAPI = "chat_completions"
 	}
 
 	if c.Telegram.AgentID == "" {

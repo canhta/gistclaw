@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -115,6 +117,130 @@ func TestRuntime_StartFrontSessionCreatesFrontRunAndSession(t *testing.T) {
 	}
 	if role != string(model.SessionRoleFront) {
 		t.Fatalf("expected front session role, got %q", role)
+	}
+}
+
+func TestRuntime_InspectConversationReturnsMissingWhenConversationDoesNotExist(t *testing.T) {
+	rt, _ := newCollaborationRuntime(t, nil)
+
+	status, err := rt.InspectConversation(context.Background(), conversations.ConversationKey{
+		ConnectorID: "telegram",
+		AccountID:   "acct-1",
+		ExternalID:  "chat-1",
+		ThreadID:    "main",
+	})
+	if err != nil {
+		t.Fatalf("InspectConversation failed: %v", err)
+	}
+	if status.Exists {
+		t.Fatalf("expected missing conversation, got %+v", status)
+	}
+}
+
+func TestRuntime_InspectConversationReportsActiveRunAndPendingApprovals(t *testing.T) {
+	rt, db := newCollaborationRuntime(t, nil)
+	ctx := context.Background()
+
+	key := conversations.ConversationKey{
+		ConnectorID: "telegram",
+		AccountID:   "acct-1",
+		ExternalID:  "chat-1",
+		ThreadID:    "main",
+	}
+	conv, err := rt.convStore.Resolve(ctx, key)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	_, err = db.RawDB().ExecContext(ctx, `
+		INSERT INTO runs (id, conversation_id, agent_id, objective, status, created_at, updated_at)
+		VALUES ('run-old', ?, 'assistant', 'old task', 'completed', datetime('now', '-10 minutes'), datetime('now', '-10 minutes')),
+		       ('run-active', ?, 'assistant', 'review the repo', 'active', datetime('now'), datetime('now'))`,
+		conv.ID, conv.ID,
+	)
+	if err != nil {
+		t.Fatalf("insert runs: %v", err)
+	}
+
+	_, err = db.RawDB().ExecContext(ctx, `
+		INSERT INTO approvals (id, run_id, tool_name, fingerprint, status, created_at)
+		VALUES ('approval-1', 'run-active', 'exec', 'fp-1', 'pending', datetime('now'))`)
+	if err != nil {
+		t.Fatalf("insert approval: %v", err)
+	}
+
+	status, err := rt.InspectConversation(ctx, key)
+	if err != nil {
+		t.Fatalf("InspectConversation failed: %v", err)
+	}
+	if !status.Exists {
+		t.Fatal("expected conversation status to exist")
+	}
+	if status.ActiveRun.ID != "run-active" {
+		t.Fatalf("expected active run run-active, got %q", status.ActiveRun.ID)
+	}
+	if status.LatestRootRun.ID != "run-active" {
+		t.Fatalf("expected latest root run run-active, got %q", status.LatestRootRun.ID)
+	}
+	if status.PendingApprovals != 1 {
+		t.Fatalf("expected 1 pending approval, got %d", status.PendingApprovals)
+	}
+}
+
+func TestRuntime_StartFrontSessionIncludesWorkspaceContextInProviderInstructions(t *testing.T) {
+	db, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	cs := conversations.NewConversationStore(db)
+	mem := memory.NewStore(db, cs)
+	reg := tools.NewRegistry()
+	prov := NewMockProvider([]GenerateResult{
+		{Content: "I inspected the repo.", InputTokens: 12, OutputTokens: 18, StopReason: "end_turn"},
+	}, nil)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+
+	workspaceRoot := t.TempDir()
+	for path, body := range map[string]string{
+		"README.md": "# Front Session Repo\n",
+		"go.mod":    "module example.com/front\n\ngo 1.24\n",
+	} {
+		abs := filepath.Join(workspaceRoot, path)
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", abs, err)
+		}
+		if err := os.WriteFile(abs, []byte(body), 0o644); err != nil {
+			t.Fatalf("write %s: %v", abs, err)
+		}
+	}
+
+	if _, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "review the repo",
+		WorkspaceRoot: workspaceRoot,
+	}); err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+
+	if len(prov.Requests) != 1 {
+		t.Fatalf("expected 1 provider request, got %d", len(prov.Requests))
+	}
+	instructions := prov.Requests[0].Instructions
+	for _, want := range []string{"Workspace root:", "README.md", "go.mod", "module example.com/front"} {
+		if !strings.Contains(instructions, want) {
+			t.Fatalf("expected provider instructions to include %q, got:\n%s", want, instructions)
+		}
 	}
 }
 

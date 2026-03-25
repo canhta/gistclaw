@@ -80,8 +80,11 @@ func runDoctor(configPath string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// 5. Telegram (optional) — skip if no token configured.
-	tgToken := lookupSettingFromDB(cfg.DatabasePath, "telegram_bot_token")
+	// 5. Telegram (optional) — prefer YAML config and fall back to DB-backed settings.
+	tgToken := cfg.Telegram.BotToken
+	if tgToken == "" {
+		tgToken = lookupSettingFromDB(cfg.DatabasePath, "telegram_bot_token")
+	}
 	if tgToken == "" {
 		// No token — skip check entirely.
 	} else {

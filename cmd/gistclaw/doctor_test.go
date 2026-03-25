@@ -88,6 +88,35 @@ func TestDoctor_TelegramMissingIsSkipped(t *testing.T) {
 	}
 }
 
+func TestDoctor_TelegramConfiguredInYAMLIsChecked(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	exec.Command("git", "init", workspaceRoot).Run()
+	dbPath := filepath.Join(t.TempDir(), "gistclaw.db")
+
+	cfgDir := t.TempDir()
+	cfgPath := filepath.Join(cfgDir, "config.yaml")
+	content := strings.Join([]string{
+		"database_path: " + dbPath,
+		"workspace_root: " + workspaceRoot,
+		"provider:",
+		"  name: openai",
+		"  api_key: sk-test",
+		"telegram:",
+		"  bot_token: telegram-test-token",
+		"",
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	runDoctor(cfgPath, &stdout, &stderr)
+	output := stdout.String()
+	if !strings.Contains(output, "telegram") {
+		t.Errorf("expected telegram check line when token is configured in YAML, got:\n%s", output)
+	}
+}
+
 func TestDoctor_BadConfigFails(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := runDoctor("/nonexistent/config.yaml", &stdout, &stderr)

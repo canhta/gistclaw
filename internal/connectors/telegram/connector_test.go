@@ -34,6 +34,10 @@ func (s *stubFrontSessionStarter) callCount() int {
 	return len(s.calls)
 }
 
+func (s *stubFrontSessionStarter) InspectConversation(context.Context, conversations.ConversationKey) (runtime.ConversationStatus, error) {
+	return runtime.ConversationStatus{}, nil
+}
+
 func newTelegramConnectorTestDB(t *testing.T) (*store.DB, *conversations.ConversationStore) {
 	t.Helper()
 	db, err := store.Open(":memory:")

@@ -5,14 +5,27 @@ import (
 	"log"
 	"time"
 
+	controlconnector "github.com/canhta/gistclaw/internal/connectors/control"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/runtime"
 	"github.com/canhta/gistclaw/internal/store"
 )
 
+type MessageSender interface {
+	Send(ctx context.Context, chatID, text string) error
+}
+
+type ConnectorRuntime interface {
+	ReceiveInboundMessage(ctx context.Context, req runtime.InboundMessageCommand) (model.Run, error)
+	InspectConversation(ctx context.Context, key conversations.ConversationKey) (runtime.ConversationStatus, error)
+}
+
 type Connector struct {
 	outbound      *OutboundDispatcher
+	sender        MessageSender
 	inbound       *InboundDispatcher
+	commands      *controlconnector.Dispatcher
 	drainInterval time.Duration
 }
 
@@ -20,29 +33,23 @@ func NewConnector(
 	token string,
 	db *store.DB,
 	cs *conversations.ConversationStore,
-	rt InboundMessageReceiver,
+	rt ConnectorRuntime,
 	defaultAgentID string,
 	workspaceRoot string,
 ) *Connector {
 	outbound := NewOutboundDispatcher(token, db, cs)
 	inbound := NewInboundDispatcher(rt, defaultAgentID, workspaceRoot)
-
-	outbound.bot.handler = func(ctx context.Context, upd Update) {
-		env, err := NormalizeUpdate(upd)
-		if err != nil {
-			log.Printf("telegram: normalize update: %v", err)
-			return
-		}
-		if err := inbound.Dispatch(ctx, env); err != nil {
-			log.Printf("telegram: dispatch update: %v", err)
-		}
-	}
-
-	return &Connector{
+	connector := &Connector{
 		outbound:      outbound,
+		sender:        outbound,
 		inbound:       inbound,
+		commands:      controlconnector.NewDispatcher(rt),
 		drainInterval: time.Second,
 	}
+
+	outbound.bot.handler = connector.handleUpdate
+
+	return connector
 }
 
 func (c *Connector) ID() string {
@@ -82,3 +89,25 @@ func (c *Connector) Start(ctx context.Context) error {
 }
 
 var _ model.Connector = (*Connector)(nil)
+
+func (c *Connector) handleUpdate(ctx context.Context, upd Update) {
+	env, err := NormalizeUpdate(upd)
+	if err != nil {
+		log.Printf("telegram: normalize update: %v", err)
+		return
+	}
+	if err := c.handleEnvelope(ctx, env); err != nil {
+		log.Printf("telegram: dispatch update: %v", err)
+	}
+}
+
+func (c *Connector) handleEnvelope(ctx context.Context, env model.Envelope) error {
+	reply, handled, err := c.commands.Dispatch(ctx, env)
+	if err != nil {
+		return err
+	}
+	if handled {
+		return c.sender.Send(ctx, env.ConversationID, reply)
+	}
+	return c.inbound.Dispatch(ctx, env)
+}

@@ -14,8 +14,9 @@ import (
 )
 
 type stubInboundReceiver struct {
-	mu    sync.Mutex
-	calls []runtime.InboundMessageCommand
+	mu     sync.Mutex
+	calls  []runtime.InboundMessageCommand
+	status runtime.ConversationStatus
 }
 
 func (s *stubInboundReceiver) ReceiveInboundMessage(_ context.Context, req runtime.InboundMessageCommand) (model.Run, error) {
@@ -29,6 +30,34 @@ func (s *stubInboundReceiver) callCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.calls)
+}
+
+func (s *stubInboundReceiver) InspectConversation(context.Context, conversations.ConversationKey) (runtime.ConversationStatus, error) {
+	return s.status, nil
+}
+
+type stubWhatsAppSender struct {
+	mu       sync.Mutex
+	messages []string
+}
+
+func (s *stubWhatsAppSender) Send(_ context.Context, _ string, text string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.messages = append(s.messages, text)
+	return nil
+}
+
+func (s *stubWhatsAppSender) callCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.messages)
+}
+
+func (s *stubWhatsAppSender) first() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.messages[0]
 }
 
 func TestNormalizeWebhookPayload_TextMessageToEnvelope(t *testing.T) {
@@ -74,7 +103,7 @@ func TestNormalizeWebhookPayload_TextMessageToEnvelope(t *testing.T) {
 }
 
 func TestWebhookHandler_VerifyChallenge(t *testing.T) {
-	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), &stubInboundReceiver{})
+	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), &stubInboundReceiver{}, nil)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=verify-token&hub.challenge=12345", nil)
@@ -91,7 +120,7 @@ func TestWebhookHandler_VerifyChallenge(t *testing.T) {
 }
 
 func TestWebhookHandler_RejectsWrongVerifyToken(t *testing.T) {
-	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), &stubInboundReceiver{})
+	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), &stubInboundReceiver{}, nil)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=12345", nil)
@@ -106,7 +135,7 @@ func TestWebhookHandler_RejectsWrongVerifyToken(t *testing.T) {
 
 func TestWebhookHandler_DispatchesInboundTextMessages(t *testing.T) {
 	receiver := &stubInboundReceiver{}
-	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), receiver)
+	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), receiver, nil)
 
 	body := `{
 	  "object":"whatsapp_business_account",
@@ -152,5 +181,48 @@ func TestWebhookHandler_DispatchesInboundTextMessages(t *testing.T) {
 	}
 	if call.SourceMessageID != "wamid.42" {
 		t.Fatalf("expected source message ID to pass through, got %q", call.SourceMessageID)
+	}
+}
+
+func TestWebhookHandler_RoutesHelpCommandToNativeReply(t *testing.T) {
+	receiver := &stubInboundReceiver{}
+	sender := &stubWhatsAppSender{}
+	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), receiver, sender)
+
+	body := `{
+	  "object":"whatsapp_business_account",
+	  "entry":[{
+	    "changes":[{
+	      "field":"messages",
+	      "value":{
+	        "metadata":{"phone_number_id":"phone-123"},
+	        "messages":[{
+	          "from":"15551234567",
+	          "id":"wamid.help",
+	          "timestamp":"1711296000",
+	          "type":"text",
+	          "text":{"body":"/help"}
+	        }]
+	      }
+	    }]
+	  }]
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/whatsapp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if receiver.callCount() != 0 {
+		t.Fatalf("expected no inbound runtime calls for /help, got %d", receiver.callCount())
+	}
+	if sender.callCount() != 1 {
+		t.Fatalf("expected 1 native reply, got %d", sender.callCount())
+	}
+	if !strings.Contains(sender.first(), "Message me naturally") {
+		t.Fatalf("unexpected native reply: %q", sender.first())
 	}
 }
