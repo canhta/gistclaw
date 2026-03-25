@@ -449,6 +449,12 @@ func TestSettings(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "Settings") {
 		t.Fatalf("expected settings page, got:\n%s", rr.Body.String())
 	}
+	if !strings.Contains(rr.Body.String(), "Team composition and agent collaboration defaults now live in Configure &gt; Team.") {
+		t.Fatalf("expected settings page to use non-interactive team guidance, got:\n%s", rr.Body.String())
+	}
+	if strings.Contains(rr.Body.String(), `Team composition and agent collaboration defaults now live on the <a href="/configure/team">Team</a> page.`) {
+		t.Fatalf("expected settings page to avoid duplicate inline Team navigation, got:\n%s", rr.Body.String())
+	}
 }
 
 func TestTeam(t *testing.T) {
@@ -885,6 +891,66 @@ func TestRunSubmit(t *testing.T) {
 		if !strings.HasPrefix(loc, "/operate/runs/") {
 			t.Fatalf("expected redirect to /operate/runs/{id}, got %q", loc)
 		}
+	})
+
+	t.Run("valid task redirects before provider completes", func(t *testing.T) {
+		prov := &blockingProvider{
+			started: make(chan struct{}),
+			release: make(chan struct{}),
+		}
+		h := newServerHarnessWithProvider(t, prov)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review+the+repo"))
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		done := make(chan struct{})
+		go func() {
+			h.server.ServeHTTP(rr, req)
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(200 * time.Millisecond):
+			close(prov.release)
+			<-done
+			t.Fatal("expected start-task request to redirect before the provider completes")
+		}
+
+		if rr.Code != http.StatusSeeOther {
+			close(prov.release)
+			<-done
+			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
+		}
+		loc := rr.Header().Get("Location")
+		if !strings.HasPrefix(loc, "/operate/runs/") {
+			close(prov.release)
+			<-done
+			t.Fatalf("expected redirect to /operate/runs/{id}, got %q", loc)
+		}
+
+		select {
+		case <-prov.started:
+		case <-time.After(time.Second):
+			close(prov.release)
+			t.Fatal("expected provider work to continue in the background")
+		}
+
+		runID := strings.TrimPrefix(loc, "/operate/runs/")
+		var status string
+		if err := h.db.RawDB().QueryRow("SELECT status FROM runs WHERE id = ?", runID).Scan(&status); err != nil {
+			close(prov.release)
+			t.Fatalf("query run status: %v", err)
+		}
+		if status != "active" {
+			close(prov.release)
+			t.Fatalf("expected background run to stay active while provider is blocked, got %q", status)
+		}
+
+		close(prov.release)
+		waitForRunStatus(t, h.db, runID, "completed")
 	})
 }
 
@@ -2666,6 +2732,40 @@ type serverHarness struct {
 
 func newServerHarness(t *testing.T) *serverHarness {
 	t.Helper()
+	return newServerHarnessWithProvider(t, runtime.NewMockProvider(nil, nil))
+}
+
+type blockingProvider struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p *blockingProvider) ID() string {
+	return "blocking"
+}
+
+func (p *blockingProvider) Generate(ctx context.Context, _ runtime.GenerateRequest, _ runtime.StreamSink) (runtime.GenerateResult, error) {
+	select {
+	case <-p.started:
+	default:
+		close(p.started)
+	}
+
+	select {
+	case <-p.release:
+		return runtime.GenerateResult{
+			Content:      "mock response",
+			InputTokens:  10,
+			OutputTokens: 20,
+			StopReason:   "end_turn",
+		}, nil
+	case <-ctx.Done():
+		return runtime.GenerateResult{}, ctx.Err()
+	}
+}
+
+func newServerHarnessWithProvider(t *testing.T, prov runtime.Provider) *serverHarness {
+	t.Helper()
 
 	db, err := store.Open(":memory:")
 	if err != nil {
@@ -2674,7 +2774,6 @@ func newServerHarness(t *testing.T) *serverHarness {
 	if err := store.Migrate(db); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
 
 	adminToken := "test-admin-token"
 	workspaceRoot := t.TempDir()
@@ -2688,9 +2787,12 @@ func newServerHarness(t *testing.T) *serverHarness {
 	cs := conversations.NewConversationStore(db)
 	mem := memory.NewStore(db, cs)
 	reg := tools.NewRegistry()
-	prov := runtime.NewMockProvider(nil, nil)
 	broadcaster := NewSSEBroadcaster()
 	rt := runtime.New(db, cs, reg, mem, prov, broadcaster)
+	t.Cleanup(func() {
+		rt.WaitAsync()
+		_ = db.Close()
+	})
 	rt.SetTeamDir(teamDir)
 	snapshot, err := teams.LoadExecutionSnapshot(teamDir)
 	if err != nil {
@@ -2719,6 +2821,26 @@ func newServerHarness(t *testing.T) *serverHarness {
 		teamDir:       teamDir,
 		workspaceRoot: workspaceRoot,
 	}
+}
+
+func waitForRunStatus(t *testing.T, db *store.DB, runID string, want string) {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var status string
+		err := db.RawDB().QueryRow("SELECT status FROM runs WHERE id = ?", runID).Scan(&status)
+		if err == nil && status == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	var status string
+	if err := db.RawDB().QueryRow("SELECT status FROM runs WHERE id = ?", runID).Scan(&status); err != nil {
+		t.Fatalf("query final run status: %v", err)
+	}
+	t.Fatalf("expected run %s to reach status %q, got %q", runID, want, status)
 }
 
 func writeTeamFixture(t *testing.T) string {

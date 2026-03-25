@@ -58,6 +58,10 @@ func Bootstrap(cfg Config) (*App, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if err := seedOperatorSettings(db, cfg); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 
 	if err := validateTeamDir(teamDir); err != nil {
 		_ = db.Close()
@@ -236,6 +240,32 @@ func ensureAdminToken(db *store.DB) error {
 	)
 	if err != nil {
 		return fmt.Errorf("bootstrap: store admin token: %w", err)
+	}
+	return nil
+}
+
+func seedOperatorSettings(db *store.DB, cfg Config) error {
+	if err := insertSettingIfMissing(db, "workspace_root", cfg.WorkspaceRoot); err != nil {
+		return fmt.Errorf("bootstrap: seed workspace_root: %w", err)
+	}
+	if err := insertSettingIfMissing(db, "telegram_bot_token", cfg.Telegram.BotToken); err != nil {
+		return fmt.Errorf("bootstrap: seed telegram_bot_token: %w", err)
+	}
+	return nil
+}
+
+func insertSettingIfMissing(db *store.DB, key, value string) error {
+	if value == "" {
+		return nil
+	}
+	_, err := db.RawDB().Exec(
+		`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+		 ON CONFLICT(key) DO NOTHING`,
+		key,
+		value,
+	)
+	if err != nil {
+		return fmt.Errorf("insert %s: %w", key, err)
 	}
 	return nil
 }

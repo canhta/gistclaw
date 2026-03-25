@@ -37,7 +37,7 @@ func (s *Server) handleRunSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	workspaceRoot := lookupSetting(s.db, "workspace_root")
-	run, err := s.rt.ReceiveInboundMessage(r.Context(), runtime.InboundMessageCommand{
+	run, err := s.rt.ReceiveInboundMessageAsync(r.Context(), runtime.InboundMessageCommand{
 		ConversationKey: conversations.ConversationKey{
 			ConnectorID: "web",
 			AccountID:   "local",

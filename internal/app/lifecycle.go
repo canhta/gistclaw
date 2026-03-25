@@ -98,6 +98,9 @@ func (a *App) Start(ctx context.Context) error {
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	if a.runtime != nil {
+		a.runtime.SetAsyncContext(runCtx)
+	}
 
 	serviceCount := len(a.connectors)
 	errCh := make(chan error, len(a.connectors)+1)
@@ -160,11 +163,17 @@ func (a *App) Start(ctx context.Context) error {
 		cancel()
 		shutdownWeb()
 		wg.Wait()
+		if a.runtime != nil {
+			a.runtime.WaitAsync()
+		}
 		return err
 	case <-ctx.Done():
 		cancel()
 		shutdownWeb()
 		wg.Wait()
+		if a.runtime != nil {
+			a.runtime.WaitAsync()
+		}
 		return ctx.Err()
 	}
 }

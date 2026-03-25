@@ -123,6 +123,84 @@ func TestBootstrap_AdminTokenNotRegeneratedIfExists(t *testing.T) {
 	}
 }
 
+func TestSeedOperatorSettings(t *testing.T) {
+	t.Run("seeds workspace and telegram settings from config when missing", func(t *testing.T) {
+		db, err := storeWiring(Config{DatabasePath: ":memory:"})
+		if err != nil {
+			t.Fatalf("storeWiring: %v", err)
+		}
+		defer db.Close()
+
+		cfg := Config{
+			WorkspaceRoot: "/tmp/gistclaw-workspace",
+			Telegram: TelegramConfig{
+				BotToken: "telegram-token",
+			},
+		}
+		if err := seedOperatorSettings(db, cfg); err != nil {
+			t.Fatalf("seedOperatorSettings: %v", err)
+		}
+
+		var workspaceRoot string
+		if err := db.RawDB().QueryRow("SELECT value FROM settings WHERE key = 'workspace_root'").Scan(&workspaceRoot); err != nil {
+			t.Fatalf("query workspace_root: %v", err)
+		}
+		if workspaceRoot != cfg.WorkspaceRoot {
+			t.Fatalf("expected workspace_root %q, got %q", cfg.WorkspaceRoot, workspaceRoot)
+		}
+
+		var telegramToken string
+		if err := db.RawDB().QueryRow("SELECT value FROM settings WHERE key = 'telegram_bot_token'").Scan(&telegramToken); err != nil {
+			t.Fatalf("query telegram_bot_token: %v", err)
+		}
+		if telegramToken != cfg.Telegram.BotToken {
+			t.Fatalf("expected telegram_bot_token %q, got %q", cfg.Telegram.BotToken, telegramToken)
+		}
+	})
+
+	t.Run("preserves operator-managed settings already stored in sqlite", func(t *testing.T) {
+		db, err := storeWiring(Config{DatabasePath: ":memory:"})
+		if err != nil {
+			t.Fatalf("storeWiring: %v", err)
+		}
+		defer db.Close()
+
+		if _, err := db.RawDB().Exec(
+			`INSERT INTO settings (key, value, updated_at) VALUES
+			 ('workspace_root', '/tmp/operator-workspace', datetime('now')),
+			 ('telegram_bot_token', 'operator-token', datetime('now'))`,
+		); err != nil {
+			t.Fatalf("seed existing settings: %v", err)
+		}
+
+		cfg := Config{
+			WorkspaceRoot: "/tmp/config-workspace",
+			Telegram: TelegramConfig{
+				BotToken: "config-token",
+			},
+		}
+		if err := seedOperatorSettings(db, cfg); err != nil {
+			t.Fatalf("seedOperatorSettings: %v", err)
+		}
+
+		var workspaceRoot string
+		if err := db.RawDB().QueryRow("SELECT value FROM settings WHERE key = 'workspace_root'").Scan(&workspaceRoot); err != nil {
+			t.Fatalf("query workspace_root: %v", err)
+		}
+		if workspaceRoot != "/tmp/operator-workspace" {
+			t.Fatalf("expected existing workspace_root to be preserved, got %q", workspaceRoot)
+		}
+
+		var telegramToken string
+		if err := db.RawDB().QueryRow("SELECT value FROM settings WHERE key = 'telegram_bot_token'").Scan(&telegramToken); err != nil {
+			t.Fatalf("query telegram_bot_token: %v", err)
+		}
+		if telegramToken != "operator-token" {
+			t.Fatalf("expected existing telegram_bot_token to be preserved, got %q", telegramToken)
+		}
+	})
+}
+
 func TestBootstrap_DoesNotWireDeferredConnectorsOrScheduler(t *testing.T) {
 	cfg := Config{
 		DatabasePath:  ":memory:",

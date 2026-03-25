@@ -121,6 +121,14 @@ func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) 
 }
 
 func (r *Runtime) ReceiveInboundMessage(ctx context.Context, cmd InboundMessageCommand) (model.Run, error) {
+	return r.receiveInboundMessage(ctx, cmd, false)
+}
+
+func (r *Runtime) ReceiveInboundMessageAsync(ctx context.Context, cmd InboundMessageCommand) (model.Run, error) {
+	return r.receiveInboundMessage(ctx, cmd, true)
+}
+
+func (r *Runtime) receiveInboundMessage(ctx context.Context, cmd InboundMessageCommand, detached bool) (model.Run, error) {
 	conv, err := r.convStore.Resolve(ctx, cmd.ConversationKey)
 	if err != nil {
 		return model.Run{}, fmt.Errorf("resolve conversation: %w", err)
@@ -148,7 +156,7 @@ func (r *Runtime) ReceiveInboundMessage(ctx context.Context, cmd InboundMessageC
 		return model.Run{}, err
 	}
 
-	run, err := r.startInboundRun(ctx, inboundRunOptions{
+	opts := inboundRunOptions{
 		conversationID:  conv.ID,
 		sessionID:       sessionID,
 		createSession:   createSession,
@@ -159,7 +167,13 @@ func (r *Runtime) ReceiveInboundMessage(ctx context.Context, cmd InboundMessageC
 		key:             cmd.ConversationKey,
 		threadID:        threadID,
 		sourceMessageID: cmd.SourceMessageID,
-	})
+	}
+	var run model.Run
+	if detached {
+		run, err = r.startInboundRunAsync(ctx, opts)
+	} else {
+		run, err = r.startInboundRun(ctx, opts)
+	}
 	if errors.Is(err, conversations.ErrDuplicateInboundMessage) && cmd.SourceMessageID != "" {
 		return r.loadInboundReceiptRun(
 			ctx,
@@ -548,6 +562,38 @@ type inboundRunOptions struct {
 }
 
 func (r *Runtime) startInboundRun(ctx context.Context, opts inboundRunOptions) (model.Run, error) {
+	prepared, err := r.prepareInboundRun(ctx, opts)
+	if err != nil {
+		return model.Run{}, err
+	}
+	return r.executeRunLoop(ctx, prepared.loopOpts)
+}
+
+type preparedInboundRun struct {
+	run      model.Run
+	loopOpts runLoopOpts
+}
+
+func (r *Runtime) startInboundRunAsync(ctx context.Context, opts inboundRunOptions) (model.Run, error) {
+	prepared, err := r.prepareInboundRun(ctx, opts)
+	if err != nil {
+		return model.Run{}, err
+	}
+
+	execCtx := r.asyncCtx
+	if execCtx == nil {
+		execCtx = context.Background()
+	}
+	r.asyncWG.Add(1)
+	go func(loopOpts runLoopOpts) {
+		defer r.asyncWG.Done()
+		_, _ = r.executeRunLoop(execCtx, loopOpts)
+	}(prepared.loopOpts)
+
+	return prepared.run, nil
+}
+
+func (r *Runtime) prepareInboundRun(ctx context.Context, opts inboundRunOptions) (preparedInboundRun, error) {
 	now := time.Now().UTC()
 	runID := generateID()
 	start := StartRun{
@@ -560,16 +606,16 @@ func (r *Runtime) startInboundRun(ctx context.Context, opts inboundRunOptions) (
 	}
 	start, err := r.prepareStartRun(ctx, "", start)
 	if err != nil {
-		return model.Run{}, err
+		return preparedInboundRun{}, err
 	}
 	if err := r.prepareRunStart(ctx, "", start); err != nil {
-		return model.Run{}, err
+		return preparedInboundRun{}, err
 	}
 
 	events := make([]model.Event, 0, 5)
 	runEvent, err := newRunStartedEvent(opts.conversationID, runID, "", start, now)
 	if err != nil {
-		return model.Run{}, err
+		return preparedInboundRun{}, err
 	}
 	events = append(events, runEvent)
 	if opts.createSession {
@@ -585,14 +631,14 @@ func (r *Runtime) startInboundRun(ctx context.Context, opts inboundRunOptions) (
 			now,
 		)
 		if err != nil {
-			return model.Run{}, err
+			return preparedInboundRun{}, err
 		}
 		events = append(events, event)
 	}
 	if opts.createBinding {
 		event, err := newSessionBoundEvent(opts.conversationID, runID, opts.key, opts.sessionID, now)
 		if err != nil {
-			return model.Run{}, err
+			return preparedInboundRun{}, err
 		}
 		events = append(events, event)
 	}
@@ -616,7 +662,7 @@ func (r *Runtime) startInboundRun(ctx context.Context, opts inboundRunOptions) (
 		now,
 	)
 	if err != nil {
-		return model.Run{}, err
+		return preparedInboundRun{}, err
 	}
 	events = append(events, messageEvent)
 	if opts.sourceMessageID != "" {
@@ -632,13 +678,13 @@ func (r *Runtime) startInboundRun(ctx context.Context, opts inboundRunOptions) (
 			now,
 		)
 		if err != nil {
-			return model.Run{}, err
+			return preparedInboundRun{}, err
 		}
 		events = append(events, event)
 	}
 
 	if err := r.convStore.AppendEvents(ctx, events); err != nil {
-		return model.Run{}, err
+		return preparedInboundRun{}, err
 	}
 	if r.eventSink != nil {
 		_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
@@ -648,14 +694,22 @@ func (r *Runtime) startInboundRun(ctx context.Context, opts inboundRunOptions) (
 		})
 	}
 
-	return r.executeRunLoop(ctx, runLoopOpts{
-		runID:          runID,
-		conversationID: opts.conversationID,
-		agentID:        opts.agentID,
-		sessionID:      opts.sessionID,
-		objective:      opts.body,
-		workspaceRoot:  opts.workspaceRoot,
-	})
+	run, err := r.loadRun(ctx, runID)
+	if err != nil {
+		return preparedInboundRun{}, err
+	}
+
+	return preparedInboundRun{
+		run: run,
+		loopOpts: runLoopOpts{
+			runID:          runID,
+			conversationID: opts.conversationID,
+			agentID:        opts.agentID,
+			sessionID:      opts.sessionID,
+			objective:      opts.body,
+			workspaceRoot:  opts.workspaceRoot,
+		},
+	}, nil
 }
 
 func (r *Runtime) loadInboundReceiptRun(

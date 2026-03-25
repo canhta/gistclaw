@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/canhta/gistclaw/internal/conversations"
@@ -113,6 +114,8 @@ type Runtime struct {
 	teamDir             string
 	defaultSnapshot     model.ExecutionSnapshot
 	defaultSnapshotJSON []byte
+	asyncCtx            context.Context
+	asyncWG             sync.WaitGroup
 }
 
 func New(
@@ -137,6 +140,7 @@ func New(
 		},
 		contextWindowSize: 200000,
 		contexts:          newDefaultContextAssembler(db, cs, nil),
+		asyncCtx:          context.Background(),
 	}
 }
 
@@ -158,6 +162,18 @@ func (r *Runtime) SetDefaultExecutionSnapshot(snapshot model.ExecutionSnapshot) 
 	r.defaultSnapshot = snapshot
 	r.defaultSnapshotJSON = raw
 	return nil
+}
+
+func (r *Runtime) SetAsyncContext(ctx context.Context) {
+	if ctx == nil {
+		r.asyncCtx = context.Background()
+		return
+	}
+	r.asyncCtx = ctx
+}
+
+func (r *Runtime) WaitAsync() {
+	r.asyncWG.Wait()
 }
 
 func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
