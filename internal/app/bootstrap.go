@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -43,7 +44,10 @@ type App struct {
 }
 
 func Bootstrap(cfg Config) (*App, error) {
-	teamDir := resolveTeamDir(cfg)
+	teamDir, err := prepareTeamDir(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	db, err := storeWiring(cfg)
 	if err != nil {
@@ -128,13 +132,75 @@ func resolveTeamDir(cfg Config) string {
 	if cfg.WorkspaceRoot == "" {
 		return ""
 	}
+	return filepath.Join(cfg.WorkspaceRoot, ".gistclaw", "teams", "default")
+}
 
-	candidate := filepath.Join(cfg.WorkspaceRoot, "teams", "default")
-	info, err := os.Stat(candidate)
-	if err != nil || !info.IsDir() {
-		return ""
+func prepareTeamDir(cfg Config) (string, error) {
+	teamDir := resolveTeamDir(cfg)
+	if teamDir == "" || cfg.TeamDir != "" {
+		return teamDir, nil
 	}
-	return candidate
+
+	if info, err := os.Stat(teamDir); err == nil {
+		if !info.IsDir() {
+			return "", fmt.Errorf("bootstrap: workspace team dir %q is not a directory", teamDir)
+		}
+		return teamDir, nil
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("bootstrap: stat workspace team dir: %w", err)
+	}
+
+	sourceDir := filepath.Join(cfg.WorkspaceRoot, "teams", "default")
+	info, err := os.Stat(sourceDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("bootstrap: stat source team dir: %w", err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("bootstrap: source team dir %q is not a directory", sourceDir)
+	}
+	if err := copyDirectory(sourceDir, teamDir); err != nil {
+		return "", fmt.Errorf("bootstrap: seed workspace team dir: %w", err)
+	}
+	return teamDir, nil
+}
+
+func copyDirectory(srcDir, dstDir string) error {
+	return filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(srcDir, path)
+		if err != nil {
+			return fmt.Errorf("relative path: %w", err)
+		}
+		targetPath := filepath.Join(dstDir, relPath)
+
+		if d.IsDir() {
+			if err := os.MkdirAll(targetPath, 0o755); err != nil {
+				return fmt.Errorf("mkdir %s: %w", targetPath, err)
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return fmt.Errorf("unsupported team entry %q", path)
+		}
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+			return fmt.Errorf("mkdir %s: %w", filepath.Dir(targetPath), err)
+		}
+		if err := os.WriteFile(targetPath, data, 0o644); err != nil {
+			return fmt.Errorf("write %s: %w", targetPath, err)
+		}
+		return nil
+	})
 }
 
 // lookupDBSetting reads a single setting value from the database.

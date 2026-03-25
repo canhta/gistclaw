@@ -80,14 +80,94 @@ func TestLayoutDefinesBrutalistPrimitives(t *testing.T) {
 		".btn-primary {",
 		".btn-secondary {",
 		".btn-danger {",
+		".team-summary-head {",
+		".team-file-tools {",
+		".team-primary-actions {",
 		".badge {",
+		".team-utility-bar {",
+		".approval-filter-grid {",
+		".approval-card-actions {",
 		".choice-card {",
 		".pager {",
+		"event.submitter",
+		"window.confirm(message)",
 		"@media (max-width: 767px) {",
 		"border-radius: 0;",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("expected layout template to contain %q", want)
 		}
+	}
+}
+
+func TestCriticalTemplatesDefineConfirmationMessages(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string][]string{
+		"approvals.html": {
+			`data-confirm="Approve this approval ticket? This action resolves it immediately."`,
+			`data-confirm="Deny this approval ticket? This action resolves it immediately."`,
+		},
+		"control.html": {
+			`data-confirm="Send this operator message into the bound session?"`,
+			`data-confirm="Deactivate this route? External messages will stop flowing into the bound session."`,
+			`data-confirm="Retry this terminal delivery now?"`,
+		},
+		"memory.html": {
+			`data-confirm="Forget this memory item permanently?"`,
+			`data-confirm="Save this memory edit?"`,
+		},
+		"onboarding.html": {
+			`data-confirm="Bind this workspace for local operations?"`,
+			`data-confirm="Start this preview run now?"`,
+		},
+		"run_submit.html": {
+			`data-confirm="Start this run now?"`,
+		},
+		"session_detail.html": {
+			`data-confirm="Wake this session with a new operator message?"`,
+			`data-confirm="Retry this session delivery now?"`,
+		},
+		"settings.html": {
+			`data-confirm="Save these workspace settings?"`,
+			`data-confirm="Update the Telegram bot token?"`,
+		},
+		"team.html": {
+			`data-confirm="Add a new team member to the editor?"`,
+			`data-confirm="Import this team file into the editor? Unsaved changes in the current editor will be replaced."`,
+			`data-confirm="Remove {{.ID}} from this team? This stays in the editor until you save."`,
+			`data-confirm="Save this team to the workspace-owned runtime copy?"`,
+		},
+	}
+
+	for name, wants := range cases {
+		name := name
+		wants := wants
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			body, err := os.ReadFile(templatePath(t, name))
+			if err != nil {
+				t.Fatalf("read template: %v", err)
+			}
+			content := string(body)
+			for _, want := range wants {
+				if !strings.Contains(content, want) {
+					t.Fatalf("expected %s to contain %q", name, want)
+				}
+			}
+		})
+	}
+}
+
+func TestSessionDetailUsesSharedConfirmationHook(t *testing.T) {
+	t.Parallel()
+
+	body, err := os.ReadFile(templatePath(t, "session_detail.html"))
+	if err != nil {
+		t.Fatalf("read template: %v", err)
+	}
+	if !strings.Contains(string(body), "window.gistclawConfirmSubmission(form, event.submitter)") {
+		t.Fatal("expected session detail realtime submit flow to use the shared confirmation hook")
 	}
 }

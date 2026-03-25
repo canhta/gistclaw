@@ -7,8 +7,28 @@
 {{if .Error}}
   <section class="error">{{.Error}}</section>
 {{end}}
-<form class="page-stack" method="POST" action="/team">
+{{if .Notice}}
+  <section class="panel notice-panel">{{.Notice}}</section>
+{{end}}
+<form class="page-stack team-workbench" method="POST" action="/team" enctype="multipart/form-data">
+  <input type="hidden" name="agent_count" value="{{len .Agents}}">
   <section class="panel team-summary">
+    <div class="team-summary-head">
+      <div class="team-summary-intro">
+        <span class="field-label">Team File</span>
+        <p class="muted">Import or export the editable team definition without mixing those file operations into the primary editing actions.</p>
+      </div>
+      <div class="team-file-tools">
+        <a class="btn btn-ghost" href="/team/export">Export YAML</a>
+        <div class="team-import-controls">
+          <label for="import_file">Import YAML</label>
+          <div class="team-import-row">
+            <input class="input-file" id="import_file" name="import_file" type="file" accept=".yaml,.yml,text/yaml,application/yaml">
+            <button class="btn btn-secondary" type="submit" name="intent" value="import" data-confirm="Import this team file into the editor? Unsaved changes in the current editor will be replaced.">Import</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="team-summary-grid">
       <div class="field">
         <label for="name">Team Name</label>
@@ -23,41 +43,90 @@
         </select>
       </div>
     </div>
-    <p class="muted">The next run uses this team snapshot exactly as shown here. Historical runs keep their own bound execution snapshot.</p>
+    <div class="team-utility-bar">
+      <div class="team-utility-copy">
+        <span class="field-label">Workspace Runtime Copy</span>
+        <p class="muted">Saving writes the editable team for this workspace into <code>.gistclaw/teams/default</code>. Historical runs keep their own bound execution snapshot.</p>
+      </div>
+      <div class="team-primary-actions">
+        <button class="btn btn-secondary" type="submit" name="intent" value="add_member" data-confirm="Add a new team member to the editor?">Add Member</button>
+        <button class="btn btn-primary" type="submit" name="intent" value="save" data-confirm="Save this team to the workspace-owned runtime copy?">Save Team</button>
+      </div>
+    </div>
   </section>
 
   <section class="team-grid">
     {{range .Agents}}
+      {{$agent := .}}
       <article class="panel team-card">
         <div class="team-agent-head">
           <div>
             <div class="team-agent-name">{{.ID}}</div>
             <div class="mono subtle">{{if .IsFront}}front agent{{else}}specialist agent{{end}}</div>
           </div>
-          {{if .IsFront}}<span class="badge">front</span>{{end}}
+          <div class="team-card-actions">
+            {{if .IsFront}}<span class="badge">front</span>{{else}}<span class="badge badge-muted">specialist</span>{{end}}
+            <button class="btn btn-danger btn-compact" type="submit" name="intent" value="remove_member:{{.Index}}" data-confirm="Remove {{.ID}} from this team? This stays in the editor until you save.">
+              Remove
+            </button>
+          </div>
         </div>
-        <div class="field">
-          <label for="agent_{{.ID}}_role">Role</label>
-          <input id="agent_{{.ID}}_role" name="agent_{{.ID}}_role" type="text" value="{{.Role}}">
+        <div class="team-card-meta">
+          <span class="field-label">Soul File</span>
+          <span class="mono subtle">{{.SoulFile}}</span>
         </div>
-        <div class="field">
-          <label for="agent_{{.ID}}_tool_posture">Tool Posture</label>
-          <input id="agent_{{.ID}}_tool_posture" name="agent_{{.ID}}_tool_posture" type="text" value="{{.ToolPosture}}">
-        </div>
-        <div class="field">
-          <label for="agent_{{.ID}}_can_spawn">Can Spawn</label>
-          <input id="agent_{{.ID}}_can_spawn" name="agent_{{.ID}}_can_spawn" type="text" value="{{.CanSpawn}}">
-        </div>
-        <div class="field">
-          <label for="agent_{{.ID}}_can_message">Can Message</label>
-          <input id="agent_{{.ID}}_can_message" name="agent_{{.ID}}_can_message" type="text" value="{{.CanMessage}}">
+        <input type="hidden" name="agent_{{.Index}}_soul_file" value="{{.SoulFile}}">
+        <input type="hidden" name="agent_{{.Index}}_soul_extra_json" value="{{.SoulExtraJSON}}">
+        <div class="team-card-fields">
+          <div class="field">
+            <label for="agent_{{.Index}}_id">Agent ID</label>
+            <input id="agent_{{.Index}}_id" name="agent_{{.Index}}_id" type="text" value="{{.ID}}">
+          </div>
+          <div class="field">
+            <label for="agent_{{.Index}}_role">Role</label>
+            <input id="agent_{{.Index}}_role" name="agent_{{.Index}}_role" type="text" value="{{.Role}}">
+          </div>
+          <div class="field">
+            <label for="agent_{{.Index}}_tool_posture">Tool Posture</label>
+            <select id="agent_{{.Index}}_tool_posture" name="agent_{{.Index}}_tool_posture">
+              {{range .ToolPostureOptions}}
+                <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+              {{end}}
+            </select>
+          </div>
+          <div class="field team-link-group">
+            <span class="field-label">Can Spawn</span>
+            <div class="choice-chip-grid">
+              {{if .CanSpawnOptions}}
+                {{range .CanSpawnOptions}}
+                  <label class="choice-chip">
+                    <input type="checkbox" name="agent_{{$agent.Index}}_can_spawn" value="{{.Value}}"{{if .Selected}} checked{{end}}>
+                    <span>{{.Label}}</span>
+                  </label>
+                {{end}}
+              {{else}}
+                <span class="muted">No other agents available.</span>
+              {{end}}
+            </div>
+          </div>
+          <div class="field team-link-group">
+            <span class="field-label">Can Message</span>
+            <div class="choice-chip-grid">
+              {{if .CanMessageOptions}}
+                {{range .CanMessageOptions}}
+                  <label class="choice-chip">
+                    <input type="checkbox" name="agent_{{$agent.Index}}_can_message" value="{{.Value}}"{{if .Selected}} checked{{end}}>
+                    <span>{{.Label}}</span>
+                  </label>
+                {{end}}
+              {{else}}
+                <span class="muted">No other agents available.</span>
+              {{end}}
+            </div>
+          </div>
         </div>
       </article>
     {{end}}
-  </section>
-
-  <section class="button-row">
-    <button class="btn btn-primary" type="submit">Save Team</button>
   </section>
 </form>
 {{end}}

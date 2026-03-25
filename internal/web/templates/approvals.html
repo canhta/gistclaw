@@ -9,42 +9,49 @@
 {{end}}
 <section class="page-section">
   <div class="panel">
-    <form class="inline-form" method="GET" action="/approvals">
-      <input type="text" name="q" value="{{.Filters.Query}}" placeholder="Search ticket, run, tool, or path">
-      <label>
-        Status
-        <select name="status">
-          <option value="all" {{if or (eq .Filters.Status "") (eq .Filters.Status "all")}}selected{{end}}>All</option>
-          <option value="open" {{if eq .Filters.Status "open"}}selected{{end}}>Open</option>
-          <option value="pending" {{if eq .Filters.Status "pending"}}selected{{end}}>Pending</option>
-          <option value="expired" {{if eq .Filters.Status "expired"}}selected{{end}}>Expired</option>
-          <option value="approved" {{if eq .Filters.Status "approved"}}selected{{end}}>Approved</option>
-          <option value="denied" {{if eq .Filters.Status "denied"}}selected{{end}}>Denied</option>
-        </select>
-      </label>
-      <label>
-        Page Size
-        <select name="limit">
-          <option value="10" {{if eq .Filters.Limit 10}}selected{{end}}>10</option>
-          <option value="20" {{if eq .Filters.Limit 20}}selected{{end}}>20</option>
-          <option value="50" {{if eq .Filters.Limit 50}}selected{{end}}>50</option>
-        </select>
-      </label>
-      <button class="btn btn-secondary" type="submit">Filter</button>
-      <a class="btn btn-ghost" href="/approvals">Reset</a>
+    <form class="approval-filter-rail" method="GET" action="/approvals">
+      <div class="approval-filter-grid">
+        <div class="field approval-filter-search">
+          <label for="approval-query">Search</label>
+          <input id="approval-query" type="text" name="q" value="{{.Filters.Query}}" placeholder="Search ticket, run, tool, or path">
+        </div>
+        <div class="field">
+          <label for="approval-status">Status</label>
+          <select id="approval-status" name="status">
+            <option value="all" {{if or (eq .Filters.Status "") (eq .Filters.Status "all")}}selected{{end}}>All</option>
+            <option value="open" {{if eq .Filters.Status "open"}}selected{{end}}>Open</option>
+            <option value="pending" {{if eq .Filters.Status "pending"}}selected{{end}}>Pending</option>
+            <option value="expired" {{if eq .Filters.Status "expired"}}selected{{end}}>Expired</option>
+            <option value="approved" {{if eq .Filters.Status "approved"}}selected{{end}}>Approved</option>
+            <option value="denied" {{if eq .Filters.Status "denied"}}selected{{end}}>Denied</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="approval-limit">Page Size</label>
+          <select id="approval-limit" name="limit">
+            <option value="10" {{if eq .Filters.Limit 10}}selected{{end}}>10</option>
+            <option value="20" {{if eq .Filters.Limit 20}}selected{{end}}>20</option>
+            <option value="50" {{if eq .Filters.Limit 50}}selected{{end}}>50</option>
+          </select>
+        </div>
+        <div class="approval-filter-actions">
+          <button class="btn btn-secondary" type="submit">Filter</button>
+          <a class="btn btn-ghost" href="/approvals">Reset</a>
+        </div>
+      </div>
     </form>
   </div>
 </section>
 {{if .Approvals}}
 <section class="page-stack">
   {{range .Approvals}}
-    <article class="run-row {{.StatusClass}}">
+    <article class="run-row {{.StatusClass}} approval-card">
       <div class="mono">{{.ID}}</div>
       <div>
         <strong>{{.ToolName}}</strong>{{if .TargetPath}} &mdash; {{.TargetPath}}{{end}}
       </div>
       <div class="muted mono">run: {{.RunID}}</div>
-      <div class="button-row">
+      <div class="button-row approval-card-meta">
         <span class="run-status {{.StatusClass}}">{{.Status}}</span>
         {{if .ResolvedBy}}
           <span class="muted mono">by {{.ResolvedBy}}</span>
@@ -54,9 +61,9 @@
         {{end}}
       </div>
       {{if eq .Status "pending"}}
-        <form class="button-row" method="POST" action="/approvals/{{.ID}}/resolve">
-          <button class="btn btn-primary" type="submit" name="decision" value="approved">Approve</button>
-          <button class="btn btn-danger" type="submit" name="decision" value="denied">Deny</button>
+        <form class="button-row approval-card-actions" method="POST" action="/approvals/{{.ID}}/resolve">
+          <button class="btn btn-primary" type="submit" name="decision" value="approved" data-confirm="Approve this approval ticket? This action resolves it immediately.">Approve</button>
+          <button class="btn btn-danger" type="submit" name="decision" value="denied" data-confirm="Deny this approval ticket? This action resolves it immediately.">Deny</button>
         </form>
       {{end}}
     </article>

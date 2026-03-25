@@ -1,11 +1,14 @@
 package app
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/canhta/gistclaw/internal/teams"
 )
 
 // writeFile writes content to path, creating parent dirs as needed.
@@ -179,9 +182,91 @@ func TestResolveTeamDir_UsesWorkspaceDefaultWhenPresent(t *testing.T) {
 	cfg := Config{WorkspaceRoot: workspaceRoot}
 
 	got := resolveTeamDir(cfg)
-	want := filepath.Join(workspaceRoot, "teams", "default")
+	want := filepath.Join(workspaceRoot, ".gistclaw", "teams", "default")
 	if got != want {
 		t.Fatalf("expected resolved team dir %q, got %q", want, got)
+	}
+}
+
+func TestBootstrap_SeedsWorkspaceOwnedTeamDirFromWorkspaceDefault(t *testing.T) {
+	workspaceRoot := workspaceRootWithDefaultTeam(t)
+	cfg := Config{
+		DatabasePath:  ":memory:",
+		StateDir:      t.TempDir(),
+		WorkspaceRoot: workspaceRoot,
+	}
+
+	app, err := Bootstrap(cfg)
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	t.Cleanup(func() { _ = app.db.Close() })
+
+	workspaceTeamDir := filepath.Join(workspaceRoot, ".gistclaw", "teams", "default")
+	for _, name := range []string{"team.yaml", "assistant.soul.yaml", "patcher.soul.yaml"} {
+		if _, err := os.Stat(filepath.Join(workspaceTeamDir, name)); err != nil {
+			t.Fatalf("expected workspace-owned team file %q to exist: %v", name, err)
+		}
+	}
+
+	sourceCfg, err := teams.LoadConfig(filepath.Join(workspaceRoot, "teams", "default"))
+	if err != nil {
+		t.Fatalf("load source team: %v", err)
+	}
+	runtimeCfg, err := app.runtime.TeamConfig()
+	if err != nil {
+		t.Fatalf("load runtime team: %v", err)
+	}
+	if runtimeCfg.Name != sourceCfg.Name || runtimeCfg.FrontAgent != sourceCfg.FrontAgent {
+		t.Fatalf("expected workspace-owned team copy to match source, got %+v want %+v", runtimeCfg, sourceCfg)
+	}
+}
+
+func TestBootstrap_UsesWorkspaceOwnedTeamDirForEdits(t *testing.T) {
+	workspaceRoot := workspaceRootWithDefaultTeam(t)
+	cfg := Config{
+		DatabasePath:  ":memory:",
+		StateDir:      t.TempDir(),
+		WorkspaceRoot: workspaceRoot,
+	}
+
+	app, err := Bootstrap(cfg)
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	t.Cleanup(func() { _ = app.db.Close() })
+
+	runtimeCfg, err := app.runtime.TeamConfig()
+	if err != nil {
+		t.Fatalf("load runtime team: %v", err)
+	}
+	runtimeCfg.Name = "Workspace Operators"
+	runtimeCfg.Agents[0].Role = "workspace owner"
+
+	if err := app.runtime.UpdateTeam(context.Background(), runtimeCfg); err != nil {
+		t.Fatalf("update runtime team: %v", err)
+	}
+
+	sourceCfg, err := teams.LoadConfig(filepath.Join(workspaceRoot, "teams", "default"))
+	if err != nil {
+		t.Fatalf("reload source team: %v", err)
+	}
+	if sourceCfg.Name != "default" {
+		t.Fatalf("expected checked-in workspace team to stay unchanged, got %q", sourceCfg.Name)
+	}
+	if sourceCfg.Agents[0].Role != "assistant" {
+		t.Fatalf("expected checked-in workspace soul to stay unchanged, got %q", sourceCfg.Agents[0].Role)
+	}
+
+	workspaceCfg, err := teams.LoadConfig(filepath.Join(workspaceRoot, ".gistclaw", "teams", "default"))
+	if err != nil {
+		t.Fatalf("reload workspace-owned team: %v", err)
+	}
+	if workspaceCfg.Name != "Workspace Operators" {
+		t.Fatalf("expected workspace-owned team to receive edit, got %q", workspaceCfg.Name)
+	}
+	if workspaceCfg.Agents[0].Role != "workspace owner" {
+		t.Fatalf("expected workspace-owned soul edit, got %q", workspaceCfg.Agents[0].Role)
 	}
 }
 

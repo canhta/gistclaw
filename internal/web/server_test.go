@@ -2,14 +2,17 @@ package web
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -265,6 +268,7 @@ func TestRuns(t *testing.T) {
 func TestApprovals(t *testing.T) {
 	t.Run("page renders approvals", func(t *testing.T) {
 		h := newServerHarness(t)
+		h.insertApprovalAt(t, "run-approval-ui", "apply_patch", "internal/web/templates/team.html", "pending", "", "2026-03-25 10:00:00")
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/approvals", nil)
@@ -274,8 +278,18 @@ func TestApprovals(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rr.Code)
 		}
-		if !strings.Contains(rr.Body.String(), "Approvals") {
-			t.Fatalf("expected approvals page, got:\n%s", rr.Body.String())
+		body := rr.Body.String()
+		for _, want := range []string{
+			"Approvals",
+			`class="approval-filter-grid"`,
+			`class="approval-filter-actions"`,
+			`approval-card-actions`,
+			`data-confirm="Approve this approval ticket? This action resolves it immediately."`,
+			`data-confirm="Deny this approval ticket? This action resolves it immediately."`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected approvals page to contain %q:\n%s", want, body)
+			}
 		}
 	})
 
@@ -360,9 +374,37 @@ func TestTeam(t *testing.T) {
 			"reviewer",
 			"operator_facing",
 			"workspace_write",
+			`name="agent_0_tool_posture"`,
+			`name="agent_0_can_spawn"`,
+			`name="agent_0_can_message"`,
+			`name="agent_0_id"`,
+			`name="agent_0_soul_file"`,
+			`type="checkbox"`,
+			`<option value="read_heavy"`,
+			`value="reviewer" checked`,
+			`Add Member`,
+			`/team/export`,
+			`name="import_file"`,
+			`type="hidden" name="agent_count" value="3"`,
+			`class="team-summary-head"`,
+			`class="team-file-tools"`,
+			`class="team-primary-actions"`,
+			`class="team-utility-bar"`,
+			`data-confirm="Add a new team member to the editor?"`,
+			`data-confirm="Import this team file into the editor? Unsaved changes in the current editor will be replaced."`,
+			`data-confirm="Remove assistant from this team? This stays in the editor until you save."`,
+			`data-confirm="Save this team to the workspace-owned runtime copy?"`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
+			}
+		}
+		for _, unwanted := range []string{
+			`name="agent_0_can_spawn" type="text"`,
+			`name="agent_0_can_message" type="text"`,
+		} {
+			if strings.Contains(body, unwanted) {
+				t.Fatalf("expected team page to avoid free-text relationship fields %q:\n%s", unwanted, body)
 			}
 		}
 	})
@@ -371,22 +413,32 @@ func TestTeam(t *testing.T) {
 		h := newServerHarness(t)
 		cookie := hostAdminSessionCookie(t, h, "/team")
 
-		form := url.Values{
-			"name":                         {"Platform Crew"},
-			"front_agent":                  {"reviewer"},
-			"agent_assistant_role":         {"operator-facing coordinator"},
-			"agent_assistant_tool_posture": {"operator_facing"},
-			"agent_assistant_can_spawn":    {"patcher,reviewer"},
-			"agent_assistant_can_message":  {"patcher,reviewer"},
-			"agent_patcher_role":           {"workspace write specialist"},
-			"agent_patcher_tool_posture":   {"workspace_write"},
-			"agent_patcher_can_spawn":      {""},
-			"agent_patcher_can_message":    {"assistant,reviewer"},
-			"agent_reviewer_role":          {"diff reviewer"},
-			"agent_reviewer_tool_posture":  {"read_heavy"},
-			"agent_reviewer_can_spawn":     {""},
-			"agent_reviewer_can_message":   {"assistant,patcher"},
+		cfg, err := teams.LoadConfig(h.teamDir)
+		if err != nil {
+			t.Fatalf("load config: %v", err)
 		}
+		form := teamFormValues(cfg)
+		form.Set("intent", "save")
+		form.Set("name", "Platform Crew")
+		form.Set("front_agent", "reviewer")
+		form.Set("agent_0_role", "operator-facing coordinator")
+		form.Set("agent_0_tool_posture", "operator_facing")
+		form.Del("agent_0_can_spawn")
+		form.Add("agent_0_can_spawn", "patcher")
+		form.Add("agent_0_can_spawn", "reviewer")
+		form.Del("agent_0_can_message")
+		form.Add("agent_0_can_message", "patcher")
+		form.Add("agent_0_can_message", "reviewer")
+		form.Set("agent_1_role", "workspace write specialist")
+		form.Set("agent_1_tool_posture", "workspace_write")
+		form.Del("agent_1_can_message")
+		form.Add("agent_1_can_message", "assistant")
+		form.Add("agent_1_can_message", "reviewer")
+		form.Set("agent_2_role", "diff reviewer")
+		form.Set("agent_2_tool_posture", "read_heavy")
+		form.Del("agent_2_can_message")
+		form.Add("agent_2_can_message", "assistant")
+		form.Add("agent_2_can_message", "patcher")
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/team", strings.NewReader(form.Encode()))
@@ -418,6 +470,15 @@ func TestTeam(t *testing.T) {
 		if spec.FrontAgent != "reviewer" {
 			t.Fatalf("expected updated front agent, got %q", spec.FrontAgent)
 		}
+		if got := spec.Agents[0].CanSpawn; len(got) != 2 || got[0] != "patcher" || got[1] != "reviewer" {
+			t.Fatalf("expected assistant can_spawn [patcher reviewer], got %#v", got)
+		}
+		if got := spec.Agents[1].CanSpawn; len(got) != 0 {
+			t.Fatalf("expected patcher can_spawn empty, got %#v", got)
+		}
+		if got := spec.Agents[2].CanMessage; len(got) != 2 || got[0] != "assistant" || got[1] != "patcher" {
+			t.Fatalf("expected reviewer can_message [assistant patcher], got %#v", got)
+		}
 
 		run, err := h.rt.Start(context.Background(), runtime.StartRun{
 			ConversationID: "conv-team-refresh",
@@ -431,6 +492,229 @@ func TestTeam(t *testing.T) {
 		}
 		if run.TeamID != "Platform Crew" {
 			t.Fatalf("expected refreshed runtime team id, got %q", run.TeamID)
+		}
+	})
+
+	t.Run("add member reshapes editor without persisting until save", func(t *testing.T) {
+		h := newServerHarness(t)
+		cookie := hostAdminSessionCookie(t, h, "/team")
+
+		cfg, err := teams.LoadConfig(h.teamDir)
+		if err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+		form := teamFormValues(cfg)
+		form.Set("intent", "add_member")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/team", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://example.com")
+		req.Host = "example.com"
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		for _, want := range []string{
+			"New member added. Save Team to apply the change.",
+			`name="agent_3_id"`,
+			`value="agent_1"`,
+			`value="agent_1.soul.yaml"`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected add-member response to contain %q:\n%s", want, body)
+			}
+		}
+
+		reloaded, err := teams.LoadConfig(h.teamDir)
+		if err != nil {
+			t.Fatalf("reload config: %v", err)
+		}
+		if len(reloaded.Agents) != 3 {
+			t.Fatalf("expected add-member action to keep stored team unchanged until save, got %d agents", len(reloaded.Agents))
+		}
+	})
+
+	t.Run("remove member blocks deleting current front agent without reassignment", func(t *testing.T) {
+		h := newServerHarness(t)
+		cookie := hostAdminSessionCookie(t, h, "/team")
+
+		cfg, err := teams.LoadConfig(h.teamDir)
+		if err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+		form := teamFormValues(cfg)
+		form.Set("intent", "remove_member")
+		form.Set("remove_agent_index", "0")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/team", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://example.com")
+		req.Host = "example.com"
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), "Choose another front agent before removing assistant.") {
+			t.Fatalf("expected front-agent guardrail, got:\n%s", rr.Body.String())
+		}
+	})
+
+	t.Run("remove member with reassigned front agent updates editor state", func(t *testing.T) {
+		h := newServerHarness(t)
+		cookie := hostAdminSessionCookie(t, h, "/team")
+
+		cfg, err := teams.LoadConfig(h.teamDir)
+		if err != nil {
+			t.Fatalf("load config: %v", err)
+		}
+		form := teamFormValues(cfg)
+		form.Set("front_agent", "patcher")
+		form.Set("intent", "remove_member")
+		form.Set("remove_agent_index", "0")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/team", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://example.com")
+		req.Host = "example.com"
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		if strings.Contains(body, `name="agent_0_id" value="assistant"`) {
+			t.Fatalf("expected removed assistant to be absent from unsaved editor state:\n%s", body)
+		}
+		for _, want := range []string{
+			"Member removed. Save Team to apply the change.",
+			`type="hidden" name="agent_count" value="2"`,
+			`<option value="patcher" selected>`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected remove-member response to contain %q:\n%s", want, body)
+			}
+		}
+	})
+
+	t.Run("team export downloads editable team file", func(t *testing.T) {
+		h := newServerHarness(t)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/team/export", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if got := rr.Header().Get("Content-Disposition"); !strings.Contains(got, "attachment") || !strings.Contains(got, "team.yaml") {
+			t.Fatalf("expected attachment header for team export, got %q", got)
+		}
+		for _, want := range []string{
+			"name: Repo Task Team",
+			"role: operator-facing coordinator",
+			"tool_posture: operator_facing",
+			"soul_file: coordinator.soul.yaml",
+		} {
+			if !strings.Contains(rr.Body.String(), want) {
+				t.Fatalf("expected export to contain %q:\n%s", want, rr.Body.String())
+			}
+		}
+	})
+
+	t.Run("team import loads editable team file into the editor", func(t *testing.T) {
+		h := newServerHarness(t)
+		cookie := hostAdminSessionCookie(t, h, "/team")
+
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		if err := writer.WriteField("intent", "import"); err != nil {
+			t.Fatalf("write intent field: %v", err)
+		}
+		part, err := writer.CreateFormFile("import_file", "team.yaml")
+		if err != nil {
+			t.Fatalf("create import file: %v", err)
+		}
+		imported := `
+name: Imported Crew
+front_agent: reviewer
+agents:
+  - id: reviewer
+    soul_file: reviewer.soul.yaml
+    role: imported reviewer
+    tool_posture: read_heavy
+    can_spawn: [assistant]
+    can_message: [assistant, patcher]
+  - id: patcher
+    soul_file: patcher.soul.yaml
+    role: imported patcher
+    tool_posture: workspace_write
+    can_spawn: []
+    can_message: [reviewer]
+  - id: assistant
+    soul_file: coordinator.soul.yaml
+    role: imported coordinator
+    tool_posture: operator_facing
+    can_spawn: [patcher, reviewer]
+    can_message: [patcher, reviewer]
+  - id: researcher
+    role: imported researcher
+    tool_posture: read_heavy
+    can_spawn: []
+    can_message: [assistant]
+`
+		if _, err := part.Write([]byte(imported)); err != nil {
+			t.Fatalf("write import file: %v", err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatalf("close multipart writer: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/team", &body)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("Origin", "http://example.com")
+		req.Host = "example.com"
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		html := rr.Body.String()
+		for _, want := range []string{
+			"Imported file loaded. Save Team to apply the change.",
+			"Imported Crew",
+			`name="agent_3_id"`,
+			`value="researcher"`,
+			`value="researcher.soul.yaml"`,
+			`<option value="reviewer" selected>`,
+			`value="assistant" checked`,
+		} {
+			if !strings.Contains(html, want) {
+				t.Fatalf("expected import response to contain %q:\n%s", want, html)
+			}
+		}
+
+		reloaded, err := teams.LoadConfig(h.teamDir)
+		if err != nil {
+			t.Fatalf("reload config: %v", err)
+		}
+		if reloaded.Name != "Repo Task Team" || len(reloaded.Agents) != 3 {
+			t.Fatalf("expected import to keep stored team unchanged until save, got %+v", reloaded)
 		}
 	})
 }
@@ -2350,6 +2634,34 @@ agents:
 	writeTestFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: workspace write specialist\ntool_posture: workspace_write\n")
 	writeTestFile(t, filepath.Join(dir, "reviewer.soul.yaml"), "role: diff reviewer\ntool_posture: read_heavy\n")
 	return dir
+}
+
+func teamFormValues(cfg teams.Config) url.Values {
+	form := url.Values{
+		"name":        {cfg.Name},
+		"front_agent": {cfg.FrontAgent},
+		"agent_count": {strconv.Itoa(len(cfg.Agents))},
+	}
+	for idx, agent := range cfg.Agents {
+		prefix := "agent_" + strconv.Itoa(idx) + "_"
+		form.Set(prefix+"id", agent.ID)
+		form.Set(prefix+"soul_file", agent.SoulFile)
+		form.Set(prefix+"role", agent.Role)
+		form.Set(prefix+"tool_posture", agent.ToolPosture)
+		rawExtra, err := json.Marshal(agent.Soul.Extra)
+		if err == nil {
+			form.Set(prefix+"soul_extra_json", string(rawExtra))
+		} else {
+			form.Set(prefix+"soul_extra_json", "{}")
+		}
+		for _, value := range agent.CanSpawn {
+			form.Add(prefix+"can_spawn", value)
+		}
+		for _, value := range agent.CanMessage {
+			form.Add(prefix+"can_message", value)
+		}
+	}
+	return form
 }
 
 func writeTestFile(t *testing.T, path, content string) {

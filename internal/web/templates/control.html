@@ -86,12 +86,12 @@
           <td>
             <form class="inline-form" method="POST" action="/control/routes/{{.ID}}/messages">
               <input type="text" name="body" placeholder="Message bound session">
-              <button class="btn btn-secondary" type="submit">Send</button>
+              <button class="btn btn-secondary" type="submit" data-confirm="Send this operator message into the bound session?">Send</button>
             </form>
           </td>
           <td>
             <form class="inline-form" method="POST" action="/control/routes/{{.ID}}/deactivate">
-              <button class="btn btn-danger" type="submit">Deactivate</button>
+              <button class="btn btn-danger" type="submit" data-confirm="Deactivate this route? External messages will stop flowing into the bound session.">Deactivate</button>
             </form>
           </td>
         </tr>
@@ -119,10 +119,10 @@
       <div class="directory-card-actions">
         <form class="stack-sm" method="POST" action="/control/routes/{{.ID}}/messages">
           <input type="text" name="body" placeholder="Message bound session">
-          <button class="btn btn-secondary" type="submit">Send</button>
+          <button class="btn btn-secondary" type="submit" data-confirm="Send this operator message into the bound session?">Send</button>
         </form>
         <form method="POST" action="/control/routes/{{.ID}}/deactivate">
-          <button class="btn btn-danger" type="submit">Deactivate</button>
+          <button class="btn btn-danger" type="submit" data-confirm="Deactivate this route? External messages will stop flowing into the bound session.">Deactivate</button>
         </form>
       </div>
     </article>
@@ -171,7 +171,7 @@
           <td>
             {{if eq .Status "terminal"}}
             <form class="inline-form" method="POST" action="/control/deliveries/{{.ID}}/retry">
-              <button class="btn btn-secondary" type="submit">Retry</button>
+              <button class="btn btn-secondary" type="submit" data-confirm="Retry this terminal delivery now?">Retry</button>
             </form>
             {{else}}
             <span class="muted">No action</span>
@@ -206,7 +206,7 @@
       <div class="directory-card-actions">
         {{if eq .Status "terminal"}}
         <form method="POST" action="/control/deliveries/{{.ID}}/retry">
-          <button class="btn btn-secondary" type="submit">Retry</button>
+          <button class="btn btn-secondary" type="submit" data-confirm="Retry this terminal delivery now?">Retry</button>
         </form>
         {{else}}
         <span class="muted">No action</span>

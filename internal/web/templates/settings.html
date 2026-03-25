@@ -28,7 +28,7 @@
       <span class="field-help">0 = unlimited &mdash; rolling 24-hour usage: ${{printf "%.4f" .RollingCostUSD}}</span>
     </div>
     <div class="button-row">
-      <button class="btn btn-primary" type="submit">Save</button>
+      <button class="btn btn-primary" type="submit" data-confirm="Save these workspace settings?">Save</button>
     </div>
   </form>
   </div>
@@ -53,7 +53,7 @@
         <input class="input-wide" type="password" name="telegram_bot_token" placeholder="Paste new token to update" autocomplete="off">
       </div>
       <div class="button-row">
-        <button class="btn btn-secondary" type="submit">Update Telegram Token</button>
+        <button class="btn btn-secondary" type="submit" data-confirm="Update the Telegram bot token?">Update Telegram Token</button>
       </div>
     </form>
   </div>

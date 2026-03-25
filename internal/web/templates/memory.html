@@ -11,7 +11,7 @@
     <div class="mono">{{.Confirm.Content}}</div>
     <form class="button-row" method="POST" action="/memory/{{.Confirm.ID}}/forget">
       <input type="hidden" name="confirm" value="yes">
-      <button class="btn btn-danger" type="submit">Yes, forget it</button>
+      <button class="btn btn-danger" type="submit" data-confirm="Forget this memory item permanently?">Yes, forget it</button>
       <a class="btn btn-ghost" href="/memory">Cancel</a>
     </form>
   </div>
@@ -79,11 +79,11 @@
           <td>
             <div class="button-row">
             <form class="inline-form" method="POST" action="/memory/{{.ID}}/forget">
-              <button class="btn btn-danger btn-compact" type="submit">Forget</button>
+              <button class="btn btn-danger btn-compact" type="submit" data-confirm="Forget this memory item permanently?">Forget</button>
             </form>
             <form class="inline-form" method="POST" action="/memory/{{.ID}}/edit">
               <input type="text" name="value" value="{{.Content}}">
-              <button class="btn btn-secondary btn-compact" type="submit">Save</button>
+              <button class="btn btn-secondary btn-compact" type="submit" data-confirm="Save this memory edit?">Save</button>
             </form>
             </div>
           </td>
@@ -116,11 +116,11 @@
       </div>
       <div class="directory-card-actions">
         <form method="POST" action="/memory/{{.ID}}/forget">
-          <button class="btn btn-danger btn-compact" type="submit">Forget</button>
+          <button class="btn btn-danger btn-compact" type="submit" data-confirm="Forget this memory item permanently?">Forget</button>
         </form>
         <form class="stack-sm" method="POST" action="/memory/{{.ID}}/edit">
           <input type="text" name="value" value="{{.Content}}">
-          <button class="btn btn-secondary btn-compact" type="submit">Save</button>
+          <button class="btn btn-secondary btn-compact" type="submit" data-confirm="Save this memory edit?">Save</button>
         </form>
       </div>
     </article>

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/canhta/gistclaw/internal/model"
 	"go.yaml.in/yaml/v4"
@@ -29,6 +30,22 @@ type SoulSpec struct {
 	Role        string         `yaml:"role,omitempty"`
 	ToolPosture string         `yaml:"tool_posture"`
 	Extra       map[string]any `yaml:",inline"`
+}
+
+type editableFile struct {
+	Name       string              `yaml:"name"`
+	FrontAgent string              `yaml:"front_agent"`
+	Agents     []editableFileAgent `yaml:"agents"`
+}
+
+type editableFileAgent struct {
+	ID          string         `yaml:"id"`
+	SoulFile    string         `yaml:"soul_file,omitempty"`
+	Role        string         `yaml:"role,omitempty"`
+	ToolPosture string         `yaml:"tool_posture"`
+	CanSpawn    []string       `yaml:"can_spawn"`
+	CanMessage  []string       `yaml:"can_message"`
+	SoulExtra   map[string]any `yaml:"soul_extra,omitempty"`
 }
 
 func LoadConfig(teamDir string) (Config, error) {
@@ -73,6 +90,15 @@ func WriteConfig(teamDir string, cfg Config) error {
 	if teamDir == "" {
 		return fmt.Errorf("team: team dir is required")
 	}
+	oldSoulFiles := referencedSoulFiles(teamDir)
+	for i := range cfg.Agents {
+		if cfg.Agents[i].SoulFile == "" {
+			cfg.Agents[i].SoulFile = SuggestedSoulFile(cfg.Agents[i].ID)
+		}
+		if cfg.Agents[i].Soul.Extra == nil {
+			cfg.Agents[i].Soul.Extra = map[string]any{}
+		}
+	}
 	spec := Spec{
 		Name:       cfg.Name,
 		FrontAgent: cfg.FrontAgent,
@@ -81,9 +107,6 @@ func WriteConfig(teamDir string, cfg Config) error {
 	for _, agent := range cfg.Agents {
 		if agent.ID == "" {
 			return fmt.Errorf("team: agent id is required")
-		}
-		if agent.SoulFile == "" {
-			return fmt.Errorf("team: agent %q is missing soul file", agent.ID)
 		}
 		spec.Agents = append(spec.Agents, AgentSpec{
 			ID:         agent.ID,
@@ -115,8 +138,99 @@ func WriteConfig(teamDir string, cfg Config) error {
 			return fmt.Errorf("team: write soul for %q: %w", agent.ID, err)
 		}
 	}
+	for _, soulFile := range oldSoulFiles {
+		if !currentSoulFile(spec.Agents, soulFile) {
+			if err := os.Remove(filepath.Join(teamDir, soulFile)); err != nil && !os.IsNotExist(err) {
+				return fmt.Errorf("team: remove orphan soul %q: %w", soulFile, err)
+			}
+		}
+	}
 
 	return nil
+}
+
+func ExportEditableYAML(cfg Config) ([]byte, error) {
+	file := editableFile{
+		Name:       cfg.Name,
+		FrontAgent: cfg.FrontAgent,
+		Agents:     make([]editableFileAgent, 0, len(cfg.Agents)),
+	}
+	for _, agent := range cfg.Agents {
+		fileAgent := editableFileAgent{
+			ID:          agent.ID,
+			SoulFile:    agent.SoulFile,
+			Role:        agent.Role,
+			ToolPosture: agent.ToolPosture,
+			CanSpawn:    append([]string(nil), agent.CanSpawn...),
+			CanMessage:  append([]string(nil), agent.CanMessage...),
+		}
+		if len(agent.Soul.Extra) > 0 {
+			fileAgent.SoulExtra = cloneSoulExtra(agent.Soul.Extra)
+		}
+		file.Agents = append(file.Agents, fileAgent)
+	}
+	raw, err := yaml.Marshal(&file)
+	if err != nil {
+		return nil, fmt.Errorf("team: marshal editable yaml: %w", err)
+	}
+	return raw, nil
+}
+
+func LoadEditableYAML(data []byte) (Config, error) {
+	var file editableFile
+	if err := yaml.Unmarshal(data, &file); err != nil {
+		return Config{}, fmt.Errorf("team: parse editable yaml: %w", err)
+	}
+
+	cfg := Config{
+		Name:       file.Name,
+		FrontAgent: file.FrontAgent,
+		Agents:     make([]AgentConfig, 0, len(file.Agents)),
+	}
+	for _, agent := range file.Agents {
+		if agent.ID == "" {
+			return Config{}, fmt.Errorf("team: agent id is required")
+		}
+		soulFile := agent.SoulFile
+		if soulFile == "" {
+			soulFile = SuggestedSoulFile(agent.ID)
+		}
+		if agent.ToolPosture == "" {
+			return Config{}, fmt.Errorf("team: agent %q: tool_posture is required", agent.ID)
+		}
+		soul := SoulSpec{
+			Role:        agent.Role,
+			ToolPosture: agent.ToolPosture,
+			Extra:       cloneSoulExtra(agent.SoulExtra),
+		}
+		cfg.Agents = append(cfg.Agents, AgentConfig{
+			ID:          agent.ID,
+			SoulFile:    soulFile,
+			Role:        agent.Role,
+			ToolPosture: agent.ToolPosture,
+			CanSpawn:    append([]string(nil), agent.CanSpawn...),
+			CanMessage:  append([]string(nil), agent.CanMessage...),
+			Soul:        soul,
+		})
+	}
+
+	spec := Spec{
+		Name:       cfg.Name,
+		FrontAgent: cfg.FrontAgent,
+		Agents:     make([]AgentSpec, 0, len(cfg.Agents)),
+	}
+	for _, agent := range cfg.Agents {
+		spec.Agents = append(spec.Agents, AgentSpec{
+			ID:         agent.ID,
+			SoulFile:   agent.SoulFile,
+			CanSpawn:   append([]string(nil), agent.CanSpawn...),
+			CanMessage: append([]string(nil), agent.CanMessage...),
+		})
+	}
+	if err := validateSpec(&spec); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
 }
 
 func (c Config) Snapshot() (model.ExecutionSnapshot, error) {
@@ -173,4 +287,72 @@ func writeSoulSpec(path string, soul SoulSpec) error {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
 	return nil
+}
+
+func SuggestedSoulFile(agentID string) string {
+	normalized := strings.ToLower(strings.TrimSpace(agentID))
+	if normalized == "" {
+		normalized = "agent"
+	}
+	var b strings.Builder
+	lastDash := false
+	for _, r := range normalized {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastDash = false
+		case r == '-' || r == '_':
+			b.WriteRune(r)
+			lastDash = false
+		default:
+			if !lastDash {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+	}
+	base := strings.Trim(b.String(), "-_")
+	if base == "" {
+		base = "agent"
+	}
+	return base + ".soul.yaml"
+}
+
+func referencedSoulFiles(teamDir string) []string {
+	data, err := os.ReadFile(filepath.Join(teamDir, "team.yaml"))
+	if err != nil {
+		return nil
+	}
+	spec, err := LoadSpec(data)
+	if err != nil {
+		return nil
+	}
+	files := make([]string, 0, len(spec.Agents))
+	for _, agent := range spec.Agents {
+		if agent.SoulFile == "" {
+			continue
+		}
+		files = append(files, agent.SoulFile)
+	}
+	return files
+}
+
+func currentSoulFile(agents []AgentSpec, soulFile string) bool {
+	for _, agent := range agents {
+		if agent.SoulFile == soulFile {
+			return true
+		}
+	}
+	return false
+}
+
+func cloneSoulExtra(extra map[string]any) map[string]any {
+	if len(extra) == 0 {
+		return map[string]any{}
+	}
+	cloned := make(map[string]any, len(extra))
+	for key, value := range extra {
+		cloned[key] = value
+	}
+	return cloned
 }
