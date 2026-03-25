@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,6 +97,43 @@ func TestOutboundDispatcher_NotifySendsToMetaAPI(t *testing.T) {
 	textBlock, _ := body["text"].(map[string]any)
 	if textBlock == nil || textBlock["body"] == "" {
 		t.Errorf("text.body: missing or empty")
+	}
+}
+
+func TestOutboundDispatcher_ApprovalRequestedSendsToMetaAPI(t *testing.T) {
+	var capturedBodies []map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		capturedBodies = append(capturedBodies, body)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"messages":[{"id":"wamid.approval"}]}`))
+	}))
+	defer srv.Close()
+
+	db, cs := setupDB(t)
+	d := newWithBaseURL("phone-123", "test-token", db, cs, srv.URL)
+
+	if err := d.Notify(context.Background(), "+1234567890", model.ReplayDelta{
+		RunID:       "run-approval",
+		Kind:        "approval_requested",
+		PayloadJSON: []byte(`{"approval_id":"ticket-1","tool_name":"shell_exec"}`),
+		OccurredAt:  time.Now(),
+	}, "dedupe-approval"); err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+
+	if len(capturedBodies) != 1 {
+		t.Fatalf("expected 1 API call, got %d", len(capturedBodies))
+	}
+	body := capturedBodies[0]
+	textBlock, _ := body["text"].(map[string]any)
+	if textBlock == nil {
+		t.Fatalf("expected text payload, got %+v", body)
+	}
+	text, _ := textBlock["body"].(string)
+	if text == "" || !strings.Contains(strings.ToLower(text), "approval") {
+		t.Fatalf("expected approval text, got %q", text)
 	}
 }
 

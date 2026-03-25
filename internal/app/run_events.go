@@ -63,16 +63,11 @@ func (n *connectorRouteNotifier) Emit(ctx context.Context, runID string, evt mod
 	if n == nil || n.db == nil {
 		return nil
 	}
-	if evt.Kind != "turn_delta" && evt.Kind != "turn_completed" {
+	if evt.Kind != "turn_delta" && evt.Kind != "turn_completed" && evt.Kind != "approval_requested" {
 		return nil
 	}
 
-	sessionID, err := n.loadRunSessionID(ctx, runID)
-	if err != nil || sessionID == "" {
-		return err
-	}
-
-	route, err := sessions.NewService(n.db, nil).LoadRouteBySession(ctx, sessionID)
+	route, err := n.loadRouteForEvent(ctx, runID, evt.Kind)
 	if err == sessions.ErrSessionRouteNotFound {
 		return nil
 	}
@@ -93,21 +88,73 @@ func (n *connectorRouteNotifier) Emit(ctx context.Context, runID string, evt mod
 	return connector.Notify(ctx, route.ExternalID, evt, "")
 }
 
-func (n *connectorRouteNotifier) loadRunSessionID(ctx context.Context, runID string) (string, error) {
+func (n *connectorRouteNotifier) loadRouteForEvent(ctx context.Context, runID, kind string) (model.SessionRoute, error) {
+	sessionID, conversationID, err := n.loadRunRouteContext(ctx, runID)
+	if err != nil {
+		return model.SessionRoute{}, err
+	}
+
+	sessionSvc := sessions.NewService(n.db, nil)
+	if sessionID != "" {
+		route, err := sessionSvc.LoadRouteBySession(ctx, sessionID)
+		if err == nil {
+			return route, nil
+		}
+		if err != sessions.ErrSessionRouteNotFound {
+			return model.SessionRoute{}, err
+		}
+	}
+	if kind != "approval_requested" || conversationID == "" {
+		return model.SessionRoute{}, sessions.ErrSessionRouteNotFound
+	}
+
+	var route model.SessionRoute
+	err = n.db.RawDB().QueryRowContext(ctx,
+		`SELECT bind.id, bind.session_id, bind.thread_id, bind.connector_id, bind.account_id, bind.external_id,
+		        bind.status, bind.created_at
+		 FROM session_bindings bind
+		 JOIN sessions sess ON sess.id = bind.session_id
+		 WHERE bind.conversation_id = ? AND bind.status = 'active'
+		 ORDER BY CASE sess.role WHEN 'front' THEN 0 ELSE 1 END,
+		          bind.created_at DESC,
+		          bind.id DESC
+		 LIMIT 1`,
+		conversationID,
+	).Scan(
+		&route.ID,
+		&route.SessionID,
+		&route.ThreadID,
+		&route.ConnectorID,
+		&route.AccountID,
+		&route.ExternalID,
+		&route.Status,
+		&route.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return model.SessionRoute{}, sessions.ErrSessionRouteNotFound
+	}
+	if err != nil {
+		return model.SessionRoute{}, err
+	}
+	return route, nil
+}
+
+func (n *connectorRouteNotifier) loadRunRouteContext(ctx context.Context, runID string) (string, string, error) {
 	var sessionID string
+	var conversationID string
 	err := n.db.RawDB().QueryRowContext(ctx,
-		`SELECT COALESCE(session_id, '')
+		`SELECT COALESCE(session_id, ''), COALESCE(conversation_id, '')
 		 FROM runs
 		 WHERE id = ?`,
 		runID,
-	).Scan(&sessionID)
+	).Scan(&sessionID, &conversationID)
 	if err == sql.ErrNoRows {
-		return "", nil
+		return "", "", nil
 	}
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return sessionID, nil
+	return sessionID, conversationID, nil
 }
 
 var _ model.RunEventSink = (*runEventFanout)(nil)

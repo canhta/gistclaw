@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -551,7 +552,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 				return model.Run{}, err
 			}
 			runCtxEvents = append(runCtxEvents, toolOutcome.events...)
-			if toolOutcome.pausedForApproval {
+			if toolOutcome.paused {
 				return r.loadRun(ctx, runID)
 			}
 			continue
@@ -617,8 +618,8 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 }
 
 type toolCallOutcome struct {
-	events            []model.Event
-	pausedForApproval bool
+	events []model.Event
+	paused bool
 }
 
 func (r *Runtime) executeToolCalls(
@@ -643,7 +644,7 @@ func (r *Runtime) executeToolCalls(
 	for _, tc := range toolCalls {
 		tool, ok := r.tools.Get(tc.ToolName)
 		if !ok {
-			event, err := r.recordToolCall(ctx, conversationID, runID, sessionID, workspaceRoot, agent, tc, nil, model.DecisionDeny, "tool not found", "")
+			event, _, err := r.recordToolCall(ctx, conversationID, runID, sessionID, workspaceRoot, agent, tc, nil, model.DecisionDeny, "tool not found", "")
 			if err != nil {
 				return outcome, err
 			}
@@ -654,11 +655,15 @@ func (r *Runtime) executeToolCalls(
 		toolDecision := policy.DecideCall(agent, runProfile, tool.Spec(), tc.InputJSON)
 		switch toolDecision.Mode {
 		case model.DecisionAllow:
-			event, err := r.recordToolCall(ctx, conversationID, runID, sessionID, workspaceRoot, agent, tc, tool, model.DecisionAllow, "", "")
+			event, result, err := r.recordToolCall(ctx, conversationID, runID, sessionID, workspaceRoot, agent, tc, tool, model.DecisionAllow, "", "")
 			if err != nil {
 				return outcome, err
 			}
 			outcome.events = append(outcome.events, event)
+			if tc.ToolName == "session_spawn" && spawnedRunStillActive(result) {
+				outcome.paused = true
+				return outcome, nil
+			}
 		case model.DecisionAsk:
 			ticket, err := tools.CreateTicket(ctx, r.store, model.ApprovalRequest{
 				RunID:      runID,
@@ -672,10 +677,10 @@ func (r *Runtime) executeToolCalls(
 			if err := r.appendApprovalRequested(ctx, conversationID, runID, tc, ticket, toolDecision.Reason); err != nil {
 				return outcome, err
 			}
-			outcome.pausedForApproval = true
+			outcome.paused = true
 			return outcome, nil
 		default:
-			event, err := r.recordToolCall(ctx, conversationID, runID, sessionID, workspaceRoot, agent, tc, tool, model.DecisionDeny, toolDecision.Reason, "")
+			event, _, err := r.recordToolCall(ctx, conversationID, runID, sessionID, workspaceRoot, agent, tc, tool, model.DecisionDeny, toolDecision.Reason, "")
 			if err != nil {
 				return outcome, err
 			}
@@ -734,7 +739,7 @@ func (r *Runtime) recordToolCall(
 	decision model.DecisionMode,
 	denyReason string,
 	approvalID string,
-) (model.Event, error) {
+) (model.Event, model.ToolResult, error) {
 	result := model.ToolResult{}
 	if decision == model.DecisionAllow {
 		if tool == nil {
@@ -761,7 +766,7 @@ func (r *Runtime) recordToolCall(
 
 	outputJSON, err := json.Marshal(result)
 	if err != nil {
-		return model.Event{}, fmt.Errorf("marshal tool result: %w", err)
+		return model.Event{}, model.ToolResult{}, fmt.Errorf("marshal tool result: %w", err)
 	}
 	payload, err := json.Marshal(map[string]any{
 		"tool_call_id": tc.ID,
@@ -772,7 +777,7 @@ func (r *Runtime) recordToolCall(
 		"approval_id":  approvalID,
 	})
 	if err != nil {
-		return model.Event{}, fmt.Errorf("marshal tool_call_recorded payload: %w", err)
+		return model.Event{}, model.ToolResult{}, fmt.Errorf("marshal tool_call_recorded payload: %w", err)
 	}
 	evt := model.Event{
 		ID:             generateID(),
@@ -782,9 +787,9 @@ func (r *Runtime) recordToolCall(
 		PayloadJSON:    payload,
 	}
 	if err := r.convStore.AppendEvent(ctx, evt); err != nil {
-		return model.Event{}, fmt.Errorf("journal tool_call_recorded: %w", err)
+		return model.Event{}, model.ToolResult{}, fmt.Errorf("journal tool_call_recorded: %w", err)
 	}
-	return evt, nil
+	return evt, result, nil
 }
 
 func (r *Runtime) appendApprovalRequested(
@@ -795,6 +800,7 @@ func (r *Runtime) appendApprovalRequested(
 	ticket model.ApprovalTicket,
 	reason string,
 ) error {
+	now := time.Now().UTC()
 	payload, err := json.Marshal(map[string]any{
 		"approval_id":  ticket.ID,
 		"tool_call_id": tc.ID,
@@ -806,14 +812,24 @@ func (r *Runtime) appendApprovalRequested(
 	if err != nil {
 		return fmt.Errorf("marshal approval_requested payload: %w", err)
 	}
-	if err := r.convStore.AppendEvent(ctx, model.Event{
+	evt := model.Event{
 		ID:             generateID(),
 		ConversationID: conversationID,
 		RunID:          runID,
 		Kind:           "approval_requested",
 		PayloadJSON:    payload,
-	}); err != nil {
+		CreatedAt:      now,
+	}
+	if err := r.convStore.AppendEvent(ctx, evt); err != nil {
 		return fmt.Errorf("journal approval_requested: %w", err)
+	}
+	if r.eventSink != nil {
+		_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
+			RunID:       runID,
+			Kind:        "approval_requested",
+			PayloadJSON: payload,
+			OccurredAt:  now,
+		})
 	}
 	return nil
 }
@@ -871,6 +887,120 @@ func (r *Runtime) loadApprovalToolCallID(ctx context.Context, runID, approvalID 
 		return "", fmt.Errorf("iterate approval events: %w", err)
 	}
 	return "", nil
+}
+
+func spawnedRunStillActive(result model.ToolResult) bool {
+	if strings.TrimSpace(result.Output) == "" {
+		return false
+	}
+	var payload struct {
+		Status model.RunStatus `json:"status"`
+	}
+	if err := json.Unmarshal([]byte(result.Output), &payload); err != nil {
+		return false
+	}
+	switch payload.Status {
+	case model.RunStatusPending, model.RunStatusActive, model.RunStatusNeedsApproval:
+		return true
+	default:
+		return false
+	}
+}
+
+func isTerminalRunStatus(status model.RunStatus) bool {
+	switch status {
+	case model.RunStatusCompleted, model.RunStatusInterrupted, model.RunStatusFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+func (r *Runtime) childTerminalMessage(ctx context.Context, run model.Run) (string, error) {
+	output, err := r.latestAssistantMessage(ctx, run.SessionID)
+	if err != nil {
+		return "", err
+	}
+	output = strings.TrimSpace(output)
+
+	switch run.Status {
+	case model.RunStatusCompleted:
+		if output != "" {
+			return fmt.Sprintf("%s completed: %s", run.AgentID, output), nil
+		}
+		return fmt.Sprintf("%s completed.", run.AgentID), nil
+	case model.RunStatusInterrupted:
+		if output != "" {
+			return fmt.Sprintf("%s was interrupted: %s", run.AgentID, output), nil
+		}
+		return fmt.Sprintf("%s was interrupted.", run.AgentID), nil
+	case model.RunStatusFailed:
+		if output != "" {
+			return fmt.Sprintf("%s failed: %s", run.AgentID, output), nil
+		}
+		return fmt.Sprintf("%s failed.", run.AgentID), nil
+	default:
+		return "", nil
+	}
+}
+
+func (r *Runtime) resumeParentAfterChildTerminal(ctx context.Context, child model.Run) error {
+	if child.ParentRunID == "" || !isTerminalRunStatus(child.Status) {
+		return nil
+	}
+
+	parent, err := r.loadRun(ctx, child.ParentRunID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	if isTerminalRunStatus(parent.Status) {
+		return nil
+	}
+
+	workerSession, err := sessions.NewService(r.store, r.convStore).LoadSession(ctx, child.SessionID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(workerSession.ControllerSessionID) == "" {
+		return nil
+	}
+
+	body, err := r.childTerminalMessage(ctx, child)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(body) != "" {
+		if _, err := r.appendSessionMessage(
+			ctx,
+			child.ConversationID,
+			parent.ID,
+			workerSession.ControllerSessionID,
+			workerSession.ID,
+			model.MessageAnnounce,
+			body,
+			model.SessionMessageProvenance{
+				Kind:            model.MessageProvenanceInterSession,
+				SourceSessionID: workerSession.ID,
+				SourceRunID:     child.ID,
+			},
+		); err != nil {
+			return err
+		}
+	}
+
+	_, err = r.executeRunLoop(ctx, runLoopOpts{
+		runID:             parent.ID,
+		conversationID:    parent.ConversationID,
+		agentID:           parent.AgentID,
+		sessionID:         parent.SessionID,
+		objective:         parent.Objective,
+		workspaceRoot:     parent.WorkspaceRoot,
+		verificationAgent: false,
+	})
+	return err
 }
 
 func combineConversationContext(base []model.Event, extra []model.Event) []model.Event {
@@ -1163,10 +1293,10 @@ func (r *Runtime) ResolveApproval(ctx context.Context, ticketID, decision string
 			return err
 		}
 		tool, _ := r.tools.Get(ticket.ToolName)
-		if _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.WorkspaceRoot, agent, call, tool, model.DecisionAllow, "", ticket.ID); err != nil {
+		if _, _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.WorkspaceRoot, agent, call, tool, model.DecisionAllow, "", ticket.ID); err != nil {
 			return err
 		}
-		_, err = r.executeRunLoop(ctx, runLoopOpts{
+		resumed, err := r.executeRunLoop(ctx, runLoopOpts{
 			runID:             run.ID,
 			conversationID:    run.ConversationID,
 			agentID:           run.AgentID,
@@ -1175,13 +1305,16 @@ func (r *Runtime) ResolveApproval(ctx context.Context, ticketID, decision string
 			workspaceRoot:     run.WorkspaceRoot,
 			verificationAgent: false,
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		return r.resumeParentAfterChildTerminal(ctx, resumed)
 	case "denied":
 		agent, err := r.agentProfileForRun(ctx, run.ID, run.AgentID)
 		if err != nil {
 			return err
 		}
-		if _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.WorkspaceRoot, agent, call, nil, model.DecisionDeny, "approval denied", ticket.ID); err != nil {
+		if _, _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.WorkspaceRoot, agent, call, nil, model.DecisionDeny, "approval denied", ticket.ID); err != nil {
 			return err
 		}
 		if err := r.convStore.AppendEvent(ctx, model.Event{
@@ -1192,7 +1325,11 @@ func (r *Runtime) ResolveApproval(ctx context.Context, ticketID, decision string
 		}); err != nil {
 			return fmt.Errorf("journal run_interrupted: %w", err)
 		}
-		return nil
+		interrupted, err := r.loadRun(ctx, run.ID)
+		if err != nil {
+			return err
+		}
+		return r.resumeParentAfterChildTerminal(ctx, interrupted)
 	default:
 		return fmt.Errorf("runtime: invalid approval decision %q", decision)
 	}

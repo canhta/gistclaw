@@ -243,6 +243,45 @@ func TestOutbound_FinishedEventDelivers(t *testing.T) {
 	}
 }
 
+func TestOutbound_ApprovalRequestedEventDelivers(t *testing.T) {
+	db := setupOutboundDB(t)
+	cs := conversations.NewConversationStore(db)
+
+	var delivered atomic.Int32
+	var messageText atomic.Value
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "sendMessage") {
+			delivered.Add(1)
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
+			}
+			messageText.Store(r.Form.Get("text"))
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":5}}`))
+		}
+	}))
+	defer srv.Close()
+
+	dispatcher := NewOutboundDispatcher("testtoken", db, cs)
+	dispatcher.bot.apiBase = srv.URL + "/bot"
+
+	if err := dispatcher.Notify(context.Background(), "445", model.ReplayDelta{
+		RunID:       "run-approval",
+		Kind:        "approval_requested",
+		PayloadJSON: []byte(`{"approval_id":"ticket-1","tool_name":"shell_exec","target_path":"openclaw-sim/index.html"}`),
+	}, "run-approval-key"); err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+
+	if delivered.Load() == 0 {
+		t.Fatal("expected sendMessage for approval_requested event")
+	}
+	got, _ := messageText.Load().(string)
+	if !strings.Contains(strings.ToLower(got), "approval") {
+		t.Fatalf("expected approval message text, got %q", got)
+	}
+}
+
 func TestOutbound_TurnDeltasFlushAsTelegramDrafts(t *testing.T) {
 	db := setupOutboundDB(t)
 	cs := conversations.NewConversationStore(db)

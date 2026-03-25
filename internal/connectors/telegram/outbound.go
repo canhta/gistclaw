@@ -23,11 +23,11 @@ import (
 
 // outboundAllowedKinds is the set of event kinds that trigger an outbound message.
 var outboundAllowedKinds = map[string]bool{
-	"run_started":     true,
-	"run_blocked":     true,
-	"run_completed":   true,
-	"run_interrupted": true,
-	"approval_needed": true,
+	"run_started":        true,
+	"run_blocked":        true,
+	"run_completed":      true,
+	"run_interrupted":    true,
+	"approval_requested": true,
 }
 
 // OutboundDispatcher writes outbound_intents and delivers them via sendMessage.
@@ -367,11 +367,28 @@ func buildMessage(delta model.ReplayDelta) string {
 		return fmt.Sprintf("Run %s completed.", delta.RunID)
 	case "run_interrupted":
 		return fmt.Sprintf("Run %s was interrupted.", delta.RunID)
-	case "approval_needed":
-		return fmt.Sprintf("Run %s needs approval. Visit the web UI to review.", delta.RunID)
+	case "approval_requested":
+		return buildApprovalMessage(delta)
 	default:
 		return fmt.Sprintf("Run %s: %s", delta.RunID, delta.Kind)
 	}
+}
+
+func buildApprovalMessage(delta model.ReplayDelta) string {
+	var payload struct {
+		ToolName   string `json:"tool_name"`
+		TargetPath string `json:"target_path"`
+	}
+	_ = json.Unmarshal(delta.PayloadJSON, &payload)
+
+	message := fmt.Sprintf("Run %s needs approval", delta.RunID)
+	if strings.TrimSpace(payload.ToolName) != "" {
+		message += " for " + payload.ToolName
+	}
+	if strings.TrimSpace(payload.TargetPath) != "" {
+		message += " (" + payload.TargetPath + ")"
+	}
+	return message + ". Review it in the web UI."
 }
 
 func generateIntentID() string {

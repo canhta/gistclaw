@@ -27,11 +27,11 @@ const (
 
 // outboundAllowedKinds mirrors the same filter used by the Telegram connector.
 var outboundAllowedKinds = map[string]bool{
-	"run_started":     true,
-	"run_blocked":     true,
-	"run_completed":   true,
-	"run_interrupted": true,
-	"approval_needed": true,
+	"run_started":        true,
+	"run_blocked":        true,
+	"run_completed":      true,
+	"run_interrupted":    true,
+	"approval_requested": true,
 }
 
 // OutboundDispatcher delivers outbound notifications via the WhatsApp Cloud API.
@@ -244,7 +244,7 @@ func buildMessage(delta model.ReplayDelta) string {
 		return fmt.Sprintf("Run %s completed.", delta.RunID)
 	case "run_interrupted":
 		return fmt.Sprintf("Run %s was interrupted.", delta.RunID)
-	case "approval_needed":
+	case "approval_requested":
 		return fmt.Sprintf("Run %s needs approval. Visit the web UI to review.", delta.RunID)
 	default:
 		return fmt.Sprintf("Run %s: %s", delta.RunID, delta.Kind)

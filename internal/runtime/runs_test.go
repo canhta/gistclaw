@@ -269,6 +269,241 @@ func TestRunEngine_SessionSpawnToolCreatesChildRun(t *testing.T) {
 	}
 }
 
+func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testing.T) {
+	db, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+
+	cs := conversations.NewConversationStore(db)
+	mem := memory.NewStore(db, cs)
+	reg, closer, err := tools.BuildRegistry(context.Background(), tools.BuildOptions{})
+	if err != nil {
+		t.Fatalf("BuildRegistry failed: %v", err)
+	}
+	if closer != nil {
+		t.Cleanup(func() { _ = closer.Close() })
+	}
+
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:       "call-spawn",
+						ToolName: "session_spawn",
+						InputJSON: []byte(`{
+							"agent_id":"patcher",
+							"prompt":"Create created.txt in the workspace."
+						}`),
+					},
+				},
+				InputTokens:  4,
+				OutputTokens: 6,
+			},
+			{
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:        "call-shell",
+						ToolName:  "shell_exec",
+						InputJSON: []byte(`{"command":"touch created.txt"}`),
+					},
+				},
+				InputTokens:  5,
+				OutputTokens: 7,
+			},
+			{Content: "Created file.", InputTokens: 6, OutputTokens: 8, StopReason: "end_turn"},
+			{Content: "QA can review now.", InputTokens: 7, OutputTokens: 9, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
+		Spawn: rt.SpawnTool,
+	})
+
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID: "default",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:      "assistant",
+				Capabilities: []model.AgentCapability{model.CapReadHeavy, model.CapSpawn},
+				ToolProfile:  "read_heavy",
+				CanSpawn:     []string{"patcher"},
+			},
+			"patcher": {
+				AgentID:      "patcher",
+				Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
+				ToolProfile:  "workspace_write",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	workspaceRoot := t.TempDir()
+	parent, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Coordinate the delivery workflow.",
+		WorkspaceRoot: workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+	if parent.Status != model.RunStatusActive {
+		t.Fatalf("expected parent run to stay active while child waits on approval, got %s", parent.Status)
+	}
+	if len(prov.Requests) != 2 {
+		t.Fatalf("expected 2 provider requests before approval, got %d", len(prov.Requests))
+	}
+
+	var completedEvents int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM events WHERE run_id = ? AND kind = 'run_completed'",
+		parent.ID,
+	).Scan(&completedEvents); err != nil {
+		t.Fatalf("query parent completion events: %v", err)
+	}
+	if completedEvents != 0 {
+		t.Fatalf("expected parent run to stay incomplete before approval, got %d completion events", completedEvents)
+	}
+
+	var childID string
+	if err := db.RawDB().QueryRow(
+		"SELECT id FROM runs WHERE parent_run_id = ? ORDER BY created_at ASC LIMIT 1",
+		parent.ID,
+	).Scan(&childID); err != nil {
+		t.Fatalf("query child run: %v", err)
+	}
+
+	var ticketID string
+	if err := db.RawDB().QueryRow(
+		"SELECT id FROM approvals WHERE run_id = ? AND status = 'pending' ORDER BY created_at ASC LIMIT 1",
+		childID,
+	).Scan(&ticketID); err != nil {
+		t.Fatalf("query child approval: %v", err)
+	}
+
+	if err := rt.ResolveApproval(context.Background(), ticketID, "approved"); err != nil {
+		t.Fatalf("ResolveApproval approved: %v", err)
+	}
+
+	parent, err = rt.loadRun(context.Background(), parent.ID)
+	if err != nil {
+		t.Fatalf("reload parent run: %v", err)
+	}
+	if parent.Status != model.RunStatusCompleted {
+		t.Fatalf("expected parent run completed after child approval, got %s", parent.Status)
+	}
+
+	child, err := rt.loadRun(context.Background(), childID)
+	if err != nil {
+		t.Fatalf("reload child run: %v", err)
+	}
+	if child.Status != model.RunStatusCompleted {
+		t.Fatalf("expected child run completed after approval, got %s", child.Status)
+	}
+
+	if _, err := os.Stat(filepath.Join(workspaceRoot, "created.txt")); err != nil {
+		t.Fatalf("expected approved child command to create file: %v", err)
+	}
+
+	if len(prov.Requests) != 4 {
+		t.Fatalf("expected 4 provider requests after child completion resumes parent, got %d", len(prov.Requests))
+	}
+
+	var sawWorkerResult bool
+	for _, evt := range prov.Requests[3].ConversationCtx {
+		if evt.Kind != "session_message_added" {
+			continue
+		}
+		var payload struct {
+			Body string `json:"body"`
+		}
+		if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
+			t.Fatalf("unmarshal resumed parent mailbox event: %v", err)
+		}
+		if strings.Contains(payload.Body, "Created file.") {
+			sawWorkerResult = true
+			break
+		}
+	}
+	if !sawWorkerResult {
+		t.Fatalf("expected resumed parent context to include child result, got %+v", prov.Requests[3].ConversationCtx)
+	}
+}
+
+func TestRunEngine_ApprovalRequestedEmitsReplayDelta(t *testing.T) {
+	db, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+
+	cs := conversations.NewConversationStore(db)
+	mem := memory.NewStore(db, cs)
+	reg, closer, err := tools.BuildRegistry(context.Background(), tools.BuildOptions{})
+	if err != nil {
+		t.Fatalf("BuildRegistry failed: %v", err)
+	}
+	if closer != nil {
+		t.Cleanup(func() { _ = closer.Close() })
+	}
+	sink := &recordingReplaySink{}
+	prov := NewMockProvider([]GenerateResult{
+		{
+			ToolCalls: []model.ToolCallRequest{
+				{ID: "call-shell", ToolName: "shell_exec", InputJSON: []byte(`{"command":"touch created.txt"}`)},
+			},
+			StopReason: "tool_calls",
+		},
+	}, nil)
+	rt := New(db, cs, reg, mem, prov, sink)
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-approval-replay",
+		AgentID:        "patcher",
+		Objective:      "mutate shell",
+		WorkspaceRoot:  t.TempDir(),
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{
+			TeamID: "default",
+			Agents: map[string]model.AgentProfile{
+				"patcher": {
+					AgentID:      "patcher",
+					Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
+					ToolProfile:  "workspace_write",
+				},
+			},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if run.Status != model.RunStatusNeedsApproval {
+		t.Fatalf("expected needs_approval, got %s", run.Status)
+	}
+
+	for _, evt := range sink.events {
+		if evt.Kind == "approval_requested" {
+			return
+		}
+	}
+	t.Fatalf("expected replay sink to emit approval_requested, got %+v", sink.events)
+}
+
 func TestRunEngine_ContinueAndResumeLoadRun(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(
