@@ -90,6 +90,14 @@ func TestRuns(t *testing.T) {
 		h := newServerHarness(t)
 		h.insertRun(t, "run-detail", "conv-1", "review the repo", "completed")
 		h.insertEvent(t, "evt-1", "conv-1", "run-detail", "run_started")
+		h.insertEventWithPayload(
+			t,
+			"evt-2",
+			"conv-1",
+			"run-detail",
+			"turn_completed",
+			[]byte(`{"content":"Draft the rollout plan.","input_tokens":12,"output_tokens":8}`),
+		)
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/runs/run-detail", nil)
@@ -101,7 +109,14 @@ func TestRuns(t *testing.T) {
 		}
 
 		body := rr.Body.String()
-		for _, want := range []string{"run-detail", "run_started"} {
+		for _, want := range []string{
+			"run-detail",
+			"run_started",
+			"Draft the rollout plan.",
+			`id="run-live-output"`,
+			`/runs/run-detail/events`,
+			`new EventSource(streamURL)`,
+		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
 			}
@@ -538,6 +553,39 @@ func TestSSE(t *testing.T) {
 		t.Fatalf("close first client: %v", err)
 	}
 	waitForSubscribers(t, h.broadcaster, "run-sse", 0)
+}
+
+func TestSSEPayloadsAreStructuredJSON(t *testing.T) {
+	h := newServerHarness(t)
+	h.insertRun(t, "run-sse-json", "conv-sse-json", "watch events", "active")
+
+	ts := httptest.NewServer(h.server)
+	defer ts.Close()
+
+	resp, reader := subscribeSSE(t, ts.URL+"/runs/run-sse-json/events")
+	defer resp.Body.Close()
+
+	payload := []byte(`{"text":"Hel"}`)
+	if err := h.broadcaster.Emit(context.Background(), "run-sse-json", model.ReplayDelta{
+		RunID:       "run-sse-json",
+		Kind:        "turn_delta",
+		PayloadJSON: payload,
+		OccurredAt:  time.Unix(1711267200, 0).UTC(),
+	}); err != nil {
+		t.Fatalf("emit turn_delta: %v", err)
+	}
+
+	event := readSSEEvent(t, reader)
+	if got := event["kind"]; got != "turn_delta" {
+		t.Fatalf("expected kind turn_delta, got %#v", got)
+	}
+	rawPayload, ok := event["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected structured payload object, got %#v", event["payload"])
+	}
+	if got := rawPayload["text"]; got != "Hel" {
+		t.Fatalf("expected payload text %q, got %#v", "Hel", got)
+	}
 }
 
 func TestSessionAPI(t *testing.T) {
@@ -2073,6 +2121,19 @@ func (h *serverHarness) insertEvent(t *testing.T, eventID, conversationID, runID
 	}
 }
 
+func (h *serverHarness) insertEventWithPayload(t *testing.T, eventID, conversationID, runID, kind string, payload []byte) {
+	t.Helper()
+
+	_, err := h.db.RawDB().Exec(
+		`INSERT INTO events (id, conversation_id, run_id, kind, payload_json, created_at)
+		 VALUES (?, ?, ?, ?, ?, datetime('now'))`,
+		eventID, conversationID, runID, kind, payload,
+	)
+	if err != nil {
+		t.Fatalf("insert event with payload: %v", err)
+	}
+}
+
 func (h *serverHarness) startFrontSession(t *testing.T, prompt string) model.Run {
 	t.Helper()
 
@@ -2141,6 +2202,31 @@ func assertEventContains(t *testing.T, reader *bufio.Reader, want string) {
 	}
 
 	t.Fatalf("did not receive SSE line containing %q", want)
+}
+
+func readSSEEvent(t *testing.T, reader *bufio.Reader) map[string]any {
+	t.Helper()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			t.Fatalf("read sse line: %v", err)
+		}
+		if !strings.HasPrefix(line, "data: ") {
+			continue
+		}
+
+		payloadLine := strings.TrimPrefix(strings.TrimSpace(line), "data: ")
+		var event map[string]any
+		if err := json.Unmarshal([]byte(payloadLine), &event); err != nil {
+			t.Fatalf("decode sse event: %v", err)
+		}
+		return event
+	}
+
+	t.Fatal("did not receive SSE event")
+	return nil
 }
 
 func waitForSubscribers(t *testing.T, broadcaster *SSEBroadcaster, runID string, want int) {

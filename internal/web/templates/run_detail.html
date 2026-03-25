@@ -3,14 +3,174 @@
   <h1>Run Detail</h1>
   <div class="mono">{{.RunID}}</div>
   <div class="muted">{{.Status}}</div>
-  {{if .Events}}
-    {{range .Events}}
-      <article class="run-row">
-        <div>{{.Kind}}</div>
-      </article>
-    {{end}}
-  {{else}}
-    <p class="muted">No events recorded yet.</p>
-  {{end}}
 </section>
+<section class="panel">
+  <h2 class="section-title">Assistant Output</h2>
+  <p id="run-live-status" class="muted">Watching for live turn updates.</p>
+  <div id="run-live-output" data-stream-url="{{.StreamURL}}">
+    <div id="run-turns">
+      {{if .Turns}}
+        {{range .Turns}}
+          <article class="run-row">
+            <div class="muted">Completed turn</div>
+            <pre class="run-output-text">{{.Content}}</pre>
+          </article>
+        {{end}}
+      {{else}}
+        <p id="run-turns-empty" class="muted">No assistant output yet.</p>
+      {{end}}
+    </div>
+    <article id="run-live-draft" class="run-row" hidden>
+      <div class="muted">Streaming turn</div>
+      <pre id="run-live-text" class="run-output-text"></pre>
+    </article>
+  </div>
+</section>
+<section class="panel">
+  <h2 class="section-title">Events</h2>
+  <div id="run-events">
+    {{if .Events}}
+      {{range .Events}}
+        <article class="run-row">
+          <div>{{.Kind}}</div>
+        </article>
+      {{end}}
+    {{else}}
+      <p class="muted">No events recorded yet.</p>
+    {{end}}
+  </div>
+</section>
+<script>
+(() => {
+  const root = document.getElementById("run-live-output");
+  if (!root || !window.EventSource) {
+    return;
+  }
+
+  const streamURL = root.dataset.streamUrl;
+  if (!streamURL) {
+    return;
+  }
+
+  const status = document.getElementById("run-live-status");
+  const turns = document.getElementById("run-turns");
+  const turnsEmpty = document.getElementById("run-turns-empty");
+  const liveDraft = document.getElementById("run-live-draft");
+  const liveText = document.getElementById("run-live-text");
+  const events = document.getElementById("run-events");
+  let draft = "";
+
+  function appendTurn(content) {
+    if (!content || !turns) {
+      return;
+    }
+    if (turnsEmpty) {
+      turnsEmpty.remove();
+    }
+    const card = document.createElement("article");
+    card.className = "run-row";
+    const label = document.createElement("div");
+    label.className = "muted";
+    label.textContent = "Completed turn";
+    const body = document.createElement("pre");
+    body.className = "run-output-text";
+    body.textContent = content;
+    card.appendChild(label);
+    card.appendChild(body);
+    turns.appendChild(card);
+  }
+
+  function appendEvent(kind) {
+    if (!events || !kind || kind === "turn_delta") {
+      return;
+    }
+    const row = document.createElement("article");
+    row.className = "run-row";
+    const body = document.createElement("div");
+    body.textContent = kind;
+    row.appendChild(body);
+    events.appendChild(row);
+  }
+
+  function clearDraft() {
+    draft = "";
+    if (liveText) {
+      liveText.textContent = "";
+    }
+    if (liveDraft) {
+      liveDraft.hidden = true;
+    }
+  }
+
+  const source = new EventSource(streamURL);
+  source.onmessage = (message) => {
+    let event;
+    try {
+      event = JSON.parse(message.data);
+    } catch (_err) {
+      return;
+    }
+
+    if (!event || !event.kind) {
+      return;
+    }
+
+    if (event.kind === "turn_delta") {
+      if (!event.payload || typeof event.payload.text !== "string" || !event.payload.text) {
+        return;
+      }
+      draft += event.payload.text;
+      if (liveText) {
+        liveText.textContent = draft;
+      }
+      if (liveDraft) {
+        liveDraft.hidden = false;
+      }
+      if (status) {
+        status.textContent = "Streaming assistant output...";
+      }
+      return;
+    }
+
+    appendEvent(event.kind);
+
+    if (event.kind === "turn_completed") {
+      const content = event.payload && typeof event.payload.content === "string" && event.payload.content
+        ? event.payload.content
+        : draft;
+      if (content) {
+        appendTurn(content);
+      }
+      clearDraft();
+      if (status) {
+        status.textContent = "Latest turn completed.";
+      }
+      return;
+    }
+
+    if (event.kind === "run_completed") {
+      clearDraft();
+      if (status) {
+        status.textContent = "Run completed.";
+      }
+      source.close();
+      return;
+    }
+
+    if (event.kind === "run_failed" || event.kind === "run_interrupted") {
+      clearDraft();
+      if (status) {
+        status.textContent = "Run stopped before completion.";
+      }
+      source.close();
+    }
+  };
+
+  source.onerror = () => {
+    if (status) {
+      status.textContent = "Reconnecting to live updates...";
+    }
+  };
+})();
+</script>
 {{end}}

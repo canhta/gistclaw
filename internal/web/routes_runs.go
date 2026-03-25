@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
+
+	"github.com/canhta/gistclaw/internal/model"
 )
 
 type runListItem struct {
@@ -21,13 +24,20 @@ type runsPageData struct {
 }
 
 type runDetailPageData struct {
-	RunID  string
-	Status string
-	Events []runEventView
+	RunID     string
+	Status    string
+	StreamURL string
+	Turns     []runTurnView
+	Events    []runEventView
 }
 
 type runEventView struct {
 	Kind      string
+	CreatedAt time.Time
+}
+
+type runTurnView struct {
+	Content   string
 	CreatedAt time.Time
 }
 
@@ -92,18 +102,48 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	events := make([]runEventView, 0, len(replayRun.Events))
+	turns := make([]runTurnView, 0, len(replayRun.Events))
 	for _, evt := range replayRun.Events {
 		events = append(events, runEventView{
 			Kind:      evt.Kind,
 			CreatedAt: evt.CreatedAt,
 		})
+		if evt.Kind != "turn_completed" {
+			continue
+		}
+		content, ok := turnContent(evt.PayloadJSON)
+		if !ok {
+			continue
+		}
+		turns = append(turns, runTurnView{
+			Content:   content,
+			CreatedAt: evt.CreatedAt,
+		})
 	}
 
 	s.renderTemplate(w, "Run Detail", "run_detail_body", runDetailPageData{
-		RunID:  replayRun.RunID,
-		Status: string(replayRun.Status),
-		Events: events,
+		RunID:     replayRun.RunID,
+		Status:    string(replayRun.Status),
+		StreamURL: "/runs/" + url.PathEscape(replayRun.RunID) + "/events",
+		Turns:     turns,
+		Events:    events,
 	})
+}
+
+func turnContent(payload []byte) (string, bool) {
+	if len(payload) == 0 {
+		return "", false
+	}
+	var decoded struct {
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		return "", false
+	}
+	if decoded.Content == "" {
+		return "", false
+	}
+	return decoded.Content, true
 }
 
 // handleRunDismiss marks an interrupted run as dismissed so it no longer
@@ -144,7 +184,7 @@ func (s *Server) handleRunEvents(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case evt := <-sub:
-			payload, err := json.Marshal(evt)
+			payload, err := marshalReplayDelta(evt)
 			if err != nil {
 				continue
 			}
@@ -160,4 +200,23 @@ func (s *Server) handleRunEvents(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+func marshalReplayDelta(evt model.ReplayDelta) ([]byte, error) {
+	type replayDeltaEnvelope struct {
+		RunID      string          `json:"run_id"`
+		Kind       string          `json:"kind"`
+		Payload    json.RawMessage `json:"payload,omitempty"`
+		OccurredAt time.Time       `json:"occurred_at"`
+	}
+
+	envelope := replayDeltaEnvelope{
+		RunID:      evt.RunID,
+		Kind:       evt.Kind,
+		OccurredAt: evt.OccurredAt,
+	}
+	if len(evt.PayloadJSON) > 0 {
+		envelope.Payload = json.RawMessage(evt.PayloadJSON)
+	}
+	return json.Marshal(envelope)
 }

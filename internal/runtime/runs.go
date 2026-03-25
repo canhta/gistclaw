@@ -431,9 +431,10 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 
 		if r.eventSink != nil {
 			_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
-				RunID:      runID,
-				Kind:       "turn_completed",
-				OccurredAt: time.Now().UTC(),
+				RunID:       runID,
+				Kind:        "turn_completed",
+				PayloadJSON: payload,
+				OccurredAt:  time.Now().UTC(),
 			})
 		}
 

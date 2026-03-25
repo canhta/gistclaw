@@ -123,6 +123,7 @@ func TestRunEngine_EmitsTurnDeltasToEventSink(t *testing.T) {
 
 	var deltaTexts []string
 	var sawTurnCompleted bool
+	var completedContent string
 	for _, evt := range sink.events {
 		switch evt.Kind {
 		case "turn_delta":
@@ -135,6 +136,13 @@ func TestRunEngine_EmitsTurnDeltasToEventSink(t *testing.T) {
 			deltaTexts = append(deltaTexts, payload.Text)
 		case "turn_completed":
 			sawTurnCompleted = true
+			var payload struct {
+				Content string `json:"content"`
+			}
+			if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
+				t.Fatalf("unmarshal turn_completed payload: %v", err)
+			}
+			completedContent = payload.Content
 		}
 	}
 
@@ -146,6 +154,9 @@ func TestRunEngine_EmitsTurnDeltasToEventSink(t *testing.T) {
 	}
 	if !sawTurnCompleted {
 		t.Fatal("expected turn_completed replay event")
+	}
+	if completedContent != "Hello" {
+		t.Fatalf("expected turn_completed payload content %q, got %q", "Hello", completedContent)
 	}
 }
 
