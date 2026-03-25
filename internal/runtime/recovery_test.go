@@ -98,6 +98,54 @@ func TestRecovery_StaleApprovalsExpired(t *testing.T) {
 	}
 }
 
+func TestRecovery_DetachedPendingApprovalsExpired(t *testing.T) {
+	db, cs, mem, reg := setupMilestoneTestDeps(t)
+	sink := &model.NoopEventSink{}
+	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), sink)
+	ctx := context.Background()
+
+	_, err := db.RawDB().ExecContext(ctx,
+		`INSERT INTO runs (id, conversation_id, agent_id, team_id, objective, workspace_root, status, created_at, updated_at)
+		 VALUES ('run-interrupted-with-approval', 'conv-detached', 'patcher', 'team-1', 'write file', '/tmp', 'interrupted', datetime('now'), datetime('now')),
+		        ('run-needs-approval', 'conv-live', 'patcher', 'team-1', 'write file', '/tmp', 'needs_approval', datetime('now'), datetime('now'))`)
+	if err != nil {
+		t.Fatalf("insert runs: %v", err)
+	}
+	_, err = db.RawDB().ExecContext(ctx,
+		`INSERT INTO approvals (id, run_id, tool_name, args_json, target_path, fingerprint, status, created_at)
+		 VALUES ('approval-detached', 'run-interrupted-with-approval', 'bash', x'', '/tmp', 'fp-detached', 'pending', datetime('now')),
+		        ('approval-live', 'run-needs-approval', 'bash', x'', '/tmp', 'fp-live', 'pending', datetime('now'))`)
+	if err != nil {
+		t.Fatalf("insert approvals: %v", err)
+	}
+
+	n, err := rt.ExpireStaleApprovals(ctx)
+	if err != nil {
+		t.Fatalf("ExpireStaleApprovals: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 detached approval expired, got %d", n)
+	}
+
+	var detachedStatus, liveStatus string
+	if err := db.RawDB().QueryRowContext(ctx,
+		"SELECT status FROM approvals WHERE id = 'approval-detached'",
+	).Scan(&detachedStatus); err != nil {
+		t.Fatalf("scan detached approval status: %v", err)
+	}
+	if err := db.RawDB().QueryRowContext(ctx,
+		"SELECT status FROM approvals WHERE id = 'approval-live'",
+	).Scan(&liveStatus); err != nil {
+		t.Fatalf("scan live approval status: %v", err)
+	}
+	if detachedStatus != "expired" {
+		t.Fatalf("expected detached approval expired, got %q", detachedStatus)
+	}
+	if liveStatus != "pending" {
+		t.Fatalf("expected active approval to stay pending, got %q", liveStatus)
+	}
+}
+
 // TestRecovery_DiskFullHandled verifies that when a commit error carries
 // SQLITE_FULL (code 13), store.Tx wraps it as store.ErrDiskFull — and that
 // the helper correctly identifies the error via its Code() method.

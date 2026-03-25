@@ -45,8 +45,14 @@ type runQueueStripView struct {
 
 type runDetailPageData struct {
 	RunID             string
+	RunShortID        string
 	Status            string
+	StatusLabel       string
 	StatusClass       string
+	StartedAtLabel    string
+	LastActivityLabel string
+	EventCount        int
+	TurnCount         int
 	StreamURL         string
 	GraphURL          string
 	Turns             []runTurnView
@@ -56,13 +62,17 @@ type runDetailPageData struct {
 }
 
 type runEventView struct {
-	Kind      string
-	CreatedAt time.Time
+	Kind           string
+	Label          string
+	CreatedAt      time.Time
+	CreatedAtLabel string
+	ToneClass      string
 }
 
 type runTurnView struct {
-	Content   string
-	CreatedAt time.Time
+	Content        string
+	CreatedAt      time.Time
+	CreatedAtLabel string
 }
 
 type runExecutionSnapshotView struct {
@@ -108,16 +118,20 @@ type runGraphColumnView struct {
 }
 
 type runGraphNodeView struct {
-	ID          string `json:"id"`
-	ParentRunID string `json:"parent_run_id"`
-	AgentID     string `json:"agent_id"`
-	SessionID   string `json:"session_id,omitempty"`
-	Objective   string `json:"objective"`
-	Status      string `json:"status"`
-	StatusClass string `json:"status_class"`
-	Depth       int    `json:"depth"`
-	IsRoot      bool   `json:"is_root"`
-	ParentLabel string `json:"parent_label,omitempty"`
+	ID             string `json:"id"`
+	ShortID        string `json:"short_id"`
+	ParentRunID    string `json:"parent_run_id"`
+	AgentID        string `json:"agent_id"`
+	SessionID      string `json:"session_id,omitempty"`
+	SessionShortID string `json:"session_short_id,omitempty"`
+	Objective      string `json:"objective"`
+	Status         string `json:"status"`
+	StatusLabel    string `json:"status_label"`
+	StatusClass    string `json:"status_class"`
+	UpdatedAtLabel string `json:"updated_at_label"`
+	Depth          int    `json:"depth"`
+	IsRoot         bool   `json:"is_root"`
+	ParentLabel    string `json:"parent_label,omitempty"`
 }
 
 type runListFilters struct {
@@ -265,8 +279,11 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 	turns := make([]runTurnView, 0, len(replayRun.Events))
 	for _, evt := range replayRun.Events {
 		events = append(events, runEventView{
-			Kind:      evt.Kind,
-			CreatedAt: evt.CreatedAt,
+			Kind:           evt.Kind,
+			Label:          humanizeEventKind(evt.Kind),
+			CreatedAt:      evt.CreatedAt,
+			CreatedAtLabel: formatRunTimestamp(evt.CreatedAt),
+			ToneClass:      eventToneClass(evt.Kind),
 		})
 		if evt.Kind != "turn_completed" {
 			continue
@@ -276,10 +293,12 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		turns = append(turns, runTurnView{
-			Content:   content,
-			CreatedAt: evt.CreatedAt,
+			Content:        content,
+			CreatedAt:      evt.CreatedAt,
+			CreatedAtLabel: formatRunTimestamp(evt.CreatedAt),
 		})
 	}
+	startedAt, lastActivity := runEventWindow(replayRun.Events)
 	graphSnapshot, err := s.replay.LoadGraphSnapshot(r.Context(), runID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -292,8 +311,14 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 
 	s.renderTemplate(w, r, "Run Detail", "run_detail_body", runDetailPageData{
 		RunID:             replayRun.RunID,
+		RunShortID:        compactIdentifier(replayRun.RunID),
 		Status:            string(replayRun.Status),
+		StatusLabel:       humanizeRunStatus(string(replayRun.Status)),
 		StatusClass:       runStatusClass(string(replayRun.Status)),
+		StartedAtLabel:    formatRunTimestamp(startedAt),
+		LastActivityLabel: formatRunTimestamp(lastActivity),
+		EventCount:        len(events),
+		TurnCount:         len(turns),
 		StreamURL:         runEventsPath(replayRun.RunID),
 		GraphURL:          runGraphPath(replayRun.RunID),
 		Turns:             turns,
@@ -605,18 +630,22 @@ func buildRunGraphView(snapshot replay.RunGraphSnapshot) runGraphView {
 	columnIndex := make(map[int]int, len(snapshot.Nodes))
 	for _, node := range snapshot.Nodes {
 		graphNode := runGraphNodeView{
-			ID:          node.ID,
-			ParentRunID: node.ParentRunID,
-			AgentID:     node.AgentID,
-			SessionID:   node.SessionID,
-			Objective:   node.Objective,
-			Status:      string(node.Status),
-			StatusClass: runStatusClass(string(node.Status)),
-			Depth:       node.Depth,
-			IsRoot:      node.ID == snapshot.RootRunID,
+			ID:             node.ID,
+			ShortID:        compactIdentifier(node.ID),
+			ParentRunID:    node.ParentRunID,
+			AgentID:        node.AgentID,
+			SessionID:      node.SessionID,
+			SessionShortID: compactIdentifier(node.SessionID),
+			Objective:      node.Objective,
+			Status:         string(node.Status),
+			StatusLabel:    humanizeRunStatus(string(node.Status)),
+			StatusClass:    runStatusClass(string(node.Status)),
+			UpdatedAtLabel: formatRunTimestamp(node.UpdatedAt),
+			Depth:          node.Depth,
+			IsRoot:         node.ID == snapshot.RootRunID,
 		}
 		if graphNode.ParentRunID != "" {
-			graphNode.ParentLabel = "from " + graphNode.ParentRunID
+			graphNode.ParentLabel = "from " + compactIdentifier(graphNode.ParentRunID)
 		}
 		view.Nodes = append(view.Nodes, graphNode)
 
@@ -703,4 +732,53 @@ func runStatusClass(status string) string {
 	default:
 		return ""
 	}
+}
+
+func humanizeEventKind(kind string) string {
+	label := strings.TrimSpace(strings.ReplaceAll(kind, "_", " "))
+	if label == "" {
+		return "Unknown event"
+	}
+	return strings.ToUpper(label[:1]) + label[1:]
+}
+
+func eventToneClass(kind string) string {
+	switch kind {
+	case "run_started", "run_resumed", "tool_started":
+		return "is-active"
+	case "approval_requested":
+		return "is-approval"
+	case "turn_completed", "tool_completed", "run_completed":
+		return "is-success"
+	case "run_failed", "tool_failed":
+		return "is-error"
+	case "run_interrupted":
+		return "is-muted"
+	default:
+		return ""
+	}
+}
+
+func compactIdentifier(id string) string {
+	if id == "" {
+		return ""
+	}
+	if len(id) <= 14 {
+		return id
+	}
+	return id[:8] + "…" + id[len(id)-4:]
+}
+
+func formatRunTimestamp(ts time.Time) string {
+	if ts.IsZero() {
+		return "Not recorded yet"
+	}
+	return ts.UTC().Format("2006-01-02 15:04:05 UTC")
+}
+
+func runEventWindow(events []model.Event) (time.Time, time.Time) {
+	if len(events) == 0 {
+		return time.Time{}, time.Time{}
+	}
+	return events[0].CreatedAt, events[len(events)-1].CreatedAt
 }

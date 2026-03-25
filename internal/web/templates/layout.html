@@ -291,6 +291,32 @@
       margin-bottom: 0;
       color: var(--text-2);
     }
+    .run-meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      align-items: stretch;
+    }
+    .run-meta-card {
+      display: grid;
+      gap: 6px;
+      border: 1.5px solid var(--border-hard);
+      border-left: 4px solid var(--border-hard);
+      padding: 12px 14px;
+      background: var(--surface);
+    }
+    .run-meta-label {
+      color: var(--text-3);
+      font: 700 10px/1.2 var(--font-mono);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .run-meta-value {
+      color: var(--text-1);
+      font-size: 14px;
+      font-weight: 700;
+      word-break: break-word;
+    }
     .panel-kicker {
       display: inline-flex;
       align-items: center;
@@ -400,6 +426,17 @@
     .row-title {
       font-size: 15px;
       font-weight: 700;
+    }
+    .run-timeline-card {
+      display: grid;
+      gap: 10px;
+    }
+    .run-timeline-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: baseline;
+      justify-content: space-between;
     }
     .run-status {
       display: inline-flex;
@@ -1013,10 +1050,16 @@
     }
     .graph-stage {
       display: grid;
+      grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.85fr);
       gap: 16px;
+      align-items: start;
+    }
+    .graph-stage-panel {
+      display: grid;
+      gap: 12px;
     }
     .graph-diagram {
-      height: clamp(360px, 48vh, 520px);
+      height: clamp(280px, 36vh, 420px);
       border: 1.5px solid var(--border-hard);
       background: var(--surface);
     }
@@ -1070,7 +1113,7 @@
     }
     .graph-board {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
       gap: 12px;
       align-items: start;
     }
@@ -1123,15 +1166,31 @@
     }
     .graph-node-head {
       display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      align-items: center;
+      gap: 10px;
+      align-items: start;
       justify-content: space-between;
+    }
+    .graph-node-title-row {
+      display: grid;
+      gap: 2px;
     }
     .graph-node-title {
       font-size: 15px;
       font-weight: 700;
       line-height: 1.3;
+    }
+    .graph-node-time {
+      display: grid;
+      gap: 2px;
+      justify-items: end;
+      text-align: right;
+      color: var(--text-2);
+      font-size: 12px;
+    }
+    .graph-node-objective {
+      color: var(--text-1);
+      font-size: 13px;
+      line-height: 1.5;
     }
     .graph-node-facts {
       display: grid;
@@ -1384,7 +1443,8 @@
       .team-grid,
       .approval-filter-grid,
       .team-utility-bar,
-      .team-import-row {
+      .team-import-row,
+      .graph-stage {
         grid-template-columns: 1fr;
       }
       .approval-filter-search {

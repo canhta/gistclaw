@@ -2,15 +2,36 @@
 <section class="page-header">
   <span class="page-eyebrow">Execution</span>
   <h1>Run Detail</h1>
-  <div class="mono">{{.RunID}}</div>
-  <div class="run-status {{.StatusClass}}" data-run-status-label>{{.Status}}</div>
+  <p class="page-lede">Inspect one execution with timestamps, delegation ownership, and the evidence trail the operator needs to trust the outcome.</p>
+  <div class="run-meta-grid">
+    <article class="run-meta-card">
+      <span class="run-meta-label">Root run</span>
+      <span class="run-meta-value mono">{{.RunID}}</span>
+      <span class="subtle">Short label {{.RunShortID}}</span>
+    </article>
+    <article class="run-meta-card">
+      <span class="run-meta-label">Started</span>
+      <span id="run-started-at" class="run-meta-value mono">{{.StartedAtLabel}}</span>
+      <span class="subtle">First recorded event in this execution.</span>
+    </article>
+    <article class="run-meta-card">
+      <span class="run-meta-label">Last activity</span>
+      <span id="run-last-activity" class="run-meta-value mono">{{.LastActivityLabel}}</span>
+      <span class="subtle">Most recent journal entry seen for this run.</span>
+    </article>
+    <article class="run-meta-card">
+      <span class="run-meta-label">Recorded events</span>
+      <span id="run-event-count" class="run-meta-value mono">{{.EventCount}}</span>
+      <span class="subtle"><span id="run-turn-count" class="mono">{{.TurnCount}}</span> completed turns captured.</span>
+    </article>
+  </div>
 </section>
 
 <section class="page-section">
   <article id="run-live-banner" class="status-banner {{.StatusClass}}">
     <div class="button-row">
       <span class="page-eyebrow">Live Status</span>
-      <span class="run-status {{.StatusClass}}" data-run-status-label>{{.Status}}</span>
+      <span class="run-status {{.StatusClass}}" data-run-status-label>{{.StatusLabel}}</span>
     </div>
     <p id="run-live-status" class="muted">Watching live graph and turn updates.</p>
   </article>
@@ -51,49 +72,62 @@
       </article>
     </div>
     <div class="graph-stage">
-      <div id="run-graph-diagram" class="graph-diagram" aria-label="Run collaboration diagram"></div>
-      <div id="run-graph-board" class="graph-board" data-graph-url="{{.GraphURL}}">
-        {{range .Graph.Columns}}
-          <section class="graph-column" data-depth="{{.Depth}}">
-            <div class="graph-column-head">
-              <span class="graph-column-title">{{.Label}}</span>
-              <span class="mono subtle">{{len .Nodes}} run(s)</span>
-            </div>
-            <div class="graph-node-stack">
-              {{range .Nodes}}
-                <article class="graph-node {{.StatusClass}}" data-run-id="{{.ID}}">
-                  <div class="graph-node-head">
-                    <div class="button-row">
-                      <span class="run-status {{.StatusClass}}">{{.Status}}</span>
-                      {{if .IsRoot}}<span class="badge badge-muted">root</span>{{end}}
+      <section class="graph-stage-panel graph-stage-panel-board">
+        <div class="panel-kicker">Readable board</div>
+        <p class="panel-note">Cards lead with owner, status, and timestamp so you can scan the handoff order without decoding raw IDs.</p>
+        <div id="run-graph-board" class="graph-board" data-graph-url="{{.GraphURL}}">
+          {{range .Graph.Columns}}
+            <section class="graph-column" data-depth="{{.Depth}}">
+              <div class="graph-column-head">
+                <span class="graph-column-title">{{.Label}}</span>
+                <span class="mono subtle">{{len .Nodes}} run(s)</span>
+              </div>
+              <div class="graph-node-stack">
+                {{range .Nodes}}
+                  <article class="graph-node {{.StatusClass}}" data-run-id="{{.ID}}">
+                    <div class="graph-node-head">
+                      <div class="stack-sm">
+                        <div class="button-row">
+                          <span class="run-status {{.StatusClass}}">{{.StatusLabel}}</span>
+                          {{if .IsRoot}}<span class="badge badge-muted">root</span>{{end}}
+                        </div>
+                        <div class="graph-node-title-row">
+                          <div class="graph-node-title">{{.AgentID}}</div>
+                          <div class="mono subtle">Run {{.ShortID}}</div>
+                        </div>
+                      </div>
+                      <div class="graph-node-time">
+                        <span class="graph-node-fact-label">Updated</span>
+                        <span class="mono">{{.UpdatedAtLabel}}</span>
+                      </div>
                     </div>
-                    <div class="mono subtle">{{.ID}}</div>
-                  </div>
-                  <div class="graph-node-title">{{if .Objective}}{{.Objective}}{{else}}{{.ID}}{{end}}</div>
-                  <div class="graph-node-facts">
-                    <div class="graph-node-fact">
-                      <span class="graph-node-fact-label">Owner</span>
-                      <span>{{.AgentID}}</span>
+                    <div class="graph-node-objective">{{if .Objective}}{{.Objective}}{{else}}No objective captured for this run.{{end}}</div>
+                    <div class="graph-node-facts">
+                      {{if .SessionShortID}}
+                      <div class="graph-node-fact">
+                        <span class="graph-node-fact-label">Session</span>
+                        <span class="mono">{{.SessionShortID}}</span>
+                      </div>
+                      {{end}}
+                      {{if .ParentLabel}}
+                      <div class="graph-node-fact">
+                        <span class="graph-node-fact-label">Parent</span>
+                        <span class="mono">{{.ParentLabel}}</span>
+                      </div>
+                      {{end}}
                     </div>
-                    {{if .SessionID}}
-                    <div class="graph-node-fact">
-                      <span class="graph-node-fact-label">Session</span>
-                      <span class="mono">{{.SessionID}}</span>
-                    </div>
-                    {{end}}
-                    {{if .ParentLabel}}
-                    <div class="graph-node-fact">
-                      <span class="graph-node-fact-label">Parent</span>
-                      <span class="mono">{{.ParentLabel}}</span>
-                    </div>
-                    {{end}}
-                  </div>
-                </article>
-              {{end}}
-            </div>
-          </section>
-        {{end}}
-      </div>
+                  </article>
+                {{end}}
+              </div>
+            </section>
+          {{end}}
+        </div>
+      </section>
+      <section class="graph-stage-panel">
+        <div class="panel-kicker">Lineage map</div>
+        <p class="panel-note">Use the diagram for delegation shape and dependency lines after the board tells you what each worker is doing.</p>
+        <div id="run-graph-diagram" class="graph-diagram" aria-label="Run collaboration diagram"></div>
+      </section>
     </div>
   </div>
 </section>
@@ -134,12 +168,16 @@
   <div class="grid-two">
     <section class="panel">
       <h2 class="section-title">Assistant Output</h2>
-      <div id="run-live-output" data-stream-url="{{.StreamURL}}">
+      <p class="graph-headline">Completed turns stay timestamped so you can correlate visible output with the collaboration graph.</p>
+      <div id="run-live-output" data-stream-url="{{.StreamURL}}" data-turn-count="{{.TurnCount}}">
         <div id="run-turns">
           {{if .Turns}}
             {{range .Turns}}
-              <article class="run-row">
-                <div class="muted">Completed turn</div>
+              <article class="run-row run-timeline-card is-success">
+                <div class="run-timeline-head">
+                  <div class="row-title">Completed turn</div>
+                  <div class="mono subtle">{{.CreatedAtLabel}}</div>
+                </div>
                 <pre class="run-output-text">{{.Content}}</pre>
               </article>
             {{end}}
@@ -147,19 +185,27 @@
             <p id="run-turns-empty" class="muted">No assistant output yet.</p>
           {{end}}
         </div>
-        <article id="run-live-draft" class="run-row" hidden>
-          <div class="muted">Streaming turn</div>
+        <article id="run-live-draft" class="run-row run-timeline-card is-active" hidden>
+          <div class="run-timeline-head">
+            <div class="row-title">Streaming turn</div>
+            <div class="mono subtle">live</div>
+          </div>
           <pre id="run-live-text" class="run-output-text"></pre>
         </article>
       </div>
     </section>
     <section class="panel">
       <h2 class="section-title">Events</h2>
-      <div id="run-events">
+      <p class="graph-headline">The event trail is the compact execution log: what happened, in what order, and when.</p>
+      <div id="run-events" data-event-count="{{.EventCount}}">
         {{if .Events}}
           {{range .Events}}
-            <article class="run-row">
-              <div>{{.Kind}}</div>
+            <article class="run-row run-timeline-card {{.ToneClass}}">
+              <div class="run-timeline-head">
+                <div class="row-title">{{.Label}}</div>
+                <div class="mono subtle">{{.CreatedAtLabel}}</div>
+              </div>
+              <div class="mono subtle">{{.Kind}}</div>
             </article>
           {{end}}
         {{else}}
@@ -187,6 +233,10 @@
   const status = document.getElementById("run-live-status");
   const liveBanner = document.getElementById("run-live-banner");
   const statusLabels = document.querySelectorAll("[data-run-status-label]");
+  const startedAt = document.getElementById("run-started-at");
+  const lastActivity = document.getElementById("run-last-activity");
+  const eventCountLabel = document.getElementById("run-event-count");
+  const turnCountLabel = document.getElementById("run-turn-count");
   const turns = document.getElementById("run-turns");
   const turnsEmpty = document.getElementById("run-turns-empty");
   const liveDraft = document.getElementById("run-live-draft");
@@ -204,6 +254,77 @@
   let graphRefreshInFlight = false;
   let graphRefreshQueued = false;
   let lastGraphSnapshot = null;
+  let eventCount = events ? Number(events.dataset.eventCount || "0") : 0;
+  let turnCount = root ? Number(root.dataset.turnCount || "0") : 0;
+
+  function formatTimestamp(value) {
+    if (!value) {
+      return "Not recorded yet";
+    }
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return "Not recorded yet";
+    }
+    const yyyy = String(date.getUTCFullYear());
+    const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(date.getUTCDate()).padStart(2, "0");
+    const hh = String(date.getUTCHours()).padStart(2, "0");
+    const min = String(date.getUTCMinutes()).padStart(2, "0");
+    const sec = String(date.getUTCSeconds()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd} ${hh}:${min}:${sec} UTC`;
+  }
+
+  function humanizeLabel(value) {
+    if (!value) {
+      return "unknown";
+    }
+    const text = String(value).replaceAll("_", " ");
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function eventToneClass(kind) {
+    switch (kind) {
+      case "run_started":
+      case "run_resumed":
+      case "tool_started":
+        return "is-active";
+      case "approval_requested":
+        return "is-approval";
+      case "turn_completed":
+      case "tool_completed":
+      case "run_completed":
+        return "is-success";
+      case "run_failed":
+      case "tool_failed":
+        return "is-error";
+      case "run_interrupted":
+        return "is-muted";
+      default:
+        return "";
+    }
+  }
+
+  function syncCounts() {
+    if (eventCountLabel) {
+      eventCountLabel.textContent = String(eventCount);
+    }
+    if (turnCountLabel) {
+      turnCountLabel.textContent = String(turnCount);
+    }
+    if (events) {
+      events.dataset.eventCount = String(eventCount);
+    }
+    if (root) {
+      root.dataset.turnCount = String(turnCount);
+    }
+  }
+
+  function updateLastActivityLabel(timestamp) {
+    if (!lastActivity) {
+      return;
+    }
+    lastActivity.textContent = formatTimestamp(timestamp);
+  }
 
   function appendGraphFact(container, labelText, valueText, mono) {
     if (!valueText) {
@@ -265,7 +386,7 @@
       if (tone) {
         label.classList.add(tone);
       }
-      label.textContent = statusText || "unknown";
+      label.textContent = humanizeLabel(statusText);
     }
   }
 
@@ -303,13 +424,20 @@
   }
 
   function graphLabel(node) {
-    const headline = node.objective || node.id || "Untitled run";
-    const details = [node.status || "unknown"];
-    if (node.agent_id) {
-      details.push(node.agent_id);
+    const headline = node.agent_id || node.short_id || node.id || "Untitled run";
+    const details = [];
+    if (node.short_id) {
+      details.push(`run ${node.short_id}`);
     }
-    if (node.session_id) {
-      details.push(`session ${node.session_id}`);
+    if (node.status_label) {
+      details.push(node.status_label);
+    } else if (node.status) {
+      details.push(node.status);
+    }
+    const objective = node.objective || "";
+    const summary = objective.length > 52 ? `${objective.slice(0, 49)}...` : objective;
+    if (summary) {
+      return `${headline}\n${details.join(" · ")}\n${summary}`;
     }
     return `${headline}\n${details.join(" · ")}`;
   }
@@ -337,18 +465,18 @@
         selector: "node",
         style: {
           "shape": "rectangle",
-          "width": 220,
-          "height": 84,
+          "width": 190,
+          "height": 96,
           "background-color": palette.surface,
           "border-color": palette.borderHard,
           "border-width": 2,
           "color": palette.text,
           "font-family": "JetBrains Mono, Fira Code, monospace",
-          "font-size": 11,
+          "font-size": 10,
           "font-weight": 500,
           "label": "data(label)",
           "text-wrap": "wrap",
-          "text-max-width": 176,
+          "text-max-width": 150,
           "text-valign": "center",
           "text-halign": "center"
         }
@@ -467,9 +595,9 @@
         rankDir: "LR",
         nodeSep: 40,
         edgeSep: 18,
-        rankSep: 90,
+        rankSep: 84,
         fit: true,
-        padding: 24,
+        padding: 20,
         animate: false,
       },
       minZoom: 0.35,
@@ -483,6 +611,57 @@
       }
       window.location.assign(`/operate/runs/${encodeURIComponent(runID)}`);
     });
+  }
+
+  function timelineHead(titleText, timestampText) {
+    const head = document.createElement("div");
+    head.className = "run-timeline-head";
+
+    const title = document.createElement("div");
+    title.className = "row-title";
+    title.textContent = titleText;
+    head.appendChild(title);
+
+    const time = document.createElement("div");
+    time.className = "mono subtle";
+    time.textContent = timestampText;
+    head.appendChild(time);
+
+    return head;
+  }
+
+  function graphNodeTime(labelText) {
+    const time = document.createElement("div");
+    time.className = "graph-node-time";
+
+    const label = document.createElement("span");
+    label.className = "graph-node-fact-label";
+    label.textContent = "Updated";
+    time.appendChild(label);
+
+    const value = document.createElement("span");
+    value.className = "mono";
+    value.textContent = labelText;
+    time.appendChild(value);
+
+    return time;
+  }
+
+  function graphNodeTitleRow(agentID, shortID) {
+    const row = document.createElement("div");
+    row.className = "graph-node-title-row";
+
+    const title = document.createElement("div");
+    title.className = "graph-node-title";
+    title.textContent = agentID || "unknown";
+    row.appendChild(title);
+
+    const meta = document.createElement("div");
+    meta.className = "mono subtle";
+    meta.textContent = shortID ? `Run ${shortID}` : "Run";
+    row.appendChild(meta);
+
+    return row;
   }
 
   function renderBoard(snapshot) {
@@ -521,12 +700,15 @@
         const nodeHead = document.createElement("div");
         nodeHead.className = "graph-node-head";
 
+        const titleStack = document.createElement("div");
+        titleStack.className = "stack-sm";
+
         const labels = document.createElement("div");
         labels.className = "button-row";
 
         const statusLabel = document.createElement("span");
         statusLabel.className = `run-status ${node.status_class || ""}`.trim();
-        statusLabel.textContent = node.status || "unknown";
+        statusLabel.textContent = node.status_label || node.status || "unknown";
         labels.appendChild(statusLabel);
 
         if (node.is_root) {
@@ -536,23 +718,20 @@
           labels.appendChild(rootBadge);
         }
 
-        nodeHead.appendChild(labels);
-
-        const idLabel = document.createElement("div");
-        idLabel.className = "mono subtle";
-        idLabel.textContent = node.id || "";
-        nodeHead.appendChild(idLabel);
+        titleStack.appendChild(labels);
+        titleStack.appendChild(graphNodeTitleRow(node.agent_id, node.short_id));
+        nodeHead.appendChild(titleStack);
+        nodeHead.appendChild(graphNodeTime(node.updated_at_label || "Not recorded yet"));
         card.appendChild(nodeHead);
 
-        const nodeTitle = document.createElement("div");
-        nodeTitle.className = "graph-node-title";
-        nodeTitle.textContent = node.objective || node.id || "Untitled run";
-        card.appendChild(nodeTitle);
+        const objective = document.createElement("div");
+        objective.className = "graph-node-objective";
+        objective.textContent = node.objective || "No objective captured for this run.";
+        card.appendChild(objective);
 
         const facts = document.createElement("div");
         facts.className = "graph-node-facts";
-        appendGraphFact(facts, "Owner", node.agent_id || "", false);
-        appendGraphFact(facts, "Session", node.session_id || "", true);
+        appendGraphFact(facts, "Session", node.session_short_id || "", true);
         appendGraphFact(facts, "Parent", node.parent_label || "", true);
         if (facts.childNodes.length > 0) {
           card.appendChild(facts);
@@ -640,7 +819,7 @@
     graphPoll = null;
   }
 
-  function appendTurn(content) {
+  function appendTurn(content, occurredAt) {
     if (!content || !turns) {
       return;
     }
@@ -648,28 +827,35 @@
       turnsEmpty.remove();
     }
     const card = document.createElement("article");
-    card.className = "run-row";
-    const label = document.createElement("div");
-    label.className = "muted";
-    label.textContent = "Completed turn";
+    card.className = "run-row run-timeline-card is-success";
+    card.appendChild(timelineHead("Completed turn", formatTimestamp(occurredAt)));
     const body = document.createElement("pre");
     body.className = "run-output-text";
     body.textContent = content;
-    card.appendChild(label);
     card.appendChild(body);
     turns.appendChild(card);
+    turnCount += 1;
+    syncCounts();
   }
 
-  function appendEvent(kind) {
+  function appendEvent(kind, occurredAt) {
     if (!events || !kind || kind === "turn_delta") {
       return;
     }
     const row = document.createElement("article");
-    row.className = "run-row";
+    row.className = `run-row run-timeline-card ${eventToneClass(kind)}`.trim();
+    row.appendChild(timelineHead(humanizeLabel(kind), formatTimestamp(occurredAt)));
     const body = document.createElement("div");
+    body.className = "mono subtle";
     body.textContent = kind;
     row.appendChild(body);
     events.appendChild(row);
+    eventCount += 1;
+    if (startedAt && startedAt.textContent === "Not recorded yet") {
+      startedAt.textContent = formatTimestamp(occurredAt);
+    }
+    updateLastActivityLabel(occurredAt);
+    syncCounts();
   }
 
   function clearDraft() {
@@ -702,6 +888,7 @@
     }
   }
 
+  syncCounts();
   void refreshGraph();
   ensureGraphPolling();
 
@@ -739,7 +926,7 @@
       return;
     }
 
-    appendEvent(event.kind);
+    appendEvent(event.kind, event.occurred_at);
     void refreshGraph();
 
     if (event.kind === "turn_completed") {
@@ -747,7 +934,7 @@
         ? event.payload.content
         : draft;
       if (content) {
-        appendTurn(content);
+        appendTurn(content, event.occurred_at);
       }
       clearDraft();
       if (status) {

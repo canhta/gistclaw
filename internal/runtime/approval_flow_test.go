@@ -134,6 +134,76 @@ func TestResolveApproval_ApprovedExecutesToolAndResumesRun(t *testing.T) {
 	}
 }
 
+func TestResolveApproval_ApprovedToolErrorInterruptsRunWithoutResumingProvider(t *testing.T) {
+	prov := NewMockProvider([]GenerateResult{
+		{
+			ToolCalls: []model.ToolCallRequest{
+				{ID: "call-unsafe", ToolName: "shell_exec", InputJSON: []byte(`{"command":"touch created.txt; touch extra.txt"}`)},
+			},
+			StopReason: "tool_calls",
+		},
+	}, nil)
+	rt, db, prov := newApprovalRuntimeWithProvider(t, prov)
+	workspaceRoot := t.TempDir()
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID:        "conv-approval-error",
+		AgentID:               "patcher",
+		Objective:             "mutate shell unsafely",
+		WorkspaceRoot:         workspaceRoot,
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, workspaceWriteSnapshot()),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	var ticketID string
+	if err := db.RawDB().QueryRow(
+		"SELECT id FROM approvals WHERE run_id = ? AND status = 'pending' LIMIT 1",
+		run.ID,
+	).Scan(&ticketID); err != nil {
+		t.Fatalf("query approval ticket: %v", err)
+	}
+
+	if err := rt.ResolveApproval(context.Background(), ticketID, "approved"); err != nil {
+		t.Fatalf("ResolveApproval approved: %v", err)
+	}
+
+	run, err = rt.loadRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if run.Status != model.RunStatusInterrupted {
+		t.Fatalf("expected interrupted run after approved tool error, got %q", run.Status)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceRoot, "created.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected unsafe approved command to not create file, stat err=%v", err)
+	}
+
+	var decision, approvalID string
+	var outputJSON []byte
+	if err := db.RawDB().QueryRow(
+		"SELECT decision, COALESCE(approval_id, ''), output_json FROM tool_calls WHERE run_id = ? AND tool_name = 'shell_exec' LIMIT 1",
+		run.ID,
+	).Scan(&decision, &approvalID, &outputJSON); err != nil {
+		t.Fatalf("query recorded tool call: %v", err)
+	}
+	if decision != string(model.DecisionAllow) || approvalID != ticketID {
+		t.Fatalf("unexpected recorded approval tool call: decision=%q approval_id=%q", decision, approvalID)
+	}
+	var result model.ToolResult
+	if err := json.Unmarshal(outputJSON, &result); err != nil {
+		t.Fatalf("unmarshal tool result: %v", err)
+	}
+	if result.Error == "" {
+		t.Fatalf("expected approved tool result to include error, got %+v", result)
+	}
+
+	if len(prov.Requests) != 1 {
+		t.Fatalf("expected provider to not resume after approved tool error, got %d requests", len(prov.Requests))
+	}
+}
+
 func TestResolveApproval_DeniedInterruptsRun(t *testing.T) {
 	rt, db, _ := newApprovalRuntime(t, []GenerateResult{
 		{

@@ -239,12 +239,7 @@ func (c Config) Snapshot() (model.ExecutionSnapshot, error) {
 		Agents: make(map[string]model.AgentProfile, len(c.Agents)),
 	}
 	for _, agent := range c.Agents {
-		profile, err := buildAgentProfile(AgentSpec{
-			ID:         agent.ID,
-			SoulFile:   agent.SoulFile,
-			CanSpawn:   agent.CanSpawn,
-			CanMessage: agent.CanMessage,
-		}, soulSpec{ToolPosture: agent.ToolPosture})
+		profile, err := buildAgentProfile(agent)
 		if err != nil {
 			return model.ExecutionSnapshot{}, fmt.Errorf("team: agent %q: %w", agent.ID, err)
 		}

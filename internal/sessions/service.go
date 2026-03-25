@@ -106,10 +106,11 @@ func (s *Service) OpenFrontSession(ctx context.Context, cmd OpenFrontSession) (m
 
 func (s *Service) SpawnWorkerSession(ctx context.Context, cmd SpawnWorkerSession) (model.Session, error) {
 	now := time.Now().UTC()
+	sessionID := generateID()
 	session := model.Session{
-		ID:                  generateID(),
+		ID:                  sessionID,
 		ConversationID:      cmd.ConversationID,
-		Key:                 BuildWorkerSessionKey(cmd.ParentSessionID, cmd.AgentID),
+		Key:                 BuildWorkerSessionKey(cmd.ParentSessionID, cmd.AgentID, sessionID),
 		AgentID:             cmd.AgentID,
 		Role:                model.SessionRoleWorker,
 		ParentSessionID:     cmd.ParentSessionID,

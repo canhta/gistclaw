@@ -454,9 +454,14 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			return model.Run{}, fmt.Errorf("journal memory read: %w", err)
 		}
 
+		agentProfile, err := r.agentProfileForRun(ctx, runID, agentID)
+		if err != nil {
+			return model.Run{}, err
+		}
 		providerReq, err := r.contexts.Assemble(ctx, ContextAssemblyInput{
 			SessionID:     sessionID,
 			AgentID:       agentID,
+			Agent:         agentProfile,
 			Objective:     objective,
 			WorkspaceRoot: workspaceRoot,
 			MemoryView:    contextView,
@@ -465,10 +470,6 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			return model.Run{}, err
 		}
 		conversationCtx := combineConversationContext(providerReq.ConversationCtx, runCtxEvents)
-		agentProfile, err := r.agentProfileForRun(ctx, runID, agentID)
-		if err != nil {
-			return model.Run{}, err
-		}
 		result, err := r.provider.Generate(ctx, GenerateRequest{
 			Instructions:    providerReq.Instructions,
 			ConversationCtx: conversationCtx,
@@ -854,6 +855,22 @@ func (r *Runtime) appendRunResumed(ctx context.Context, conversationID, runID, a
 	return nil
 }
 
+func (r *Runtime) interruptRun(ctx context.Context, run model.Run) (model.Run, error) {
+	if err := r.convStore.AppendEvent(ctx, model.Event{
+		ID:             generateID(),
+		ConversationID: run.ConversationID,
+		RunID:          run.ID,
+		Kind:           "run_interrupted",
+	}); err != nil {
+		return model.Run{}, fmt.Errorf("journal run_interrupted: %w", err)
+	}
+	interrupted, err := r.loadRun(ctx, run.ID)
+	if err != nil {
+		return model.Run{}, err
+	}
+	return interrupted, nil
+}
+
 func (r *Runtime) loadApprovalToolCallID(ctx context.Context, runID, approvalID string) (string, error) {
 	rows, err := r.store.RawDB().QueryContext(ctx,
 		`SELECT payload_json
@@ -1094,8 +1111,18 @@ func (r *Runtime) ReconcileInterrupted(ctx context.Context) (ReconcileReport, er
 // 'expired'. Returns the number of approvals expired.
 func (r *Runtime) ExpireStaleApprovals(ctx context.Context) (int, error) {
 	res, err := r.store.RawDB().ExecContext(ctx,
-		`UPDATE approvals SET status = 'expired'
-		 WHERE status = 'pending' AND created_at < datetime('now', '-24 hours')`)
+		`UPDATE approvals
+		 SET status = 'expired', resolved_at = datetime('now')
+		 WHERE status = 'pending'
+		   AND (
+		     created_at < datetime('now', '-24 hours')
+		     OR NOT EXISTS (
+		       SELECT 1
+		       FROM runs
+		       WHERE runs.id = approvals.run_id
+		         AND runs.status = 'needs_approval'
+		     )
+		   )`)
 	if err != nil {
 		return 0, fmt.Errorf("expire stale approvals: %w", err)
 	}
@@ -1293,8 +1320,16 @@ func (r *Runtime) ResolveApproval(ctx context.Context, ticketID, decision string
 			return err
 		}
 		tool, _ := r.tools.Get(ticket.ToolName)
-		if _, _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.WorkspaceRoot, agent, call, tool, model.DecisionAllow, "", ticket.ID); err != nil {
+		_, result, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.WorkspaceRoot, agent, call, tool, model.DecisionAllow, "", ticket.ID)
+		if err != nil {
 			return err
+		}
+		if strings.TrimSpace(result.Error) != "" {
+			interrupted, err := r.interruptRun(ctx, run)
+			if err != nil {
+				return err
+			}
+			return r.resumeParentAfterChildTerminal(ctx, interrupted)
 		}
 		resumed, err := r.executeRunLoop(ctx, runLoopOpts{
 			runID:             run.ID,
@@ -1317,15 +1352,7 @@ func (r *Runtime) ResolveApproval(ctx context.Context, ticketID, decision string
 		if _, _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.WorkspaceRoot, agent, call, nil, model.DecisionDeny, "approval denied", ticket.ID); err != nil {
 			return err
 		}
-		if err := r.convStore.AppendEvent(ctx, model.Event{
-			ID:             generateID(),
-			ConversationID: run.ConversationID,
-			RunID:          run.ID,
-			Kind:           "run_interrupted",
-		}); err != nil {
-			return fmt.Errorf("journal run_interrupted: %w", err)
-		}
-		interrupted, err := r.loadRun(ctx, run.ID)
+		interrupted, err := r.interruptRun(ctx, run)
 		if err != nil {
 			return err
 		}

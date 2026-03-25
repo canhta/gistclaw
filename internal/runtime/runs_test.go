@@ -443,6 +443,90 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 	}
 }
 
+func TestRunEngine_IncludesSoulInstructionsInProviderRequests(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "Coordinator ready.", InputTokens: 5, OutputTokens: 7, StopReason: "end_turn"},
+			{Content: "Research findings ready.", InputTokens: 6, OutputTokens: 8, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID: "default",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:      "assistant",
+				Role:         "operator-facing coordinator",
+				Instructions: "must route external research through researcher",
+				Capabilities: []model.AgentCapability{model.CapReadHeavy, model.CapSpawn},
+				ToolProfile:  "read_heavy",
+				CanSpawn:     []string{"researcher"},
+			},
+			"researcher": {
+				AgentID:      "researcher",
+				Role:         "research specialist",
+				Instructions: "prefer primary sources and return concise findings",
+				Capabilities: []model.AgentCapability{model.CapReadHeavy},
+				ToolProfile:  "read_heavy",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	parent, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Coordinate research.",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+
+	child, err := rt.Spawn(context.Background(), SpawnCommand{
+		ControllerSessionID: parent.SessionID,
+		AgentID:             "researcher",
+		Prompt:              "Inspect OpenClaw.",
+	})
+	if err != nil {
+		t.Fatalf("Spawn failed: %v", err)
+	}
+
+	if child.Status != model.RunStatusCompleted {
+		t.Fatalf("expected child run completed, got %s", child.Status)
+	}
+	if len(prov.Requests) != 2 {
+		t.Fatalf("expected 2 provider requests, got %d", len(prov.Requests))
+	}
+
+	for _, want := range []string{
+		"operator-facing coordinator",
+		"must route external research through researcher",
+		"Can spawn: researcher",
+	} {
+		if !strings.Contains(prov.Requests[0].Instructions, want) {
+			t.Fatalf("expected front instructions to include %q, got:\n%s", want, prov.Requests[0].Instructions)
+		}
+	}
+	for _, want := range []string{
+		"research specialist",
+		"prefer primary sources and return concise findings",
+	} {
+		if !strings.Contains(prov.Requests[1].Instructions, want) {
+			t.Fatalf("expected child instructions to include %q, got:\n%s", want, prov.Requests[1].Instructions)
+		}
+	}
+}
+
 func TestRunEngine_ApprovalRequestedEmitsReplayDelta(t *testing.T) {
 	db, err := store.Open(":memory:")
 	if err != nil {

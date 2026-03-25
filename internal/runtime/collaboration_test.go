@@ -140,6 +140,40 @@ func TestRuntime_SpawnToolReturnsLatestAssistantMessage(t *testing.T) {
 	}
 }
 
+func TestRuntime_SpawnAllowsSameSpecialistTwiceFromSameControllerSession(t *testing.T) {
+	rt, _ := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "Coordinator ready.", InputTokens: 2, OutputTokens: 3, StopReason: "end_turn"},
+		{Content: "Research batch one.", InputTokens: 4, OutputTokens: 5, StopReason: "end_turn"},
+		{Content: "Research batch two.", InputTokens: 4, OutputTokens: 5, StopReason: "end_turn"},
+	})
+
+	parent := startFrontRun(t, rt, "Coordinate repeated research")
+
+	first, err := rt.Spawn(context.Background(), SpawnCommand{
+		ControllerSessionID: parent.SessionID,
+		AgentID:             "researcher",
+		Prompt:              "Inspect OpenClaw history",
+	})
+	if err != nil {
+		t.Fatalf("first Spawn failed: %v", err)
+	}
+
+	second, err := rt.Spawn(context.Background(), SpawnCommand{
+		ControllerSessionID: parent.SessionID,
+		AgentID:             "researcher",
+		Prompt:              "Inspect OpenClaw build targets",
+	})
+	if err != nil {
+		t.Fatalf("second Spawn failed: %v", err)
+	}
+	if first.SessionID == second.SessionID {
+		t.Fatalf("expected unique worker sessions, got %q", first.SessionID)
+	}
+	if first.ID == second.ID {
+		t.Fatalf("expected unique worker runs, got %q", first.ID)
+	}
+}
+
 func TestRuntime_LatestAssistantMessageReturnsEmptyWhenMissing(t *testing.T) {
 	rt, _ := newCollaborationRuntime(t, nil)
 

@@ -299,6 +299,8 @@ type RunProfile struct {
 
 type AgentProfile struct {
 	AgentID      string
+	Role         string
+	Instructions string
 	Capabilities []AgentCapability
 	ToolProfile  string
 	MemoryScope  string

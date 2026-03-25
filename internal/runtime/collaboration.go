@@ -792,7 +792,7 @@ func newSessionOpenedEvent(
 ) (model.Event, error) {
 	key := sessionkeys.BuildFrontSessionKey(conversationID)
 	if role == model.SessionRoleWorker {
-		key = sessionkeys.BuildWorkerSessionKey(parentSessionID, agentID)
+		key = sessionkeys.BuildWorkerSessionKey(parentSessionID, agentID, sessionID)
 	}
 
 	payload, err := json.Marshal(map[string]any{

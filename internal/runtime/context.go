@@ -7,6 +7,7 @@ import (
 
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
+	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/sessions"
 	"github.com/canhta/gistclaw/internal/store"
 )
@@ -18,6 +19,7 @@ type ContextAssembler interface {
 type ContextAssemblyInput struct {
 	SessionID     string
 	AgentID       string
+	Agent         model.AgentProfile
 	Objective     string
 	WorkspaceRoot string
 	MemoryView    memory.ContextView
@@ -51,7 +53,7 @@ func (a *defaultContextAssembler) Assemble(ctx context.Context, input ContextAss
 	}
 
 	req := GenerateRequest{
-		Instructions: composeInstructions(input.Objective, input.MemoryView, workspace),
+		Instructions: composeInstructions(input.Objective, input.Agent, input.MemoryView, workspace),
 	}
 	if input.SessionID == "" {
 		return req, nil
@@ -68,8 +70,28 @@ func (a *defaultContextAssembler) Assemble(ctx context.Context, input ContextAss
 	return req, nil
 }
 
-func composeInstructions(objective string, contextView memory.ContextView, workspace WorkspaceContext) string {
-	parts := []string{objective}
+func composeInstructions(objective string, agent model.AgentProfile, contextView memory.ContextView, workspace WorkspaceContext) string {
+	parts := []string{"Objective:\n" + objective}
+
+	agentParts := make([]string, 0, 6)
+	if agent.AgentID != "" {
+		agentParts = append(agentParts, "Agent ID: "+agent.AgentID)
+	}
+	if agent.Role != "" {
+		agentParts = append(agentParts, "Role: "+agent.Role)
+	}
+	if agent.ToolProfile != "" {
+		agentParts = append(agentParts, "Tool posture: "+agent.ToolProfile)
+	}
+	if len(agent.CanSpawn) > 0 {
+		agentParts = append(agentParts, "Can spawn: "+strings.Join(agent.CanSpawn, ", "))
+	}
+	if agent.Instructions != "" {
+		agentParts = append(agentParts, "Rules:\n"+agent.Instructions)
+	}
+	if len(agentParts) > 0 {
+		parts = append(parts, "Agent contract:\n"+strings.Join(agentParts, "\n"))
+	}
 
 	if workspace.Root != "" {
 		workspaceParts := []string{"Workspace root:\n" + workspace.Root}

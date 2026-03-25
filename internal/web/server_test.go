@@ -172,19 +172,35 @@ func TestRuns(t *testing.T) {
 		if err != nil {
 			t.Fatalf("load execution snapshot: %v", err)
 		}
-		h.insertRunWithSnapshot(t, "run-detail", "conv-1", "review the repo", "completed", snapshot)
-		h.insertEvent(t, "evt-1", "conv-1", "run-detail", "run_started")
+		h.insertRunWithSnapshotAt(
+			t,
+			"082b1c314823744cc779ece2f90e80e7",
+			"conv-1",
+			"review the repo",
+			"completed",
+			"2026-03-25 08:00:00",
+			"2026-03-25 08:06:00",
+			snapshot,
+		)
+		h.insertEventAt(t, "evt-1", "conv-1", "082b1c314823744cc779ece2f90e80e7", "run_started", "2026-03-25 08:00:00")
 		h.insertEventWithPayload(
 			t,
 			"evt-2",
 			"conv-1",
-			"run-detail",
+			"082b1c314823744cc779ece2f90e80e7",
 			"turn_completed",
 			[]byte(`{"content":"Draft the rollout plan.","input_tokens":12,"output_tokens":8}`),
 		)
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE events SET created_at = ? WHERE id = ?`,
+			"2026-03-25 08:06:00",
+			"evt-2",
+		); err != nil {
+			t.Fatalf("set event timestamp: %v", err)
+		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-detail", nil)
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs/082b1c314823744cc779ece2f90e80e7", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -194,18 +210,28 @@ func TestRuns(t *testing.T) {
 
 		body := rr.Body.String()
 		for _, want := range []string{
-			"run-detail",
+			"082b1c314823744cc779ece2f90e80e7",
 			"Execution Snapshot",
 			"Repo Task Team",
 			"assistant",
 			"workspace_write",
-			"run_started",
+			"Started",
+			"Last activity",
+			"Recorded events",
+			"Completed turns",
+			"2026-03-25 08:00:00 UTC",
+			"2026-03-25 08:06:00 UTC",
+			"Run started",
+			"082b1c31…80e7",
+			"Updated",
 			"Draft the rollout plan.",
 			`id="run-live-output"`,
+			`id="run-started-at"`,
+			`id="run-last-activity"`,
 			`id="run-graph-diagram"`,
 			`id="run-graph-board"`,
-			`data-graph-url="/operate/runs/run-detail/graph"`,
-			`/operate/runs/run-detail/events`,
+			`data-graph-url="/operate/runs/082b1c314823744cc779ece2f90e80e7/graph"`,
+			`/operate/runs/082b1c314823744cc779ece2f90e80e7/events`,
 			`window.cytoscape`,
 			`fetch(graphURL`,
 			`new EventSource(streamURL)`,
@@ -218,18 +244,32 @@ func TestRuns(t *testing.T) {
 
 	t.Run("graph endpoint renders lineage snapshot with statuses", func(t *testing.T) {
 		h := newServerHarness(t)
-		h.insertRun(t, "run-root", "conv-graph", "review the repo", "active")
+		h.insertRunAt(t, "082b1c314823744cc779ece2f90e80e7", "conv-graph", "review the repo", "active", "2026-03-25 08:00:00")
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE runs SET updated_at = ? WHERE id = ?`,
+			"2026-03-25 08:02:00",
+			"082b1c314823744cc779ece2f90e80e7",
+		); err != nil {
+			t.Fatalf("set root updated_at: %v", err)
+		}
 		if _, err := h.db.RawDB().Exec(
 			`INSERT INTO runs
 			 (id, conversation_id, agent_id, session_id, team_id, parent_run_id, objective, workspace_root, status, created_at, updated_at)
-			 VALUES (?, ?, 'researcher', 'sess-worker', 'repo-task-team', ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-			"run-worker", "conv-graph", "run-root", "Inspect docs.", h.workspaceRoot, "needs_approval",
+			 VALUES (?, ?, 'researcher', 'sess-worker-4ed077c29497f4c95a19125b86096953', 'repo-task-team', ?, ?, ?, ?, ?, ?)`,
+			"4ed077c29497f4c95a19125b86096953",
+			"conv-graph",
+			"082b1c314823744cc779ece2f90e80e7",
+			"Inspect docs.",
+			h.workspaceRoot,
+			"needs_approval",
+			"2026-03-25 08:03:00",
+			"2026-03-25 08:05:00",
 		); err != nil {
 			t.Fatalf("insert worker run: %v", err)
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-root/graph", nil)
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs/082b1c314823744cc779ece2f90e80e7/graph", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -251,17 +291,20 @@ func TestRuns(t *testing.T) {
 			Columns []struct {
 				Depth int `json:"depth"`
 				Nodes []struct {
-					ID          string `json:"id"`
-					Status      string `json:"status"`
-					StatusClass string `json:"status_class"`
+					ID             string `json:"id"`
+					ShortID        string `json:"short_id"`
+					Status         string `json:"status"`
+					StatusClass    string `json:"status_class"`
+					StatusLabel    string `json:"status_label"`
+					UpdatedAtLabel string `json:"updated_at_label"`
 				} `json:"nodes"`
 			} `json:"columns"`
 		}
 		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("unmarshal graph response: %v", err)
 		}
-		if resp.RootRunID != "run-root" {
-			t.Fatalf("expected root run id run-root, got %q", resp.RootRunID)
+		if resp.RootRunID != "082b1c314823744cc779ece2f90e80e7" {
+			t.Fatalf("expected root run id 082b1c314823744cc779ece2f90e80e7, got %q", resp.RootRunID)
 		}
 		if resp.Summary.Total != 2 || resp.Summary.Active != 1 || resp.Summary.NeedsApproval != 1 {
 			t.Fatalf("unexpected graph summary: %+v", resp.Summary)
@@ -269,14 +312,23 @@ func TestRuns(t *testing.T) {
 		if len(resp.Columns) != 2 {
 			t.Fatalf("expected 2 graph columns, got %d", len(resp.Columns))
 		}
-		if resp.Columns[0].Nodes[0].ID != "run-root" || resp.Columns[1].Nodes[0].ID != "run-worker" {
+		if resp.Columns[0].Nodes[0].ID != "082b1c314823744cc779ece2f90e80e7" || resp.Columns[1].Nodes[0].ID != "4ed077c29497f4c95a19125b86096953" {
 			t.Fatalf("unexpected graph nodes: %+v", resp.Columns)
 		}
-		if len(resp.Edges) != 1 || resp.Edges[0].From != "run-root" || resp.Edges[0].To != "run-worker" {
+		if len(resp.Edges) != 1 || resp.Edges[0].From != "082b1c314823744cc779ece2f90e80e7" || resp.Edges[0].To != "4ed077c29497f4c95a19125b86096953" {
 			t.Fatalf("unexpected graph edges: %+v", resp.Edges)
 		}
 		if resp.Columns[1].Nodes[0].StatusClass != "is-approval" {
 			t.Fatalf("expected approval status class for worker node, got %+v", resp.Columns[1].Nodes[0])
+		}
+		if resp.Columns[0].Nodes[0].ShortID != "082b1c31…80e7" {
+			t.Fatalf("expected short root id, got %+v", resp.Columns[0].Nodes[0])
+		}
+		if resp.Columns[1].Nodes[0].StatusLabel != "needs approval" {
+			t.Fatalf("expected humanized status label, got %+v", resp.Columns[1].Nodes[0])
+		}
+		if resp.Columns[1].Nodes[0].UpdatedAtLabel != "2026-03-25 08:05:00 UTC" {
+			t.Fatalf("expected updated-at label, got %+v", resp.Columns[1].Nodes[0])
 		}
 	})
 
@@ -3293,6 +3345,11 @@ func (h *serverHarness) insertRunInWorkspace(t *testing.T, runID, conversationID
 
 func (h *serverHarness) insertRunWithSnapshot(t *testing.T, runID, conversationID, objective, status string, snapshot model.ExecutionSnapshot) {
 	t.Helper()
+	h.insertRunWithSnapshotAt(t, runID, conversationID, objective, status, "2026-03-25 00:00:00", "2026-03-25 00:00:00", snapshot)
+}
+
+func (h *serverHarness) insertRunWithSnapshotAt(t *testing.T, runID, conversationID, objective, status, createdAt, updatedAt string, snapshot model.ExecutionSnapshot) {
+	t.Helper()
 
 	rawSnapshot, err := json.Marshal(snapshot)
 	if err != nil {
@@ -3302,8 +3359,8 @@ func (h *serverHarness) insertRunWithSnapshot(t *testing.T, runID, conversationI
 	_, err = h.db.RawDB().Exec(
 		`INSERT INTO runs
 		 (id, conversation_id, agent_id, team_id, objective, workspace_root, status, execution_snapshot_json, created_at, updated_at)
-		 VALUES (?, ?, 'agent-1', ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
-		runID, conversationID, snapshot.TeamID, objective, h.workspaceRoot, status, rawSnapshot,
+		 VALUES (?, ?, 'agent-1', ?, ?, ?, ?, ?, ?, ?)`,
+		runID, conversationID, snapshot.TeamID, objective, h.workspaceRoot, status, rawSnapshot, createdAt, updatedAt,
 	)
 	if err != nil {
 		t.Fatalf("insert run with snapshot: %v", err)
@@ -3419,24 +3476,28 @@ func (h *serverHarness) insertApprovalAt(t *testing.T, runID, toolName, targetPa
 
 func (h *serverHarness) insertEvent(t *testing.T, eventID, conversationID, runID, kind string) {
 	t.Helper()
+	h.insertEventAtWithPayload(t, eventID, conversationID, runID, kind, nil, "2026-03-25 00:00:00")
+}
 
-	_, err := h.db.RawDB().Exec(
-		`INSERT INTO events (id, conversation_id, run_id, kind, payload_json, created_at)
-		 VALUES (?, ?, ?, ?, x'', datetime('now'))`,
-		eventID, conversationID, runID, kind,
-	)
-	if err != nil {
-		t.Fatalf("insert event: %v", err)
-	}
+func (h *serverHarness) insertEventAt(t *testing.T, eventID, conversationID, runID, kind, createdAt string) {
+	t.Helper()
+	h.insertEventAtWithPayload(t, eventID, conversationID, runID, kind, nil, createdAt)
 }
 
 func (h *serverHarness) insertEventWithPayload(t *testing.T, eventID, conversationID, runID, kind string, payload []byte) {
 	t.Helper()
+	h.insertEventAtWithPayload(t, eventID, conversationID, runID, kind, payload, "2026-03-25 00:00:00")
+}
 
+func (h *serverHarness) insertEventAtWithPayload(t *testing.T, eventID, conversationID, runID, kind string, payload []byte, createdAt string) {
+	t.Helper()
+	if len(payload) == 0 {
+		payload = []byte{}
+	}
 	_, err := h.db.RawDB().Exec(
 		`INSERT INTO events (id, conversation_id, run_id, kind, payload_json, created_at)
-		 VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-		eventID, conversationID, runID, kind, payload,
+		 VALUES (?, ?, ?, ?, ?, ?)`,
+		eventID, conversationID, runID, kind, payload, createdAt,
 	)
 	if err != nil {
 		t.Fatalf("insert event with payload: %v", err)

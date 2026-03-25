@@ -26,4 +26,27 @@ func TestDefault(t *testing.T) {
 			t.Fatalf("expected embedded team.yaml to include team metadata, got:\n%s", string(body))
 		}
 	})
+
+	t.Run("embeds coordinator routing rules for specialist delegation", func(t *testing.T) {
+		defaults := Default()
+
+		body, err := fs.ReadFile(defaults, "coordinator.soul.yaml")
+		if err != nil {
+			t.Fatalf("read embedded coordinator.soul.yaml: %v", err)
+		}
+
+		text := string(body)
+		for _, want := range []string{
+			"must route external research through researcher",
+			"must route workspace writes through patcher",
+			"must not claim a specialist acted unless a child run exists",
+			"reviewer and verifier may run in parallel only after patcher work lands",
+			"workflow:",
+			"output_contract:",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("expected embedded coordinator prompt to contain %q, got:\n%s", want, text)
+			}
+		}
+	})
 }

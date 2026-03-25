@@ -3,6 +3,7 @@ package teams
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/model"
@@ -23,7 +24,7 @@ agents:
     can_spawn: []
     can_message: [assistant]
 `)
-	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "tool_posture: operator_facing\n")
+	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: operator_facing\ndecision_boundaries:\n  - must route workspace writes through patcher\n")
 	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "tool_posture: workspace_write\n")
 
 	snapshot, err := LoadExecutionSnapshot(dir)
@@ -43,6 +44,12 @@ agents:
 	}
 	if assistant.ToolProfile != "operator_facing" {
 		t.Fatalf("expected assistant operator_facing, got %q", assistant.ToolProfile)
+	}
+	if assistant.Role != "coordinator" {
+		t.Fatalf("expected assistant role coordinator, got %q", assistant.Role)
+	}
+	if !strings.Contains(assistant.Instructions, "must route workspace writes through patcher") {
+		t.Fatalf("expected assistant instructions to contain delegation rule, got %q", assistant.Instructions)
 	}
 	if !hasCapability(assistant.Capabilities, model.CapOperatorFacing) {
 		t.Fatalf("expected assistant operator_facing capability, got %+v", assistant.Capabilities)
