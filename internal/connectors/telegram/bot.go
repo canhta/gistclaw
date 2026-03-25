@@ -9,7 +9,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
+
+	controlconnector "github.com/canhta/gistclaw/internal/connectors/control"
 )
 
 // UpdateHandler is called for each dispatched Telegram update.
@@ -20,8 +24,9 @@ type Bot struct {
 	token   string
 	handler UpdateHandler
 	// apiBase can be overridden in tests to point at a mock server.
-	apiBase string
-	client  *http.Client
+	apiBase      string
+	client       *http.Client
+	commandSpecs []controlconnector.CommandSpec
 }
 
 // NewBot creates a Bot. If token is empty, Start returns immediately without polling.
@@ -40,6 +45,9 @@ func NewBot(token string, handler UpdateHandler) *Bot {
 func (b *Bot) Start(ctx context.Context) error {
 	if b.token == "" {
 		return nil
+	}
+	if err := b.publishCommands(ctx); err != nil {
+		log.Printf("telegram: setMyCommands warning: %v", err)
 	}
 
 	var offset int64
@@ -73,6 +81,51 @@ func (b *Bot) Start(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func (b *Bot) publishCommands(ctx context.Context) error {
+	if len(b.commandSpecs) == 0 {
+		return nil
+	}
+
+	body, err := json.Marshal(b.commandSpecs)
+	if err != nil {
+		return fmt.Errorf("telegram: marshal commands: %w", err)
+	}
+
+	form := url.Values{}
+	form.Set("commands", string(body))
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		fmt.Sprintf("%s%s/setMyCommands", b.apiBase, b.token),
+		strings.NewReader(form.Encode()),
+	)
+	if err != nil {
+		return fmt.Errorf("telegram: build setMyCommands request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram: setMyCommands: %w", err)
+	}
+	defer resp.Body.Close()
+
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("telegram: read setMyCommands body: %w", err)
+	}
+
+	var result struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal(rawBody, &result); err != nil {
+		return fmt.Errorf("telegram: parse setMyCommands response: %w", err)
+	}
+	if !result.OK {
+		return fmt.Errorf("telegram: setMyCommands returned ok=false")
+	}
+	return nil
 }
 
 func (b *Bot) getUpdates(ctx context.Context, offset int64) ([]Update, error) {

@@ -10,7 +10,13 @@ import (
 	"github.com/canhta/gistclaw/internal/runtime"
 )
 
-var defaultRegistry = NewRegistry("start", "help", "status")
+var defaultCommandSpecs = []CommandSpec{
+	{Name: "start", Description: "Show help and how to use the bot"},
+	{Name: "help", Description: "Show the available commands"},
+	{Name: "status", Description: "Show the latest status for this chat"},
+}
+
+var defaultRegistry = NewRegistry(defaultCommandSpecs...)
 
 // TODO(m3): Add /cancel once inbound runs execute off their transport loops and
 // own cancellable contexts that can interrupt an active provider turn.
@@ -116,4 +122,10 @@ func displayObjective(objective string) string {
 		return "no objective recorded"
 	}
 	return trimmed
+}
+
+func DefaultCommandSpecs() []CommandSpec {
+	specs := make([]CommandSpec, len(defaultCommandSpecs))
+	copy(specs, defaultCommandSpecs)
+	return specs
 }

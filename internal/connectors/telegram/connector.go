@@ -46,6 +46,7 @@ func NewConnector(
 		commands:      controlconnector.NewDispatcher(rt),
 		drainInterval: time.Second,
 	}
+	outbound.bot.commandSpecs = controlconnector.DefaultCommandSpecs()
 
 	outbound.bot.handler = connector.handleUpdate
 

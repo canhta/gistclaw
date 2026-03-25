@@ -494,6 +494,113 @@ func TestRunEngine_MemoryContextReadIsJournaled(t *testing.T) {
 	}
 }
 
+func TestRunEngine_ExecutesToolCallsAndCarriesResultsIntoNextTurn(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	tool := &recordingRuntimeTool{
+		name:   "repo_read",
+		result: `{"summary":"README loaded"}`,
+	}
+	reg.Register(tool)
+
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				Content: "I need to inspect the repo first.",
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:        "call-readme",
+						ToolName:  "repo_read",
+						InputJSON: []byte(`{"path":"README.md"}`),
+					},
+				},
+				InputTokens:  10,
+				OutputTokens: 5,
+				StopReason:   "tool_calls",
+			},
+			{
+				Content:      "The README is loaded.",
+				InputTokens:  8,
+				OutputTokens: 6,
+				StopReason:   "end_turn",
+			},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	ctx := context.Background()
+
+	run, err := rt.Start(ctx, StartRun{
+		ConversationID: "conv-tool-loop",
+		AgentID:        "agent-a",
+		Objective:      "Inspect README and summarize it",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if run.Status != model.RunStatusCompleted {
+		t.Fatalf("expected completed, got %q", run.Status)
+	}
+
+	if len(tool.calls) != 1 {
+		t.Fatalf("expected 1 tool call, got %d", len(tool.calls))
+	}
+	if string(tool.calls[0].InputJSON) != `{"path":"README.md"}` {
+		t.Fatalf("unexpected tool input: %s", tool.calls[0].InputJSON)
+	}
+
+	if len(prov.Requests) != 2 {
+		t.Fatalf("expected 2 provider requests, got %d", len(prov.Requests))
+	}
+	if len(prov.Requests[0].ToolSpecs) != 1 {
+		t.Fatalf("expected first request to advertise 1 tool, got %d", len(prov.Requests[0].ToolSpecs))
+	}
+	if prov.Requests[0].ToolSpecs[0].Name != "repo_read" {
+		t.Fatalf("unexpected tool spec name %q", prov.Requests[0].ToolSpecs[0].Name)
+	}
+
+	var sawToolEvent bool
+	for _, ev := range prov.Requests[1].ConversationCtx {
+		if ev.Kind != "tool_call_recorded" {
+			continue
+		}
+		sawToolEvent = true
+		var payload struct {
+			ToolCallID string          `json:"tool_call_id"`
+			ToolName   string          `json:"tool_name"`
+			InputJSON  json.RawMessage `json:"input_json"`
+			OutputJSON json.RawMessage `json:"output_json"`
+			Decision   string          `json:"decision"`
+		}
+		if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil {
+			t.Fatalf("unmarshal tool payload: %v", err)
+		}
+		if payload.ToolCallID != "call-readme" {
+			t.Fatalf("unexpected tool call id %q", payload.ToolCallID)
+		}
+		if payload.ToolName != "repo_read" {
+			t.Fatalf("unexpected tool name %q", payload.ToolName)
+		}
+		if payload.Decision != "allow" {
+			t.Fatalf("unexpected decision %q", payload.Decision)
+		}
+	}
+	if !sawToolEvent {
+		t.Fatal("expected second provider request to include tool_call_recorded context")
+	}
+
+	var toolCallCount int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM tool_calls WHERE run_id = ? AND tool_name = 'repo_read' AND decision = 'allow'",
+		run.ID,
+	).Scan(&toolCallCount); err != nil {
+		t.Fatalf("query tool_calls: %v", err)
+	}
+	if toolCallCount != 1 {
+		t.Fatalf("expected 1 projected tool call, got %d", toolCallCount)
+	}
+}
+
 func TestRunEngine_ProviderInstructionsIncludeWorkspaceSnapshot(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(
@@ -630,4 +737,28 @@ func TestStartFrontSession_ProviderContextUsesSessionMailboxNotConversationWideE
 			t.Fatalf("expected provider context to include %q, got %q", want, gotJoined)
 		}
 	}
+}
+
+type recordingRuntimeTool struct {
+	name   string
+	result string
+	calls  []model.ToolCall
+}
+
+func (t *recordingRuntimeTool) Name() string {
+	return t.name
+}
+
+func (t *recordingRuntimeTool) Spec() model.ToolSpec {
+	return model.ToolSpec{
+		Name:            t.name,
+		Description:     "test tool",
+		InputSchemaJSON: `{"type":"object","properties":{"path":{"type":"string"}}}`,
+		Risk:            model.RiskLow,
+	}
+}
+
+func (t *recordingRuntimeTool) Invoke(_ context.Context, call model.ToolCall) (model.ToolResult, error) {
+	t.calls = append(t.calls, call)
+	return model.ToolResult{Output: t.result}, nil
 }

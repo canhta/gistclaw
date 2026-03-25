@@ -3,7 +3,11 @@ package control
 import "testing"
 
 func TestRegistryParse(t *testing.T) {
-	registry := NewRegistry("start", "help", "status")
+	registry := NewRegistry(
+		CommandSpec{Name: "start", Description: "Show help and how to use the bot"},
+		CommandSpec{Name: "help", Description: "Show the available commands"},
+		CommandSpec{Name: "status", Description: "Show the latest status for this chat"},
+	)
 
 	tests := []struct {
 		name string
@@ -61,5 +65,24 @@ func TestRegistryParse(t *testing.T) {
 				t.Fatalf("Parse(%q) = %+v, want %+v", tt.text, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestRegistrySpecsPreserveDescriptions(t *testing.T) {
+	registry := NewRegistry(
+		CommandSpec{Name: "start", Description: "Show help and how to use the bot"},
+		CommandSpec{Name: "help", Description: "Show the available commands"},
+		CommandSpec{Name: "status", Description: "Show the latest status for this chat"},
+	)
+
+	specs := registry.Specs()
+	if len(specs) != 3 {
+		t.Fatalf("expected 3 specs, got %d", len(specs))
+	}
+	if specs[0].Name != "start" || specs[0].Description == "" {
+		t.Fatalf("expected first spec to preserve name and description, got %+v", specs[0])
+	}
+	if specs[2].Name != "status" || specs[2].Description != "Show the latest status for this chat" {
+		t.Fatalf("expected status description to be preserved, got %+v", specs[2])
 	}
 }

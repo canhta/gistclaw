@@ -172,6 +172,65 @@ func TestProvider_SessionMessageEventsConvertedToMessages(t *testing.T) {
 	}
 }
 
+func TestProvider_ToolCallEventsConvertedToMessages(t *testing.T) {
+	var capturedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(successResponse("response", 5, 3))
+	}))
+	defer srv.Close()
+
+	toolPayload, _ := json.Marshal(map[string]any{
+		"tool_call_id": "toolu_123",
+		"tool_name":    "read_file",
+		"input_json":   map[string]any{"path": "main.go"},
+		"output_json":  map[string]any{"output": "package main\n", "error": ""},
+		"decision":     "allow",
+	})
+
+	p := newWithEndpoint("key", "claude-3-5-sonnet-20241022", srv.URL)
+	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "system",
+		MaxTokens:    100,
+		ConversationCtx: []model.Event{
+			{Kind: "tool_call_recorded", PayloadJSON: toolPayload},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	msgs, ok := capturedBody["messages"].([]any)
+	if !ok || len(msgs) < 2 {
+		t.Fatalf("expected tool-use and tool-result messages, got %v", capturedBody["messages"])
+	}
+
+	assistantMsg := msgs[0].(map[string]any)
+	if assistantMsg["role"] != "assistant" {
+		t.Fatalf("expected first message role assistant, got %v", assistantMsg["role"])
+	}
+	assistantBlocks, ok := assistantMsg["content"].([]any)
+	if !ok || len(assistantBlocks) != 1 {
+		t.Fatalf("expected assistant tool_use block, got %v", assistantMsg["content"])
+	}
+	if assistantBlocks[0].(map[string]any)["type"] != "tool_use" {
+		t.Fatalf("expected tool_use block, got %v", assistantBlocks[0])
+	}
+
+	userMsg := msgs[1].(map[string]any)
+	if userMsg["role"] != "user" {
+		t.Fatalf("expected second message role user, got %v", userMsg["role"])
+	}
+	userBlocks, ok := userMsg["content"].([]any)
+	if !ok || len(userBlocks) != 1 {
+		t.Fatalf("expected user tool_result block, got %v", userMsg["content"])
+	}
+	if userBlocks[0].(map[string]any)["type"] != "tool_result" {
+		t.Fatalf("expected tool_result block, got %v", userBlocks[0])
+	}
+}
+
 func TestProvider_ToolCallsInResponse(t *testing.T) {
 	toolInputJSON, _ := json.Marshal(map[string]any{"path": "main.go"})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -2,6 +2,11 @@ package control
 
 import "strings"
 
+type CommandSpec struct {
+	Name        string `json:"command"`
+	Description string `json:"description"`
+}
+
 type Command struct {
 	Name string
 	Args string
@@ -9,18 +14,24 @@ type Command struct {
 
 type Registry struct {
 	commands map[string]struct{}
+	specs    []CommandSpec
 }
 
-func NewRegistry(names ...string) Registry {
-	commands := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		normalized := normalizeName(name)
+func NewRegistry(specs ...CommandSpec) Registry {
+	commands := make(map[string]struct{}, len(specs))
+	normalizedSpecs := make([]CommandSpec, 0, len(specs))
+	for _, spec := range specs {
+		normalized := normalizeName(spec.Name)
 		if normalized == "" {
 			continue
 		}
 		commands[normalized] = struct{}{}
+		normalizedSpecs = append(normalizedSpecs, CommandSpec{
+			Name:        normalized,
+			Description: strings.TrimSpace(spec.Description),
+		})
 	}
-	return Registry{commands: commands}
+	return Registry{commands: commands, specs: normalizedSpecs}
 }
 
 func (r Registry) Parse(text string) (Command, bool) {
@@ -52,4 +63,10 @@ func (r Registry) Parse(text string) (Command, bool) {
 
 func normalizeName(name string) string {
 	return strings.ToLower(strings.TrimSpace(strings.TrimPrefix(name, "/")))
+}
+
+func (r Registry) Specs() []CommandSpec {
+	specs := make([]CommandSpec, len(r.specs))
+	copy(specs, r.specs)
+	return specs
 }

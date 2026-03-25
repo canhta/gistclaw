@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -115,5 +116,62 @@ func TestConnector_StartDispatchesInboundAndDrainsOutbound(t *testing.T) {
 
 	if err := <-errCh; err != nil && err != context.DeadlineExceeded && err != context.Canceled {
 		t.Fatalf("Start returned unexpected error: %v", err)
+	}
+}
+
+func TestConnector_StartPublishesTelegramCommandMenu(t *testing.T) {
+	db, cs := newTelegramConnectorTestDB(t)
+	starter := &stubFrontSessionStarter{}
+
+	var setCommandsCalls atomic.Int32
+	var publishedCommands []map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "setMyCommands"):
+			setCommandsCalls.Add(1)
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm: %v", err)
+			}
+			if err := json.Unmarshal([]byte(r.Form.Get("commands")), &publishedCommands); err != nil {
+				t.Fatalf("Unmarshal commands: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+		case strings.Contains(r.URL.Path, "getUpdates"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"result":[]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	connector := NewConnector("testtoken", db, cs, starter, "assistant", "")
+	connector.outbound.bot.apiBase = srv.URL + "/bot"
+
+	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- connector.Start(ctx)
+	}()
+
+	<-ctx.Done()
+	if err := <-errCh; err != nil && err != context.DeadlineExceeded && err != context.Canceled {
+		t.Fatalf("Start returned unexpected error: %v", err)
+	}
+
+	if setCommandsCalls.Load() != 1 {
+		t.Fatalf("expected 1 setMyCommands call, got %d", setCommandsCalls.Load())
+	}
+	if len(publishedCommands) != 3 {
+		t.Fatalf("expected 3 published commands, got %d", len(publishedCommands))
+	}
+	if publishedCommands[0]["command"] != "start" || publishedCommands[0]["description"] == "" {
+		t.Fatalf("unexpected first published command: %+v", publishedCommands[0])
+	}
+	if publishedCommands[2]["command"] != "status" {
+		t.Fatalf("unexpected published commands: %+v", publishedCommands)
 	}
 }

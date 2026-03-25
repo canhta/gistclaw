@@ -186,6 +186,65 @@ func TestProvider_SessionMessageEventsConvertedToMessages(t *testing.T) {
 	}
 }
 
+func TestProvider_ToolCallEventsConvertedToMessages(t *testing.T) {
+	var capturedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(successResponse("response", 5, 3))
+	}))
+	defer srv.Close()
+
+	toolPayload, _ := json.Marshal(map[string]any{
+		"tool_call_id": "call_123",
+		"tool_name":    "read_file",
+		"input_json":   map[string]any{"path": "main.go"},
+		"output_json":  map[string]any{"output": "package main\n", "error": ""},
+		"decision":     "allow",
+	})
+
+	p := New("key", "gpt-4o", srv.URL, "")
+	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "system",
+		MaxTokens:    100,
+		ConversationCtx: []model.Event{
+			{Kind: "tool_call_recorded", PayloadJSON: toolPayload},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	msgs, ok := capturedBody["messages"].([]any)
+	if !ok {
+		t.Fatalf("expected messages array, got %T", capturedBody["messages"])
+	}
+
+	var assistantToolMsg map[string]any
+	var toolResultMsg map[string]any
+	for _, raw := range msgs {
+		msg := raw.(map[string]any)
+		if msg["role"] == "assistant" {
+			if toolCalls, ok := msg["tool_calls"].([]any); ok && len(toolCalls) == 1 {
+				assistantToolMsg = msg
+			}
+		}
+		if msg["role"] == "tool" {
+			toolResultMsg = msg
+		}
+	}
+
+	if assistantToolMsg == nil {
+		t.Fatalf("expected assistant tool-call message, got %v", msgs)
+	}
+	if toolResultMsg == nil {
+		t.Fatalf("expected tool result message, got %v", msgs)
+	}
+	if toolResultMsg["tool_call_id"] != "call_123" {
+		t.Fatalf("unexpected tool_call_id %v", toolResultMsg["tool_call_id"])
+	}
+}
+
 func TestProvider_ToolCallsInResponse(t *testing.T) {
 	argsJSON, _ := json.Marshal(map[string]any{"path": "main.go"})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
