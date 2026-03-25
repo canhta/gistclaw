@@ -6,46 +6,65 @@
 </section>
 
 <section class="page-section">
-  <div class="panel">
-  <form class="inline-form" method="GET" action="/operate/sessions">
-    <input type="text" name="q" value="{{.Filters.Query}}" placeholder="Search sessions or routes">
-    <input type="text" name="agent_id" value="{{.Filters.AgentID}}" placeholder="Agent ID">
-    <label>
-      Role
-      <select name="role">
-        <option value="" {{if eq .Filters.Role ""}}selected{{end}}>All</option>
-        <option value="front" {{if eq .Filters.Role "front"}}selected{{end}}>Front</option>
-        <option value="worker" {{if eq .Filters.Role "worker"}}selected{{end}}>Worker</option>
-      </select>
-    </label>
-    <label>
-      Status
-      <select name="status">
-        <option value="" {{if eq .Filters.Status ""}}selected{{end}}>All</option>
-        <option value="active" {{if eq .Filters.Status "active"}}selected{{end}}>Active</option>
-        <option value="archived" {{if eq .Filters.Status "archived"}}selected{{end}}>Archived</option>
-      </select>
-    </label>
-    <input type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="Connector ID">
-    <fieldset class="filter-cluster">
-      <legend class="filter-legend">Binding</legend>
-      <div class="segmented-control">
-        <label class="segmented-option">
-          <input type="radio" name="binding" value="any" {{if or (eq .Filters.Binding "") (eq .Filters.Binding "any")}}checked{{end}}>
-          <span>Any</span>
-        </label>
-        <label class="segmented-option">
-          <input type="radio" name="binding" value="bound" {{if eq .Filters.Binding "bound"}}checked{{end}}>
-          <span>Bound</span>
-        </label>
-        <label class="segmented-option">
-          <input type="radio" name="binding" value="unbound" {{if eq .Filters.Binding "unbound"}}checked{{end}}>
-          <span>Unbound</span>
-        </label>
+  <div class="panel filter-panel">
+  <span class="panel-kicker">Session filters</span>
+  <form class="page-stack" method="GET" action="/operate/sessions">
+    <div class="field">
+      <label for="session-query">Search</label>
+      <input id="session-query" type="text" name="q" value="{{.Filters.Query}}" placeholder="Search sessions or routes">
+    </div>
+    <div class="field">
+      <label for="session-agent-id">Agent ID</label>
+      <input id="session-agent-id" type="text" name="agent_id" value="{{.Filters.AgentID}}" placeholder="Agent ID">
+    </div>
+    <div class="session-filter-grid">
+      <div class="field">
+        <label for="session-role">Role</label>
+        <select id="session-role" name="role">
+          <option value="" {{if eq .Filters.Role ""}}selected{{end}}>All</option>
+          <option value="front" {{if eq .Filters.Role "front"}}selected{{end}}>Front</option>
+          <option value="worker" {{if eq .Filters.Role "worker"}}selected{{end}}>Worker</option>
+        </select>
       </div>
-    </fieldset>
-    <button class="btn btn-secondary" type="submit">Filter</button>
-    <a class="btn btn-subtle" href="/operate/sessions">Reset</a>
+      <div class="field">
+        <label for="session-status">Status</label>
+        <select id="session-status" name="status">
+          <option value="" {{if eq .Filters.Status ""}}selected{{end}}>All</option>
+          <option value="active" {{if eq .Filters.Status "active"}}selected{{end}}>Active</option>
+          <option value="archived" {{if eq .Filters.Status "archived"}}selected{{end}}>Archived</option>
+        </select>
+      </div>
+    </div>
+    <div class="field">
+      <label for="session-connector-id">Connector ID</label>
+      <input id="session-connector-id" type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="Connector ID">
+    </div>
+    <div class="session-filter-footer">
+      <fieldset class="filter-cluster">
+        <legend class="filter-legend">Binding</legend>
+        <div class="segmented-control">
+          <label class="segmented-option">
+            <input type="radio" name="binding" value="any" {{if or (eq .Filters.Binding "") (eq .Filters.Binding "any")}}checked{{end}}>
+            <span>Any</span>
+          </label>
+          <label class="segmented-option">
+            <input type="radio" name="binding" value="bound" {{if eq .Filters.Binding "bound"}}checked{{end}}>
+            <span>Bound</span>
+          </label>
+          <label class="segmented-option">
+            <input type="radio" name="binding" value="unbound" {{if eq .Filters.Binding "unbound"}}checked{{end}}>
+            <span>Unbound</span>
+          </label>
+        </div>
+      </fieldset>
+      <div class="filter-action-group session-filter-actions">
+        <span class="filter-legend field-label-ghost" aria-hidden="true">Actions</span>
+        <div class="filter-actions">
+          <button class="btn btn-secondary" type="submit">Filter</button>
+          <a class="btn btn-subtle" href="/operate/sessions">Reset</a>
+        </div>
+      </div>
+    </div>
   </form>
   </div>
 </section>

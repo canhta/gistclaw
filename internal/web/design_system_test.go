@@ -81,16 +81,21 @@ func TestLayoutDefinesBrutalistPrimitives(t *testing.T) {
 		".directory-card-list {",
 		".directory-card {",
 		".field {",
+		".field-label-ghost {",
 		".btn {",
 		".btn-primary {",
 		".btn-secondary {",
 		".btn-danger {",
+		".btn-compact {",
 		".team-summary-head {",
 		".team-file-tools {",
 		".team-primary-actions {",
 		".metric-strip {",
 		".empty-state {",
 		".queue-strip {",
+		".filter-action-group {",
+		".session-filter-grid {",
+		".session-filter-footer {",
 		".badge {",
 		".team-utility-bar {",
 		".approval-filter-grid {",
@@ -124,6 +129,25 @@ func TestLayoutDefinesUnifiedControlHeight(t *testing.T) {
 		"--control-height: 44px;",
 		"height: var(--control-height);",
 		"min-height: var(--control-height);",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected layout template to contain %q", want)
+		}
+	}
+}
+
+func TestLayoutDefinesCompactUtilityButtonHeight(t *testing.T) {
+	t.Parallel()
+
+	body, err := os.ReadFile(templatePath(t, "layout.html"))
+	if err != nil {
+		t.Fatalf("read layout template: %v", err)
+	}
+
+	content := string(body)
+	for _, want := range []string{
+		".btn-compact {",
+		"min-height: 28px;",
 	} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("expected layout template to contain %q", want)

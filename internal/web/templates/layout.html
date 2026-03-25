@@ -314,6 +314,10 @@
       font-size: 13px;
       font-weight: 700;
     }
+    .field-label-ghost {
+      visibility: hidden;
+      user-select: none;
+    }
     .field-help {
       font-size: 13px;
       color: var(--text-2);
@@ -518,6 +522,26 @@
       gap: 12px;
       align-items: end;
     }
+    .session-filter-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      align-items: end;
+    }
+    .session-filter-footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 16px;
+      align-items: flex-start;
+    }
+    .filter-action-group.session-filter-actions {
+      gap: 0;
+    }
+    .filter-grid .field,
+    .approval-filter-grid .field,
+    .inline-form .field {
+      margin-bottom: 0;
+    }
     .filter-search {
       grid-column: 1 / -1;
     }
@@ -526,6 +550,12 @@
       flex-wrap: wrap;
       gap: 10px;
       align-items: center;
+    }
+    .filter-action-group {
+      display: grid;
+      gap: 4px;
+      align-self: end;
+      justify-self: start;
     }
     .table th,
     .table td {
@@ -587,6 +617,10 @@
       display: grid;
       gap: 4px;
       align-self: stretch;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      min-inline-size: 0;
     }
     .filter-legend {
       color: var(--text-2);
@@ -598,11 +632,13 @@
     .segmented-control {
       display: inline-flex;
       align-items: stretch;
+      height: var(--control-height);
       border: 1.5px solid var(--border-hard);
       background: var(--surface);
     }
     .segmented-option {
       display: flex;
+      align-items: stretch;
       gap: 0;
       font-size: 12px;
       font-weight: 700;
@@ -616,7 +652,9 @@
     .segmented-option span {
       display: inline-flex;
       align-items: center;
-      padding: 8px 12px;
+      height: 100%;
+      min-height: 0;
+      padding: 0 12px;
       border-right: 1.5px solid var(--border-hard);
       background: var(--surface);
       color: var(--text-2);
@@ -755,7 +793,8 @@
       color: var(--surface);
     }
     .btn-compact {
-      padding: 4px 8px;
+      min-height: 28px;
+      padding: 0 8px;
       font-size: 11px;
     }
     .choice-list {
@@ -1323,6 +1362,7 @@
       }
       .grid-two,
       .filter-grid,
+      .session-filter-grid,
       .queue-strip-head,
       .team-summary-head,
       .team-summary-grid,

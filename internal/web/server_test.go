@@ -361,7 +361,9 @@ func TestApprovals(t *testing.T) {
 		for _, want := range []string{
 			"Approvals",
 			`class="approval-filter-grid"`,
+			`filter-action-group`,
 			`class="approval-filter-actions"`,
+			`class="field-label field-label-ghost"`,
 			`approval-card-actions`,
 			`data-confirm="Approve this approval ticket? This action resolves it immediately."`,
 			`data-confirm="Deny this approval ticket? This action resolves it immediately."`,
@@ -2390,7 +2392,20 @@ func TestSessionPages(t *testing.T) {
 			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 		}
 		body := rr.Body.String()
-		for _, want := range []string{"Sessions", front.SessionID, worker.SessionID, "assistant", "researcher", "Any", "Bound", "Unbound"} {
+		for _, want := range []string{
+			"Sessions",
+			front.SessionID,
+			worker.SessionID,
+			"assistant",
+			"researcher",
+			"Any",
+			"Bound",
+			"Unbound",
+			`class="panel filter-panel"`,
+			`class="session-filter-grid"`,
+			`class="session-filter-footer"`,
+			`filter-action-group`,
+		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected session directory to contain %q:\n%s", want, body)
 			}
