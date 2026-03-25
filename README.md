@@ -18,7 +18,7 @@ Today the repo already ships a working daemon, CLI, local web control plane, rep
 
 - `gistclaw serve` starts the daemon and local web host.
 - `gistclaw run`, `inspect`, `doctor`, `backup`, and `export` cover the operator CLI.
-- The web UI includes onboarding, runs, approvals, settings, memory, sessions, and control pages.
+- The web UI includes onboarding plus operator-job pages for `Operate`, `Configure`, and `Recover`.
 - Providers: Anthropic and OpenAI-compatible endpoints.
 - Tools: built-in web fetch, optional Tavily search, optional MCP stdio tools.
 - Live external surfaces: Telegram DM and WhatsApp.
@@ -54,7 +54,7 @@ go run ./cmd/gistclaw serve
 
 Then open `http://127.0.0.1:8080`. You can override the config path with `GISTCLAW_CONFIG` or `gistclaw -c /path/to/config.yaml ...`.
 
-From there, you can submit a task from the web UI or from the CLI and use the local control plane for approvals, replay, session inspection, and delivery recovery.
+From there, you can submit a task from the web UI or from the CLI and use the local operator surface for runs, approvals, session inspection, team configuration, memory, and delivery recovery.
 
 ## CLI Surface
 

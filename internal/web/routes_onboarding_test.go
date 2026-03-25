@@ -27,7 +27,7 @@ func newServerHarnessNoWorkspace(t *testing.T) *serverHarness {
 func TestOnboarding_RedirectsWhenNoWorkspace(t *testing.T) {
 	h := newServerHarnessNoWorkspace(t)
 
-	paths := []string{"/runs", "/run", "/approvals", "/settings"}
+	paths := []string{"/operate/runs", "/operate/start-task", "/recover/approvals", "/configure/settings"}
 	for _, path := range paths {
 		t.Run(path, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -206,9 +206,9 @@ func TestOnboardingStep3_NoModelCallsDuringScan(t *testing.T) {
 	}
 }
 
-// TestOnboarding_RedirectsToRunsWhenBound verifies that GET /onboarding redirects
-// to /runs when a workspace is already bound in settings.
-func TestOnboarding_RedirectsToRunsWhenBound(t *testing.T) {
+// TestOnboarding_RedirectsToOperateRunsWhenBound verifies that GET /onboarding redirects
+// to /operate/runs when a workspace is already bound in settings.
+func TestOnboarding_RedirectsToOperateRunsWhenBound(t *testing.T) {
 	h := newServerHarness(t) // workspace_root is seeded by default
 	req := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
 	w := httptest.NewRecorder()
@@ -217,8 +217,8 @@ func TestOnboarding_RedirectsToRunsWhenBound(t *testing.T) {
 		t.Fatalf("expected 303 redirect when workspace bound, got %d body=%s", w.Code, w.Body.String())
 	}
 	loc := w.Header().Get("Location")
-	if loc != "/runs" {
-		t.Fatalf("expected redirect to /runs, got %q", loc)
+	if loc != "/operate/runs" {
+		t.Fatalf("expected redirect to /operate/runs, got %q", loc)
 	}
 }
 

@@ -89,7 +89,7 @@
       font-size: 14px;
       line-height: 1.5;
     }
-    header {
+    .shell-header {
       display: flex;
       align-items: center;
       min-height: 44px;
@@ -97,17 +97,14 @@
       background: var(--bg);
       padding: 0 24px;
     }
-    nav {
+    .shell-nav {
       display: flex;
       flex-wrap: wrap;
       gap: 16px;
       align-items: center;
       width: 100%;
     }
-    .nav-spacer {
-      flex: 1;
-    }
-    .nav-brand {
+    .shell-brand {
       display: inline-flex;
       align-items: center;
       padding: 4px 8px;
@@ -117,23 +114,49 @@
       font-weight: 700;
       line-height: 1;
     }
-    nav a {
+    .shell-nav-group {
       color: var(--text-2);
       text-decoration: none;
       font-size: 13px;
       font-weight: 700;
       text-underline-offset: 4px;
     }
-    nav a:hover,
-    nav a.is-active {
+    .shell-subnav-link {
+      color: var(--text-2);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 700;
+      text-underline-offset: 4px;
+    }
+    .shell-nav-group:hover,
+    .shell-nav-group.is-active,
+    .shell-subnav-link:hover,
+    .shell-subnav-link.is-active {
       color: var(--text-1);
       text-decoration: underline;
       text-decoration-thickness: 1.5px;
+    }
+    .shell-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-left: auto;
+    }
+    .shell-start-task {
+      min-width: fit-content;
     }
     main {
       max-width: 1080px;
       margin: 0 auto;
       padding: 32px 24px 48px;
+    }
+    .shell-subnav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: center;
+      margin: 0 0 24px 0;
     }
     a {
       color: var(--brand);
@@ -1078,7 +1101,7 @@
       }
     }
     @media (max-width: 767px) {
-      header {
+      .shell-header {
         padding: 8px 16px;
       }
       main {
@@ -1105,46 +1128,43 @@
       .directory-card-list {
         display: grid;
       }
-      .nav-spacer {
-        display: none;
+      .shell-toolbar {
+        margin-left: 0;
+        width: 100%;
+        justify-content: space-between;
       }
     }
   </style>
 </head>
 <body>
-  <header>
-    <nav>
-      <span class="nav-brand">gistclaw</span>
-      <a href="/runs">Runs</a>
-      <a href="/team">Team</a>
-      <a href="/control">Control</a>
-      <a href="/sessions">Sessions</a>
-      <a href="/approvals">Approvals</a>
-      <a href="/settings">Settings</a>
-      <span class="nav-spacer"></span>
+  <header class="shell-header">
+    <nav class="shell-nav" aria-label="Primary">
+      <span class="shell-brand">gistclaw</span>
+      {{range .Navigation.Groups}}
+      <a class="shell-nav-group{{if .Active}} is-active{{end}}" href="{{.Href}}">{{.Label}}</a>
+      {{end}}
+      <div class="shell-toolbar">
+      <a class="btn btn-primary shell-start-task{{if .Navigation.StartTask.Active}} is-active{{end}}" href="{{.Navigation.StartTask.Href}}">{{.Navigation.StartTask.Label}}</a>
       <div class="theme-switcher" role="group" aria-label="Color theme">
         <button class="theme-toggle" type="button" data-theme-option="system">System</button>
         <button class="theme-toggle" type="button" data-theme-option="light">Light</button>
         <button class="theme-toggle" type="button" data-theme-option="dark">Dark</button>
       </div>
+      </div>
     </nav>
   </header>
   <main>
+    {{if .Navigation.Children}}
+    <nav class="shell-subnav" aria-label="Section">
+      {{range .Navigation.Children}}
+      <a class="shell-subnav-link{{if .Active}} is-active{{end}}" href="{{.Href}}">{{.Label}}</a>
+      {{end}}
+    </nav>
+    {{end}}
     {{.Body}}
   </main>
   <script>
     (() => {
-      const path = window.location.pathname;
-      for (const link of document.querySelectorAll("nav a[href]")) {
-        const href = link.getAttribute("href");
-        if (!href) {
-          continue;
-        }
-        if (path === href || path.startsWith(href + "/")) {
-          link.classList.add("is-active");
-        }
-      }
-
       const storageKey = "gistclaw.theme";
       const root = document.documentElement;
       const buttons = document.querySelectorAll("[data-theme-option]");

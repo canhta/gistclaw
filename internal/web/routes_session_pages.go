@@ -43,7 +43,7 @@ func (s *Server) handleSessionPageIndex(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.renderTemplate(w, "Sessions", "sessions_body", data)
+	s.renderTemplate(w, r, "Sessions", "sessions_body", data)
 }
 
 func (s *Server) handleSessionPageDetail(w http.ResponseWriter, r *http.Request) {
@@ -56,7 +56,7 @@ func (s *Server) handleSessionPageDetail(w http.ResponseWriter, r *http.Request)
 		http.Error(w, err.Error(), status)
 		return
 	}
-	s.renderTemplate(w, "Session Detail", "session_detail_body", data)
+	s.renderTemplate(w, r, "Session Detail", "session_detail_body", data)
 }
 
 func (s *Server) handleSessionPageSend(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +92,7 @@ func (s *Server) handleSessionPageSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/runs/"+run.ID, http.StatusSeeOther)
+	http.Redirect(w, r, runDetailPath(run.ID), http.StatusSeeOther)
 }
 
 func (s *Server) handleSessionPageRetryDelivery(w http.ResponseWriter, r *http.Request) {
@@ -114,7 +114,7 @@ func (s *Server) handleSessionPageRetryDelivery(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	http.Redirect(w, r, "/sessions/"+r.PathValue("id"), http.StatusSeeOther)
+	http.Redirect(w, r, sessionDetailPath(r.PathValue("id")), http.StatusSeeOther)
 }
 
 func (s *Server) renderSessionPageError(w http.ResponseWriter, r *http.Request, status int, message string) {
@@ -124,7 +124,7 @@ func (s *Server) renderSessionPageError(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 	data.Error = message
-	s.renderTemplateStatus(w, status, "Session Detail", "session_detail_body", data)
+	s.renderTemplateStatus(w, r, status, "Session Detail", "session_detail_body", data)
 }
 
 func (s *Server) loadSessionPageIndexData(r *http.Request) (sessionPageIndexData, error) {
@@ -149,7 +149,7 @@ func (s *Server) loadSessionPageIndexData(r *http.Request) (sessionPageIndexData
 			Binding:     filter.Binding,
 		},
 		Paging: buildPageLinks(
-			"/sessions",
+			pageOperateSessions,
 			cloneQuery(r.URL.Query()),
 			"cursor",
 			"direction",

@@ -13,8 +13,8 @@ type runSubmitPageData struct {
 	Task  string
 }
 
-func (s *Server) handleRunForm(w http.ResponseWriter, _ *http.Request) {
-	s.renderTemplate(w, "Submit a Task", "run_submit_body", runSubmitPageData{})
+func (s *Server) handleRunForm(w http.ResponseWriter, r *http.Request) {
+	s.renderTemplate(w, r, "Start Task", "run_submit_body", runSubmitPageData{})
 }
 
 func (s *Server) handleRunSubmit(w http.ResponseWriter, r *http.Request) {
@@ -25,7 +25,7 @@ func (s *Server) handleRunSubmit(w http.ResponseWriter, r *http.Request) {
 
 	task := strings.TrimSpace(r.FormValue("task"))
 	if task == "" {
-		s.renderTemplate(w, "Submit a Task", "run_submit_body", runSubmitPageData{
+		s.renderTemplate(w, r, "Start Task", "run_submit_body", runSubmitPageData{
 			Error: "Task is required.",
 		})
 		return
@@ -53,5 +53,5 @@ func (s *Server) handleRunSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/runs/"+run.ID, http.StatusSeeOther)
+	http.Redirect(w, r, runDetailPath(run.ID), http.StatusSeeOther)
 }

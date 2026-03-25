@@ -20,7 +20,7 @@ func TestApprovalFlow_ExpiredBadgeVisible(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/approvals", nil)
+	req := httptest.NewRequest(http.MethodGet, "/recover/approvals", nil)
 	h.server.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
@@ -44,7 +44,7 @@ func TestApprovalFlow_ExpiredResolveReturns409(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/approvals/approval-expired-resolve/resolve",
+	req := httptest.NewRequest(http.MethodPost, "/recover/approvals/approval-expired-resolve/resolve",
 		strings.NewReader("decision=approve"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Authorization", "Bearer "+h.adminToken)
@@ -67,7 +67,7 @@ func TestApprovalFlow_AuditTrailShowsResolvedToday(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/approvals", nil)
+	req := httptest.NewRequest(http.MethodGet, "/recover/approvals", nil)
 	h.server.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
@@ -94,7 +94,7 @@ func TestApprovalFlow_AuditTrailShowsTelegramActor(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/approvals", nil)
+	req := httptest.NewRequest(http.MethodGet, "/recover/approvals", nil)
 	h.server.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusOK {
@@ -114,22 +114,22 @@ func TestApprovalFlow_InterruptedRunDismiss(t *testing.T) {
 
 	// Dismiss it.
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/runs/run-interrupted-dismiss/dismiss", nil)
+	req := httptest.NewRequest(http.MethodPost, "/operate/runs/run-interrupted-dismiss/dismiss", nil)
 	req.Header.Set("X-Admin-Token", h.adminToken)
 	h.server.ServeHTTP(rr, req)
 
 	// After dismiss, the run list's active section should not include it.
 	rr2 := httptest.NewRecorder()
-	req2 := httptest.NewRequest(http.MethodGet, "/runs", nil)
+	req2 := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
 	h.server.ServeHTTP(rr2, req2)
 
 	if rr2.Code != http.StatusOK {
-		t.Fatalf("GET /runs: expected 200, got %d", rr2.Code)
+		t.Fatalf("GET /operate/runs: expected 200, got %d", rr2.Code)
 	}
 
 	// The run should still be retrievable by direct ID.
 	rr3 := httptest.NewRecorder()
-	req3 := httptest.NewRequest(http.MethodGet, "/runs/run-interrupted-dismiss", nil)
+	req3 := httptest.NewRequest(http.MethodGet, "/operate/runs/run-interrupted-dismiss", nil)
 	h.server.ServeHTTP(rr3, req3)
 
 	if rr3.Code == http.StatusNotFound {

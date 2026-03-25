@@ -1,7 +1,8 @@
 {{define "memory_body"}}
 <section class="page-header">
-  <span class="page-eyebrow">Memory</span>
+  <span class="page-eyebrow">Configure</span>
   <h1>Memory</h1>
+  <p class="page-lede">Edit remembered facts that shape future assistant behavior without mixing them into runtime recovery screens.</p>
 </section>
 
 {{if .Confirm}}
@@ -9,10 +10,10 @@
   <div class="panel stack-sm">
     <p>Forget this fact?</p>
     <div class="mono">{{.Confirm.Content}}</div>
-    <form class="button-row" method="POST" action="/memory/{{.Confirm.ID}}/forget">
+    <form class="button-row" method="POST" action="/configure/memory/{{.Confirm.ID}}/forget">
       <input type="hidden" name="confirm" value="yes">
       <button class="btn btn-danger" type="submit" data-confirm="Forget this memory item permanently?">Yes, forget it</button>
-      <a class="btn btn-ghost" href="/memory">Cancel</a>
+      <a class="btn btn-ghost" href="/configure/memory">Cancel</a>
     </form>
   </div>
 </section>
@@ -20,7 +21,7 @@
 
 <section class="page-section">
   <div class="panel">
-  <form class="inline-form" method="GET" action="/memory">
+  <form class="inline-form" method="GET" action="/configure/memory">
     <div class="field">
       <label for="q">search</label>
       <input type="text" id="q" name="q" value="{{.Filter.Query}}" placeholder="search memory content">
@@ -47,7 +48,7 @@
     </div>
     <div class="button-row">
       <button class="btn btn-secondary" type="submit">Filter</button>
-      <a class="btn btn-ghost" href="/memory">Clear</a>
+      <a class="btn btn-ghost" href="/configure/memory">Clear</a>
     </div>
   </form>
   </div>
@@ -78,10 +79,10 @@
           <td class="mono">{{.AgentID}}</td>
           <td>
             <div class="button-row">
-            <form class="inline-form" method="POST" action="/memory/{{.ID}}/forget">
+            <form class="inline-form" method="POST" action="/configure/memory/{{.ID}}/forget">
               <button class="btn btn-danger btn-compact" type="submit" data-confirm="Forget this memory item permanently?">Forget</button>
             </form>
-            <form class="inline-form" method="POST" action="/memory/{{.ID}}/edit">
+            <form class="inline-form" method="POST" action="/configure/memory/{{.ID}}/edit">
               <input type="text" name="value" value="{{.Content}}">
               <button class="btn btn-secondary btn-compact" type="submit" data-confirm="Save this memory edit?">Save</button>
             </form>
@@ -115,10 +116,10 @@
         </div>
       </div>
       <div class="directory-card-actions">
-        <form method="POST" action="/memory/{{.ID}}/forget">
+        <form method="POST" action="/configure/memory/{{.ID}}/forget">
           <button class="btn btn-danger btn-compact" type="submit" data-confirm="Forget this memory item permanently?">Forget</button>
         </form>
-        <form class="stack-sm" method="POST" action="/memory/{{.ID}}/edit">
+        <form class="stack-sm" method="POST" action="/configure/memory/{{.ID}}/edit">
           <input type="text" name="value" value="{{.Content}}">
           <button class="btn btn-secondary btn-compact" type="submit" data-confirm="Save this memory edit?">Save</button>
         </form>

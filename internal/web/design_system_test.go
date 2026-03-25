@@ -24,9 +24,9 @@ func TestTemplatesAvoidInlineStyles(t *testing.T) {
 
 	files := []string{
 		"approvals.html",
-		"control.html",
 		"memory.html",
 		"onboarding.html",
+		"routes_deliveries.html",
 		"session_detail.html",
 		"sessions.html",
 		"settings.html",
@@ -62,6 +62,10 @@ func TestLayoutDefinesBrutalistPrimitives(t *testing.T) {
 		"--error: #dc2626;",
 		":root[data-theme=\"dark\"] {",
 		"@media (prefers-color-scheme: dark) {",
+		".shell-nav {",
+		".shell-subnav {",
+		".shell-nav-group {",
+		".shell-start-task {",
 		".page-header {",
 		".page-stack {",
 		".page-section {",
@@ -91,6 +95,9 @@ func TestLayoutDefinesBrutalistPrimitives(t *testing.T) {
 		".pager {",
 		"event.submitter",
 		"window.confirm(message)",
+		"{{range .Navigation.Groups}}",
+		".Navigation.StartTask.Href",
+		".Navigation.Children",
 		"@media (max-width: 767px) {",
 		"border-radius: 0;",
 	} {
@@ -108,7 +115,7 @@ func TestCriticalTemplatesDefineConfirmationMessages(t *testing.T) {
 			`data-confirm="Approve this approval ticket? This action resolves it immediately."`,
 			`data-confirm="Deny this approval ticket? This action resolves it immediately."`,
 		},
-		"control.html": {
+		"routes_deliveries.html": {
 			`data-confirm="Send this operator message into the bound session?"`,
 			`data-confirm="Deactivate this route? External messages will stop flowing into the bound session."`,
 			`data-confirm="Retry this terminal delivery now?"`,

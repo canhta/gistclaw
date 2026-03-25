@@ -64,7 +64,7 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items, paging := finalizeApprovalListPage(r.URL.Query(), filter, approvalRows)
-	s.renderTemplate(w, "Approvals", "approvals_body", approvalsPageData{
+	s.renderTemplate(w, r, "Approvals", "approvals_body", approvalsPageData{
 		Approvals: items,
 		Filters: approvalListFilters{
 			Query:  filter.Query,
@@ -108,13 +108,13 @@ func (s *Server) handleApprovalResolve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.rt.ResolveApproval(r.Context(), ticketID, decision); err != nil {
-		s.renderTemplate(w, "Approvals", "approvals_body", approvalsPageData{
+		s.renderTemplate(w, r, "Approvals", "approvals_body", approvalsPageData{
 			Error: err.Error(),
 		})
 		return
 	}
 
-	http.Redirect(w, r, "/approvals", http.StatusSeeOther)
+	http.Redirect(w, r, pageRecoverApprovals, http.StatusSeeOther)
 }
 
 type approvalListFilters struct {
@@ -239,7 +239,7 @@ func finalizeApprovalListPage(query url.Values, filter approvalListRequest, rows
 		hasNext = hasExtra
 	}
 
-	return items, buildPageLinks("/approvals", cloneQuery(query), "cursor", "direction", nextCursor, prevCursor, hasNext, hasPrev)
+	return items, buildPageLinks(pageRecoverApprovals, cloneQuery(query), "cursor", "direction", nextCursor, prevCursor, hasNext, hasPrev)
 }
 
 func parseApprovalListCursor(raw string) (approvalListCursor, bool) {

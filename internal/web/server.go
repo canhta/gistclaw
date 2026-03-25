@@ -39,8 +39,9 @@ type Server struct {
 }
 
 type layoutData struct {
-	Title string
-	Body  template.HTML
+	Title      string
+	Body       template.HTML
+	Navigation shellNavigation
 }
 
 func NewServer(opts Options) (*Server, error) {
@@ -79,8 +80,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) registerRoutes() {
-	s.mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/runs", http.StatusSeeOther)
+	s.mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, pageOperateRuns, http.StatusSeeOther)
+	})
+	s.mux.HandleFunc("GET /operate", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, pageOperateRuns, http.StatusSeeOther)
+	})
+	s.mux.HandleFunc("GET /configure", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, pageConfigureTeam, http.StatusSeeOther)
+	})
+	s.mux.HandleFunc("GET /recover", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, pageRecoverApprovals, http.StatusSeeOther)
 	})
 	s.mux.Handle("GET /assets/{path...}", http.StripPrefix("/assets/", http.FileServer(http.Dir(staticAssetDir()))))
 	if s.whatsAppWebhook != nil {
@@ -92,17 +102,17 @@ func (s *Server) registerRoutes() {
 	}
 	s.mux.HandleFunc("GET /api/sessions", s.handleSessionsIndex)
 	s.mux.HandleFunc("GET /api/sessions/{id}", s.handleSessionDetail)
-	s.mux.HandleFunc("GET /sessions", s.handleSessionPageIndex)
-	s.mux.HandleFunc("GET /sessions/{id}", s.handleSessionPageDetail)
-	s.mux.Handle("POST /sessions/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleSessionPageSend)))
-	s.mux.Handle("POST /sessions/{id}/deliveries/{delivery_id}/retry", s.adminAuth(http.HandlerFunc(s.handleSessionPageRetryDelivery)))
-	s.mux.HandleFunc("GET /control", s.handleControlPage)
-	s.mux.HandleFunc("GET /team", s.handleTeam)
-	s.mux.HandleFunc("GET /team/export", s.handleTeamExport)
-	s.mux.Handle("POST /team", s.adminAuth(http.HandlerFunc(s.handleTeamUpdate)))
-	s.mux.Handle("POST /control/routes/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleControlRouteSend)))
-	s.mux.Handle("POST /control/routes/{id}/deactivate", s.adminAuth(http.HandlerFunc(s.handleControlRouteDeactivate)))
-	s.mux.Handle("POST /control/deliveries/{id}/retry", s.adminAuth(http.HandlerFunc(s.handleControlDeliveryRetry)))
+	s.mux.HandleFunc("GET "+pageOperateSessions, s.handleSessionPageIndex)
+	s.mux.HandleFunc("GET "+pageOperateSessions+"/{id}", s.handleSessionPageDetail)
+	s.mux.Handle("POST "+pageOperateSessions+"/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleSessionPageSend)))
+	s.mux.Handle("POST "+pageOperateSessions+"/{id}/deliveries/{delivery_id}/retry", s.adminAuth(http.HandlerFunc(s.handleSessionPageRetryDelivery)))
+	s.mux.HandleFunc("GET "+pageRecoverRoutesDeliveries, s.handleRoutesDeliveriesPage)
+	s.mux.HandleFunc("GET "+pageConfigureTeam, s.handleTeam)
+	s.mux.HandleFunc("GET "+pageConfigureTeamExport, s.handleTeamExport)
+	s.mux.Handle("POST "+pageConfigureTeam, s.adminAuth(http.HandlerFunc(s.handleTeamUpdate)))
+	s.mux.Handle("POST "+pageRecoverRoutesDeliveries+"/routes/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleRoutesDeliveriesRouteSend)))
+	s.mux.Handle("POST "+pageRecoverRoutesDeliveries+"/routes/{id}/deactivate", s.adminAuth(http.HandlerFunc(s.handleRoutesDeliveriesRouteDeactivate)))
+	s.mux.Handle("POST "+pageRecoverRoutesDeliveries+"/deliveries/{id}/retry", s.adminAuth(http.HandlerFunc(s.handleRoutesDeliveriesDeliveryRetry)))
 	s.mux.Handle("POST /api/routes", s.adminAuth(http.HandlerFunc(s.handleRouteCreate)))
 	s.mux.HandleFunc("GET /api/routes", s.handleRoutesIndex)
 	s.mux.Handle("POST /api/routes/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleRouteSend)))
@@ -112,33 +122,33 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("POST /api/deliveries/{id}/retry", s.adminAuth(http.HandlerFunc(s.handleDeliveryRetry)))
 	s.mux.Handle("POST /api/sessions/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleSessionSend)))
 	s.mux.Handle("POST /api/sessions/{id}/deliveries/{delivery_id}/retry", s.adminAuth(http.HandlerFunc(s.handleSessionRetryDelivery)))
-	s.mux.HandleFunc("GET /runs", s.handleRunsIndex)
-	s.mux.HandleFunc("GET /runs/{id}", s.handleRunDetail)
-	s.mux.HandleFunc("GET /runs/{id}/graph", s.handleRunGraph)
-	s.mux.HandleFunc("GET /runs/{id}/events", s.handleRunEvents)
-	s.mux.Handle("POST /runs/{id}/dismiss", s.adminAuth(http.HandlerFunc(s.handleRunDismiss)))
-	s.mux.HandleFunc("GET /approvals", s.handleApprovals)
-	s.mux.Handle("POST /approvals/{id}/resolve", s.adminAuth(http.HandlerFunc(s.handleApprovalResolve)))
-	s.mux.HandleFunc("GET /settings", s.handleSettings)
-	s.mux.Handle("POST /settings", s.adminAuth(http.HandlerFunc(s.handleSettingsUpdate)))
-	s.mux.HandleFunc("GET /run", s.handleRunForm)
-	s.mux.Handle("POST /run", s.adminAuth(http.HandlerFunc(s.handleRunSubmit)))
+	s.mux.HandleFunc("GET "+pageOperateRuns, s.handleRunsIndex)
+	s.mux.HandleFunc("GET "+pageOperateRuns+"/{id}", s.handleRunDetail)
+	s.mux.HandleFunc("GET "+pageOperateRuns+"/{id}/graph", s.handleRunGraph)
+	s.mux.HandleFunc("GET "+pageOperateRuns+"/{id}/events", s.handleRunEvents)
+	s.mux.Handle("POST "+pageOperateRuns+"/{id}/dismiss", s.adminAuth(http.HandlerFunc(s.handleRunDismiss)))
+	s.mux.HandleFunc("GET "+pageRecoverApprovals, s.handleApprovals)
+	s.mux.Handle("POST "+pageRecoverApprovals+"/{id}/resolve", s.adminAuth(http.HandlerFunc(s.handleApprovalResolve)))
+	s.mux.HandleFunc("GET "+pageConfigureSettings, s.handleSettings)
+	s.mux.Handle("POST "+pageConfigureSettings, s.adminAuth(http.HandlerFunc(s.handleSettingsUpdate)))
+	s.mux.HandleFunc("GET "+pageOperateStartTask, s.handleRunForm)
+	s.mux.Handle("POST "+pageOperateStartTask, s.adminAuth(http.HandlerFunc(s.handleRunSubmit)))
 	s.mux.HandleFunc("GET /onboarding", s.handleOnboarding)
 	s.mux.HandleFunc("POST /onboarding", s.handleOnboardingStep1Submit)
 	s.mux.HandleFunc("GET /onboarding/step/2", s.handleOnboardingStep2)
 	s.mux.HandleFunc("GET /onboarding/step/3", s.handleOnboardingStep3)
 	s.mux.HandleFunc("POST /onboarding/step/3", s.handleOnboardingStep3Submit)
 	s.mux.HandleFunc("GET /onboarding/step/4/{id}", s.handleOnboardingStep4)
-	s.mux.HandleFunc("GET /memory", s.handleMemoryList)
-	s.mux.Handle("POST /memory/{id}/forget", s.adminAuth(http.HandlerFunc(s.handleMemoryForget)))
-	s.mux.Handle("POST /memory/{id}/edit", s.adminAuth(http.HandlerFunc(s.handleMemoryEdit)))
+	s.mux.HandleFunc("GET "+pageConfigureMemory, s.handleMemoryList)
+	s.mux.Handle("POST "+pageConfigureMemory+"/{id}/forget", s.adminAuth(http.HandlerFunc(s.handleMemoryForget)))
+	s.mux.Handle("POST "+pageConfigureMemory+"/{id}/edit", s.adminAuth(http.HandlerFunc(s.handleMemoryEdit)))
 }
 
-func (s *Server) renderTemplate(w http.ResponseWriter, title, bodyTemplate string, data any) {
-	s.renderTemplateStatus(w, http.StatusOK, title, bodyTemplate, data)
+func (s *Server) renderTemplate(w http.ResponseWriter, r *http.Request, title, bodyTemplate string, data any) {
+	s.renderTemplateStatus(w, r, http.StatusOK, title, bodyTemplate, data)
 }
 
-func (s *Server) renderTemplateStatus(w http.ResponseWriter, status int, title, bodyTemplate string, data any) {
+func (s *Server) renderTemplateStatus(w http.ResponseWriter, r *http.Request, status int, title, bodyTemplate string, data any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	var body bytes.Buffer
 	if err := s.templates.ExecuteTemplate(&body, bodyTemplate, data); err != nil {
@@ -147,8 +157,9 @@ func (s *Server) renderTemplateStatus(w http.ResponseWriter, status int, title, 
 	}
 	w.WriteHeader(status)
 	if err := s.templates.ExecuteTemplate(w, "layout", layoutData{
-		Title: title,
-		Body:  template.HTML(body.String()),
+		Title:      title,
+		Body:       template.HTML(body.String()),
+		Navigation: navigationForPath(r.URL.Path),
 	}); err != nil {
 		http.Error(w, fmt.Sprintf("template render failed: %v", err), http.StatusInternalServerError)
 	}
@@ -296,8 +307,8 @@ func loadTemplates() (*template.Template, error) {
 		filepath.Join(templateDir, "team.html"),
 		filepath.Join(templateDir, "onboarding.html"),
 		filepath.Join(templateDir, "memory.html"),
-		filepath.Join(templateDir, "control.html"),
 		filepath.Join(templateDir, "sessions.html"),
+		filepath.Join(templateDir, "routes_deliveries.html"),
 		filepath.Join(templateDir, "session_detail.html"),
 	)
 	if err != nil {

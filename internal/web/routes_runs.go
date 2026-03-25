@@ -151,7 +151,7 @@ func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items, paging := finalizeRunListPage(r.URL.Query(), filter, runRows)
-	s.renderTemplate(w, "Runs", "runs_body", runsPageData{
+	s.renderTemplate(w, r, "Runs", "runs_body", runsPageData{
 		Runs:    items,
 		Filters: runListFilters{Query: filter.Query, Status: filter.Status, Limit: filter.Limit},
 		Paging:  paging,
@@ -214,12 +214,12 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	s.renderTemplate(w, "Run Detail", "run_detail_body", runDetailPageData{
+	s.renderTemplate(w, r, "Run Detail", "run_detail_body", runDetailPageData{
 		RunID:             replayRun.RunID,
 		Status:            string(replayRun.Status),
 		StatusClass:       runStatusClass(string(replayRun.Status)),
-		StreamURL:         "/runs/" + url.PathEscape(replayRun.RunID) + "/events",
-		GraphURL:          "/runs/" + url.PathEscape(replayRun.RunID) + "/graph",
+		StreamURL:         runEventsPath(replayRun.RunID),
+		GraphURL:          runGraphPath(replayRun.RunID),
 		Turns:             turns,
 		Events:            events,
 		Graph:             buildRunGraphView(graphSnapshot),
@@ -403,7 +403,7 @@ func finalizeRunListPage(query url.Values, filter runListRequest, rows []runList
 		hasNext = hasExtra
 	}
 
-	return items, buildPageLinks("/runs", cloneQuery(query), "cursor", "direction", nextCursor, prevCursor, hasNext, hasPrev)
+	return items, buildPageLinks(pageOperateRuns, cloneQuery(query), "cursor", "direction", nextCursor, prevCursor, hasNext, hasPrev)
 }
 
 func parseRunListCursor(raw string) (runListCursor, bool) {
@@ -436,7 +436,7 @@ func (s *Server) handleRunDismiss(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to dismiss run", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, "/runs", http.StatusSeeOther)
+	http.Redirect(w, r, pageOperateRuns, http.StatusSeeOther)
 }
 
 func (s *Server) handleRunEvents(w http.ResponseWriter, r *http.Request) {

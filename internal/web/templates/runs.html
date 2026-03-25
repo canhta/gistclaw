@@ -1,12 +1,12 @@
 {{define "runs_body"}}
 <section class="page-header">
-  <span class="page-eyebrow">Runtime</span>
+  <span class="page-eyebrow">Operate</span>
   <h1>Runs</h1>
   <p class="page-lede">The operational queue for recent runs. Filters and paging stay in the URL so you can share the exact slice you are reviewing.</p>
 </section>
 <section class="page-section">
   <div class="panel">
-    <form class="inline-form" method="GET" action="/runs">
+    <form class="inline-form" method="GET" action="/operate/runs">
       <input type="text" name="q" value="{{.Filters.Query}}" placeholder="Search run ID or objective">
       <label>
         Status
@@ -29,14 +29,14 @@
         </select>
       </label>
       <button class="btn btn-secondary" type="submit">Filter</button>
-      <a class="btn btn-ghost" href="/runs">Reset</a>
+      <a class="btn btn-ghost" href="/operate/runs">Reset</a>
     </form>
   </div>
 </section>
 {{if .Runs}}
 <section class="page-stack">
   {{range .Runs}}
-    <a class="run-link" href="/runs/{{.ID}}">
+    <a class="run-link" href="/operate/runs/{{.ID}}">
       <article class="run-row {{.StatusClass}}">
         <div class="mono">{{.ID}}</div>
         <div class="row-title">{{.Objective}}</div>

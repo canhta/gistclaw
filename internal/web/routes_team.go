@@ -43,11 +43,11 @@ type teamOption struct {
 func (s *Server) handleTeam(w http.ResponseWriter, r *http.Request) {
 	cfg, err := s.loadTeamConfig()
 	if err != nil {
-		s.renderTemplate(w, "Team", "team_body", teamPageData{Error: err.Error()})
+		s.renderTemplate(w, r, "Team", "team_body", teamPageData{Error: err.Error()})
 		return
 	}
 
-	s.renderTemplate(w, "Team", "team_body", newTeamPageData(cfg, "", ""))
+	s.renderTemplate(w, r, "Team", "team_body", newTeamPageData(cfg, "", ""))
 }
 
 func (s *Server) handleTeamExport(w http.ResponseWriter, r *http.Request) {
@@ -94,10 +94,10 @@ func (s *Server) handleTeamUpdate(w http.ResponseWriter, r *http.Request) {
 	case "import":
 		cfg, err := parseImportedTeamConfig(r)
 		if err != nil {
-			s.renderStoredTeamError(w, http.StatusUnprocessableEntity, err.Error())
+			s.renderStoredTeamError(w, r, http.StatusUnprocessableEntity, err.Error())
 			return
 		}
-		s.renderTemplate(w, "Team", "team_body", newTeamPageData(cfg, "", "Imported file loaded. Save Team to apply the change."))
+		s.renderTemplate(w, r, "Team", "team_body", newTeamPageData(cfg, "", "Imported file loaded. Save Team to apply the change."))
 		return
 	case "add_member", "remove_member", "save":
 	default:
@@ -106,26 +106,26 @@ func (s *Server) handleTeamUpdate(w http.ResponseWriter, r *http.Request) {
 
 	cfg, err := teamConfigFromRequest(r)
 	if err != nil {
-		s.renderStoredTeamError(w, http.StatusUnprocessableEntity, err.Error())
+		s.renderStoredTeamError(w, r, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
 
 	switch intent {
 	case "add_member":
 		cfg = addTeamMember(cfg)
-		s.renderTemplate(w, "Team", "team_body", newTeamPageData(cfg, "", "New member added. Save Team to apply the change."))
+		s.renderTemplate(w, r, "Team", "team_body", newTeamPageData(cfg, "", "New member added. Save Team to apply the change."))
 		return
 	case "remove_member":
 		index, err := strconv.Atoi(removeIndex)
 		if err != nil {
-			s.renderTemplateStatus(w, http.StatusUnprocessableEntity, "Team", "team_body", newTeamPageData(cfg, "invalid member removal request", ""))
+			s.renderTemplateStatus(w, r, http.StatusUnprocessableEntity, "Team", "team_body", newTeamPageData(cfg, "invalid member removal request", ""))
 			return
 		}
 		if err := removeTeamMember(&cfg, index); err != nil {
-			s.renderTemplateStatus(w, http.StatusUnprocessableEntity, "Team", "team_body", newTeamPageData(cfg, err.Error(), ""))
+			s.renderTemplateStatus(w, r, http.StatusUnprocessableEntity, "Team", "team_body", newTeamPageData(cfg, err.Error(), ""))
 			return
 		}
-		s.renderTemplate(w, "Team", "team_body", newTeamPageData(cfg, "", "Member removed. Save Team to apply the change."))
+		s.renderTemplate(w, r, "Team", "team_body", newTeamPageData(cfg, "", "Member removed. Save Team to apply the change."))
 		return
 	default:
 		if s.rt == nil {
@@ -133,10 +133,10 @@ func (s *Server) handleTeamUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.rt.UpdateTeam(r.Context(), cfg); err != nil {
-			s.renderTemplateStatus(w, http.StatusUnprocessableEntity, "Team", "team_body", newTeamPageData(cfg, err.Error(), ""))
+			s.renderTemplateStatus(w, r, http.StatusUnprocessableEntity, "Team", "team_body", newTeamPageData(cfg, err.Error(), ""))
 			return
 		}
-		http.Redirect(w, r, "/team", http.StatusSeeOther)
+		http.Redirect(w, r, pageConfigureTeam, http.StatusSeeOther)
 	}
 }
 
@@ -151,13 +151,13 @@ func (s *Server) loadTeamConfig() (teams.Config, error) {
 	return cfg, nil
 }
 
-func (s *Server) renderStoredTeamError(w http.ResponseWriter, status int, errMsg string) {
+func (s *Server) renderStoredTeamError(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
 	cfg, err := s.loadTeamConfig()
 	if err != nil {
-		s.renderTemplateStatus(w, status, "Team", "team_body", teamPageData{Error: errMsg})
+		s.renderTemplateStatus(w, r, status, "Team", "team_body", teamPageData{Error: errMsg})
 		return
 	}
-	s.renderTemplateStatus(w, status, "Team", "team_body", newTeamPageData(cfg, errMsg, ""))
+	s.renderTemplateStatus(w, r, status, "Team", "team_body", newTeamPageData(cfg, errMsg, ""))
 }
 
 func newTeamPageData(cfg teams.Config, errMsg, notice string) teamPageData {

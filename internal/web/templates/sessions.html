@@ -1,13 +1,13 @@
 {{define "sessions_body"}}
 <section class="page-header">
-  <span class="page-eyebrow">Sessions</span>
+  <span class="page-eyebrow">Operate</span>
   <h1>Sessions</h1>
   <p class="page-lede">Browse the assistant front session and any spawned worker sessions currently stored in the runtime.</p>
 </section>
 
 <section class="page-section">
   <div class="panel">
-  <form class="inline-form" method="GET" action="/sessions">
+  <form class="inline-form" method="GET" action="/operate/sessions">
     <input type="text" name="q" value="{{.Filters.Query}}" placeholder="Search sessions or routes">
     <input type="text" name="agent_id" value="{{.Filters.AgentID}}" placeholder="Agent ID">
     <label>
@@ -45,7 +45,7 @@
       </div>
     </fieldset>
     <button class="btn btn-secondary" type="submit">Filter</button>
-    <a class="btn btn-ghost" href="/sessions">Reset</a>
+    <a class="btn btn-ghost" href="/operate/sessions">Reset</a>
   </form>
   </div>
 </section>
@@ -73,7 +73,7 @@
         {{range .Sessions}}
         <tr>
           <td>
-            <div class="mono"><a href="/sessions/{{.ID}}">{{.ID}}</a></div>
+            <div class="mono"><a href="/operate/sessions/{{.ID}}">{{.ID}}</a></div>
             <div class="muted mono">conversation: {{.ConversationID}}</div>
           </td>
           <td>
@@ -85,7 +85,7 @@
             <div class="muted mono">{{.UpdatedAt.Format "2006-01-02T15:04:05Z"}}</div>
           </td>
           <td>
-            <a href="/sessions/{{.ID}}">Open detail</a>
+            <a href="/operate/sessions/{{.ID}}">Open detail</a>
           </td>
         </tr>
         {{end}}
@@ -97,7 +97,7 @@
     <article class="directory-card">
       <div class="directory-card-section">
         <span class="directory-card-label">Session</span>
-        <div class="mono"><a href="/sessions/{{.ID}}">{{.ID}}</a></div>
+        <div class="mono"><a href="/operate/sessions/{{.ID}}">{{.ID}}</a></div>
         <div class="muted mono">conversation: {{.ConversationID}}</div>
       </div>
       <div class="directory-card-grid">
@@ -113,7 +113,7 @@
         </div>
       </div>
       <div class="directory-card-actions">
-        <a href="/sessions/{{.ID}}">Open detail</a>
+        <a href="/operate/sessions/{{.ID}}">Open detail</a>
       </div>
     </article>
     {{end}}

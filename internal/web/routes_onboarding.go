@@ -128,13 +128,13 @@ func fallbackTrio(workspaceRoot string) []TaskCandidate {
 }
 
 // handleOnboarding renders step 1 of the onboarding wizard (workspace bind).
-// If a workspace is already bound, redirects to /runs.
+// If a workspace is already bound, redirects to the main Operate queue.
 func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
 	if lookupSetting(s.db, "workspace_root") != "" {
-		http.Redirect(w, r, "/runs", http.StatusSeeOther)
+		http.Redirect(w, r, pageOperateRuns, http.StatusSeeOther)
 		return
 	}
-	s.renderTemplate(w, "Bind Workspace", "onboarding_step1_body", nil)
+	s.renderTemplate(w, r, "Bind Workspace", "onboarding_step1_body", nil)
 }
 
 // handleOnboardingStep1Submit validates and persists the submitted workspace path.
@@ -146,7 +146,7 @@ func (s *Server) handleOnboardingStep1Submit(w http.ResponseWriter, r *http.Requ
 	workspaceRoot := strings.TrimSpace(r.FormValue("workspace_root"))
 	if workspaceRoot == "" {
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.renderTemplate(w, "Bind Workspace", "onboarding_step1_body", map[string]any{
+		s.renderTemplate(w, r, "Bind Workspace", "onboarding_step1_body", map[string]any{
 			"Error": "workspace path is required",
 		})
 		return
@@ -154,7 +154,7 @@ func (s *Server) handleOnboardingStep1Submit(w http.ResponseWriter, r *http.Requ
 
 	if errMsg := validateWorkspacePath(workspaceRoot); errMsg != "" {
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.renderTemplate(w, "Bind Workspace", "onboarding_step1_body", map[string]any{
+		s.renderTemplate(w, r, "Bind Workspace", "onboarding_step1_body", map[string]any{
 			"Error": errMsg,
 		})
 		return
@@ -201,7 +201,7 @@ func validateWorkspacePath(path string) string {
 func (s *Server) handleOnboardingStep2(w http.ResponseWriter, r *http.Request) {
 	workspaceRoot := lookupSetting(s.db, "workspace_root")
 	candidates := scanRepoSignals(workspaceRoot)
-	s.renderTemplate(w, "Choose a Task", "onboarding_step2_body", map[string]any{
+	s.renderTemplate(w, r, "Choose a Task", "onboarding_step2_body", map[string]any{
 		"Candidates": candidates,
 	})
 }
@@ -210,7 +210,7 @@ func (s *Server) handleOnboardingStep2(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleOnboardingStep3(w http.ResponseWriter, r *http.Request) {
 	workspaceRoot := lookupSetting(s.db, "workspace_root")
 	candidates := scanRepoSignals(workspaceRoot)
-	s.renderTemplate(w, "Select Task", "onboarding_step3_body", map[string]any{
+	s.renderTemplate(w, r, "Select Task", "onboarding_step3_body", map[string]any{
 		"Candidates": candidates,
 	})
 }
@@ -246,7 +246,7 @@ func (s *Server) handleOnboardingStep3Submit(w http.ResponseWriter, r *http.Requ
 // handleOnboardingStep4 renders the live preview view for the onboarding run.
 func (s *Server) handleOnboardingStep4(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("id")
-	s.renderTemplate(w, "Preview", "onboarding_step4_body", map[string]any{
+	s.renderTemplate(w, r, "Preview", "onboarding_step4_body", map[string]any{
 		"RunID": runID,
 	})
 }

@@ -1,13 +1,13 @@
-{{define "control_body"}}
+{{define "routes_deliveries_body"}}
 <section class="page-header">
-  <span class="page-eyebrow">Control Plane</span>
-  <h1>Control</h1>
-  <p class="page-lede">Inspect connector pressure, route bindings, and queued delivery state from the local host.</p>
+  <span class="page-eyebrow">Recover</span>
+  <h1>Routes &amp; Deliveries</h1>
+  <p class="page-lede">Recover broken flow, inspect route bindings, and retry outbound delivery from one intervention surface.</p>
 </section>
 
 <section class="page-section">
   <div class="panel">
-  <form class="inline-form" method="GET" action="/control">
+  <form class="inline-form" method="GET" action="/recover/routes-deliveries">
     <input type="text" name="q" value="{{.Filters.Query}}" placeholder="Search routes or deliveries">
     <input type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="Connector ID">
     <label>
@@ -28,7 +28,7 @@
       </select>
     </label>
     <button class="btn btn-secondary" type="submit">Filter</button>
-    <a class="btn btn-ghost" href="/control">Reset</a>
+    <a class="btn btn-ghost" href="/recover/routes-deliveries">Reset</a>
   </form>
   </div>
 </section>
@@ -79,18 +79,18 @@
             <div class="muted mono">thread: {{.ThreadID}}</div>
           </td>
           <td>
-            <div class="mono"><a href="/sessions/{{.SessionID}}">{{.SessionID}}</a></div>
+            <div class="mono"><a href="/operate/sessions/{{.SessionID}}">{{.SessionID}}</a></div>
             <div>{{.AgentID}} <span class="muted">({{.Role}})</span></div>
             <div class="muted mono">conversation: {{.ConversationID}}</div>
           </td>
           <td>
-            <form class="inline-form" method="POST" action="/control/routes/{{.ID}}/messages">
+            <form class="inline-form" method="POST" action="/recover/routes-deliveries/routes/{{.ID}}/messages">
               <input type="text" name="body" placeholder="Message bound session">
               <button class="btn btn-secondary" type="submit" data-confirm="Send this operator message into the bound session?">Send</button>
             </form>
           </td>
           <td>
-            <form class="inline-form" method="POST" action="/control/routes/{{.ID}}/deactivate">
+            <form class="inline-form" method="POST" action="/recover/routes-deliveries/routes/{{.ID}}/deactivate">
               <button class="btn btn-danger" type="submit" data-confirm="Deactivate this route? External messages will stop flowing into the bound session.">Deactivate</button>
             </form>
           </td>
@@ -111,17 +111,17 @@
       <div class="directory-card-grid">
         <div class="directory-card-section">
           <span class="directory-card-label">Binding</span>
-          <div class="mono"><a href="/sessions/{{.SessionID}}">{{.SessionID}}</a></div>
+          <div class="mono"><a href="/operate/sessions/{{.SessionID}}">{{.SessionID}}</a></div>
           <div>{{.AgentID}} <span class="muted">({{.Role}})</span></div>
           <div class="muted mono">conversation: {{.ConversationID}}</div>
         </div>
       </div>
       <div class="directory-card-actions">
-        <form class="stack-sm" method="POST" action="/control/routes/{{.ID}}/messages">
+        <form class="stack-sm" method="POST" action="/recover/routes-deliveries/routes/{{.ID}}/messages">
           <input type="text" name="body" placeholder="Message bound session">
           <button class="btn btn-secondary" type="submit" data-confirm="Send this operator message into the bound session?">Send</button>
         </form>
-        <form method="POST" action="/control/routes/{{.ID}}/deactivate">
+        <form method="POST" action="/recover/routes-deliveries/routes/{{.ID}}/deactivate">
           <button class="btn btn-danger" type="submit" data-confirm="Deactivate this route? External messages will stop flowing into the bound session.">Deactivate</button>
         </form>
       </div>
@@ -170,7 +170,7 @@
           </td>
           <td>
             {{if eq .Status "terminal"}}
-            <form class="inline-form" method="POST" action="/control/deliveries/{{.ID}}/retry">
+            <form class="inline-form" method="POST" action="/recover/routes-deliveries/deliveries/{{.ID}}/retry">
               <button class="btn btn-secondary" type="submit" data-confirm="Retry this terminal delivery now?">Retry</button>
             </form>
             {{else}}
@@ -205,7 +205,7 @@
       </div>
       <div class="directory-card-actions">
         {{if eq .Status "terminal"}}
-        <form method="POST" action="/control/deliveries/{{.ID}}/retry">
+        <form method="POST" action="/recover/routes-deliveries/deliveries/{{.ID}}/retry">
           <button class="btn btn-secondary" type="submit" data-confirm="Retry this terminal delivery now?">Retry</button>
         </form>
         {{else}}

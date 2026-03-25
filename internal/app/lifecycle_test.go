@@ -193,13 +193,13 @@ func TestLifecycle_StartServesWebUI(t *testing.T) {
 		t.Fatal("expected web listener address to be published")
 	}
 
-	resp, err := http.Get("http://" + addr + "/runs")
+	resp, err := http.Get("http://" + addr + "/operate/runs")
 	if err != nil {
-		t.Fatalf("GET /runs failed: %v", err)
+		t.Fatalf("GET /operate/runs failed: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 from /runs, got %d", resp.StatusCode)
+		t.Fatalf("expected 200 from /operate/runs, got %d", resp.StatusCode)
 	}
 
 	cancel()

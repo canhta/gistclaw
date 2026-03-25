@@ -34,7 +34,7 @@ func TestRuns(t *testing.T) {
 		h.insertRun(t, "run-known", "conv-1", "review the repo", "active")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/runs", nil)
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -48,7 +48,7 @@ func TestRuns(t *testing.T) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
 			}
 		}
-		if !strings.Contains(body, `href="/runs/run-known"`) {
+		if !strings.Contains(body, `href="/operate/runs/run-known"`) {
 			t.Fatalf("expected runs list to link to run detail:\n%s", body)
 		}
 	})
@@ -67,7 +67,7 @@ func TestRuns(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/runs", nil)
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -83,7 +83,7 @@ func TestRuns(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/runs", nil)
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -102,7 +102,7 @@ func TestRuns(t *testing.T) {
 		h.insertRunAt(t, "run-oldest", "conv-runs-3", "fix pagination", "active", "2026-03-25 08:00:00")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/runs?q=fix&status=active&limit=1", nil)
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs?q=fix&status=active&limit=1", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -121,7 +121,7 @@ func TestRuns(t *testing.T) {
 		}
 
 		rr = httptest.NewRecorder()
-		req = httptest.NewRequest(http.MethodGet, "/runs?q=fix&status=active&limit=1&cursor=2026-03-25+10%3A00%3A00%7Crun-newest&direction=next", nil)
+		req = httptest.NewRequest(http.MethodGet, "/operate/runs?q=fix&status=active&limit=1&cursor=2026-03-25+10%3A00%3A00%7Crun-newest&direction=next", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -155,7 +155,7 @@ func TestRuns(t *testing.T) {
 		)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/runs/run-detail", nil)
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-detail", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -175,8 +175,8 @@ func TestRuns(t *testing.T) {
 			`id="run-live-output"`,
 			`id="run-graph-diagram"`,
 			`id="run-graph-board"`,
-			`data-graph-url="/runs/run-detail/graph"`,
-			`/runs/run-detail/events`,
+			`data-graph-url="/operate/runs/run-detail/graph"`,
+			`/operate/runs/run-detail/events`,
 			`window.cytoscape`,
 			`fetch(graphURL`,
 			`new EventSource(streamURL)`,
@@ -200,7 +200,7 @@ func TestRuns(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/runs/run-root/graph", nil)
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-root/graph", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -255,12 +255,89 @@ func TestRuns(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/runs/missing", nil)
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs/missing", nil)
 
 		h.server.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rr.Code)
+		}
+	})
+}
+
+func TestPageRouteMap(t *testing.T) {
+	t.Run("root redirects to operate runs", func(t *testing.T) {
+		h := newServerHarness(t)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303, got %d", rr.Code)
+		}
+		if rr.Header().Get("Location") != "/operate/runs" {
+			t.Fatalf("expected redirect to /operate/runs, got %q", rr.Header().Get("Location"))
+		}
+	})
+
+	t.Run("new grouped page routes render without legacy aliases", func(t *testing.T) {
+		h := newServerHarness(t)
+
+		cases := []struct {
+			path string
+			want []string
+		}{
+			{path: "/operate/runs", want: []string{"Operate", "Configure", "Recover", `href="/operate/runs"`, `href="/operate/sessions"`}},
+			{path: "/configure/team", want: []string{"Team", `href="/configure/team"`, `href="/configure/settings"`}},
+			{path: "/recover/routes-deliveries", want: []string{"Routes &amp; Deliveries", `href="/recover/approvals"`}},
+			{path: "/operate/start-task", want: []string{"Start Task"}},
+		}
+
+		for _, tc := range cases {
+			t.Run(tc.path, func(t *testing.T) {
+				rr := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+
+				h.server.ServeHTTP(rr, req)
+
+				if rr.Code != http.StatusOK {
+					t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+				}
+				body := rr.Body.String()
+				for _, want := range tc.want {
+					if !strings.Contains(body, want) {
+						t.Fatalf("expected %s to contain %q:\n%s", tc.path, want, body)
+					}
+				}
+			})
+		}
+	})
+
+	t.Run("legacy page routes are gone", func(t *testing.T) {
+		h := newServerHarness(t)
+
+		for _, path := range []string{
+			"/runs",
+			"/sessions",
+			"/team",
+			"/control",
+			"/approvals",
+			"/settings",
+			"/memory",
+			"/run",
+		} {
+			t.Run(path, func(t *testing.T) {
+				rr := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+
+				h.server.ServeHTTP(rr, req)
+
+				if rr.Code != http.StatusNotFound {
+					t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
+				}
+			})
 		}
 	})
 }
@@ -271,7 +348,7 @@ func TestApprovals(t *testing.T) {
 		h.insertApprovalAt(t, "run-approval-ui", "apply_patch", "internal/web/templates/team.html", "pending", "", "2026-03-25 10:00:00")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/approvals", nil)
+		req := httptest.NewRequest(http.MethodGet, "/recover/approvals", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -300,7 +377,7 @@ func TestApprovals(t *testing.T) {
 		h.insertApprovalAt(t, "run-approval-old", "bash", "/tmp/old", "pending", "", "2026-03-25 08:00:00")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/approvals?q=bash&status=pending&limit=1", nil)
+		req := httptest.NewRequest(http.MethodGet, "/recover/approvals?q=bash&status=pending&limit=1", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -319,7 +396,7 @@ func TestApprovals(t *testing.T) {
 		}
 
 		rr = httptest.NewRecorder()
-		req = httptest.NewRequest(http.MethodGet, "/approvals?q=bash&status=pending&limit=1&cursor=2026-03-25+10%3A00%3A00%7Cticket-run-approval-new&direction=next", nil)
+		req = httptest.NewRequest(http.MethodGet, "/recover/approvals?q=bash&status=pending&limit=1&cursor=2026-03-25+10%3A00%3A00%7Cticket-run-approval-new&direction=next", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -340,7 +417,7 @@ func TestSettings(t *testing.T) {
 	h := newServerHarness(t)
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req := httptest.NewRequest(http.MethodGet, "/configure/settings", nil)
 
 	h.server.ServeHTTP(rr, req)
 
@@ -357,7 +434,7 @@ func TestTeam(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/team", nil)
+		req := httptest.NewRequest(http.MethodGet, "/configure/team", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -383,7 +460,7 @@ func TestTeam(t *testing.T) {
 			`<option value="read_heavy"`,
 			`value="reviewer" checked`,
 			`Add Member`,
-			`/team/export`,
+			`/configure/team/export`,
 			`name="import_file"`,
 			`type="hidden" name="agent_count" value="3"`,
 			`class="team-summary-head"`,
@@ -411,7 +488,7 @@ func TestTeam(t *testing.T) {
 
 	t.Run("team update rewrites default team and refreshes runtime snapshot", func(t *testing.T) {
 		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/team")
+		cookie := hostAdminSessionCookie(t, h, "/configure/team")
 
 		cfg, err := teams.LoadConfig(h.teamDir)
 		if err != nil {
@@ -441,7 +518,7 @@ func TestTeam(t *testing.T) {
 		form.Add("agent_2_can_message", "patcher")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/team", strings.NewReader(form.Encode()))
+		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Origin", "http://example.com")
 		req.Host = "example.com"
@@ -452,8 +529,8 @@ func TestTeam(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if rr.Header().Get("Location") != "/team" {
-			t.Fatalf("expected redirect to /team, got %q", rr.Header().Get("Location"))
+		if rr.Header().Get("Location") != "/configure/team" {
+			t.Fatalf("expected redirect to /configure/team, got %q", rr.Header().Get("Location"))
 		}
 
 		specData, err := os.ReadFile(filepath.Join(h.teamDir, "team.yaml"))
@@ -497,7 +574,7 @@ func TestTeam(t *testing.T) {
 
 	t.Run("add member reshapes editor without persisting until save", func(t *testing.T) {
 		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/team")
+		cookie := hostAdminSessionCookie(t, h, "/configure/team")
 
 		cfg, err := teams.LoadConfig(h.teamDir)
 		if err != nil {
@@ -507,7 +584,7 @@ func TestTeam(t *testing.T) {
 		form.Set("intent", "add_member")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/team", strings.NewReader(form.Encode()))
+		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Origin", "http://example.com")
 		req.Host = "example.com"
@@ -541,7 +618,7 @@ func TestTeam(t *testing.T) {
 
 	t.Run("remove member blocks deleting current front agent without reassignment", func(t *testing.T) {
 		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/team")
+		cookie := hostAdminSessionCookie(t, h, "/configure/team")
 
 		cfg, err := teams.LoadConfig(h.teamDir)
 		if err != nil {
@@ -552,7 +629,7 @@ func TestTeam(t *testing.T) {
 		form.Set("remove_agent_index", "0")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/team", strings.NewReader(form.Encode()))
+		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Origin", "http://example.com")
 		req.Host = "example.com"
@@ -570,7 +647,7 @@ func TestTeam(t *testing.T) {
 
 	t.Run("remove member with reassigned front agent updates editor state", func(t *testing.T) {
 		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/team")
+		cookie := hostAdminSessionCookie(t, h, "/configure/team")
 
 		cfg, err := teams.LoadConfig(h.teamDir)
 		if err != nil {
@@ -582,7 +659,7 @@ func TestTeam(t *testing.T) {
 		form.Set("remove_agent_index", "0")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/team", strings.NewReader(form.Encode()))
+		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Origin", "http://example.com")
 		req.Host = "example.com"
@@ -612,7 +689,7 @@ func TestTeam(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/team/export", nil)
+		req := httptest.NewRequest(http.MethodGet, "/configure/team/export", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -636,7 +713,7 @@ func TestTeam(t *testing.T) {
 
 	t.Run("team import loads editable team file into the editor", func(t *testing.T) {
 		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/team")
+		cookie := hostAdminSessionCookie(t, h, "/configure/team")
 
 		var body bytes.Buffer
 		writer := multipart.NewWriter(&body)
@@ -683,7 +760,7 @@ agents:
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/team", &body)
+		req := httptest.NewRequest(http.MethodPost, "/configure/team", &body)
 		req.Header.Set("Content-Type", writer.FormDataContentType())
 		req.Header.Set("Origin", "http://example.com")
 		req.Host = "example.com"
@@ -739,14 +816,14 @@ func TestRunSubmit(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/run", nil)
+		req := httptest.NewRequest(http.MethodGet, "/operate/start-task", nil)
 
 		h.server.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rr.Code)
 		}
-		if !strings.Contains(rr.Body.String(), "Submit a Task") {
+		if !strings.Contains(rr.Body.String(), "Start Task") {
 			t.Fatalf("expected submit form, got:\n%s", rr.Body.String())
 		}
 	})
@@ -755,7 +832,7 @@ func TestRunSubmit(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/run", strings.NewReader("task="))
+		req := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task="))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -773,7 +850,7 @@ func TestRunSubmit(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/run", strings.NewReader("task=review+the+repo"))
+		req := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review+the+repo"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -783,8 +860,8 @@ func TestRunSubmit(t *testing.T) {
 			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
 		}
 		loc := rr.Header().Get("Location")
-		if !strings.HasPrefix(loc, "/runs/") {
-			t.Fatalf("expected redirect to /runs/{id}, got %q", loc)
+		if !strings.HasPrefix(loc, "/operate/runs/") {
+			t.Fatalf("expected redirect to /operate/runs/{id}, got %q", loc)
 		}
 	})
 }
@@ -795,7 +872,7 @@ func TestApprovalsResolve(t *testing.T) {
 		ticketID := h.insertApproval(t, "run-approve", "bash", "echo hi")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/approvals/"+ticketID+"/resolve",
+		req := httptest.NewRequest(http.MethodPost, "/recover/approvals/"+ticketID+"/resolve",
 			strings.NewReader("decision=approved"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -805,8 +882,8 @@ func TestApprovalsResolve(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
 		}
-		if rr.Header().Get("Location") != "/approvals" {
-			t.Fatalf("expected redirect to /approvals, got %q", rr.Header().Get("Location"))
+		if rr.Header().Get("Location") != "/recover/approvals" {
+			t.Fatalf("expected redirect to /recover/approvals, got %q", rr.Header().Get("Location"))
 		}
 	})
 
@@ -815,7 +892,7 @@ func TestApprovalsResolve(t *testing.T) {
 		ticketID := h.insertApproval(t, "run-deny", "bash", "rm -rf /")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/approvals/"+ticketID+"/resolve",
+		req := httptest.NewRequest(http.MethodPost, "/recover/approvals/"+ticketID+"/resolve",
 			strings.NewReader("decision=denied"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -832,7 +909,7 @@ func TestApprovalsResolve(t *testing.T) {
 		ticketID := h.insertApproval(t, "run-bad", "bash", "echo")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/approvals/"+ticketID+"/resolve",
+		req := httptest.NewRequest(http.MethodPost, "/recover/approvals/"+ticketID+"/resolve",
 			strings.NewReader("decision=maybe"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -850,7 +927,7 @@ func TestSettingsUpdate(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/settings",
+		req := httptest.NewRequest(http.MethodPost, "/configure/settings",
 			strings.NewReader("workspace_root=%2Ftmp%2Fworkspace"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -860,8 +937,8 @@ func TestSettingsUpdate(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
 		}
-		if rr.Header().Get("Location") != "/settings" {
-			t.Fatalf("expected redirect to /settings, got %q", rr.Header().Get("Location"))
+		if rr.Header().Get("Location") != "/configure/settings" {
+			t.Fatalf("expected redirect to /configure/settings, got %q", rr.Header().Get("Location"))
 		}
 	})
 
@@ -869,7 +946,7 @@ func TestSettingsUpdate(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+		req := httptest.NewRequest(http.MethodGet, "/configure/settings", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -887,7 +964,7 @@ func TestSettingsBudget(t *testing.T) {
 	t.Run("settings page shows budget fields", func(t *testing.T) {
 		h := newServerHarness(t)
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+		req := httptest.NewRequest(http.MethodGet, "/configure/settings", nil)
 		h.server.ServeHTTP(rr, req)
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rr.Code)
@@ -903,7 +980,7 @@ func TestSettingsBudget(t *testing.T) {
 	t.Run("update budget settings redirects to settings", func(t *testing.T) {
 		h := newServerHarness(t)
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/settings",
+		req := httptest.NewRequest(http.MethodPost, "/configure/settings",
 			strings.NewReader("per_run_token_budget=100000&daily_cost_cap_usd=5.0"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -919,7 +996,7 @@ func TestAdminToken(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/run", strings.NewReader("task=review"))
+		req := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -928,8 +1005,8 @@ func TestAdminToken(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
 		}
-		if !strings.HasPrefix(rr.Header().Get("Location"), "/runs/") {
-			t.Fatalf("expected redirect to /runs/{id}, got %q", rr.Header().Get("Location"))
+		if !strings.HasPrefix(rr.Header().Get("Location"), "/operate/runs/") {
+			t.Fatalf("expected redirect to /operate/runs/{id}, got %q", rr.Header().Get("Location"))
 		}
 	})
 
@@ -937,7 +1014,7 @@ func TestAdminToken(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/run", strings.NewReader("task=review"))
+		req := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review"))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 		h.server.ServeHTTP(rr, req)
@@ -954,7 +1031,7 @@ func TestAdminToken(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/run", strings.NewReader("task=review"))
+		req := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review"))
 		req.Header.Set("Authorization", "Bearer wrong-token")
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -973,7 +1050,7 @@ func TestAdminToken(t *testing.T) {
 		h.setAdminToken(t, "rotated-admin-token")
 
 		oldTokenResp := httptest.NewRecorder()
-		oldTokenReq := httptest.NewRequest(http.MethodPost, "/run", strings.NewReader("task=review"))
+		oldTokenReq := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review"))
 		oldTokenReq.Header.Set("Authorization", "Bearer "+h.adminToken)
 		oldTokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -984,13 +1061,13 @@ func TestAdminToken(t *testing.T) {
 		}
 
 		newTokenResp := httptest.NewRecorder()
-		newTokenReq := httptest.NewRequest(http.MethodPost, "/run", strings.NewReader("task=review"))
+		newTokenReq := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review"))
 		newTokenReq.Header.Set("Authorization", "Bearer rotated-admin-token")
 		newTokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 		h.server.ServeHTTP(newTokenResp, newTokenReq)
 
-		// The handler succeeds (redirect to /runs/{id}) — not 401
+		// The handler succeeds (redirect to /operate/runs/{id}) — not 401
 		if newTokenResp.Code == http.StatusUnauthorized {
 			t.Fatalf("expected current token to be accepted, got 401")
 		}
@@ -1000,7 +1077,7 @@ func TestAdminToken(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/run", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/start-task", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -1022,10 +1099,10 @@ func TestAdminToken(t *testing.T) {
 
 	t.Run("same-origin host admin cookie can submit run form", func(t *testing.T) {
 		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/run")
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/operate/start-task")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "http://localhost/run", strings.NewReader("task=review"))
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/operate/start-task", strings.NewReader("task=review"))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Origin", "http://localhost")
 		req.AddCookie(cookie)
@@ -1035,17 +1112,17 @@ func TestAdminToken(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
 		}
-		if !strings.HasPrefix(rr.Header().Get("Location"), "/runs/") {
-			t.Fatalf("expected redirect to /runs/{id}, got %q", rr.Header().Get("Location"))
+		if !strings.HasPrefix(rr.Header().Get("Location"), "/operate/runs/") {
+			t.Fatalf("expected redirect to /operate/runs/{id}, got %q", rr.Header().Get("Location"))
 		}
 	})
 
 	t.Run("cross-origin host admin cookie is rejected", func(t *testing.T) {
 		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/run")
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/operate/start-task")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "http://localhost/run", strings.NewReader("task=review"))
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/operate/start-task", strings.NewReader("task=review"))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Origin", "http://evil.test")
 		req.AddCookie(cookie)
@@ -1068,8 +1145,8 @@ func TestSSE(t *testing.T) {
 	ts := httptest.NewServer(h.server)
 	defer ts.Close()
 
-	respOne, readerOne := subscribeSSE(t, ts.URL+"/runs/run-sse/events")
-	respTwo, readerTwo := subscribeSSE(t, ts.URL+"/runs/run-sse/events")
+	respOne, readerOne := subscribeSSE(t, ts.URL+"/operate/runs/run-sse/events")
+	respTwo, readerTwo := subscribeSSE(t, ts.URL+"/operate/runs/run-sse/events")
 
 	first := model.ReplayDelta{
 		RunID:      "run-sse",
@@ -1112,7 +1189,7 @@ func TestSSEPayloadsAreStructuredJSON(t *testing.T) {
 	ts := httptest.NewServer(h.server)
 	defer ts.Close()
 
-	resp, reader := subscribeSSE(t, ts.URL+"/runs/run-sse-json/events")
+	resp, reader := subscribeSSE(t, ts.URL+"/operate/runs/run-sse-json/events")
 	defer resp.Body.Close()
 
 	payload := []byte(`{"text":"Hel"}`)
@@ -2019,14 +2096,14 @@ func TestSessionAPI(t *testing.T) {
 	})
 }
 
-func TestControlPlanePage(t *testing.T) {
-	t.Run("GET /control renders health routes and deliveries", func(t *testing.T) {
+func TestRoutesDeliveriesPage(t *testing.T) {
+	t.Run("GET /recover/routes-deliveries renders health routes and deliveries", func(t *testing.T) {
 		h := newServerHarness(t)
-		run, route, intentID := h.seedControlPlaneRoute(t)
+		run, route, intentID := h.seedRoutesDeliveriesData(t)
 		h.markOutboundIntentTerminal(t, intentID)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/control", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/recover/routes-deliveries", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -2034,21 +2111,21 @@ func TestControlPlanePage(t *testing.T) {
 			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 		}
 		body := rr.Body.String()
-		for _, want := range []string{"Control", "Connector Health", "Route Directory", "Delivery Queue", route.ID, run.SessionID, "telegram", "terminal"} {
+		for _, want := range []string{"Routes &amp; Deliveries", "Connector Health", "Route Directory", "Delivery Queue", route.ID, run.SessionID, "telegram", "terminal"} {
 			if !strings.Contains(body, want) {
-				t.Fatalf("expected control page to contain %q:\n%s", want, body)
+				t.Fatalf("expected routes and deliveries page to contain %q:\n%s", want, body)
 			}
 		}
 		for _, want := range []string{"directory-card-list", "directory-card"} {
 			if !strings.Contains(body, want) {
-				t.Fatalf("expected responsive control markup %q:\n%s", want, body)
+				t.Fatalf("expected responsive routes and deliveries markup %q:\n%s", want, body)
 			}
 		}
 	})
 
-	t.Run("GET /control applies shared query filters", func(t *testing.T) {
+	t.Run("GET /recover/routes-deliveries applies shared query filters", func(t *testing.T) {
 		h := newServerHarness(t)
-		_, route, intentID := h.seedControlPlaneRoute(t)
+		_, route, intentID := h.seedRoutesDeliveriesData(t)
 		h.markOutboundIntentTerminal(t, intentID)
 		if _, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
 			ConversationKey: conversations.ConversationKey{
@@ -2065,7 +2142,7 @@ func TestControlPlanePage(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/control?connector_id=telegram&q=chat-1&route_status=all&delivery_status=terminal", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/recover/routes-deliveries?connector_id=telegram&q=chat-1&route_status=all&delivery_status=terminal", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -2075,19 +2152,19 @@ func TestControlPlanePage(t *testing.T) {
 		body := rr.Body.String()
 		for _, want := range []string{route.ID, "chat-1", "terminal"} {
 			if !strings.Contains(body, want) {
-				t.Fatalf("expected filtered control page to contain %q:\n%s", want, body)
+				t.Fatalf("expected filtered routes and deliveries page to contain %q:\n%s", want, body)
 			}
 		}
 		for _, unwanted := range []string{"chat-beta", "whatsapp", "thread-2"} {
 			if strings.Contains(body, unwanted) {
-				t.Fatalf("expected filtered control page to exclude %q:\n%s", unwanted, body)
+				t.Fatalf("expected filtered routes and deliveries page to exclude %q:\n%s", unwanted, body)
 			}
 		}
 	})
 
-	t.Run("GET /control renders section pagination links", func(t *testing.T) {
+	t.Run("GET /recover/routes-deliveries renders section pagination links", func(t *testing.T) {
 		h := newServerHarness(t)
-		_, _, firstIntentID := h.seedControlPlaneRoute(t)
+		_, _, firstIntentID := h.seedRoutesDeliveriesData(t)
 		h.markOutboundIntentTerminal(t, firstIntentID)
 
 		secondRun, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
@@ -2139,7 +2216,7 @@ func TestControlPlanePage(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/control?connector_id=telegram&route_status=active&active_limit=1&delivery_status=terminal&delivery_limit=1", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/recover/routes-deliveries?connector_id=telegram&route_status=active&active_limit=1&delivery_status=terminal&delivery_limit=1", nil)
 		h.server.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusOK {
@@ -2148,20 +2225,20 @@ func TestControlPlanePage(t *testing.T) {
 		body := rr.Body.String()
 		for _, want := range []string{"chat-2", "active_cursor=", "active_direction=next", "delivery_cursor=", "delivery_direction=next"} {
 			if !strings.Contains(body, want) {
-				t.Fatalf("expected paginated control page to contain %q:\n%s", want, body)
+				t.Fatalf("expected paginated routes and deliveries page to contain %q:\n%s", want, body)
 			}
 		}
 	})
 
-	t.Run("POST /control/routes/{id}/messages wakes the bound session", func(t *testing.T) {
+	t.Run("POST /recover/routes-deliveries/routes/{id}/messages wakes the bound session", func(t *testing.T) {
 		h := newServerHarness(t)
-		run, route, _ := h.seedControlPlaneRoute(t)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/control")
+		run, route, _ := h.seedRoutesDeliveriesData(t)
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/recover/routes-deliveries")
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(
 			http.MethodPost,
-			"http://localhost/control/routes/"+route.ID+"/messages",
+			"http://localhost/recover/routes-deliveries/routes/"+route.ID+"/messages",
 			strings.NewReader("body=What+changed%3F"),
 		)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -2173,8 +2250,8 @@ func TestControlPlanePage(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if !strings.HasPrefix(rr.Header().Get("Location"), "/runs/") {
-			t.Fatalf("expected redirect to /runs/{id}, got %q", rr.Header().Get("Location"))
+		if !strings.HasPrefix(rr.Header().Get("Location"), "/operate/runs/") {
+			t.Fatalf("expected redirect to /operate/runs/{id}, got %q", rr.Header().Get("Location"))
 		}
 
 		runs, err := h.db.RawDB().Query(
@@ -2198,13 +2275,13 @@ func TestControlPlanePage(t *testing.T) {
 		}
 	})
 
-	t.Run("POST /control/routes/{id}/messages with empty body re-renders the page with an error", func(t *testing.T) {
+	t.Run("POST /recover/routes-deliveries/routes/{id}/messages with empty body re-renders the page with an error", func(t *testing.T) {
 		h := newServerHarness(t)
-		_, route, _ := h.seedControlPlaneRoute(t)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/control")
+		_, route, _ := h.seedRoutesDeliveriesData(t)
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/recover/routes-deliveries")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "http://localhost/control/routes/"+route.ID+"/messages", strings.NewReader("body="))
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/recover/routes-deliveries/routes/"+route.ID+"/messages", strings.NewReader("body="))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Origin", "http://localhost")
 		req.AddCookie(cookie)
@@ -2219,13 +2296,13 @@ func TestControlPlanePage(t *testing.T) {
 		}
 	})
 
-	t.Run("POST /control/routes/{id}/deactivate redirects and clears the active route", func(t *testing.T) {
+	t.Run("POST /recover/routes-deliveries/routes/{id}/deactivate redirects and clears the active route", func(t *testing.T) {
 		h := newServerHarness(t)
-		_, route, _ := h.seedControlPlaneRoute(t)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/control")
+		_, route, _ := h.seedRoutesDeliveriesData(t)
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/recover/routes-deliveries")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "http://localhost/control/routes/"+route.ID+"/deactivate", nil)
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/recover/routes-deliveries/routes/"+route.ID+"/deactivate", nil)
 		req.Header.Set("Origin", "http://localhost")
 		req.AddCookie(cookie)
 
@@ -2234,8 +2311,8 @@ func TestControlPlanePage(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if rr.Header().Get("Location") != "/control" {
-			t.Fatalf("expected redirect to /control, got %q", rr.Header().Get("Location"))
+		if rr.Header().Get("Location") != "/recover/routes-deliveries" {
+			t.Fatalf("expected redirect to /recover/routes-deliveries, got %q", rr.Header().Get("Location"))
 		}
 
 		routes, err := h.rt.ListRoutes(context.Background(), sessions.RouteListFilter{
@@ -2251,14 +2328,14 @@ func TestControlPlanePage(t *testing.T) {
 		}
 	})
 
-	t.Run("POST /control/deliveries/{id}/retry redirects and requeues terminal delivery", func(t *testing.T) {
+	t.Run("POST /recover/routes-deliveries/deliveries/{id}/retry redirects and requeues terminal delivery", func(t *testing.T) {
 		h := newServerHarness(t)
-		_, _, intentID := h.seedControlPlaneRoute(t)
+		_, _, intentID := h.seedRoutesDeliveriesData(t)
 		h.markOutboundIntentTerminal(t, intentID)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/control")
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/recover/routes-deliveries")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "http://localhost/control/deliveries/"+intentID+"/retry", nil)
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/recover/routes-deliveries/deliveries/"+intentID+"/retry", nil)
 		req.Header.Set("Origin", "http://localhost")
 		req.AddCookie(cookie)
 
@@ -2267,8 +2344,8 @@ func TestControlPlanePage(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if rr.Header().Get("Location") != "/control" {
-			t.Fatalf("expected redirect to /control, got %q", rr.Header().Get("Location"))
+		if rr.Header().Get("Location") != "/recover/routes-deliveries" {
+			t.Fatalf("expected redirect to /recover/routes-deliveries, got %q", rr.Header().Get("Location"))
 		}
 
 		delivery, err := h.rt.RetryDelivery(context.Background(), intentID)
@@ -2279,13 +2356,13 @@ func TestControlPlanePage(t *testing.T) {
 }
 
 func TestSessionPages(t *testing.T) {
-	t.Run("GET /sessions renders the recent session directory", func(t *testing.T) {
+	t.Run("GET /operate/sessions renders the recent session directory", func(t *testing.T) {
 		h := newServerHarness(t)
 		front := h.startFrontSession(t, "Inspect the repo.")
 		worker := h.spawnWorkerSession(t, front.SessionID, "researcher", "Inspect docs.")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -2308,13 +2385,13 @@ func TestSessionPages(t *testing.T) {
 		}
 	})
 
-	t.Run("GET /sessions applies shared directory filters", func(t *testing.T) {
+	t.Run("GET /operate/sessions applies shared directory filters", func(t *testing.T) {
 		h := newServerHarness(t)
-		run, _, _ := h.seedControlPlaneRoute(t)
+		run, _, _ := h.seedRoutesDeliveriesData(t)
 		worker := h.spawnWorkerSession(t, run.SessionID, "researcher", "Inspect docs.")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions?connector_id=telegram&binding=bound", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions?connector_id=telegram&binding=bound", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -2330,13 +2407,13 @@ func TestSessionPages(t *testing.T) {
 		}
 	})
 
-	t.Run("GET /sessions can filter for unbound sessions", func(t *testing.T) {
+	t.Run("GET /operate/sessions can filter for unbound sessions", func(t *testing.T) {
 		h := newServerHarness(t)
-		run, _, _ := h.seedControlPlaneRoute(t)
+		run, _, _ := h.seedRoutesDeliveriesData(t)
 		worker := h.spawnWorkerSession(t, run.SessionID, "researcher", "Inspect docs.")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions?binding=unbound", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions?binding=unbound", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -2352,7 +2429,7 @@ func TestSessionPages(t *testing.T) {
 		}
 	})
 
-	t.Run("GET /sessions renders pagination links", func(t *testing.T) {
+	t.Run("GET /operate/sessions renders pagination links", func(t *testing.T) {
 		h := newServerHarness(t)
 		svc := sessions.NewService(h.db, conversations.NewConversationStore(h.db))
 		base := time.Date(2026, 3, 25, 8, 0, 0, 0, time.UTC)
@@ -2384,7 +2461,7 @@ func TestSessionPages(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions?limit=1", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions?limit=1", nil)
 		h.server.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusOK {
@@ -2399,13 +2476,13 @@ func TestSessionPages(t *testing.T) {
 		}
 	})
 
-	t.Run("GET /sessions/{id} renders mailbox route and delivery state", func(t *testing.T) {
+	t.Run("GET /operate/sessions/{id} renders mailbox route and delivery state", func(t *testing.T) {
 		h := newServerHarness(t)
-		run, route, intentID := h.seedControlPlaneRoute(t)
+		run, route, intentID := h.seedRoutesDeliveriesData(t)
 		h.markOutboundIntentTerminal(t, intentID)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions/"+run.SessionID, nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions/"+run.SessionID, nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -2413,14 +2490,14 @@ func TestSessionPages(t *testing.T) {
 			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 		}
 		body := rr.Body.String()
-		for _, want := range []string{"Session Detail", run.SessionID, "Inspect Telegram.", "mock response", route.ID, "terminal", "/sessions/" + run.SessionID + "/messages"} {
+		for _, want := range []string{"Session Detail", run.SessionID, "Inspect Telegram.", "mock response", route.ID, "terminal", "/operate/sessions/" + run.SessionID + "/messages"} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected session detail to contain %q:\n%s", want, body)
 			}
 		}
 	})
 
-	t.Run("GET /sessions/{id} renders live mailbox streaming hooks for an active run", func(t *testing.T) {
+	t.Run("GET /operate/sessions/{id} renders live mailbox streaming hooks for an active run", func(t *testing.T) {
 		h := newServerHarness(t)
 		run := h.startFrontSession(t, "Inspect the repo.")
 		svc := sessions.NewService(h.db, conversations.NewConversationStore(h.db))
@@ -2439,7 +2516,7 @@ func TestSessionPages(t *testing.T) {
 		h.insertRunWithSession(t, "run-session-active", run.ConversationID, run.SessionID, "follow up", "active")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions/"+run.SessionID, nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions/"+run.SessionID, nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -2451,7 +2528,7 @@ func TestSessionPages(t *testing.T) {
 			`id="session-live-root"`,
 			`data-active-run-id="run-session-active"`,
 			`/api/sessions/` + run.SessionID + `/messages`,
-			"`/runs/${encodeURIComponent(runID)}/events`",
+			"`/operate/runs/${encodeURIComponent(runID)}/events`",
 			`new EventSource(streamURL)`,
 			`data-source-run-id="` + run.ID + `"`,
 		} {
@@ -2461,15 +2538,15 @@ func TestSessionPages(t *testing.T) {
 		}
 	})
 
-	t.Run("POST /sessions/{id}/messages wakes the session and redirects to the new run", func(t *testing.T) {
+	t.Run("POST /operate/sessions/{id}/messages wakes the session and redirects to the new run", func(t *testing.T) {
 		h := newServerHarness(t)
 		front := h.startFrontSession(t, "Inspect the repo.")
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/sessions/"+front.SessionID)
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/operate/sessions/"+front.SessionID)
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(
 			http.MethodPost,
-			"http://localhost/sessions/"+front.SessionID+"/messages",
+			"http://localhost/operate/sessions/"+front.SessionID+"/messages",
 			strings.NewReader("body=What+changed%3F"),
 		)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -2481,20 +2558,20 @@ func TestSessionPages(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if !strings.HasPrefix(rr.Header().Get("Location"), "/runs/") {
-			t.Fatalf("expected redirect to /runs/{id}, got %q", rr.Header().Get("Location"))
+		if !strings.HasPrefix(rr.Header().Get("Location"), "/operate/runs/") {
+			t.Fatalf("expected redirect to /operate/runs/{id}, got %q", rr.Header().Get("Location"))
 		}
 	})
 
-	t.Run("POST /sessions/{id}/messages with empty body re-renders the detail page with an error", func(t *testing.T) {
+	t.Run("POST /operate/sessions/{id}/messages with empty body re-renders the detail page with an error", func(t *testing.T) {
 		h := newServerHarness(t)
 		front := h.startFrontSession(t, "Inspect the repo.")
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/sessions/"+front.SessionID)
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/operate/sessions/"+front.SessionID)
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(
 			http.MethodPost,
-			"http://localhost/sessions/"+front.SessionID+"/messages",
+			"http://localhost/operate/sessions/"+front.SessionID+"/messages",
 			strings.NewReader("body="),
 		)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -2511,16 +2588,16 @@ func TestSessionPages(t *testing.T) {
 		}
 	})
 
-	t.Run("POST /sessions/{id}/deliveries/{delivery_id}/retry redirects back to session detail", func(t *testing.T) {
+	t.Run("POST /operate/sessions/{id}/deliveries/{delivery_id}/retry redirects back to session detail", func(t *testing.T) {
 		h := newServerHarness(t)
-		run, _, intentID := h.seedControlPlaneRoute(t)
+		run, _, intentID := h.seedRoutesDeliveriesData(t)
 		h.markOutboundIntentTerminal(t, intentID)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/sessions/"+run.SessionID)
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/operate/sessions/"+run.SessionID)
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(
 			http.MethodPost,
-			"http://localhost/sessions/"+run.SessionID+"/deliveries/"+intentID+"/retry",
+			"http://localhost/operate/sessions/"+run.SessionID+"/deliveries/"+intentID+"/retry",
 			nil,
 		)
 		req.Header.Set("Origin", "http://localhost")
@@ -2531,7 +2608,7 @@ func TestSessionPages(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if rr.Header().Get("Location") != "/sessions/"+run.SessionID {
+		if rr.Header().Get("Location") != "/operate/sessions/"+run.SessionID {
 			t.Fatalf("expected redirect to session detail, got %q", rr.Header().Get("Location"))
 		}
 
@@ -2784,7 +2861,7 @@ func (h *serverHarness) insertRunWithSession(t *testing.T, runID, conversationID
 	}
 }
 
-func (h *serverHarness) seedControlPlaneRoute(t *testing.T) (model.Run, model.RouteDirectoryItem, string) {
+func (h *serverHarness) seedRoutesDeliveriesData(t *testing.T) (model.Run, model.RouteDirectoryItem, string) {
 	t.Helper()
 
 	run, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{

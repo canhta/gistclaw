@@ -1,6 +1,6 @@
 {{define "settings_body"}}
 <section class="page-header">
-  <span class="page-eyebrow">Config</span>
+  <span class="page-eyebrow">Configure</span>
   <h1>Settings</h1>
   <p class="page-lede">Operator configuration, workspace binding, and local credentials. Each concern gets its own work panel.</p>
 </section>
@@ -10,9 +10,9 @@
 <section class="page-section">
   <div class="panel">
   <div class="stack-sm">
-    <p class="muted">Team composition and agent collaboration defaults now live on the <a href="/team">Team</a> page.</p>
+    <p class="muted">Team composition and agent collaboration defaults now live on the <a href="/configure/team">Team</a> page.</p>
   </div>
-  <form method="POST" action="/settings">
+  <form method="POST" action="/configure/settings">
     <div class="field">
       <label for="workspace_root">Workspace Root</label>
       <input type="text" id="workspace_root" name="workspace_root" value="{{.WorkspaceRoot}}">
@@ -48,7 +48,7 @@
     {{else}}
     <div class="muted">Not configured</div>
     {{end}}
-    <form class="stack-md" method="POST" action="/settings">
+    <form class="stack-md" method="POST" action="/configure/settings">
       <div class="field">
         <input class="input-wide" type="password" name="telegram_bot_token" placeholder="Paste new token to update" autocomplete="off">
       </div>

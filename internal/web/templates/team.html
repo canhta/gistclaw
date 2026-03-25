@@ -1,6 +1,6 @@
 {{define "team_body"}}
 <section class="page-header">
-  <span class="page-eyebrow">Orchestration</span>
+  <span class="page-eyebrow">Configure</span>
   <h1>Team</h1>
   <p class="page-lede">Configure the default agent team for future runs. Each card shows the live default role, tool posture, and collaboration edges for that agent.</p>
 </section>
@@ -10,7 +10,7 @@
 {{if .Notice}}
   <section class="panel notice-panel">{{.Notice}}</section>
 {{end}}
-<form class="page-stack team-workbench" method="POST" action="/team" enctype="multipart/form-data">
+<form class="page-stack team-workbench" method="POST" action="/configure/team" enctype="multipart/form-data">
   <input type="hidden" name="agent_count" value="{{len .Agents}}">
   <section class="panel team-summary">
     <div class="team-summary-head">
@@ -19,7 +19,7 @@
         <p class="muted">Import or export the editable team definition without mixing those file operations into the primary editing actions.</p>
       </div>
       <div class="team-file-tools">
-        <a class="btn btn-ghost" href="/team/export">Export YAML</a>
+        <a class="btn btn-ghost" href="/configure/team/export">Export YAML</a>
         <div class="team-import-controls">
           <label for="import_file">Import YAML</label>
           <div class="team-import-row">

@@ -82,7 +82,10 @@ The important current boundaries are:
 
 ## Design System
 
-Always read `DESIGN.md` before any visual or UI decision. Do not deviate without explicit user approval.
+Always read `DESIGN.md` before making any visual or UI decision.
+All navigation, page hierarchy, graph placement, font choices, colors, spacing, and aesthetic direction are defined there.
+Do not deviate without explicit user approval.
+In QA mode, flag any code that does not match `DESIGN.md`.
 
 ## Documentation
 

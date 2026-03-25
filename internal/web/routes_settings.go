@@ -45,7 +45,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		data.TelegramToken = strings.Repeat("*", len(tgRaw))
 	}
 
-	s.renderTemplate(w, "Settings", "settings_body", data)
+	s.renderTemplate(w, r, "Settings", "settings_body", data)
 }
 
 func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
@@ -67,9 +67,9 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.rt.UpdateSettings(r.Context(), updates); err != nil {
-		s.renderTemplate(w, "Settings", "settings_body", settingsPageData{Error: err.Error()})
+		s.renderTemplate(w, r, "Settings", "settings_body", settingsPageData{Error: err.Error()})
 		return
 	}
 
-	http.Redirect(w, r, "/settings", http.StatusSeeOther)
+	http.Redirect(w, r, pageConfigureSettings, http.StatusSeeOther)
 }

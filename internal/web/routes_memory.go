@@ -56,9 +56,9 @@ func (s *Server) handleMemoryList(w http.ResponseWriter, r *http.Request) {
 			Query:   keyword,
 			Limit:   limit,
 		},
-		Paging: buildPageLinks("/memory", cloneQuery(r.URL.Query()), "cursor", "direction", page.NextCursor, page.PrevCursor, page.HasNext, page.HasPrev),
+		Paging: buildPageLinks(pageConfigureMemory, cloneQuery(r.URL.Query()), "cursor", "direction", page.NextCursor, page.PrevCursor, page.HasNext, page.HasPrev),
 	}
-	s.renderTemplate(w, "Memory", "memory_body", data)
+	s.renderTemplate(w, r, "Memory", "memory_body", data)
 }
 
 func (s *Server) handleMemoryForget(w http.ResponseWriter, r *http.Request) {
@@ -83,7 +83,7 @@ func (s *Server) handleMemoryForget(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data := memoryPageData{Confirm: &item}
-		s.renderTemplate(w, "Memory", "memory_body", data)
+		s.renderTemplate(w, r, "Memory", "memory_body", data)
 		return
 	}
 
@@ -92,7 +92,7 @@ func (s *Server) handleMemoryForget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/memory", http.StatusSeeOther)
+	http.Redirect(w, r, pageConfigureMemory, http.StatusSeeOther)
 }
 
 func (s *Server) handleMemoryEdit(w http.ResponseWriter, r *http.Request) {
@@ -114,5 +114,5 @@ func (s *Server) handleMemoryEdit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/memory", http.StatusSeeOther)
+	http.Redirect(w, r, pageConfigureMemory, http.StatusSeeOther)
 }

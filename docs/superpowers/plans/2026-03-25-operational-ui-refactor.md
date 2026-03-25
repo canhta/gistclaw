@@ -24,7 +24,7 @@
 - [ ] **Step 2: Run `go test ./internal/web/...` to verify the new tests fail for missing route/data**
 - [ ] **Step 3: Add runtime/team view types and accessors for default team config plus run snapshot decoding**
 - [ ] **Step 4: Pass team-dir context from app bootstrap into the web/runtime seam**
-- [ ] **Step 5: Implement `GET /team` and any required `POST /team` update path with runtime-owned writes**
+- [ ] **Step 5: Implement `GET /configure/team` and any required `POST /configure/team` update path with runtime-owned writes**
 - [ ] **Step 6: Re-run focused web tests and make them pass**
 
 ### Task 2: Shared list controls

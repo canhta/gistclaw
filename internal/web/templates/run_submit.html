@@ -1,13 +1,14 @@
 {{define "run_submit_body"}}
 <section class="page-header">
-  <span class="page-eyebrow">Execution</span>
-  <h1>Submit a Task</h1>
+  <span class="page-eyebrow">Operate</span>
+  <h1>Start Task</h1>
+  <p class="page-lede">Open a new run from the operator surface. This is the primary action for active work, not a peer destination in the navigation.</p>
 </section>
 {{if .Error}}
   <section class="error">{{.Error}}</section>
 {{end}}
 <section class="panel">
-  <form method="POST" action="/run">
+  <form method="POST" action="/operate/start-task">
     <div class="field">
       <label for="task">Task</label>
       <textarea id="task" name="task" rows="4" placeholder="Describe the task for the agent team...">{{.Task}}</textarea>

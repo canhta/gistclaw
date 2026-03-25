@@ -15,7 +15,7 @@ If you are evaluating GistClaw as a tool, the current value is:
 ## What Ships Today
 
 - A single Go binary, `gistclaw`, with daemon and operator commands.
-- A local web host with onboarding, runs, approvals, settings, memory, sessions, and control pages.
+- A local web host with onboarding plus operator-job pages grouped under Operate, Configure, and Recover.
 - A journal-backed runtime that records runs, session collaboration, approvals, receipts, route bindings, and outbound delivery state in SQLite.
 - Provider adapters for Anthropic and OpenAI-compatible endpoints.
 - A tool registry with built-in web fetch, optional Tavily search, and optional MCP stdio tools.
@@ -45,12 +45,14 @@ If you are evaluating GistClaw as a tool, the current value is:
 ### Web
 
 - `/onboarding` binds the workspace and walks through the first run.
-- `/runs` and `/runs/{id}` show run state and live replay.
-- `/approvals` resolves risky tool actions.
-- `/memory` lists, edits, and forgets stored facts.
-- `/sessions` and `/sessions/{id}` expose session mailbox history, route state, and delivery failures.
-- `/control` exposes connector health, route bindings, route history, and delivery retry actions.
-- `/settings` updates operator-managed settings such as workspace root and budgets.
+- `/operate/runs` and `/operate/runs/{id}` show run state and live replay, with the orchestration graph kept on runs and run detail.
+- `/operate/sessions` and `/operate/sessions/{id}` expose session mailbox history, route state, and delivery failures.
+- `/operate/start-task` starts a new operator task from the web surface.
+- `/configure/team` edits and exports the runtime team definition.
+- `/configure/memory` lists, edits, and forgets stored facts.
+- `/configure/settings` updates operator-managed settings such as workspace root and budgets.
+- `/recover/approvals` resolves risky tool actions.
+- `/recover/routes-deliveries` exposes connector health, route bindings, route history, and delivery retry actions.
 
 ### Connectors
 

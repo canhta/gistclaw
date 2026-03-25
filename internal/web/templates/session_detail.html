@@ -1,6 +1,6 @@
 {{define "session_detail_body"}}
 <section class="page-header">
-  <span class="page-eyebrow">Session</span>
+  <span class="page-eyebrow">Operate</span>
   <h1>Session Detail</h1>
   <div class="mono">{{.Session.ID}}</div>
   <p class="muted">{{.Session.AgentID}} · {{.Session.Role}} · {{.Session.Status}}</p>
@@ -14,7 +14,7 @@
 
 <section id="session-live-root" class="panel" data-session-id="{{.Session.ID}}" data-send-url="/api/sessions/{{.Session.ID}}/messages" data-active-run-id="{{.ActiveRunID}}">
   <h2 class="section-title">Send Message</h2>
-  <form id="session-send-form" class="inline-form" method="POST" action="/sessions/{{.Session.ID}}/messages">
+  <form id="session-send-form" class="inline-form" method="POST" action="/operate/sessions/{{.Session.ID}}/messages">
     <input id="session-send-input" type="text" name="body" placeholder="Send a message into this session">
     <button class="btn btn-secondary" type="submit" data-confirm="Wake this session with a new operator message?">Wake Session</button>
   </form>
@@ -96,7 +96,7 @@
         </td>
         <td>
           {{if eq .Status "terminal"}}
-          <form class="inline-form" method="POST" action="/sessions/{{$.Session.ID}}/deliveries/{{.ID}}/retry">
+          <form class="inline-form" method="POST" action="/operate/sessions/{{$.Session.ID}}/deliveries/{{.ID}}/retry">
             <button class="btn btn-secondary" type="submit" data-confirm="Retry this session delivery now?">Retry</button>
           </form>
           {{else}}
@@ -242,7 +242,7 @@
     }
     closeStream();
     currentRunID = runID;
-    const streamURL = `/runs/${encodeURIComponent(runID)}/events`;
+    const streamURL = `/operate/runs/${encodeURIComponent(runID)}/events`;
     const source = new EventSource(streamURL);
     currentSource = source;
 

@@ -1,6 +1,6 @@
 {{define "approvals_body"}}
 <section class="page-header">
-  <span class="page-eyebrow">Approval Gate</span>
+  <span class="page-eyebrow">Recover</span>
   <h1>Approvals</h1>
   <p class="page-lede">Review pending, expired, and resolved approval tickets in one directory. Filters and paging keep the queue explainable under load.</p>
 </section>
@@ -9,7 +9,7 @@
 {{end}}
 <section class="page-section">
   <div class="panel">
-    <form class="approval-filter-rail" method="GET" action="/approvals">
+    <form class="approval-filter-rail" method="GET" action="/recover/approvals">
       <div class="approval-filter-grid">
         <div class="field approval-filter-search">
           <label for="approval-query">Search</label>
@@ -36,7 +36,7 @@
         </div>
         <div class="approval-filter-actions">
           <button class="btn btn-secondary" type="submit">Filter</button>
-          <a class="btn btn-ghost" href="/approvals">Reset</a>
+          <a class="btn btn-ghost" href="/recover/approvals">Reset</a>
         </div>
       </div>
     </form>
@@ -61,7 +61,7 @@
         {{end}}
       </div>
       {{if eq .Status "pending"}}
-        <form class="button-row approval-card-actions" method="POST" action="/approvals/{{.ID}}/resolve">
+        <form class="button-row approval-card-actions" method="POST" action="/recover/approvals/{{.ID}}/resolve">
           <button class="btn btn-primary" type="submit" name="decision" value="approved" data-confirm="Approve this approval ticket? This action resolves it immediately.">Approve</button>
           <button class="btn btn-danger" type="submit" name="decision" value="denied" data-confirm="Deny this approval ticket? This action resolves it immediately.">Deny</button>
         </form>
