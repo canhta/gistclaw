@@ -34,6 +34,39 @@ func setupRunTestDeps(t *testing.T) (*store.DB, *conversations.ConversationStore
 	return db, cs, mem, reg
 }
 
+type recordingReplaySink struct {
+	events []model.ReplayDelta
+}
+
+func (s *recordingReplaySink) Emit(_ context.Context, _ string, evt model.ReplayDelta) error {
+	s.events = append(s.events, evt)
+	return nil
+}
+
+type streamingProvider struct{}
+
+func (p *streamingProvider) ID() string { return "streaming" }
+
+func (p *streamingProvider) Generate(ctx context.Context, _ GenerateRequest, stream StreamSink) (GenerateResult, error) {
+	if stream != nil {
+		if err := stream.OnDelta(ctx, "Hel"); err != nil {
+			return GenerateResult{}, err
+		}
+		if err := stream.OnDelta(ctx, "lo"); err != nil {
+			return GenerateResult{}, err
+		}
+		if err := stream.OnComplete(); err != nil {
+			return GenerateResult{}, err
+		}
+	}
+	return GenerateResult{
+		Content:      "Hello",
+		InputTokens:  10,
+		OutputTokens: 5,
+		StopReason:   "end_turn",
+	}, nil
+}
+
 func TestRunEngine_StartAndComplete(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(
@@ -67,6 +100,52 @@ func TestRunEngine_StartAndComplete(t *testing.T) {
 	}
 	if receiptCount != 1 {
 		t.Fatalf("expected 1 receipt, got %d", receiptCount)
+	}
+}
+
+func TestRunEngine_EmitsTurnDeltasToEventSink(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	sink := &recordingReplaySink{}
+	rt := New(db, cs, reg, mem, &streamingProvider{}, sink)
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-stream",
+		AgentID:        "agent-a",
+		Objective:      "stream text",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if run.Status != model.RunStatusCompleted {
+		t.Fatalf("expected status %q, got %q", model.RunStatusCompleted, run.Status)
+	}
+
+	var deltaTexts []string
+	var sawTurnCompleted bool
+	for _, evt := range sink.events {
+		switch evt.Kind {
+		case "turn_delta":
+			var payload struct {
+				Text string `json:"text"`
+			}
+			if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
+				t.Fatalf("unmarshal turn_delta payload: %v", err)
+			}
+			deltaTexts = append(deltaTexts, payload.Text)
+		case "turn_completed":
+			sawTurnCompleted = true
+		}
+	}
+
+	if len(deltaTexts) != 2 {
+		t.Fatalf("expected 2 turn deltas, got %d", len(deltaTexts))
+	}
+	if deltaTexts[0] != "Hel" || deltaTexts[1] != "lo" {
+		t.Fatalf("unexpected turn deltas: %v", deltaTexts)
+	}
+	if !sawTurnCompleted {
+		t.Fatal("expected turn_completed replay event")
 	}
 }
 

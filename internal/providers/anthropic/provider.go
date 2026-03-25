@@ -3,6 +3,7 @@ package anthropic
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -40,6 +41,13 @@ type sessionMessagePayload struct {
 	Body string `json:"body"`
 }
 
+type messageStream interface {
+	Next() bool
+	Current() anthropicsdk.MessageStreamEventUnion
+	Err() error
+	Close() error
+}
+
 // New creates a Provider for the given API key and default model ID.
 // If the ANTHROPIC_BASE_URL environment variable is set, it is used as the
 // base URL instead of the default. This allows test suites to point at an
@@ -68,7 +76,7 @@ func (p *Provider) ID() string { return "anthropic" }
 // Generate sends a request to the Anthropic Messages API and returns the result.
 // The StreamSink parameter is accepted for interface compliance but streaming is
 // not yet implemented; the full response is buffered and returned at once.
-func (p *Provider) Generate(ctx context.Context, req runtime.GenerateRequest, _ runtime.StreamSink) (runtime.GenerateResult, error) {
+func (p *Provider) Generate(ctx context.Context, req runtime.GenerateRequest, stream runtime.StreamSink) (runtime.GenerateResult, error) {
 	modelID := req.ModelID
 	if modelID == "" {
 		modelID = p.modelID
@@ -78,6 +86,10 @@ func (p *Provider) Generate(ctx context.Context, req runtime.GenerateRequest, _ 
 		maxTokens = defaultMaxTokens
 	}
 
+	if stream != nil {
+		return p.streamMessages(ctx, req, modelID, maxTokens, stream)
+	}
+
 	client := p.sdkClient()
 	apiResp, err := client.Messages.New(ctx, buildMessageParams(req, modelID, maxTokens))
 	if err != nil {
@@ -85,6 +97,42 @@ func (p *Provider) Generate(ctx context.Context, req runtime.GenerateRequest, _ 
 	}
 
 	return parseResponse(apiResp), nil
+}
+
+func (p *Provider) streamMessages(ctx context.Context, req runtime.GenerateRequest, modelID string, maxTokens int, streamSink runtime.StreamSink) (runtime.GenerateResult, error) {
+	client := p.sdkClient()
+	stream := client.Messages.NewStreaming(ctx, buildMessageParams(req, modelID, maxTokens))
+	return consumeMessageStream(ctx, stream, streamSink)
+}
+
+func consumeMessageStream(ctx context.Context, stream messageStream, streamSink runtime.StreamSink) (runtime.GenerateResult, error) {
+	defer stream.Close()
+	var message anthropicsdk.Message
+	for stream.Next() {
+		event := stream.Current()
+		if err := message.Accumulate(event); err != nil {
+			return runtime.GenerateResult{}, fmt.Errorf("anthropic: accumulate stream: %w", err)
+		}
+
+		switch evt := event.AsAny().(type) {
+		case anthropicsdk.ContentBlockDeltaEvent:
+			if evt.Delta.Type != "text_delta" || evt.Delta.Text == "" {
+				continue
+			}
+			if err := streamSink.OnDelta(ctx, evt.Delta.Text); err != nil {
+				return runtime.GenerateResult{}, err
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return runtime.GenerateResult{}, providerutil.ProviderError("anthropic", err)
+	}
+
+	result := parseResponse(&message)
+	if err := streamSink.OnComplete(); err != nil {
+		return runtime.GenerateResult{}, err
+	}
+	return result, nil
 }
 
 func (p *Provider) sdkClient() anthropicsdk.Client {

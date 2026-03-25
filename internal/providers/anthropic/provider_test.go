@@ -7,9 +7,46 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime"
 )
+
+type recordingStreamSink struct {
+	deltas    []string
+	completed bool
+}
+
+func (s *recordingStreamSink) OnDelta(_ context.Context, text string) error {
+	s.deltas = append(s.deltas, text)
+	return nil
+}
+
+func (s *recordingStreamSink) OnComplete() error {
+	s.completed = true
+	return nil
+}
+
+type stubMessageStream struct {
+	events []anthropicsdk.MessageStreamEventUnion
+	index  int
+}
+
+func (s *stubMessageStream) Next() bool {
+	if s.index >= len(s.events) {
+		return false
+	}
+	s.index++
+	return true
+}
+
+func (s *stubMessageStream) Current() anthropicsdk.MessageStreamEventUnion {
+	return s.events[s.index-1]
+}
+
+func (s *stubMessageStream) Err() error { return nil }
+
+func (s *stubMessageStream) Close() error { return nil }
 
 // successResponse builds a minimal valid Anthropic Messages API response body.
 func successResponse(text string, inputTokens, outputTokens int) []byte {
@@ -400,5 +437,50 @@ func TestProvider_InvalidToolSchemaFallsBackToEmptyObject(t *testing.T) {
 	}
 	if inputSchema["type"] != "object" {
 		t.Fatalf("input_schema.type: got %v, want object", inputSchema["type"])
+	}
+}
+
+func TestConsumeMessageStreamWritesTextDeltas(t *testing.T) {
+	rawEvents := []string{
+		`{"type":"message_start","message":{"id":"msg_stream","type":"message","role":"assistant","model":"claude-3-5-sonnet-20241022","content":[],"usage":{"input_tokens":10,"output_tokens":0},"stop_reason":null,"stop_sequence":""}}`,
+		`{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hel"}}`,
+		`{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"lo"}}`,
+		`{"type":"content_block_stop","index":0}`,
+		`{"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":""},"usage":{"output_tokens":5}}`,
+		`{"type":"message_stop"}`,
+	}
+	events := make([]anthropicsdk.MessageStreamEventUnion, 0, len(rawEvents))
+	for _, raw := range rawEvents {
+		var event anthropicsdk.MessageStreamEventUnion
+		if err := json.Unmarshal([]byte(raw), &event); err != nil {
+			t.Fatalf("unmarshal stream event: %v", err)
+		}
+		events = append(events, event)
+	}
+
+	sink := &recordingStreamSink{}
+	result, err := consumeMessageStream(context.Background(), &stubMessageStream{events: events}, sink)
+	if err != nil {
+		t.Fatalf("consumeMessageStream: %v", err)
+	}
+
+	if got := len(sink.deltas); got != 2 {
+		t.Fatalf("expected 2 streamed deltas, got %d", got)
+	}
+	if sink.deltas[0] != "Hel" || sink.deltas[1] != "lo" {
+		t.Fatalf("unexpected streamed deltas: %v", sink.deltas)
+	}
+	if !sink.completed {
+		t.Fatal("expected stream completion callback")
+	}
+	if result.Content != "Hello" {
+		t.Fatalf("Content: got %q, want %q", result.Content, "Hello")
+	}
+	if result.InputTokens != 10 || result.OutputTokens != 5 {
+		t.Fatalf("usage: got %d/%d, want 10/5", result.InputTokens, result.OutputTokens)
+	}
+	if result.StopReason != "end_turn" {
+		t.Fatalf("StopReason: got %q, want %q", result.StopReason, "end_turn")
 	}
 }

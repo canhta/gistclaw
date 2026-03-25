@@ -238,6 +238,44 @@ type runLoopOpts struct {
 	verificationAgent bool
 }
 
+type replayStreamSink struct {
+	runID     string
+	eventSink model.RunEventSink
+}
+
+func newReplayStreamSink(eventSink model.RunEventSink, runID string) StreamSink {
+	if eventSink == nil {
+		return nil
+	}
+	if _, ok := eventSink.(*model.NoopEventSink); ok {
+		return nil
+	}
+	return &replayStreamSink{
+		runID:     runID,
+		eventSink: eventSink,
+	}
+}
+
+func (s *replayStreamSink) OnDelta(ctx context.Context, text string) error {
+	if s == nil || text == "" {
+		return nil
+	}
+	payload, err := json.Marshal(map[string]any{"text": text})
+	if err != nil {
+		return fmt.Errorf("marshal turn_delta payload: %w", err)
+	}
+	return s.eventSink.Emit(ctx, s.runID, model.ReplayDelta{
+		RunID:       s.runID,
+		Kind:        "turn_delta",
+		PayloadJSON: payload,
+		OccurredAt:  time.Now().UTC(),
+	})
+}
+
+func (s *replayStreamSink) OnComplete() error {
+	return nil
+}
+
 func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.Run, error) {
 	runID := opts.runID
 	conversationID := opts.conversationID
@@ -327,7 +365,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			Instructions:    providerReq.Instructions,
 			ConversationCtx: conversationCtx,
 			ToolSpecs:       r.tools.List(),
-		}, nil)
+		}, newReplayStreamSink(r.eventSink, runID))
 		if err != nil {
 			_ = r.convStore.AppendEvent(ctx, model.Event{
 				ID:             generateID(),

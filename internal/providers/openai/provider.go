@@ -66,7 +66,16 @@ func New(apiKey, modelID, baseURL, wireAPI string) *Provider {
 
 func (p *Provider) ID() string { return "openai" }
 
-func (p *Provider) Generate(ctx context.Context, req runtime.GenerateRequest, _ runtime.StreamSink) (runtime.GenerateResult, error) {
+func (p *Provider) Generate(ctx context.Context, req runtime.GenerateRequest, stream runtime.StreamSink) (runtime.GenerateResult, error) {
+	if stream != nil {
+		switch p.wireAPI {
+		case wireAPIResponses:
+			return p.streamResponses(ctx, req, stream)
+		default:
+			return p.streamChatCompletions(ctx, req, stream)
+		}
+	}
+
 	switch p.wireAPI {
 	case wireAPIResponses:
 		return p.generateResponses(ctx, req)
@@ -111,6 +120,97 @@ func (p *Provider) generateResponses(ctx context.Context, req runtime.GenerateRe
 	}
 
 	return parseResponsesResponse(apiResp), nil
+}
+
+func (p *Provider) streamChatCompletions(ctx context.Context, req runtime.GenerateRequest, streamSink runtime.StreamSink) (runtime.GenerateResult, error) {
+	modelID := req.ModelID
+	if modelID == "" {
+		modelID = p.modelID
+	}
+	maxTokens := req.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultMaxTokens
+	}
+
+	client := p.sdkClient()
+	stream := client.Chat.Completions.NewStreaming(ctx, buildChatCompletionParams(req, modelID, maxTokens))
+	defer stream.Close()
+
+	var acc openaisdk.ChatCompletionAccumulator
+	for stream.Next() {
+		chunk := stream.Current()
+		if !acc.AddChunk(chunk) {
+			return runtime.GenerateResult{}, &model.ProviderError{
+				Code:    model.ErrMalformedResponse,
+				Message: "openai: invalid streaming chat completion chunk sequence",
+			}
+		}
+
+		for _, choice := range chunk.Choices {
+			if choice.Delta.Content == "" {
+				continue
+			}
+			if err := streamSink.OnDelta(ctx, choice.Delta.Content); err != nil {
+				return runtime.GenerateResult{}, err
+			}
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return runtime.GenerateResult{}, providerutil.ProviderError("openai", err)
+	}
+
+	result := parseChatCompletionsResponse(&acc.ChatCompletion)
+	if err := streamSink.OnComplete(); err != nil {
+		return runtime.GenerateResult{}, err
+	}
+	return result, nil
+}
+
+func (p *Provider) streamResponses(ctx context.Context, req runtime.GenerateRequest, streamSink runtime.StreamSink) (runtime.GenerateResult, error) {
+	modelID := req.ModelID
+	if modelID == "" {
+		modelID = p.modelID
+	}
+	maxTokens := req.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultMaxTokens
+	}
+
+	client := p.sdkClient()
+	stream := client.Responses.NewStreaming(ctx, buildResponsesParams(req, modelID, maxTokens))
+	defer stream.Close()
+
+	var completed *openairesponses.Response
+	for stream.Next() {
+		event := stream.Current()
+		switch evt := event.AsAny().(type) {
+		case openairesponses.ResponseTextDeltaEvent:
+			if evt.Delta == "" {
+				continue
+			}
+			if err := streamSink.OnDelta(ctx, evt.Delta); err != nil {
+				return runtime.GenerateResult{}, err
+			}
+		case openairesponses.ResponseCompletedEvent:
+			response := evt.Response
+			completed = &response
+		}
+	}
+	if err := stream.Err(); err != nil {
+		return runtime.GenerateResult{}, providerutil.ProviderError("openai", err)
+	}
+	if completed == nil {
+		return runtime.GenerateResult{}, &model.ProviderError{
+			Code:    model.ErrMalformedResponse,
+			Message: "openai: streaming response completed without a final response payload",
+		}
+	}
+
+	result := parseResponsesResponse(completed)
+	if err := streamSink.OnComplete(); err != nil {
+		return runtime.GenerateResult{}, err
+	}
+	return result, nil
 }
 
 func (p *Provider) sdkClient() openaisdk.Client {

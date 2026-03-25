@@ -11,6 +11,21 @@ import (
 	"github.com/canhta/gistclaw/internal/runtime"
 )
 
+type recordingStreamSink struct {
+	deltas    []string
+	completed bool
+}
+
+func (s *recordingStreamSink) OnDelta(_ context.Context, text string) error {
+	s.deltas = append(s.deltas, text)
+	return nil
+}
+
+func (s *recordingStreamSink) OnComplete() error {
+	s.completed = true
+	return nil
+}
+
 func successResponse(text string, promptTokens, completionTokens int) []byte {
 	b, _ := json.Marshal(map[string]any{
 		"id":     "chatcmpl-test",
@@ -543,5 +558,91 @@ func TestProvider_InvalidToolSchemaFallsBackToEmptyObject(t *testing.T) {
 	}
 	if parameters["type"] != "object" {
 		t.Fatalf("parameters.type: got %v, want object", parameters["type"])
+	}
+}
+
+func TestProvider_StreamingChatCompletionsWritesTextDeltas(t *testing.T) {
+	sseBody := `data: {"id":"chatcmpl-stream","object":"chat.completion.chunk","created":0,"model":"gpt-4o","choices":[{"index":0,"delta":{"role":"assistant","content":"Hel"},"finish_reason":null}],"usage":null}
+
+data: {"id":"chatcmpl-stream","object":"chat.completion.chunk","created":0,"model":"gpt-4o","choices":[{"index":0,"delta":{"content":"lo"},"finish_reason":"stop"}],"usage":null}
+
+data: {"id":"chatcmpl-stream","object":"chat.completion.chunk","created":0,"model":"gpt-4o","choices":[],"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15}}
+
+data: [DONE]
+
+`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseBody))
+	}))
+	defer srv.Close()
+
+	sink := &recordingStreamSink{}
+	p := New("test-key", "gpt-4o", srv.URL, "chat_completions")
+	result, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "You are helpful.",
+		MaxTokens:    128,
+	}, sink)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	if got := len(sink.deltas); got != 2 {
+		t.Fatalf("expected 2 streamed deltas, got %d", got)
+	}
+	if sink.deltas[0] != "Hel" || sink.deltas[1] != "lo" {
+		t.Fatalf("unexpected streamed deltas: %v", sink.deltas)
+	}
+	if !sink.completed {
+		t.Fatal("expected stream completion callback")
+	}
+	if result.Content != "Hello" {
+		t.Fatalf("Content: got %q, want %q", result.Content, "Hello")
+	}
+	if result.InputTokens != 12 || result.OutputTokens != 3 {
+		t.Fatalf("usage: got %d/%d, want 12/3", result.InputTokens, result.OutputTokens)
+	}
+}
+
+func TestProvider_StreamingResponsesWritesTextDeltas(t *testing.T) {
+	sseBody := `data: {"type":"response.output_text.delta","sequence_number":1,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"Hel","logprobs":[]}
+
+data: {"type":"response.output_text.delta","sequence_number":2,"item_id":"msg_1","output_index":0,"content_index":0,"delta":"lo","logprobs":[]}
+
+data: {"type":"response.completed","sequence_number":3,"response":{"id":"resp_1","status":"completed","output":[{"type":"message","id":"msg_1","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Hello","annotations":[]}]}],"usage":{"input_tokens":11,"output_tokens":7}}}
+
+data: [DONE]
+
+`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sseBody))
+	}))
+	defer srv.Close()
+
+	sink := &recordingStreamSink{}
+	p := New("test-key", "cx/gpt-5.4", srv.URL, "responses")
+	result, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "You are helpful.",
+		MaxTokens:    128,
+	}, sink)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	if got := len(sink.deltas); got != 2 {
+		t.Fatalf("expected 2 streamed deltas, got %d", got)
+	}
+	if sink.deltas[0] != "Hel" || sink.deltas[1] != "lo" {
+		t.Fatalf("unexpected streamed deltas: %v", sink.deltas)
+	}
+	if !sink.completed {
+		t.Fatal("expected stream completion callback")
+	}
+	if result.Content != "Hello" {
+		t.Fatalf("Content: got %q, want %q", result.Content, "Hello")
+	}
+	if result.InputTokens != 11 || result.OutputTokens != 7 {
+		t.Fatalf("usage: got %d/%d, want 11/7", result.InputTokens, result.OutputTokens)
 	}
 }
