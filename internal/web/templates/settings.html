@@ -1,9 +1,14 @@
 {{define "settings_body"}}
-<section class="panel">
+<section class="page-header">
+  <span class="page-eyebrow">Config</span>
   <h1>Settings</h1>
-  {{if .Error}}
-    <p class="error">{{.Error}}</p>
-  {{end}}
+  <p class="page-lede">Operator configuration, workspace binding, and local credentials. Each concern gets its own work panel.</p>
+</section>
+{{if .Error}}
+  <section class="error">{{.Error}}</section>
+{{end}}
+<section class="page-section">
+  <div class="panel">
   <form method="POST" action="/settings">
     <div class="field">
       <label for="team_name">Team Name</label>
@@ -16,34 +21,41 @@
     <div class="field">
       <label for="per_run_token_budget">Per-Run Token Budget</label>
       <input type="number" id="per_run_token_budget" name="per_run_token_budget" value="{{.PerRunTokenBudget}}" min="0">
-      <span class="muted">tokens (0 = unlimited)</span>
+      <span class="field-help">tokens (0 = unlimited)</span>
     </div>
     <div class="field">
       <label for="daily_cost_cap_usd">Daily Cost Cap (USD)</label>
       <input type="number" id="daily_cost_cap_usd" name="daily_cost_cap_usd" value="{{.DailyCostCapUSD}}" min="0" step="0.01">
-      <span class="muted">0 = unlimited &mdash; rolling 24-hour usage: ${{printf "%.4f" .RollingCostUSD}}</span>
+      <span class="field-help">0 = unlimited &mdash; rolling 24-hour usage: ${{printf "%.4f" .RollingCostUSD}}</span>
     </div>
-    <div class="field">
-      <button type="submit">Save</button>
+    <div class="button-row">
+      <button class="btn btn-primary" type="submit">Save</button>
     </div>
   </form>
-  <div class="panel" style="margin-top:16px">
+  </div>
+</section>
+<section class="page-section">
+  <div class="panel stack-sm">
     <label>Admin Token</label>
     <div class="mono">{{.AdminToken}}</div>
     <p class="muted">Use <code>gistclaw inspect token</code> to retrieve the full token.</p>
   </div>
-  <div class="panel" style="margin-top:16px">
+</section>
+<section class="page-section">
+  <div class="panel stack-sm">
     <label>Telegram Bot Token</label>
     {{if .TelegramToken}}
     <div class="mono">{{.TelegramToken}}</div>
     {{else}}
     <div class="muted">Not configured</div>
     {{end}}
-    <form method="POST" action="/settings" style="margin-top:8px">
+    <form class="stack-md" method="POST" action="/settings">
       <div class="field">
-        <input type="password" name="telegram_bot_token" placeholder="Paste new token to update" autocomplete="off" style="width:320px">
+        <input class="input-wide" type="password" name="telegram_bot_token" placeholder="Paste new token to update" autocomplete="off">
       </div>
-      <button type="submit">Update Telegram Token</button>
+      <div class="button-row">
+        <button class="btn btn-secondary" type="submit">Update Telegram Token</button>
+      </div>
     </form>
   </div>
 </section>

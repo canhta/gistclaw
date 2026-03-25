@@ -1,16 +1,19 @@
 {{define "run_submit_body"}}
-<section class="panel">
+<section class="page-header">
+  <span class="page-eyebrow">Execution</span>
   <h1>Submit a Task</h1>
-  {{if .Error}}
-    <p class="error">{{.Error}}</p>
-  {{end}}
+</section>
+{{if .Error}}
+  <section class="error">{{.Error}}</section>
+{{end}}
+<section class="panel">
   <form method="POST" action="/run">
     <div class="field">
       <label for="task">Task</label>
       <textarea id="task" name="task" rows="4" placeholder="Describe the task for the agent team...">{{.Task}}</textarea>
     </div>
-    <div class="field">
-      <button type="submit">Start Run</button>
+    <div class="button-row">
+      <button class="btn btn-primary" type="submit">Start Run</button>
     </div>
   </form>
 </section>

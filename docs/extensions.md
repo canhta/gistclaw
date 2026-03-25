@@ -4,21 +4,21 @@
 
 Providers, connectors, tools, and plugins are part of GistClaw's long-term platform direction.
 
-That does not mean they are all immediate implementation requirements.
+That does not mean they all have to ship at once.
 
-## Required In The Reset
+## Shipped Seams Today
 
-The current rewrite must leave behind clean seams for:
+The current tree already has concrete seams for:
 
-- tools
-- providers
-- connectors
+- tools in `internal/tools/`
+- providers in `internal/providers/`
+- connectors in `internal/connectors/`
 
-The kernel should know these seams exist without forcing the rewrite to implement broad extension breadth right now.
+The shipped surface today includes built-in web fetch, optional Tavily search, optional MCP stdio tools, provider adapters for Anthropic and OpenAI-compatible APIs, and live Telegram and WhatsApp connector wiring.
 
-## Deferred After The Reset
+## Still Deferred
 
-The following are intentionally deferred until the session-first runtime is stable:
+The following are still intentionally deferred until the session-first runtime is more mature:
 
 - broad connector expansion
 - marketplace or installation UX

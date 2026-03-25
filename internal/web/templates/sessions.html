@@ -1,10 +1,12 @@
 {{define "sessions_body"}}
-<section class="panel">
-  <h1 style="margin-top:0">Sessions</h1>
-  <p class="muted">Browse the assistant front session and any spawned worker sessions currently stored in the runtime.</p>
+<section class="page-header">
+  <span class="page-eyebrow">Sessions</span>
+  <h1>Sessions</h1>
+  <p class="page-lede">Browse the assistant front session and any spawned worker sessions currently stored in the runtime.</p>
 </section>
 
-<section class="panel">
+<section class="page-section">
+  <div class="panel">
   <form class="inline-form" method="GET" action="/sessions">
     <input type="text" name="q" value="{{.Filters.Query}}" placeholder="Search sessions or routes">
     <input type="text" name="agent_id" value="{{.Filters.AgentID}}" placeholder="Agent ID">
@@ -29,9 +31,10 @@
       <input type="checkbox" name="bound_only" value="1" {{if .Filters.BoundOnly}}checked{{end}}>
       Bound only
     </label>
-    <button type="submit">Filter</button>
-    <a href="/sessions">Reset</a>
+    <button class="btn btn-secondary" type="submit">Filter</button>
+    <a class="btn btn-ghost" href="/sessions">Reset</a>
   </form>
+  </div>
 </section>
 
 {{if .Error}}
@@ -40,7 +43,8 @@
 </section>
 {{end}}
 
-<section class="panel">
+<section class="page-section">
+  <div class="panel">
   {{if .Sessions}}
   <table class="table">
     <thead>
@@ -74,7 +78,7 @@
     </tbody>
   </table>
   {{if or .Paging.HasPrev .Paging.HasNext}}
-  <div style="margin-top:12px; display:flex; gap:12px">
+  <div class="pager">
     {{if .Paging.HasPrev}}<a href="{{.Paging.PrevURL}}">Previous</a>{{end}}
     {{if .Paging.HasNext}}<a href="{{.Paging.NextURL}}">Next</a>{{end}}
   </div>
@@ -82,5 +86,6 @@
   {{else}}
   <p class="muted">No sessions yet.</p>
   {{end}}
+  </div>
 </section>
 {{end}}

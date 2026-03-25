@@ -5,78 +5,301 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{.Title}}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #f8f7f5;
-      --surface: #ffffff;
+      --bg: #ede5d8;
+      --surface: #fffdf8;
       --border-hard: #1c1917;
-      --border-soft: #e4e2de;
+      --border-soft: #cfc5b6;
       --text-1: #1c1917;
-      --text-2: #78716c;
-      --brand: #2563eb;
+      --text-2: #6b6258;
+      --text-3: #9b9083;
+      --brand: #1c5dff;
+      --brand-hover: #1848c7;
       --active: #0284c7;
+      --approval: #b45309;
+      --success: #15803d;
+      --error: #dc2626;
+      --muted-state: #6b7280;
+      --font-mono: "JetBrains Mono", "Fira Code", monospace;
     }
-    * { box-sizing: border-box; }
+    * {
+      box-sizing: border-box;
+    }
+    html {
+      color-scheme: light;
+    }
     body {
       margin: 0;
+      min-width: 1024px;
       background: var(--bg);
       color: var(--text-1);
-      font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
     }
     header {
+      display: flex;
+      align-items: center;
+      min-height: 44px;
       border-bottom: 1.5px solid var(--border-hard);
-      background: var(--surface);
-      padding: 12px 24px;
-      font-weight: 700;
+      background: var(--bg);
+      padding: 0 24px;
     }
     nav {
       display: flex;
       gap: 16px;
       align-items: center;
+      width: 100%;
+    }
+    .nav-brand {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+      background: var(--border-hard);
+      color: var(--surface);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1;
     }
     nav a {
-      color: var(--text-1);
+      color: var(--text-2);
       text-decoration: none;
-    }
-    nav a:hover {
-      text-decoration: underline;
+      font-size: 13px;
+      font-weight: 700;
       text-underline-offset: 4px;
     }
+    nav a:hover,
+    nav a.is-active {
+      color: var(--text-1);
+      text-decoration: underline;
+      text-decoration-thickness: 1.5px;
+    }
     main {
-      max-width: 1200px;
-      padding: 24px;
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 32px 24px 48px;
+    }
+    a {
+      color: var(--brand);
+    }
+    a:hover {
+      color: var(--brand-hover);
+    }
+    a:focus-visible,
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--brand);
+      outline-offset: 2px;
+    }
+    h1,
+    h2,
+    h3,
+    p,
+    ul {
+      margin-top: 0;
+    }
+    h1 {
+      margin-bottom: 20px;
+      font-size: 24px;
+      line-height: 1.2;
+      font-weight: 700;
+    }
+    h2 {
+      margin-bottom: 12px;
+      font-size: 16px;
+      line-height: 1.2;
+      font-weight: 700;
+    }
+    label {
+      display: grid;
+      gap: 4px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    code {
+      font-family: var(--font-mono);
+      font-size: 12px;
     }
     .panel {
       border: 1.5px solid var(--border-hard);
       background: var(--surface);
-      padding: 16px;
+      padding: 18px 20px;
       margin-bottom: 16px;
+      border-radius: 0;
+    }
+    .page-header {
+      display: grid;
+      gap: 8px;
+      margin: 0 0 20px 0;
+    }
+    .page-stack {
+      display: grid;
+      gap: 14px;
+    }
+    .page-section {
+      margin-bottom: 20px;
+    }
+    .page-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      padding: 3px 8px;
+      background: var(--border-hard);
+      color: var(--surface);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .page-lede {
+      max-width: 720px;
+      margin-bottom: 0;
+      color: var(--text-2);
+    }
+    .panel:last-child {
+      margin-bottom: 0;
+    }
+    .stack-sm > * + * {
+      margin-top: 8px;
+    }
+    .stack-md > * + * {
+      margin-top: 12px;
+    }
+    .stack-lg > * + * {
+      margin-top: 16px;
+    }
+    .field {
+      display: grid;
+      gap: 4px;
+      margin-bottom: 12px;
+    }
+    .field:last-child {
+      margin-bottom: 0;
+    }
+    .field-help {
+      font-size: 13px;
+      color: var(--text-2);
+    }
+    .input-wide {
+      width: 100%;
+    }
+    .mono {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .mono-strong {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1.6;
+    }
+    .muted {
+      color: var(--text-2);
+    }
+    .subtle {
+      color: var(--text-3);
     }
     .run-row {
       border: 1.5px solid var(--border-hard);
-      border-left: 4px solid var(--active);
-      padding: 12px;
-      margin-top: 12px;
+      border-left: 4px solid var(--border-hard);
+      padding: 14px 16px;
+      margin-top: 0;
       background: var(--surface);
+      border-radius: 0;
+    }
+    .run-row.is-active {
+      border-left-color: var(--active);
+    }
+    .run-row.is-approval {
+      border-left-color: var(--approval);
+    }
+    .run-row.is-success {
+      border-left-color: var(--success);
+    }
+    .run-row.is-error {
+      border-left-color: var(--error);
+    }
+    .run-row.is-muted {
+      border-left-color: var(--muted-state);
+    }
+    .row-title {
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .run-status {
+      display: inline-flex;
+      align-items: center;
+      width: fit-content;
+      color: var(--text-2);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .run-status.is-active {
+      color: var(--active);
+    }
+    .run-status.is-approval {
+      color: var(--approval);
+    }
+    .run-status.is-success {
+      color: var(--success);
+    }
+    .run-status.is-error {
+      color: var(--error);
+    }
+    .run-status.is-muted {
+      color: var(--muted-state);
     }
     .run-output-text {
       margin: 8px 0 0 0;
       white-space: pre-wrap;
       word-break: break-word;
-      font: 13px/1.6 "JetBrains Mono", "Fira Code", monospace;
-    }
-    .mono {
-      font-family: "JetBrains Mono", "Fira Code", monospace;
-    }
-    .muted {
-      color: var(--text-2);
+      font: 13px/1.6 var(--font-mono);
     }
     .error {
-      border: 1.5px solid #dc2626;
-      color: #dc2626;
+      border: 1.5px solid var(--error);
+      color: var(--error);
       padding: 12px;
       margin-bottom: 16px;
       background: var(--surface);
+      border-radius: 0;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid currentColor;
+      padding: 2px 6px;
+      background: transparent;
+      color: currentColor;
+      border-radius: 0;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .badge-approval {
+      color: var(--approval);
+    }
+    .badge-success {
+      color: var(--success);
+    }
+    .badge-error {
+      color: var(--error);
+    }
+    .badge-muted {
+      color: var(--text-2);
     }
     .grid-two {
       display: grid;
@@ -100,37 +323,146 @@
       font-size: 13px;
       font-weight: 700;
     }
-    .inline-form {
-      display: inline-flex;
+    .button-row {
+      display: flex;
+      flex-wrap: wrap;
       gap: 8px;
       align-items: center;
+    }
+    .inline-form {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
       flex-wrap: wrap;
     }
-    .inline-form input[type="text"] {
+    .inline-form input[type="text"],
+    .inline-form input[type="password"],
+    .inline-form select {
       min-width: 220px;
     }
-    input, textarea, select, button {
+    input[type="text"],
+    input[type="password"],
+    input[type="number"],
+    textarea,
+    select {
       border: 1.5px solid var(--border-hard);
       background: var(--surface);
       color: var(--text-1);
-      padding: 6px 10px;
+      padding: 8px 12px;
       font: inherit;
+      border-radius: 0;
+      width: 100%;
+    }
+    input[type="radio"],
+    input[type="checkbox"] {
+      width: auto;
+      margin: 0;
+      accent-color: var(--brand);
+    }
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      border: 1.5px solid transparent;
+      padding: 7px 14px;
+      background: transparent;
+      color: var(--text-1);
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.2;
+      text-decoration: none;
+      cursor: pointer;
+      border-radius: 0;
+      transition: background 100ms ease-out, color 100ms ease-out, border-color 100ms ease-out;
     }
     button {
-      font-weight: 700;
+      font: inherit;
+    }
+    .btn-primary {
+      background: var(--brand);
+      border-color: var(--brand);
+      color: var(--surface);
+    }
+    .btn-primary:hover {
+      background: var(--brand-hover);
+      border-color: var(--brand-hover);
+      color: var(--surface);
+    }
+    .btn-secondary {
+      background: var(--surface);
+      border-color: var(--border-hard);
+      color: var(--text-1);
+    }
+    .btn-secondary:hover {
+      background: var(--border-hard);
+      color: var(--surface);
+    }
+    .btn-ghost {
+      border-color: transparent;
+      padding-left: 0;
+      padding-right: 0;
+      color: var(--text-2);
+    }
+    .btn-ghost:hover {
+      color: var(--text-1);
+    }
+    .btn-danger {
+      background: var(--surface);
+      border-color: var(--error);
+      color: var(--error);
+    }
+    .btn-danger:hover {
+      background: var(--error);
+      color: var(--surface);
+    }
+    .btn-compact {
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+    .choice-list {
+      display: grid;
+      gap: 8px;
+    }
+    .choice-card {
+      display: grid;
+      gap: 4px;
+      border: 1.5px solid var(--border-hard);
+      border-left: 4px solid var(--active);
+      padding: 12px;
       cursor: pointer;
+      background: var(--surface);
+      border-radius: 0;
+    }
+    .choice-card-meta {
+      display: block;
+    }
+    .divider {
+      border: none;
+      border-top: 1.5px solid var(--border-soft);
+      margin: 16px 0;
     }
     .section-title {
       margin: 0 0 12px 0;
       font-size: 16px;
       font-weight: 700;
     }
+    .pager {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-top: 12px;
+    }
   </style>
 </head>
 <body>
   <header>
     <nav>
-      <span>gistclaw</span>
+      <span class="nav-brand">gistclaw</span>
       <a href="/runs">Runs</a>
       <a href="/control">Control</a>
       <a href="/sessions">Sessions</a>
@@ -141,6 +473,20 @@
   <main>
     {{.Body}}
   </main>
+  <script>
+    (() => {
+      const path = window.location.pathname;
+      for (const link of document.querySelectorAll("nav a[href]")) {
+        const href = link.getAttribute("href");
+        if (!href) {
+          continue;
+        }
+        if (path === href || path.startsWith(href + "/")) {
+          link.classList.add("is-active");
+        }
+      }
+    })();
+  </script>
 </body>
 </html>
 {{end}}

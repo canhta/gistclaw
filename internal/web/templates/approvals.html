@@ -1,41 +1,51 @@
 {{define "approvals_body"}}
-<section class="panel">
+<section class="page-header">
+  <span class="page-eyebrow">Approval Gate</span>
   <h1>Approvals</h1>
-  {{if .Error}}
-    <p class="error">{{.Error}}</p>
-  {{end}}
-  {{if .Approvals}}
-    {{range .Approvals}}
-      <article class="run-row">
-        <div class="mono">{{.ID}}</div>
-        <div>
-          <strong>{{.ToolName}}</strong>{{if .TargetPath}} &mdash; {{.TargetPath}}{{end}}
-          {{if eq .Status "expired"}}
-            <span style="display:inline-block;border:1.5px solid #1c1917;padding:0 6px;font-size:0.75em;font-family:var(--mono);border-radius:0">Expired</span>
-          {{end}}
-        </div>
-        <div class="muted mono">run: {{.RunID}}</div>
-        {{if ne .Status "expired"}}
-          <form method="POST" action="/approvals/{{.ID}}/resolve" style="display:inline">
-            <button type="submit" name="decision" value="approved">Approve</button>
-            <button type="submit" name="decision" value="denied">Deny</button>
-          </form>
-        {{end}}
-      </article>
-    {{end}}
-  {{else}}
-    <p class="muted">No pending approvals.</p>
-  {{end}}
+  <p class="page-lede">Risky actions stop here. Pending tickets should read like discrete decision cards, not a buried list inside a wrapper.</p>
 </section>
-{{if .Audit}}
-<section class="panel" style="margin-top:24px">
-  <h2 style="font-weight:700;margin-top:0">Resolved Today</h2>
-  {{range .Audit}}
-    <article class="run-row">
+{{if .Error}}
+  <section class="error">{{.Error}}</section>
+{{end}}
+{{if .Approvals}}
+<section class="page-stack">
+  {{range .Approvals}}
+    <article class="run-row{{if eq .Status "expired"}} is-muted{{else}} is-approval{{end}}">
       <div class="mono">{{.ID}}</div>
-      <div class="muted mono">actor: {{.Actor}} &mdash; {{.ResolvedAt.Format "2006-01-02T15:04:05Z"}}</div>
+      <div>
+        <strong>{{.ToolName}}</strong>{{if .TargetPath}} &mdash; {{.TargetPath}}{{end}}
+        {{if eq .Status "expired"}}
+          <span class="badge badge-muted">Expired</span>
+        {{end}}
+      </div>
+      <div class="muted mono">run: {{.RunID}}</div>
+      {{if ne .Status "expired"}}
+        <form class="button-row" method="POST" action="/approvals/{{.ID}}/resolve">
+          <button class="btn btn-primary" type="submit" name="decision" value="approved">Approve</button>
+          <button class="btn btn-danger" type="submit" name="decision" value="denied">Deny</button>
+        </form>
+      {{end}}
     </article>
   {{end}}
+</section>
+{{else}}
+<section class="panel">
+  <p class="muted">No pending approvals.</p>
+</section>
+{{end}}
+{{if .Audit}}
+<section class="page-section">
+  <div class="panel">
+    <h2 class="section-title">Resolved Today</h2>
+    <div class="page-stack">
+    {{range .Audit}}
+      <article class="run-row is-success">
+        <div class="mono">{{.ID}}</div>
+        <div class="muted mono">actor: {{.Actor}} &mdash; {{.ResolvedAt.Format "2006-01-02T15:04:05Z"}}</div>
+      </article>
+    {{end}}
+    </div>
+  </div>
 </section>
 {{end}}
 {{end}}

@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### Operator-facing
+
+Live model output now streams through the runtime into run detail, session pages, and Telegram draft replies instead of only appearing at turn boundaries.
+
+The tool surface now includes optional Tavily research and minimal MCP stdio loading, giving runs a broader read-only research path without changing the approval model.
+
+### For contributors
+
+Provider adapters now use the official Anthropic and OpenAI SDK clients.
+
+Template layout and style coverage now have dedicated regression tests.
+
 ## v1.0.0 — 2026-03-24
 
 ### Milestone 4 — Stable 1.0

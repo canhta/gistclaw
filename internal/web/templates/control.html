@@ -1,10 +1,12 @@
 {{define "control_body"}}
-<section class="panel">
-  <h1 style="margin-top:0">Control</h1>
-  <p class="muted">Inspect connector pressure, route bindings, and queued delivery state from the local host.</p>
+<section class="page-header">
+  <span class="page-eyebrow">Control Plane</span>
+  <h1>Control</h1>
+  <p class="page-lede">Inspect connector pressure, route bindings, and queued delivery state from the local host.</p>
 </section>
 
-<section class="panel">
+<section class="page-section">
+  <div class="panel">
   <form class="inline-form" method="GET" action="/control">
     <input type="text" name="q" value="{{.Filters.Query}}" placeholder="Search routes or deliveries">
     <input type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="Connector ID">
@@ -25,9 +27,10 @@
         <option value="terminal" {{if eq .Filters.DeliveryStatus "terminal"}}selected{{end}}>Terminal</option>
       </select>
     </label>
-    <button type="submit">Filter</button>
-    <a href="/control">Reset</a>
+    <button class="btn btn-secondary" type="submit">Filter</button>
+    <a class="btn btn-ghost" href="/control">Reset</a>
   </form>
+  </div>
 </section>
 
 {{if .Error}}
@@ -41,8 +44,8 @@
   {{if .Health}}
   <div class="grid-two">
     {{range .Health}}
-    <article class="run-row" style="margin-top:0">
-      <div style="font-weight:700">{{.ConnectorID}}</div>
+    <article class="run-row is-active">
+      <div class="row-title">{{.ConnectorID}}</div>
       <div class="muted">pending: <span class="mono">{{.PendingCount}}</span></div>
       <div class="muted">retrying: <span class="mono">{{.RetryingCount}}</span></div>
       <div class="muted">terminal: <span class="mono">{{.TerminalCount}}</span></div>
@@ -82,12 +85,12 @@
         <td>
           <form class="inline-form" method="POST" action="/control/routes/{{.ID}}/messages">
             <input type="text" name="body" placeholder="Message bound session">
-            <button type="submit">Send</button>
+            <button class="btn btn-secondary" type="submit">Send</button>
           </form>
         </td>
         <td>
           <form class="inline-form" method="POST" action="/control/routes/{{.ID}}/deactivate">
-            <button type="submit">Deactivate</button>
+            <button class="btn btn-danger" type="submit">Deactivate</button>
           </form>
         </td>
       </tr>
@@ -95,7 +98,7 @@
     </tbody>
   </table>
   {{if or .ActivePaging.HasPrev .ActivePaging.HasNext}}
-  <div style="margin-top:12px; display:flex; gap:12px">
+  <div class="pager">
     {{if .ActivePaging.HasPrev}}<a href="{{.ActivePaging.PrevURL}}">Previous</a>{{end}}
     {{if .ActivePaging.HasNext}}<a href="{{.ActivePaging.NextURL}}">Next</a>{{end}}
   </div>
@@ -136,7 +139,7 @@
         <td>
           {{if eq .Status "terminal"}}
           <form class="inline-form" method="POST" action="/control/deliveries/{{.ID}}/retry">
-            <button type="submit">Retry</button>
+            <button class="btn btn-secondary" type="submit">Retry</button>
           </form>
           {{else}}
           <span class="muted">No action</span>
@@ -147,7 +150,7 @@
     </tbody>
   </table>
   {{if or .DeliveryPaging.HasPrev .DeliveryPaging.HasNext}}
-  <div style="margin-top:12px; display:flex; gap:12px">
+  <div class="pager">
     {{if .DeliveryPaging.HasPrev}}<a href="{{.DeliveryPaging.PrevURL}}">Previous</a>{{end}}
     {{if .DeliveryPaging.HasNext}}<a href="{{.DeliveryPaging.NextURL}}">Next</a>{{end}}
   </div>
@@ -196,7 +199,7 @@
     </tbody>
   </table>
   {{if or .HistoryPaging.HasPrev .HistoryPaging.HasNext}}
-  <div style="margin-top:12px; display:flex; gap:12px">
+  <div class="pager">
     {{if .HistoryPaging.HasPrev}}<a href="{{.HistoryPaging.PrevURL}}">Previous</a>{{end}}
     {{if .HistoryPaging.HasNext}}<a href="{{.HistoryPaging.NextURL}}">Next</a>{{end}}
   </div>

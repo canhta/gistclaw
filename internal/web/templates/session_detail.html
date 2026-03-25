@@ -1,6 +1,7 @@
 {{define "session_detail_body"}}
-<section class="panel">
-  <h1 style="margin-top:0">Session Detail</h1>
+<section class="page-header">
+  <span class="page-eyebrow">Session</span>
+  <h1>Session Detail</h1>
   <div class="mono">{{.Session.ID}}</div>
   <p class="muted">{{.Session.AgentID}} · {{.Session.Role}} · {{.Session.Status}}</p>
 </section>
@@ -15,7 +16,7 @@
   <h2 class="section-title">Send Message</h2>
   <form id="session-send-form" class="inline-form" method="POST" action="/sessions/{{.Session.ID}}/messages">
     <input id="session-send-input" type="text" name="body" placeholder="Send a message into this session">
-    <button type="submit">Wake Session</button>
+    <button class="btn btn-secondary" type="submit">Wake Session</button>
   </form>
   <p id="session-live-status" class="muted">{{if .ActiveRunID}}Streaming active run.{{else}}Ready for the next message.{{end}}</p>
 </section>
@@ -96,7 +97,7 @@
         <td>
           {{if eq .Status "terminal"}}
           <form class="inline-form" method="POST" action="/sessions/{{$.Session.ID}}/deliveries/{{.ID}}/retry">
-            <button type="submit">Retry</button>
+            <button class="btn btn-secondary" type="submit">Retry</button>
           </form>
           {{else}}
           <span class="muted">No action</span>

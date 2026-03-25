@@ -1,67 +1,81 @@
 {{define "onboarding_step1_body"}}
-<h1>Bind Workspace</h1>
+<section class="page-header">
+  <span class="page-eyebrow">Onboarding</span>
+  <h1>Bind Workspace</h1>
+  <p class="page-lede">Start by binding the local repo. The page stays on the canvas; the decision lives in one work panel.</p>
+</section>
 {{if .Error}}
-<p style="color:#dc2626;border:1.5px solid #dc2626;padding:8px;">{{.Error}}</p>
+<p class="error">{{.Error}}</p>
 {{end}}
-<div class="panel">
-  <form method="POST" action="/onboarding">
-    <label for="workspace_root"><strong>Workspace Path</strong></label><br>
-    <input type="text" id="workspace_root" name="workspace_root"
-           placeholder="/home/you/projects/myrepo"
-           style="width:100%;border:1.5px solid #1c1917;padding:6px;margin-top:4px;font-family:inherit;">
-    <br><br>
-    <p class="muted">Path must exist on disk and contain a .git directory.</p>
-    <button type="submit" style="border:1.5px solid #1c1917;background:#f8f7f5;padding:6px 16px;cursor:pointer;">
-      Bind Workspace
-    </button>
+<section class="panel">
+  <form class="stack-md" method="POST" action="/onboarding">
+    <div class="field">
+      <label for="workspace_root">Workspace Path</label>
+      <input class="input-wide" type="text" id="workspace_root" name="workspace_root" placeholder="/home/you/projects/myrepo">
+      <p class="field-help">Path must exist on disk and contain a .git directory.</p>
+    </div>
+    <div class="button-row">
+      <button class="btn btn-primary" type="submit">Bind Workspace</button>
+    </div>
   </form>
-</div>
+</section>
 {{end}}
 
 {{define "onboarding_step2_body"}}
-<h1>Repo Scan</h1>
-<div class="panel">
+<section class="page-header">
+  <span class="page-eyebrow">Onboarding</span>
+  <h1>Repo Scan</h1>
+</section>
+<section class="panel stack-md">
   <p>Signals detected in your workspace:</p>
-  <ul>
+  <ul class="stack-sm">
   {{range .Candidates}}
     <li><strong>{{.Kind}}</strong>: {{.Description}} <span class="muted">({{.Signal}})</span></li>
   {{end}}
   </ul>
-  <a href="/onboarding/step/3" style="display:inline-block;border:1.5px solid #1c1917;padding:6px 16px;text-decoration:none;color:#1c1917;">
-    Choose a Task
-  </a>
-</div>
+  <div class="button-row">
+    <a class="btn btn-secondary" href="/onboarding/step/3">Choose a Task</a>
+  </div>
+</section>
 {{end}}
 
 {{define "onboarding_step3_body"}}
-<h1>Select Task</h1>
-<div class="panel">
-  <form method="POST" action="/onboarding/step/3">
+<section class="page-header">
+  <span class="page-eyebrow">Onboarding</span>
+  <h1>Select Task</h1>
+</section>
+<section class="panel">
+  <form class="stack-md" method="POST" action="/onboarding/step/3">
+    <div class="choice-list">
     {{range .Candidates}}
-    <label style="display:block;border:1.5px solid #1c1917;border-left:4px solid #0284c7;padding:12px;margin-bottom:8px;cursor:pointer;">
+    <label class="choice-card">
       <input type="radio" name="task" value="{{.Description}}">
       <strong>{{.Kind}}</strong>: {{.Description}}
-      <span class="muted" style="display:block;margin-top:4px;">Signal: {{.Signal}}</span>
+      <span class="muted choice-card-meta">Signal: {{.Signal}}</span>
     </label>
     {{end}}
-    <button type="submit" style="border:1.5px solid #1c1917;background:#f8f7f5;padding:6px 16px;cursor:pointer;">
-      Run Preview
-    </button>
+    </div>
+    <div class="button-row">
+      <button class="btn btn-primary" type="submit">Run Preview</button>
+    </div>
   </form>
-</div>
+</section>
 {{end}}
 
 {{define "onboarding_step4_body"}}
-<h1>Preview Run</h1>
-<div class="panel">
+<section class="page-header">
+  <span class="page-eyebrow">Onboarding</span>
+  <h1>Preview Run</h1>
+</section>
+<section class="panel stack-md">
   <p>Run ID: <span class="mono">{{.RunID}}</span></p>
   <p class="muted">Previewing changes — no files will be modified.</p>
-  <p>
-    <a href="/runs/{{.RunID}}">View run timeline</a>
-  </p>
-  <hr style="border:none;border-top:1.5px solid #e4e2de;margin:16px 0;">
+  <div class="button-row">
+    <a class="btn btn-secondary" href="/runs/{{.RunID}}">View run timeline</a>
+  </div>
+  <hr class="divider">
   <p>Connect Telegram to get updates on future runs &mdash;
      <a href="/settings">Configure in Settings</a>
   </p>
-</div>
+</section>
 {{end}}

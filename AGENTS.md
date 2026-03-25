@@ -2,10 +2,10 @@
 
 ## Project
 
-GistClaw is a local-first multi-agent runtime for software repo tasks. A single Go binary (`gistclaw`) coordinates multiple AI agents around one repo task, with approvals before side effects, durable event journaling, and full audit trails. It is the clean-slate successor to OpenClaw.
+GistClaw is a local-first multi-agent runtime for software repo tasks. A single Go binary (`gistclaw`) coordinates agents around a shared workspace, with approvals before risky side effects, durable event journaling, replayable runs, and operator-facing web controls.
 
 **Module:** `github.com/canhta/gistclaw`
-**Status:** Design complete, implementation begins at Milestone 1.
+**Status:** Active implementation on `main`. The current tree already includes the daemon, local web host, sessions, memory, tools, providers, replay, and live Telegram and WhatsApp paths.
 
 ## Build & Test
 
@@ -17,7 +17,7 @@ go test -run TestFoo ./...       # single test
 go vet ./...
 ```
 
-**Tech stack:** Go 1.24+, `modernc.org/sqlite` (pure-Go, no CGO), stdlib `net/http`, Go `testing` package.
+**Tech stack:** Go 1.25+, `modernc.org/sqlite` (pure-Go, no CGO), stdlib `net/http`, Go `testing` package.
 
 ## Problem-Solving Policy
 
@@ -65,68 +65,20 @@ go vet ./...
 
 **Out-of-scope changes get a TODO, not an implementation.** If a correct fix or feature belongs to a future milestone, add `// TODO(mX): <description>` at the relevant call site and stop. Do not implement deferred work inline without explicit instruction.
 
-## Architecture
+## Current System
 
-### Runtime Model
+Use [docs/system.md](/Users/canh/Projects/OSS/gistclaw/docs/system.md) as the source of truth for the shipped package map and operator surface.
 
-- **Single-writer daemon** owns all mutable state (`runtime.db`). Local web UI, CLI, and Telegram DM send commands through the daemon.
-- **Append-only events journal** is the persistence spine. All state changes go through `ConversationStore.AppendEvent` — this is the single canonical write path. The run engine never writes to the journal directly.
-- **Current-state tables** (`runs`, `approvals`, `tool_calls`, `receipts`, etc.) are projections maintained transactionally from journal events.
-- **One active root run per canonical conversation**. Parallel child delegations allowed under the root; new inbound asks queue or attach explicitly.
-- **Bounded child concurrency** — each root run has a fixed active-child budget; extra delegations queue with visible backpressure.
+The important current boundaries are:
 
-### Execution Snapshots & Approvals
-
-- Each root run records a frozen execution snapshot (team spec, soul, tool policy, config) at start. Child delegations inherit it. Live config edits apply to the next run only.
-- **Snapshot-bound approvals**: each approval ticket binds to one concrete action bundle. If the proposed action changes materially, the ticket expires and the runtime must ask again.
-- **Approval fingerprint**: `sha256(tool_name + normalized_args_json + target_path)`.
-
-### Day-One Package Layout (Milestones 1–2)
-
-```
-cmd/gistclaw/        — binary entry point
-internal/app/        — config, bootstrap, lifecycle, migration checks
-internal/store/      — SQLite journal, migrations, tx helpers
-internal/model/      — shared domain types, RunEventSink interface (zero project imports)
-internal/conversations/ — ConversationKey normalization, event-history APIs, active-run arbitration
-internal/tools/      — tool registry, policy evaluation, approval tickets, WorkspaceApplier
-internal/runtime/    — run lifecycle (Start, Continue, Delegate, Resume), provider calls only
-internal/replay/     — read-only replay, delegation graph, timeline, receipt projections
-internal/memory/     — durable memory store, retrieval, promotion
-internal/web/        — HTTP server, SSE broadcaster (implements RunEventSink), Go templates
-```
-
-`internal/telegram/` is added in Milestone 3. Do not create the deferred packages (`internal/agents/`, `internal/soul/`, `internal/providers/`, etc.) before the split trigger rule fires.
-
-### Dependency Direction
-
-```
-app -> runtime, conversations, tools, replay, memory, web
-web -> runtime (write path), store (read path), replay (read path)
-runtime -> conversations, tools, memory, providers
-conversations -> store
-tools -> store
-replay -> store, memory
-memory -> store
-```
-
-**Forbidden (day-one):**
-- `runtime` → `web` (runtime publishes to `RunEventSink` in `internal/model` instead)
-- `web` writing to `store` directly for any write-path handler (must route through runtime)
-- `internal/model` importing anything from this project (stdlib only)
-
-Verify with `go list -deps`.
-
-### Global Guardrails
-
-1. No WebSocket control plane — SSE only
-2. No transcript files or JSON side stores — SQLite only
-3. No plugin runtime
-4. No vector memory
-5. No autonomous background loops — only explicit run starts
-6. No journal writes outside `ConversationStore.AppendEvent`
-7. `schedules` table is NOT in `001_init.sql` — deferred
-8. `BudgetGuard` does NOT handle active-child concurrency — that is `delegations.go`
+- `gistclaw serve` starts the daemon and local web host.
+- SQLite is the only state store. No transcript files or JSON side stores.
+- All journal-backed state changes still flow through `ConversationStore.AppendEvent`.
+- `runtime` must not depend on `web`.
+- Web write paths go through `runtime`; they do not mutate runtime state directly through ad hoc SQL.
+- Live run updates use SSE. No WebSocket control plane.
+- Provider adapters belong under `internal/providers/`, tools under `internal/tools/`, connectors under `internal/connectors/`, and team files under `teams/`.
+- The shipped live connector surfaces are Telegram and WhatsApp. Do not imply broader connector coverage than the code actually wires today.
 
 ## Design System
 
@@ -135,9 +87,10 @@ Always read `DESIGN.md` before any visual or UI decision. Do not deviate without
 ## Documentation
 
 Read in this order to onboard:
-1. `docs/00-system-diagrams.md` — runtime shape, trust model, workflow
-2. `docs/11-architecture-redesign.md` — design stance and targets
-3. `docs/12-go-package-structure.md` — package ownership and dependency rules
-4. `docs/13-core-interfaces.md` — minimal abstraction seams
-5. `docs/superpowers/plans/2026-03-24-m*.md` — milestone task breakdowns
-6. `docs/18-eng-review.md` — 12 locked architecture decisions
+1. `README.md` — product and quick-start overview
+2. `docs/system.md` — current shipped system and package ownership
+3. `docs/vision.md` — long-term product direction
+4. `docs/kernel.md` — runtime invariants
+5. `docs/roadmap.md` — current priorities and non-goals
+6. `docs/extensions.md` — extension seam rules
+7. `DESIGN.md` — visual system for the local web UI

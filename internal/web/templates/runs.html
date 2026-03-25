@@ -1,17 +1,23 @@
 {{define "runs_body"}}
-<section class="panel">
+<section class="page-header">
+  <span class="page-eyebrow">Runtime</span>
   <h1>Runs</h1>
-  {{if .Runs}}
-    {{range .Runs}}
-      <article class="run-row">
-        <div class="mono">{{.ID}}</div>
-        <div>{{.Objective}}</div>
-        <div class="muted">{{.Summary}}</div>
-        <div class="muted">{{.Status}}</div>
-      </article>
-    {{end}}
-  {{else}}
-    <p>You haven't run any tasks yet.</p>
+  <p class="page-lede">Recent root runs with strong state signaling. The page background stays visible so the bordered rows feel like deliberate work objects.</p>
+</section>
+{{if .Runs}}
+<section class="page-stack">
+  {{range .Runs}}
+    <article class="run-row{{if eq .Status "active"}} is-active{{else if eq .Status "needs_approval"}} is-approval{{else if eq .Status "completed"}} is-success{{else if or (eq .Status "failed") (eq .Status "error")}} is-error{{else if eq .Status "interrupted"}} is-muted{{end}}">
+      <div class="mono">{{.ID}}</div>
+      <div class="row-title">{{.Objective}}</div>
+      <div class="muted">{{.Summary}}</div>
+      <div class="run-status{{if eq .Status "active"}} is-active{{else if eq .Status "needs_approval"}} is-approval{{else if eq .Status "completed"}} is-success{{else if or (eq .Status "failed") (eq .Status "error")}} is-error{{else if eq .Status "interrupted"}} is-muted{{end}}">{{.Status}}</div>
+    </article>
   {{end}}
 </section>
+{{else}}
+<section class="panel">
+  <p>You haven't run any tasks yet.</p>
+</section>
+{{end}}
 {{end}}
