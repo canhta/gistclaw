@@ -22,6 +22,7 @@ type sessionPageDetailData struct {
 	Session          model.Session
 	Messages         []model.SessionMessage
 	Route            *model.SessionRoute
+	ActiveRunID      string
 	Deliveries       []model.OutboundIntent
 	DeliveryFailures []model.DeliveryFailure
 	Error            string
@@ -175,11 +176,17 @@ func (s *Server) loadSessionPageDetailData(r *http.Request) (sessionPageDetailDa
 	}
 
 	var route *model.SessionRoute
-	loadedRoute, err := sessions.NewService(s.db, nil).LoadRouteBySession(r.Context(), sessionID)
+	sessionSvc := sessions.NewService(s.db, nil)
+	loadedRoute, err := sessionSvc.LoadRouteBySession(r.Context(), sessionID)
 	if err == nil {
 		route = &loadedRoute
 	} else if !errors.Is(err, sessions.ErrSessionRouteNotFound) {
 		return sessionPageDetailData{}, http.StatusInternalServerError, errors.New("failed to load session route")
+	}
+
+	activeRun, err := sessionSvc.LoadActiveRunRef(r.Context(), sessionID)
+	if err != nil {
+		return sessionPageDetailData{}, http.StatusInternalServerError, errors.New("failed to load active session run")
 	}
 
 	deliveries, failures, err := s.rt.SessionDeliveryState(r.Context(), sessionID, 25)
@@ -191,6 +198,7 @@ func (s *Server) loadSessionPageDetailData(r *http.Request) (sessionPageDetailDa
 		Session:          session,
 		Messages:         messages,
 		Route:            route,
+		ActiveRunID:      activeRun.ID,
 		Deliveries:       deliveries,
 		DeliveryFailures: failures,
 	}, http.StatusOK, nil

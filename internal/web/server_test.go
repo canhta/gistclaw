@@ -1835,6 +1835,47 @@ func TestSessionPages(t *testing.T) {
 		}
 	})
 
+	t.Run("GET /sessions/{id} renders live mailbox streaming hooks for an active run", func(t *testing.T) {
+		h := newServerHarness(t)
+		run := h.startFrontSession(t, "Inspect the repo.")
+		svc := sessions.NewService(h.db, conversations.NewConversationStore(h.db))
+		if err := svc.AppendMessage(context.Background(), model.SessionMessage{
+			ID:        "msg-stream-assistant",
+			SessionID: run.SessionID,
+			Kind:      model.MessageAssistant,
+			Body:      "Previous reply.",
+			Provenance: model.SessionMessageProvenance{
+				Kind:        model.MessageProvenanceAssistantTurn,
+				SourceRunID: run.ID,
+			},
+		}); err != nil {
+			t.Fatalf("AppendMessage failed: %v", err)
+		}
+		h.insertRunWithSession(t, "run-session-active", run.ConversationID, run.SessionID, "follow up", "active")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions/"+run.SessionID, nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		for _, want := range []string{
+			`id="session-live-root"`,
+			`data-active-run-id="run-session-active"`,
+			`/api/sessions/` + run.SessionID + `/messages`,
+			"`/runs/${encodeURIComponent(runID)}/events`",
+			`new EventSource(streamURL)`,
+			`data-source-run-id="` + run.ID + `"`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected session detail to contain %q:\n%s", want, body)
+			}
+		}
+	})
+
 	t.Run("POST /sessions/{id}/messages wakes the session and redirects to the new run", func(t *testing.T) {
 		h := newServerHarness(t)
 		front := h.startFrontSession(t, "Inspect the repo.")
@@ -2032,6 +2073,20 @@ func (h *serverHarness) insertRun(t *testing.T, runID, conversationID, objective
 	)
 	if err != nil {
 		t.Fatalf("insert run: %v", err)
+	}
+}
+
+func (h *serverHarness) insertRunWithSession(t *testing.T, runID, conversationID, sessionID, objective, status string) {
+	t.Helper()
+
+	_, err := h.db.RawDB().Exec(
+		`INSERT INTO runs
+		 (id, conversation_id, agent_id, session_id, team_id, objective, workspace_root, status, created_at, updated_at)
+		 VALUES (?, ?, 'agent-1', ?, 'repo-task-team', ?, ?, ?, datetime('now'), datetime('now'))`,
+		runID, conversationID, sessionID, objective, h.workspaceRoot, status,
+	)
+	if err != nil {
+		t.Fatalf("insert session run: %v", err)
 	}
 }
 

@@ -11,17 +11,17 @@
 </section>
 {{end}}
 
-<section class="panel">
+<section id="session-live-root" class="panel" data-session-id="{{.Session.ID}}" data-send-url="/api/sessions/{{.Session.ID}}/messages" data-active-run-id="{{.ActiveRunID}}">
   <h2 class="section-title">Send Message</h2>
-  <form class="inline-form" method="POST" action="/sessions/{{.Session.ID}}/messages">
-    <input type="text" name="body" placeholder="Send a message into this session">
+  <form id="session-send-form" class="inline-form" method="POST" action="/sessions/{{.Session.ID}}/messages">
+    <input id="session-send-input" type="text" name="body" placeholder="Send a message into this session">
     <button type="submit">Wake Session</button>
   </form>
+  <p id="session-live-status" class="muted">{{if .ActiveRunID}}Streaming active run.{{else}}Ready for the next message.{{end}}</p>
 </section>
 
 <section class="panel">
   <h2 class="section-title">Mailbox</h2>
-  {{if .Messages}}
   <table class="table">
     <thead>
       <tr>
@@ -30,9 +30,10 @@
         <th>Sender</th>
       </tr>
     </thead>
-    <tbody>
+    <tbody id="session-mailbox-body">
+      {{if .Messages}}
       {{range .Messages}}
-      <tr>
+      <tr data-message-kind="{{.Kind}}" data-source-run-id="{{.Provenance.SourceRunID}}">
         <td>{{.Body}}</td>
         <td>{{.Kind}}</td>
         <td>
@@ -44,11 +45,18 @@
         </td>
       </tr>
       {{end}}
+      {{else}}
+      <tr id="session-mailbox-empty">
+        <td colspan="3" class="muted">No mailbox messages.</td>
+      </tr>
+      {{end}}
+      <tr id="session-live-draft" hidden>
+        <td><pre id="session-live-text" class="run-output-text"></pre></td>
+        <td>assistant</td>
+        <td><span class="muted">streaming</span></td>
+      </tr>
     </tbody>
   </table>
-  {{else}}
-  <p class="muted">No mailbox messages.</p>
-  {{end}}
 </section>
 
 <section class="panel">
@@ -129,4 +137,235 @@
   <p class="muted">No active delivery failures for this session.</p>
   {{end}}
 </section>
+
+<script>
+(() => {
+  const root = document.getElementById("session-live-root");
+  if (!root || !window.EventSource || !window.fetch) {
+    return;
+  }
+
+  const sessionID = root.dataset.sessionId;
+  const sendURL = root.dataset.sendUrl;
+  const initialRunID = root.dataset.activeRunId;
+  const form = document.getElementById("session-send-form");
+  const input = document.getElementById("session-send-input");
+  const status = document.getElementById("session-live-status");
+  const mailbox = document.getElementById("session-mailbox-body");
+  const draftRow = document.getElementById("session-live-draft");
+  const draftText = document.getElementById("session-live-text");
+  let currentRunID = "";
+  let currentSource = null;
+  let draft = "";
+  let sending = false;
+
+  function setStatus(text) {
+    if (status) {
+      status.textContent = text;
+    }
+  }
+
+  function clearDraft() {
+    draft = "";
+    if (draftText) {
+      draftText.textContent = "";
+    }
+    if (draftRow) {
+      draftRow.hidden = true;
+    }
+  }
+
+  function removeMailboxEmpty() {
+    const empty = document.getElementById("session-mailbox-empty");
+    if (empty) {
+      empty.remove();
+    }
+  }
+
+  function hasMailboxRowForRun(runID) {
+    if (!runID || !mailbox) {
+      return false;
+    }
+    return mailbox.querySelector(`tr[data-source-run-id="${runID}"]`) !== null;
+  }
+
+  function appendMailboxRow(body, kind, senderSessionID, sourceRunID) {
+    if (!body || !mailbox) {
+      return;
+    }
+    removeMailboxEmpty();
+    const row = document.createElement("tr");
+    row.dataset.messageKind = kind || "";
+    if (sourceRunID) {
+      row.dataset.sourceRunId = sourceRunID;
+    }
+
+    const bodyCell = document.createElement("td");
+    bodyCell.textContent = body;
+    row.appendChild(bodyCell);
+
+    const kindCell = document.createElement("td");
+    kindCell.textContent = kind || "";
+    row.appendChild(kindCell);
+
+    const senderCell = document.createElement("td");
+    const sender = document.createElement("span");
+    if (senderSessionID) {
+      sender.className = "mono";
+      sender.textContent = senderSessionID;
+    } else {
+      sender.className = "muted";
+      sender.textContent = "operator/runtime";
+    }
+    senderCell.appendChild(sender);
+    row.appendChild(senderCell);
+
+    if (draftRow) {
+      mailbox.insertBefore(row, draftRow);
+    } else {
+      mailbox.appendChild(row);
+    }
+  }
+
+  function closeStream() {
+    if (currentSource) {
+      currentSource.close();
+      currentSource = null;
+    }
+    currentRunID = "";
+  }
+
+  function connectRun(runID) {
+    if (!runID || runID === currentRunID) {
+      return;
+    }
+    closeStream();
+    currentRunID = runID;
+    const streamURL = `/runs/${encodeURIComponent(runID)}/events`;
+    const source = new EventSource(streamURL);
+    currentSource = source;
+
+    source.onmessage = (message) => {
+      let event;
+      try {
+        event = JSON.parse(message.data);
+      } catch (_err) {
+        return;
+      }
+      if (!event || !event.kind) {
+        return;
+      }
+
+      if (event.kind === "turn_delta") {
+        if (!event.payload || typeof event.payload.text !== "string" || !event.payload.text) {
+          return;
+        }
+        draft += event.payload.text;
+        if (draftText) {
+          draftText.textContent = draft;
+        }
+        if (draftRow) {
+          draftRow.hidden = false;
+        }
+        setStatus("Streaming assistant output...");
+        return;
+      }
+
+      if (event.kind === "turn_completed") {
+        const content = event.payload && typeof event.payload.content === "string" && event.payload.content
+          ? event.payload.content
+          : draft;
+        if (content && !hasMailboxRowForRun(runID)) {
+          appendMailboxRow(content, "assistant", sessionID, runID);
+        }
+        clearDraft();
+        setStatus("Latest turn completed.");
+        return;
+      }
+
+      if (event.kind === "run_completed") {
+        clearDraft();
+        setStatus("Session reply delivered.");
+        closeStream();
+        return;
+      }
+
+      if (event.kind === "run_failed" || event.kind === "run_interrupted") {
+        clearDraft();
+        setStatus("Run stopped before completion.");
+        closeStream();
+      }
+    };
+
+    source.onerror = () => {
+      setStatus("Reconnecting to live updates...");
+    };
+  }
+
+  if (form && input && sendURL) {
+    form.addEventListener("submit", async (event) => {
+      if (sending) {
+        event.preventDefault();
+        return;
+      }
+      event.preventDefault();
+
+      const body = input.value.trim();
+      if (!body) {
+        setStatus("Session message body is required.");
+        return;
+      }
+
+      sending = true;
+      input.disabled = true;
+      setStatus("Starting run...");
+
+      try {
+        const response = await fetch(sendURL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+          },
+          body: JSON.stringify({ body })
+        });
+        if (!response.ok) {
+          let message = "Failed to send session message.";
+          try {
+            const problem = await response.json();
+            if (problem && typeof problem.message === "string" && problem.message) {
+              message = problem.message;
+            }
+          } catch (_err) {
+          }
+          setStatus(message);
+          return;
+        }
+
+        appendMailboxRow(body, "user", "", "");
+        input.value = "";
+
+        const data = await response.json();
+        const run = data && data.run ? data.run : {};
+        const runID = run.ID || run.id || "";
+        if (runID) {
+          connectRun(runID);
+          setStatus("Waiting for assistant response...");
+        } else {
+          setStatus("Run started.");
+        }
+      } catch (_err) {
+        setStatus("Failed to send session message.");
+      } finally {
+        sending = false;
+        input.disabled = false;
+      }
+    });
+  }
+
+  if (initialRunID) {
+    connectRun(initialRunID);
+  }
+})();
+</script>
 {{end}}
