@@ -11,9 +11,11 @@ import (
 )
 
 type RunReplay struct {
-	RunID  string
-	Status model.RunStatus
-	Events []model.Event
+	RunID                 string
+	TeamID                string
+	ExecutionSnapshotJSON []byte
+	Status                model.RunStatus
+	Events                []model.Event
 }
 
 type ReplayGraph struct {
@@ -53,10 +55,12 @@ func NewService(db *store.DB) *Service {
 
 func (s *Service) LoadRun(ctx context.Context, runID string) (RunReplay, error) {
 	var status string
+	var teamID string
+	var executionSnapshotJSON []byte
 	err := s.db.RawDB().QueryRowContext(ctx,
-		"SELECT status FROM runs WHERE id = ?",
+		"SELECT COALESCE(team_id, ''), COALESCE(execution_snapshot_json, x''), status FROM runs WHERE id = ?",
 		runID,
-	).Scan(&status)
+	).Scan(&teamID, &executionSnapshotJSON, &status)
 	if err != nil {
 		return RunReplay{}, fmt.Errorf("replay: load run: %w", err)
 	}
@@ -92,9 +96,11 @@ func (s *Service) LoadRun(ctx context.Context, runID string) (RunReplay, error) 
 	}
 
 	return RunReplay{
-		RunID:  runID,
-		Status: model.RunStatus(status),
-		Events: events,
+		RunID:                 runID,
+		TeamID:                teamID,
+		ExecutionSnapshotJSON: executionSnapshotJSON,
+		Status:                model.RunStatus(status),
+		Events:                events,
 	}, rows.Err()
 }
 

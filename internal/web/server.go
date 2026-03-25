@@ -82,6 +82,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/runs", http.StatusSeeOther)
 	})
+	s.mux.Handle("GET /assets/{path...}", http.StripPrefix("/assets/", http.FileServer(http.Dir(staticAssetDir()))))
 	if s.whatsAppWebhook != nil {
 		s.mux.Handle("GET /webhooks/whatsapp", s.whatsAppWebhook)
 		s.mux.Handle("POST /webhooks/whatsapp", s.whatsAppWebhook)
@@ -96,6 +97,8 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("POST /sessions/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleSessionPageSend)))
 	s.mux.Handle("POST /sessions/{id}/deliveries/{delivery_id}/retry", s.adminAuth(http.HandlerFunc(s.handleSessionPageRetryDelivery)))
 	s.mux.HandleFunc("GET /control", s.handleControlPage)
+	s.mux.HandleFunc("GET /team", s.handleTeam)
+	s.mux.Handle("POST /team", s.adminAuth(http.HandlerFunc(s.handleTeamUpdate)))
 	s.mux.Handle("POST /control/routes/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleControlRouteSend)))
 	s.mux.Handle("POST /control/routes/{id}/deactivate", s.adminAuth(http.HandlerFunc(s.handleControlRouteDeactivate)))
 	s.mux.Handle("POST /control/deliveries/{id}/retry", s.adminAuth(http.HandlerFunc(s.handleControlDeliveryRetry)))
@@ -222,7 +225,7 @@ func shouldIssueHostAdminCookie(r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
-	if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/webhooks/") {
+	if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/assets/") || strings.HasPrefix(r.URL.Path, "/webhooks/") {
 		return false
 	}
 	if strings.HasSuffix(r.URL.Path, "/events") {
@@ -277,12 +280,11 @@ func (s *Server) writeUnauthorized(w http.ResponseWriter) {
 }
 
 func loadTemplates() (*template.Template, error) {
-	_, currentFile, _, ok := goruntime.Caller(0)
-	if !ok {
-		return nil, fmt.Errorf("web: locate template directory")
+	templateDir, err := templateDir()
+	if err != nil {
+		return nil, err
 	}
 
-	templateDir := filepath.Join(filepath.Dir(currentFile), "templates")
 	tpls, err := template.ParseFiles(
 		filepath.Join(templateDir, "layout.html"),
 		filepath.Join(templateDir, "runs.html"),
@@ -290,6 +292,7 @@ func loadTemplates() (*template.Template, error) {
 		filepath.Join(templateDir, "run_submit.html"),
 		filepath.Join(templateDir, "approvals.html"),
 		filepath.Join(templateDir, "settings.html"),
+		filepath.Join(templateDir, "team.html"),
 		filepath.Join(templateDir, "onboarding.html"),
 		filepath.Join(templateDir, "memory.html"),
 		filepath.Join(templateDir, "control.html"),
@@ -300,6 +303,23 @@ func loadTemplates() (*template.Template, error) {
 		return nil, fmt.Errorf("web: parse templates: %w", err)
 	}
 	return tpls, nil
+}
+
+func templateDir() (string, error) {
+	_, currentFile, _, ok := goruntime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("web: locate template directory")
+	}
+
+	return filepath.Join(filepath.Dir(currentFile), "templates"), nil
+}
+
+func staticAssetDir() string {
+	_, currentFile, _, ok := goruntime.Caller(0)
+	if !ok {
+		return "."
+	}
+	return filepath.Join(filepath.Dir(currentFile), "static")
 }
 
 func lookupSetting(db *store.DB, key string) string {

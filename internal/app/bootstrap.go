@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 
 	telegramconnector "github.com/canhta/gistclaw/internal/connectors/telegram"
@@ -41,6 +43,8 @@ type App struct {
 }
 
 func Bootstrap(cfg Config) (*App, error) {
+	teamDir := resolveTeamDir(cfg)
+
 	db, err := storeWiring(cfg)
 	if err != nil {
 		return nil, err
@@ -51,7 +55,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		return nil, err
 	}
 
-	if err := validateTeamDir(cfg.TeamDir); err != nil {
+	if err := validateTeamDir(teamDir); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -67,8 +71,9 @@ func Bootstrap(cfg Config) (*App, error) {
 	broadcaster := web.NewSSEBroadcaster()
 	connectorNotifier := newConnectorRouteNotifier(db)
 	rt := runtimeWiring(cfg, db, convStore, reg, mem, newRunEventFanout(broadcaster, connectorNotifier))
-	if cfg.TeamDir != "" {
-		snapshot, err := teams.LoadExecutionSnapshot(cfg.TeamDir)
+	rt.SetTeamDir(teamDir)
+	if teamDir != "" {
+		snapshot, err := teams.LoadExecutionSnapshot(teamDir)
 		if err != nil {
 			if toolCloser != nil {
 				_ = toolCloser.Close()
@@ -114,6 +119,22 @@ func Bootstrap(cfg Config) (*App, error) {
 		connectors: connectors,
 		toolCloser: toolCloser,
 	}, nil
+}
+
+func resolveTeamDir(cfg Config) string {
+	if cfg.TeamDir != "" {
+		return cfg.TeamDir
+	}
+	if cfg.WorkspaceRoot == "" {
+		return ""
+	}
+
+	candidate := filepath.Join(cfg.WorkspaceRoot, "teams", "default")
+	info, err := os.Stat(candidate)
+	if err != nil || !info.IsDir() {
+		return ""
+	}
+	return candidate
 }
 
 // lookupDBSetting reads a single setting value from the database.

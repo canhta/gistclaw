@@ -6,7 +6,6 @@ import (
 )
 
 type settingsPageData struct {
-	TeamName          string
 	WorkspaceRoot     string
 	AdminToken        string // masked for display only
 	PerRunTokenBudget string
@@ -18,7 +17,6 @@ type settingsPageData struct {
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	data := settingsPageData{
-		TeamName:          lookupSetting(s.db, "team_name"),
 		WorkspaceRoot:     lookupSetting(s.db, "workspace_root"),
 		PerRunTokenBudget: lookupSetting(s.db, "per_run_token_budget"),
 		DailyCostCapUSD:   lookupSetting(s.db, "daily_cost_cap_usd"),
@@ -62,7 +60,7 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updates := make(map[string]string)
-	for _, key := range []string{"team_name", "workspace_root", "per_run_token_budget", "daily_cost_cap_usd", "telegram_bot_token"} {
+	for _, key := range []string{"workspace_root", "per_run_token_budget", "daily_cost_cap_usd", "telegram_bot_token"} {
 		if v := strings.TrimSpace(r.FormValue(key)); v != "" {
 			updates[key] = v
 		}

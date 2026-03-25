@@ -108,6 +108,49 @@ func TestMemoryInspector(t *testing.T) {
 		}
 	})
 
+	t.Run("GET /memory supports keyword filter and pagination", func(t *testing.T) {
+		h := newServerHarness(t)
+		newestID := seedMemoryFact(t, h, "coordinator", "local", "graph fact newest", "model")
+		middleID := seedMemoryFact(t, h, "coordinator", "local", "unrelated note", "model")
+		oldestID := seedMemoryFact(t, h, "coordinator", "local", "graph fact oldest", "model")
+		setMemoryUpdatedAt(t, h, newestID, "2026-03-25 10:00:00")
+		setMemoryUpdatedAt(t, h, middleID, "2026-03-25 09:00:00")
+		setMemoryUpdatedAt(t, h, oldestID, "2026-03-25 08:00:00")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/memory?q=graph&limit=1", nil)
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, "graph fact newest") {
+			t.Fatalf("expected newest filtered fact on first page, got:\n%s", body)
+		}
+		if strings.Contains(body, "graph fact oldest") || strings.Contains(body, "unrelated note") {
+			t.Fatalf("expected first page to contain only newest filtered fact, got:\n%s", body)
+		}
+		if !strings.Contains(body, "direction=next") || !strings.Contains(body, "limit=1") {
+			t.Fatalf("expected next-page controls in memory page, got:\n%s", body)
+		}
+
+		rr = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/memory?q=graph&limit=1&cursor=2026-03-25+10%3A00%3A00%7C"+newestID+"&direction=next", nil)
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected second page 200, got %d", rr.Code)
+		}
+		body = rr.Body.String()
+		if !strings.Contains(body, "graph fact oldest") {
+			t.Fatalf("expected older filtered fact on second page, got:\n%s", body)
+		}
+		if strings.Contains(body, "graph fact newest") || strings.Contains(body, "unrelated note") {
+			t.Fatalf("expected second page to contain only older filtered fact, got:\n%s", body)
+		}
+	})
+
 	t.Run("POST /memory/{id}/forget with confirm=yes forgets and redirects", func(t *testing.T) {
 		h := newServerHarness(t)
 		id := seedMemoryFact(t, h, "coordinator", "local", "to be forgotten", "model")
@@ -227,4 +270,14 @@ func TestMemoryInspector(t *testing.T) {
 			t.Fatalf("expected 401, got %d: %s", rr.Code, rr.Body.String())
 		}
 	})
+}
+
+func setMemoryUpdatedAt(t *testing.T, h *serverHarness, id, updatedAt string) {
+	t.Helper()
+	if _, err := h.db.RawDB().Exec(
+		`UPDATE memory_items SET updated_at = ?, created_at = ? WHERE id = ?`,
+		updatedAt, updatedAt, id,
+	); err != nil {
+		t.Fatalf("set memory updated_at: %v", err)
+	}
 }

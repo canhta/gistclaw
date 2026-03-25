@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/canhta/gistclaw/internal/runtime"
 	"github.com/canhta/gistclaw/internal/sessions"
 	"github.com/canhta/gistclaw/internal/store"
+	"github.com/canhta/gistclaw/internal/teams"
 	"github.com/canhta/gistclaw/internal/tools"
 )
 
@@ -89,9 +92,55 @@ func TestRuns(t *testing.T) {
 		}
 	})
 
+	t.Run("list filters and paginates runs", func(t *testing.T) {
+		h := newServerHarness(t)
+		h.insertRunAt(t, "run-newest", "conv-runs-1", "fix graph cards", "active", "2026-03-25 10:00:00")
+		h.insertRunAt(t, "run-middle", "conv-runs-2", "review docs", "completed", "2026-03-25 09:00:00")
+		h.insertRunAt(t, "run-oldest", "conv-runs-3", "fix pagination", "active", "2026-03-25 08:00:00")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/runs?q=fix&status=active&limit=1", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, "run-newest") {
+			t.Fatalf("expected first filtered page to contain newest run, got:\n%s", body)
+		}
+		if strings.Contains(body, "run-middle") || strings.Contains(body, "run-oldest") {
+			t.Fatalf("expected first filtered page to contain only newest filtered run, got:\n%s", body)
+		}
+		if !strings.Contains(body, "direction=next") || !strings.Contains(body, "limit=1") {
+			t.Fatalf("expected next-page controls in first page, got:\n%s", body)
+		}
+
+		rr = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/runs?q=fix&status=active&limit=1&cursor=2026-03-25+10%3A00%3A00%7Crun-newest&direction=next", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected second page 200, got %d", rr.Code)
+		}
+		body = rr.Body.String()
+		if !strings.Contains(body, "run-oldest") {
+			t.Fatalf("expected second filtered page to contain oldest run, got:\n%s", body)
+		}
+		if strings.Contains(body, "run-newest") || strings.Contains(body, "run-middle") {
+			t.Fatalf("expected second filtered page to contain only oldest filtered run, got:\n%s", body)
+		}
+	})
+
 	t.Run("detail renders known run", func(t *testing.T) {
 		h := newServerHarness(t)
-		h.insertRun(t, "run-detail", "conv-1", "review the repo", "completed")
+		snapshot, err := teams.LoadExecutionSnapshot(h.teamDir)
+		if err != nil {
+			t.Fatalf("load execution snapshot: %v", err)
+		}
+		h.insertRunWithSnapshot(t, "run-detail", "conv-1", "review the repo", "completed", snapshot)
 		h.insertEvent(t, "evt-1", "conv-1", "run-detail", "run_started")
 		h.insertEventWithPayload(
 			t,
@@ -114,6 +163,10 @@ func TestRuns(t *testing.T) {
 		body := rr.Body.String()
 		for _, want := range []string{
 			"run-detail",
+			"Execution Snapshot",
+			"Repo Task Team",
+			"assistant",
+			"workspace_write",
 			"run_started",
 			"Draft the rollout plan.",
 			`id="run-live-output"`,
@@ -210,19 +263,63 @@ func TestRuns(t *testing.T) {
 }
 
 func TestApprovals(t *testing.T) {
-	h := newServerHarness(t)
+	t.Run("page renders approvals", func(t *testing.T) {
+		h := newServerHarness(t)
 
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/approvals", nil)
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/approvals", nil)
 
-	h.server.ServeHTTP(rr, req)
+		h.server.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
-	if !strings.Contains(rr.Body.String(), "Approvals") {
-		t.Fatalf("expected approvals page, got:\n%s", rr.Body.String())
-	}
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+		if !strings.Contains(rr.Body.String(), "Approvals") {
+			t.Fatalf("expected approvals page, got:\n%s", rr.Body.String())
+		}
+	})
+
+	t.Run("page filters and paginates approvals", func(t *testing.T) {
+		h := newServerHarness(t)
+		h.insertApprovalAt(t, "run-approval-new", "bash", "/tmp/new", "pending", "", "2026-03-25 10:00:00")
+		h.insertApprovalAt(t, "run-approval-mid", "git", "/tmp/mid", "approved", "operator", "2026-03-25 09:00:00")
+		h.insertApprovalAt(t, "run-approval-old", "bash", "/tmp/old", "pending", "", "2026-03-25 08:00:00")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/approvals?q=bash&status=pending&limit=1", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, "ticket-run-approval-new") {
+			t.Fatalf("expected first approval page to contain newest pending approval, got:\n%s", body)
+		}
+		if strings.Contains(body, "ticket-run-approval-mid") || strings.Contains(body, "ticket-run-approval-old") {
+			t.Fatalf("expected first approval page to contain only newest filtered approval, got:\n%s", body)
+		}
+		if !strings.Contains(body, "direction=next") || !strings.Contains(body, "limit=1") {
+			t.Fatalf("expected next-page controls in first approval page, got:\n%s", body)
+		}
+
+		rr = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/approvals?q=bash&status=pending&limit=1&cursor=2026-03-25+10%3A00%3A00%7Cticket-run-approval-new&direction=next", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected second approval page 200, got %d", rr.Code)
+		}
+		body = rr.Body.String()
+		if !strings.Contains(body, "ticket-run-approval-old") {
+			t.Fatalf("expected second approval page to contain older pending approval, got:\n%s", body)
+		}
+		if strings.Contains(body, "ticket-run-approval-new") || strings.Contains(body, "ticket-run-approval-mid") {
+			t.Fatalf("expected second approval page to contain only older filtered approval, got:\n%s", body)
+		}
+	})
 }
 
 func TestSettings(t *testing.T) {
@@ -239,6 +336,103 @@ func TestSettings(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "Settings") {
 		t.Fatalf("expected settings page, got:\n%s", rr.Body.String())
 	}
+}
+
+func TestTeam(t *testing.T) {
+	t.Run("team page renders configured default team", func(t *testing.T) {
+		h := newServerHarness(t)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/team", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+
+		body := rr.Body.String()
+		for _, want := range []string{
+			"Team",
+			"Repo Task Team",
+			"assistant",
+			"patcher",
+			"reviewer",
+			"operator_facing",
+			"workspace_write",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected body to contain %q:\n%s", want, body)
+			}
+		}
+	})
+
+	t.Run("team update rewrites default team and refreshes runtime snapshot", func(t *testing.T) {
+		h := newServerHarness(t)
+		cookie := hostAdminSessionCookie(t, h, "/team")
+
+		form := url.Values{
+			"name":                         {"Platform Crew"},
+			"front_agent":                  {"reviewer"},
+			"agent_assistant_role":         {"operator-facing coordinator"},
+			"agent_assistant_tool_posture": {"operator_facing"},
+			"agent_assistant_can_spawn":    {"patcher,reviewer"},
+			"agent_assistant_can_message":  {"patcher,reviewer"},
+			"agent_patcher_role":           {"workspace write specialist"},
+			"agent_patcher_tool_posture":   {"workspace_write"},
+			"agent_patcher_can_spawn":      {""},
+			"agent_patcher_can_message":    {"assistant,reviewer"},
+			"agent_reviewer_role":          {"diff reviewer"},
+			"agent_reviewer_tool_posture":  {"read_heavy"},
+			"agent_reviewer_can_spawn":     {""},
+			"agent_reviewer_can_message":   {"assistant,patcher"},
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/team", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://example.com")
+		req.Host = "example.com"
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if rr.Header().Get("Location") != "/team" {
+			t.Fatalf("expected redirect to /team, got %q", rr.Header().Get("Location"))
+		}
+
+		specData, err := os.ReadFile(filepath.Join(h.teamDir, "team.yaml"))
+		if err != nil {
+			t.Fatalf("read team file: %v", err)
+		}
+		spec, err := teams.LoadSpec(specData)
+		if err != nil {
+			t.Fatalf("load team spec: %v", err)
+		}
+		if spec.Name != "Platform Crew" {
+			t.Fatalf("expected updated team name, got %q", spec.Name)
+		}
+		if spec.FrontAgent != "reviewer" {
+			t.Fatalf("expected updated front agent, got %q", spec.FrontAgent)
+		}
+
+		run, err := h.rt.Start(context.Background(), runtime.StartRun{
+			ConversationID: "conv-team-refresh",
+			AgentID:        "reviewer",
+			Objective:      "confirm refreshed snapshot",
+			WorkspaceRoot:  h.workspaceRoot,
+			PreviewOnly:    true,
+		})
+		if err != nil {
+			t.Fatalf("start run with refreshed snapshot: %v", err)
+		}
+		if run.TeamID != "Platform Crew" {
+			t.Fatalf("expected refreshed runtime team id, got %q", run.TeamID)
+		}
+	})
 }
 
 func TestWebhooks(t *testing.T) {
@@ -368,12 +562,12 @@ func TestApprovalsResolve(t *testing.T) {
 }
 
 func TestSettingsUpdate(t *testing.T) {
-	t.Run("update team_name redirects to settings", func(t *testing.T) {
+	t.Run("update workspace root redirects to settings", func(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/settings",
-			strings.NewReader("team_name=My+Team"))
+			strings.NewReader("workspace_root=%2Ftmp%2Fworkspace"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -1561,6 +1755,11 @@ func TestControlPlanePage(t *testing.T) {
 				t.Fatalf("expected control page to contain %q:\n%s", want, body)
 			}
 		}
+		for _, want := range []string{"directory-card-list", "directory-card"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected responsive control markup %q:\n%s", want, body)
+			}
+		}
 	})
 
 	t.Run("GET /control applies shared query filters", func(t *testing.T) {
@@ -1815,6 +2014,11 @@ func TestSessionPages(t *testing.T) {
 				t.Fatalf("expected session directory to contain %q:\n%s", want, body)
 			}
 		}
+		for _, want := range []string{"directory-card-list", "directory-card"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected responsive session markup %q:\n%s", want, body)
+			}
+		}
 		if strings.Contains(body, "Bound only") {
 			t.Fatalf("expected segmented binding filter instead of legacy checkbox:\n%s", body)
 		}
@@ -2060,6 +2264,7 @@ type serverHarness struct {
 	broadcaster   *SSEBroadcaster
 	rt            *runtime.Runtime
 	adminToken    string
+	teamDir       string
 	workspaceRoot string
 }
 
@@ -2077,6 +2282,7 @@ func newServerHarness(t *testing.T) *serverHarness {
 
 	adminToken := "test-admin-token"
 	workspaceRoot := t.TempDir()
+	teamDir := writeTeamFixture(t)
 	seedSettings(t, db, map[string]string{
 		"admin_token":    adminToken,
 		"workspace_root": workspaceRoot,
@@ -2089,6 +2295,14 @@ func newServerHarness(t *testing.T) *serverHarness {
 	prov := runtime.NewMockProvider(nil, nil)
 	broadcaster := NewSSEBroadcaster()
 	rt := runtime.New(db, cs, reg, mem, prov, broadcaster)
+	rt.SetTeamDir(teamDir)
+	snapshot, err := teams.LoadExecutionSnapshot(teamDir)
+	if err != nil {
+		t.Fatalf("load execution snapshot: %v", err)
+	}
+	if err := rt.SetDefaultExecutionSnapshot(snapshot); err != nil {
+		t.Fatalf("set default execution snapshot: %v", err)
+	}
 
 	server, err := NewServer(Options{
 		DB:          db,
@@ -2106,7 +2320,45 @@ func newServerHarness(t *testing.T) *serverHarness {
 		broadcaster:   broadcaster,
 		rt:            rt,
 		adminToken:    adminToken,
+		teamDir:       teamDir,
 		workspaceRoot: workspaceRoot,
+	}
+}
+
+func writeTeamFixture(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	writeTestFile(t, filepath.Join(dir, "team.yaml"), `
+name: Repo Task Team
+front_agent: assistant
+agents:
+  - id: assistant
+    soul_file: coordinator.soul.yaml
+    can_spawn: [patcher, reviewer]
+    can_message: [patcher, reviewer]
+  - id: patcher
+    soul_file: patcher.soul.yaml
+    can_spawn: []
+    can_message: [assistant, reviewer]
+  - id: reviewer
+    soul_file: reviewer.soul.yaml
+    can_spawn: []
+    can_message: [assistant, patcher]
+`)
+	writeTestFile(t, filepath.Join(dir, "coordinator.soul.yaml"), "role: operator-facing coordinator\ntool_posture: operator_facing\n")
+	writeTestFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: workspace write specialist\ntool_posture: workspace_write\n")
+	writeTestFile(t, filepath.Join(dir, "reviewer.soul.yaml"), "role: diff reviewer\ntool_posture: read_heavy\n")
+	return dir
+}
+
+func writeTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(strings.TrimLeft(content, "\n")), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
 	}
 }
 
@@ -2170,6 +2422,39 @@ func (h *serverHarness) insertRun(t *testing.T, runID, conversationID, objective
 	)
 	if err != nil {
 		t.Fatalf("insert run: %v", err)
+	}
+}
+
+func (h *serverHarness) insertRunAt(t *testing.T, runID, conversationID, objective, status, createdAt string) {
+	t.Helper()
+
+	_, err := h.db.RawDB().Exec(
+		`INSERT INTO runs
+		 (id, conversation_id, agent_id, team_id, objective, workspace_root, status, created_at, updated_at)
+		 VALUES (?, ?, 'agent-1', 'repo-task-team', ?, ?, ?, ?, ?)`,
+		runID, conversationID, objective, h.workspaceRoot, status, createdAt, createdAt,
+	)
+	if err != nil {
+		t.Fatalf("insert run at %s: %v", createdAt, err)
+	}
+}
+
+func (h *serverHarness) insertRunWithSnapshot(t *testing.T, runID, conversationID, objective, status string, snapshot model.ExecutionSnapshot) {
+	t.Helper()
+
+	rawSnapshot, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("marshal execution snapshot: %v", err)
+	}
+
+	_, err = h.db.RawDB().Exec(
+		`INSERT INTO runs
+		 (id, conversation_id, agent_id, team_id, objective, workspace_root, status, execution_snapshot_json, created_at, updated_at)
+		 VALUES (?, ?, 'agent-1', ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+		runID, conversationID, snapshot.TeamID, objective, h.workspaceRoot, status, rawSnapshot,
+	)
+	if err != nil {
+		t.Fatalf("insert run with snapshot: %v", err)
 	}
 }
 
@@ -2256,6 +2541,26 @@ func (h *serverHarness) insertApproval(t *testing.T, runID, toolName, targetPath
 	)
 	if err != nil {
 		t.Fatalf("insert approval: %v", err)
+	}
+	return id
+}
+
+func (h *serverHarness) insertApprovalAt(t *testing.T, runID, toolName, targetPath, status, resolvedBy, createdAt string) string {
+	t.Helper()
+
+	id := "ticket-" + runID
+	var resolvedAt any
+	if resolvedBy != "" {
+		resolvedAt = createdAt
+	}
+
+	_, err := h.db.RawDB().Exec(
+		`INSERT INTO approvals (id, run_id, tool_name, args_json, target_path, fingerprint, status, resolved_by, created_at, resolved_at)
+		 VALUES (?, ?, ?, x'', ?, 'fp-test', ?, NULLIF(?, ''), ?, ?)`,
+		id, runID, toolName, targetPath, status, resolvedBy, createdAt, resolvedAt,
+	)
+	if err != nil {
+		t.Fatalf("insert approval at %s: %v", createdAt, err)
 	}
 	return id
 }

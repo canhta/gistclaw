@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/canhta/gistclaw/internal/conversations"
@@ -22,6 +23,23 @@ type Store struct {
 type ContextView struct {
 	Summary model.SummaryRef
 	Items   []model.MemoryItem
+}
+
+type SearchPageQuery struct {
+	AgentID   string
+	Scope     string
+	Keyword   string
+	Limit     int
+	Cursor    string
+	Direction string
+}
+
+type SearchPage struct {
+	Items      []model.MemoryItem
+	NextCursor string
+	PrevCursor string
+	HasNext    bool
+	HasPrev    bool
 }
 
 func NewStore(db *store.DB, cs *conversations.ConversationStore) *Store {
@@ -181,10 +199,34 @@ func (s *Store) Filter(ctx context.Context, f MemoryFilter) ([]model.MemoryItem,
 }
 
 func (s *Store) Search(ctx context.Context, query model.MemoryQuery) ([]model.MemoryItem, error) {
+	page, err := s.SearchPage(ctx, SearchPageQuery{
+		AgentID: query.AgentID,
+		Scope:   query.Scope,
+		Keyword: query.Keyword,
+		Limit:   query.Limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
+func (s *Store) SearchPage(ctx context.Context, query SearchPageQuery) (SearchPage, error) {
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 100
+	}
+
+	cursor, hasCursor := parseMemoryCursor(query.Cursor)
+	direction := query.Direction
+	if direction != "prev" {
+		direction = "next"
+	}
+
 	sqlQuery := `SELECT id, agent_id, scope, content, source, COALESCE(provenance, ''),
-		COALESCE(confidence, 0), COALESCE(dedupe_key, ''), created_at, updated_at
+		COALESCE(confidence, 0), COALESCE(dedupe_key, ''), created_at, updated_at, updated_at
 		FROM memory_items WHERE forgotten_at IS NULL`
-	args := make([]any, 0)
+	args := make([]any, 0, 8)
 
 	if query.AgentID != "" {
 		sqlQuery += " AND agent_id = ?"
@@ -198,23 +240,33 @@ func (s *Store) Search(ctx context.Context, query model.MemoryQuery) ([]model.Me
 		sqlQuery += " AND content LIKE ?"
 		args = append(args, "%"+query.Keyword+"%")
 	}
-
-	limit := query.Limit
-	if limit <= 0 {
-		limit = 100
+	if hasCursor {
+		if direction == "prev" {
+			sqlQuery += " AND (updated_at > ? OR (updated_at = ? AND id > ?))"
+		} else {
+			sqlQuery += " AND (updated_at < ? OR (updated_at = ? AND id < ?))"
+		}
+		args = append(args, cursor.UpdatedAt, cursor.UpdatedAt, cursor.ID)
 	}
-	sqlQuery += " ORDER BY updated_at DESC LIMIT ?"
-	args = append(args, limit)
+
+	if direction == "prev" {
+		sqlQuery += " ORDER BY updated_at ASC, id ASC"
+	} else {
+		sqlQuery += " ORDER BY updated_at DESC, id DESC"
+	}
+	sqlQuery += " LIMIT ?"
+	args = append(args, limit+1)
 
 	rows, err := s.db.RawDB().QueryContext(ctx, sqlQuery, args...)
 	if err != nil {
-		return nil, fmt.Errorf("memory: search: %w", err)
+		return SearchPage{}, fmt.Errorf("memory: search page: %w", err)
 	}
 	defer rows.Close()
 
-	items := make([]model.MemoryItem, 0)
+	pageRows := make([]memoryPageRow, 0, limit+1)
 	for rows.Next() {
 		var item model.MemoryItem
+		var updatedAt string
 		if err := rows.Scan(
 			&item.ID,
 			&item.AgentID,
@@ -226,13 +278,17 @@ func (s *Store) Search(ctx context.Context, query model.MemoryQuery) ([]model.Me
 			&item.DedupeKey,
 			&item.CreatedAt,
 			&item.UpdatedAt,
+			&updatedAt,
 		); err != nil {
-			return nil, fmt.Errorf("memory: scan: %w", err)
+			return SearchPage{}, fmt.Errorf("memory: scan page: %w", err)
 		}
-		items = append(items, item)
+		pageRows = append(pageRows, memoryPageRow{Item: item, UpdatedAt: updatedAt})
+	}
+	if err := rows.Err(); err != nil {
+		return SearchPage{}, fmt.Errorf("memory: iterate page: %w", err)
 	}
 
-	return items, rows.Err()
+	return finalizeMemoryPage(direction, hasCursor, limit, pageRows), nil
 }
 
 func (s *Store) UpsertWorkingSummary(ctx context.Context, runID, conversationID string) (model.SummaryRef, error) {
@@ -308,4 +364,68 @@ func memGenerateID() string {
 	buf := make([]byte, 16)
 	_, _ = rand.Read(buf)
 	return hex.EncodeToString(buf)
+}
+
+type memoryCursor struct {
+	UpdatedAt string
+	ID        string
+}
+
+type memoryPageRow struct {
+	Item      model.MemoryItem
+	UpdatedAt string
+}
+
+func parseMemoryCursor(raw string) (memoryCursor, bool) {
+	if raw == "" {
+		return memoryCursor{}, false
+	}
+	parts := strings.SplitN(raw, "|", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return memoryCursor{}, false
+	}
+	return memoryCursor{UpdatedAt: parts[0], ID: parts[1]}, true
+}
+
+func encodeMemoryCursor(updatedAt, id string) string {
+	if updatedAt == "" || id == "" {
+		return ""
+	}
+	return updatedAt + "|" + id
+}
+
+func finalizeMemoryPage(direction string, hasCursor bool, limit int, rows []memoryPageRow) SearchPage {
+	hasExtra := len(rows) > limit
+	if hasExtra {
+		rows = rows[:limit]
+	}
+	if direction == "prev" {
+		for left, right := 0, len(rows)-1; left < right; left, right = left+1, right-1 {
+			rows[left], rows[right] = rows[right], rows[left]
+		}
+	}
+
+	page := SearchPage{
+		Items: make([]model.MemoryItem, 0, len(rows)),
+	}
+	for _, row := range rows {
+		page.Items = append(page.Items, row.Item)
+	}
+	if len(rows) > 0 {
+		first := rows[0]
+		last := rows[len(rows)-1]
+		page.PrevCursor = encodeMemoryCursor(first.UpdatedAt, first.Item.ID)
+		page.NextCursor = encodeMemoryCursor(last.UpdatedAt, last.Item.ID)
+	}
+
+	switch direction {
+	case "prev":
+		page.HasPrev = hasExtra
+		page.HasNext = hasCursor
+	default:
+		page.HasPrev = hasCursor
+		page.HasNext = hasExtra
+	}
+
+	return page
 }

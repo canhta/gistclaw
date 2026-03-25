@@ -54,6 +54,29 @@ func bootstrapWithTeamDir(t *testing.T, teamDir string) error {
 	return err
 }
 
+func workspaceRootWithDefaultTeam(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+	teamDir := filepath.Join(root, "teams", "default")
+	writeFile(t, filepath.Join(teamDir, "team.yaml"), `
+name: default
+front_agent: assistant
+agents:
+  - id: assistant
+    soul_file: assistant.soul.yaml
+    can_spawn: [patcher]
+    can_message: [patcher]
+  - id: patcher
+    soul_file: patcher.soul.yaml
+    can_spawn: []
+    can_message: [assistant]
+`)
+	writeFile(t, filepath.Join(teamDir, "assistant.soul.yaml"), "role: assistant\ntool_posture: operator_facing\n")
+	writeFile(t, filepath.Join(teamDir, "patcher.soul.yaml"), "role: patcher\ntool_posture: workspace_write\n")
+	return root
+}
+
 // TestTeamValidation_ValidTeam verifies Bootstrap succeeds with a valid team dir.
 func TestTeamValidation_ValidTeam(t *testing.T) {
 	dir := validTeamDir(t)
@@ -148,6 +171,17 @@ func TestTeamValidation_EmptyTeamDir(t *testing.T) {
 	}
 	if a != nil {
 		_ = a.db.Close()
+	}
+}
+
+func TestResolveTeamDir_UsesWorkspaceDefaultWhenPresent(t *testing.T) {
+	workspaceRoot := workspaceRootWithDefaultTeam(t)
+	cfg := Config{WorkspaceRoot: workspaceRoot}
+
+	got := resolveTeamDir(cfg)
+	want := filepath.Join(workspaceRoot, "teams", "default")
+	if got != want {
+		t.Fatalf("expected resolved team dir %q, got %q", want, got)
 	}
 }
 

@@ -59,6 +59,33 @@ func TestReplay_LoadRunFromJournal(t *testing.T) {
 	}
 }
 
+func TestReplay_LoadRunIncludesExecutionSnapshot(t *testing.T) {
+	db := setupReplayDB(t)
+	ctx := context.Background()
+
+	snapshotJSON := []byte(`{"team_id":"Repo Task Team","agents":{"assistant":{"agent_id":"assistant","tool_profile":"operator_facing","capabilities":["operator_facing","spawn"]}}}`)
+	_, err := db.RawDB().Exec(
+		`INSERT INTO runs (id, conversation_id, agent_id, team_id, status, execution_snapshot_json, created_at, updated_at)
+		 VALUES ('run-snapshot', 'conv-snapshot', 'assistant', 'Repo Task Team', 'completed', ?, datetime('now'), datetime('now'))`,
+		snapshotJSON,
+	)
+	if err != nil {
+		t.Fatalf("insert run: %v", err)
+	}
+
+	svc := NewService(db)
+	replay, err := svc.LoadRun(ctx, "run-snapshot")
+	if err != nil {
+		t.Fatalf("LoadRun failed: %v", err)
+	}
+	if replay.TeamID != "Repo Task Team" {
+		t.Fatalf("expected team id, got %q", replay.TeamID)
+	}
+	if string(replay.ExecutionSnapshotJSON) != string(snapshotJSON) {
+		t.Fatalf("expected snapshot json %s, got %s", snapshotJSON, replay.ExecutionSnapshotJSON)
+	}
+}
+
 func TestLoadGraph_UsesSessionLineageInsteadOfHandoffEdges(t *testing.T) {
 	db := setupReplayDB(t)
 	ctx := context.Background()

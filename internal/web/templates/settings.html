@@ -9,11 +9,10 @@
 {{end}}
 <section class="page-section">
   <div class="panel">
+  <div class="stack-sm">
+    <p class="muted">Team composition and agent collaboration defaults now live on the <a href="/team">Team</a> page.</p>
+  </div>
   <form method="POST" action="/settings">
-    <div class="field">
-      <label for="team_name">Team Name</label>
-      <input type="text" id="team_name" name="team_name" value="{{.TeamName}}">
-    </div>
     <div class="field">
       <label for="workspace_root">Workspace Root</label>
       <input type="text" id="workspace_root" name="workspace_root" value="{{.WorkspaceRoot}}">

@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/canhta/gistclaw/internal/model"
@@ -14,25 +16,29 @@ import (
 )
 
 type runListItem struct {
-	ID        string
-	Objective string
-	Summary   string
-	Status    string
+	ID          string
+	Objective   string
+	Summary     string
+	Status      string
+	StatusClass string
 }
 
 type runsPageData struct {
-	Runs []runListItem
+	Runs    []runListItem
+	Filters runListFilters
+	Paging  pageLinks
 }
 
 type runDetailPageData struct {
-	RunID       string
-	Status      string
-	StatusClass string
-	StreamURL   string
-	GraphURL    string
-	Turns       []runTurnView
-	Events      []runEventView
-	Graph       runGraphView
+	RunID             string
+	Status            string
+	StatusClass       string
+	StreamURL         string
+	GraphURL          string
+	Turns             []runTurnView
+	Events            []runEventView
+	Graph             runGraphView
+	ExecutionSnapshot runExecutionSnapshotView
 }
 
 type runEventView struct {
@@ -45,10 +51,22 @@ type runTurnView struct {
 	CreatedAt time.Time
 }
 
+type runExecutionSnapshotView struct {
+	TeamID string
+	Agents []runExecutionAgentView
+}
+
+type runExecutionAgentView struct {
+	ID           string
+	ToolProfile  string
+	Capabilities []string
+}
+
 type runGraphView struct {
 	RootRunID string               `json:"root_run_id"`
 	Headline  string               `json:"headline"`
 	Summary   runGraphSummaryView  `json:"summary"`
+	Nodes     []runGraphNodeView   `json:"nodes"`
 	Edges     []runGraphEdgeView   `json:"edges"`
 	Columns   []runGraphColumnView `json:"columns"`
 }
@@ -88,37 +106,56 @@ type runGraphNodeView struct {
 	ParentLabel string `json:"parent_label,omitempty"`
 }
 
+type runListFilters struct {
+	Query  string
+	Status string
+	Limit  int
+}
+
+type runListRow struct {
+	Item      runListItem
+	CreatedAt string
+}
+
 func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.db.RawDB().QueryContext(r.Context(),
-		`SELECT id, COALESCE(objective, ''), COALESCE(parent_run_id, ''), status,
-		        (SELECT count(*) FROM runs child WHERE child.parent_run_id = runs.id) AS worker_count
-		 FROM runs
-		 ORDER BY created_at DESC`,
-	)
+	filter := runListFilterFromRequest(r)
+	querySQL, args, err := buildRunListQuery(filter)
+	if err != nil {
+		http.Error(w, "failed to build runs query", http.StatusInternalServerError)
+		return
+	}
+	rows, err := s.db.RawDB().QueryContext(r.Context(), querySQL, args...)
 	if err != nil {
 		http.Error(w, "failed to load runs", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
 
-	runs := make([]runListItem, 0)
+	runRows := make([]runListRow, 0, filter.Limit+1)
 	for rows.Next() {
 		var item runListItem
 		var parentRunID string
+		var createdAt string
 		var workerCount int
-		if err := rows.Scan(&item.ID, &item.Objective, &parentRunID, &item.Status, &workerCount); err != nil {
+		if err := rows.Scan(&item.ID, &item.Objective, &parentRunID, &item.Status, &createdAt, &workerCount); err != nil {
 			http.Error(w, "failed to load runs", http.StatusInternalServerError)
 			return
 		}
 		item.Summary = formatRunSummary(parentRunID, item.ID, workerCount)
-		runs = append(runs, item)
+		item.StatusClass = runStatusClass(item.Status)
+		runRows = append(runRows, runListRow{Item: item, CreatedAt: createdAt})
 	}
 	if err := rows.Err(); err != nil {
 		http.Error(w, "failed to load runs", http.StatusInternalServerError)
 		return
 	}
 
-	s.renderTemplate(w, "Runs", "runs_body", runsPageData{Runs: runs})
+	items, paging := finalizeRunListPage(r.URL.Query(), filter, runRows)
+	s.renderTemplate(w, "Runs", "runs_body", runsPageData{
+		Runs:    items,
+		Filters: runListFilters{Query: filter.Query, Status: filter.Status, Limit: filter.Limit},
+		Paging:  paging,
+	})
 }
 
 func formatRunSummary(parentRunID, runID string, workerCount int) string {
@@ -178,14 +215,15 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.renderTemplate(w, "Run Detail", "run_detail_body", runDetailPageData{
-		RunID:       replayRun.RunID,
-		Status:      string(replayRun.Status),
-		StatusClass: runStatusClass(string(replayRun.Status)),
-		StreamURL:   "/runs/" + url.PathEscape(replayRun.RunID) + "/events",
-		GraphURL:    "/runs/" + url.PathEscape(replayRun.RunID) + "/graph",
-		Turns:       turns,
-		Events:      events,
-		Graph:       buildRunGraphView(graphSnapshot),
+		RunID:             replayRun.RunID,
+		Status:            string(replayRun.Status),
+		StatusClass:       runStatusClass(string(replayRun.Status)),
+		StreamURL:         "/runs/" + url.PathEscape(replayRun.RunID) + "/events",
+		GraphURL:          "/runs/" + url.PathEscape(replayRun.RunID) + "/graph",
+		Turns:             turns,
+		Events:            events,
+		Graph:             buildRunGraphView(graphSnapshot),
+		ExecutionSnapshot: buildExecutionSnapshotView(replayRun.TeamID, replayRun.ExecutionSnapshotJSON),
 	})
 }
 
@@ -219,6 +257,171 @@ func turnContent(payload []byte) (string, bool) {
 		return "", false
 	}
 	return decoded.Content, true
+}
+
+func buildExecutionSnapshotView(teamID string, raw []byte) runExecutionSnapshotView {
+	view := runExecutionSnapshotView{TeamID: teamID}
+	if len(raw) == 0 {
+		return view
+	}
+
+	var snapshot model.ExecutionSnapshot
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return view
+	}
+	if snapshot.TeamID != "" {
+		view.TeamID = snapshot.TeamID
+	}
+
+	agentIDs := make([]string, 0, len(snapshot.Agents))
+	for agentID := range snapshot.Agents {
+		agentIDs = append(agentIDs, agentID)
+	}
+	sort.Strings(agentIDs)
+
+	view.Agents = make([]runExecutionAgentView, 0, len(agentIDs))
+	for _, agentID := range agentIDs {
+		profile := snapshot.Agents[agentID]
+		capabilities := make([]string, 0, len(profile.Capabilities))
+		for _, capability := range profile.Capabilities {
+			capabilities = append(capabilities, string(capability))
+		}
+		sort.Strings(capabilities)
+		view.Agents = append(view.Agents, runExecutionAgentView{
+			ID:           agentID,
+			ToolProfile:  profile.ToolProfile,
+			Capabilities: capabilities,
+		})
+	}
+
+	return view
+}
+
+type runListRequest struct {
+	Query     string
+	Status    string
+	Limit     int
+	Cursor    runListCursor
+	HasCursor bool
+	Direction string
+}
+
+type runListCursor struct {
+	CreatedAt string
+	ID        string
+}
+
+func runListFilterFromRequest(r *http.Request) runListRequest {
+	cursor, ok := parseRunListCursor(strings.TrimSpace(r.URL.Query().Get("cursor")))
+	direction := strings.TrimSpace(r.URL.Query().Get("direction"))
+	if direction != "prev" {
+		direction = "next"
+	}
+
+	return runListRequest{
+		Query:     strings.TrimSpace(r.URL.Query().Get("q")),
+		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
+		Limit:     requestNamedLimit(r, "limit", 20),
+		Cursor:    cursor,
+		HasCursor: ok,
+		Direction: direction,
+	}
+}
+
+func buildRunListQuery(filter runListRequest) (string, []any, error) {
+	var query strings.Builder
+	query.WriteString(`SELECT id, COALESCE(objective, ''), COALESCE(parent_run_id, ''), status, created_at,
+	        (SELECT count(*) FROM runs child WHERE child.parent_run_id = runs.id) AS worker_count
+	 FROM runs`)
+
+	clauses := []string{"1=1"}
+	args := make([]any, 0, 8)
+	if filter.Query != "" {
+		like := "%" + filter.Query + "%"
+		clauses = append(clauses, "(id LIKE ? OR COALESCE(objective, '') LIKE ?)")
+		args = append(args, like, like)
+	}
+	if filter.Status != "" {
+		clauses = append(clauses, "status = ?")
+		args = append(args, filter.Status)
+	}
+	if filter.HasCursor {
+		switch filter.Direction {
+		case "prev":
+			clauses = append(clauses, "(created_at > ? OR (created_at = ? AND id > ?))")
+		default:
+			clauses = append(clauses, "(created_at < ? OR (created_at = ? AND id < ?))")
+		}
+		args = append(args, filter.Cursor.CreatedAt, filter.Cursor.CreatedAt, filter.Cursor.ID)
+	}
+
+	query.WriteString(" WHERE ")
+	query.WriteString(strings.Join(clauses, " AND "))
+	if filter.Direction == "prev" {
+		query.WriteString(" ORDER BY created_at ASC, id ASC")
+	} else {
+		query.WriteString(" ORDER BY created_at DESC, id DESC")
+	}
+	query.WriteString(" LIMIT ?")
+	args = append(args, filter.Limit+1)
+	return query.String(), args, nil
+}
+
+func finalizeRunListPage(query url.Values, filter runListRequest, rows []runListRow) ([]runListItem, pageLinks) {
+	hasExtra := len(rows) > filter.Limit
+	if hasExtra {
+		rows = rows[:filter.Limit]
+	}
+	if filter.Direction == "prev" {
+		for left, right := 0, len(rows)-1; left < right; left, right = left+1, right-1 {
+			rows[left], rows[right] = rows[right], rows[left]
+		}
+	}
+
+	items := make([]runListItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.Item)
+	}
+
+	var nextCursor string
+	var prevCursor string
+	hasNext := false
+	hasPrev := false
+	if len(rows) > 0 {
+		first := rows[0]
+		last := rows[len(rows)-1]
+		prevCursor = encodeRunListCursor(first.CreatedAt, first.Item.ID)
+		nextCursor = encodeRunListCursor(last.CreatedAt, last.Item.ID)
+	}
+
+	switch filter.Direction {
+	case "prev":
+		hasPrev = hasExtra
+		hasNext = filter.HasCursor
+	default:
+		hasPrev = filter.HasCursor
+		hasNext = hasExtra
+	}
+
+	return items, buildPageLinks("/runs", cloneQuery(query), "cursor", "direction", nextCursor, prevCursor, hasNext, hasPrev)
+}
+
+func parseRunListCursor(raw string) (runListCursor, bool) {
+	if raw == "" {
+		return runListCursor{}, false
+	}
+	parts := strings.SplitN(raw, "|", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return runListCursor{}, false
+	}
+	return runListCursor{CreatedAt: parts[0], ID: parts[1]}, true
+}
+
+func encodeRunListCursor(createdAt, id string) string {
+	if createdAt == "" || id == "" {
+		return ""
+	}
+	return createdAt + "|" + id
 }
 
 // handleRunDismiss marks an interrupted run as dismissed so it no longer
@@ -299,6 +502,7 @@ func marshalReplayDelta(evt model.ReplayDelta) ([]byte, error) {
 func buildRunGraphView(snapshot replay.RunGraphSnapshot) runGraphView {
 	view := runGraphView{
 		RootRunID: snapshot.RootRunID,
+		Nodes:     make([]runGraphNodeView, 0, len(snapshot.Nodes)),
 		Edges:     make([]runGraphEdgeView, 0, len(snapshot.Edges)),
 		Columns:   make([]runGraphColumnView, 0, len(snapshot.Nodes)),
 	}
@@ -325,6 +529,7 @@ func buildRunGraphView(snapshot replay.RunGraphSnapshot) runGraphView {
 		if graphNode.ParentRunID != "" {
 			graphNode.ParentLabel = "from " + graphNode.ParentRunID
 		}
+		view.Nodes = append(view.Nodes, graphNode)
 
 		switch node.Status {
 		case model.RunStatusPending:

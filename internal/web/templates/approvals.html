@@ -2,24 +2,58 @@
 <section class="page-header">
   <span class="page-eyebrow">Approval Gate</span>
   <h1>Approvals</h1>
-  <p class="page-lede">Risky actions stop here. Pending tickets should read like discrete decision cards, not a buried list inside a wrapper.</p>
+  <p class="page-lede">Review pending, expired, and resolved approval tickets in one directory. Filters and paging keep the queue explainable under load.</p>
 </section>
 {{if .Error}}
   <section class="error">{{.Error}}</section>
 {{end}}
+<section class="page-section">
+  <div class="panel">
+    <form class="inline-form" method="GET" action="/approvals">
+      <input type="text" name="q" value="{{.Filters.Query}}" placeholder="Search ticket, run, tool, or path">
+      <label>
+        Status
+        <select name="status">
+          <option value="all" {{if or (eq .Filters.Status "") (eq .Filters.Status "all")}}selected{{end}}>All</option>
+          <option value="open" {{if eq .Filters.Status "open"}}selected{{end}}>Open</option>
+          <option value="pending" {{if eq .Filters.Status "pending"}}selected{{end}}>Pending</option>
+          <option value="expired" {{if eq .Filters.Status "expired"}}selected{{end}}>Expired</option>
+          <option value="approved" {{if eq .Filters.Status "approved"}}selected{{end}}>Approved</option>
+          <option value="denied" {{if eq .Filters.Status "denied"}}selected{{end}}>Denied</option>
+        </select>
+      </label>
+      <label>
+        Page Size
+        <select name="limit">
+          <option value="10" {{if eq .Filters.Limit 10}}selected{{end}}>10</option>
+          <option value="20" {{if eq .Filters.Limit 20}}selected{{end}}>20</option>
+          <option value="50" {{if eq .Filters.Limit 50}}selected{{end}}>50</option>
+        </select>
+      </label>
+      <button class="btn btn-secondary" type="submit">Filter</button>
+      <a class="btn btn-ghost" href="/approvals">Reset</a>
+    </form>
+  </div>
+</section>
 {{if .Approvals}}
 <section class="page-stack">
   {{range .Approvals}}
-    <article class="run-row{{if eq .Status "expired"}} is-muted{{else}} is-approval{{end}}">
+    <article class="run-row {{.StatusClass}}">
       <div class="mono">{{.ID}}</div>
       <div>
         <strong>{{.ToolName}}</strong>{{if .TargetPath}} &mdash; {{.TargetPath}}{{end}}
-        {{if eq .Status "expired"}}
-          <span class="badge badge-muted">Expired</span>
-        {{end}}
       </div>
       <div class="muted mono">run: {{.RunID}}</div>
-      {{if ne .Status "expired"}}
+      <div class="button-row">
+        <span class="run-status {{.StatusClass}}">{{.Status}}</span>
+        {{if .ResolvedBy}}
+          <span class="muted mono">by {{.ResolvedBy}}</span>
+        {{end}}
+        {{if .ResolvedAt}}
+          <span class="muted mono">{{.ResolvedAt.Format "2006-01-02T15:04:05Z"}}</span>
+        {{end}}
+      </div>
+      {{if eq .Status "pending"}}
         <form class="button-row" method="POST" action="/approvals/{{.ID}}/resolve">
           <button class="btn btn-primary" type="submit" name="decision" value="approved">Approve</button>
           <button class="btn btn-danger" type="submit" name="decision" value="denied">Deny</button>
@@ -28,24 +62,17 @@
     </article>
   {{end}}
 </section>
-{{else}}
-<section class="panel">
-  <p class="muted">No pending approvals.</p>
+{{if or .Paging.HasPrev .Paging.HasNext}}
+<section class="page-section">
+  <div class="pager">
+    {{if .Paging.HasPrev}}<a href="{{.Paging.PrevURL}}">Previous</a>{{end}}
+    {{if .Paging.HasNext}}<a href="{{.Paging.NextURL}}">Next</a>{{end}}
+  </div>
 </section>
 {{end}}
-{{if .Audit}}
-<section class="page-section">
-  <div class="panel">
-    <h2 class="section-title">Resolved Today</h2>
-    <div class="page-stack">
-    {{range .Audit}}
-      <article class="run-row is-success">
-        <div class="mono">{{.ID}}</div>
-        <div class="muted mono">actor: {{.Actor}} &mdash; {{.ResolvedAt.Format "2006-01-02T15:04:05Z"}}</div>
-      </article>
-    {{end}}
-    </div>
-  </div>
+{{else}}
+<section class="panel">
+  <p class="muted">No approvals match this filter.</p>
 </section>
 {{end}}
 {{end}}

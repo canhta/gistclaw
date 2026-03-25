@@ -82,7 +82,7 @@
     }
     body {
       margin: 0;
-      min-width: 1024px;
+      min-width: 320px;
       background: var(--bg);
       color: var(--text-1);
       font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -99,6 +99,7 @@
     }
     nav {
       display: flex;
+      flex-wrap: wrap;
       gap: 16px;
       align-items: center;
       width: 100%;
@@ -294,13 +295,18 @@
       border-left-color: var(--muted-state);
     }
     .run-link {
-      display: grid;
-      gap: 4px;
+      display: block;
       color: inherit;
       text-decoration: none;
     }
     .run-link:hover {
       color: inherit;
+    }
+    .run-link:hover .row-title,
+    .run-link:focus-visible .row-title {
+      text-decoration: underline;
+      text-decoration-thickness: 1.5px;
+      text-underline-offset: 4px;
     }
     .row-title {
       font-size: 15px;
@@ -309,13 +315,25 @@
     .run-status {
       display: inline-flex;
       align-items: center;
+      gap: 6px;
       width: fit-content;
+      border: 1.5px solid currentColor;
+      padding: 2px 6px;
+      background: var(--surface);
       color: var(--text-2);
       font-family: var(--font-mono);
       font-size: 10px;
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
+    }
+    .run-status::before {
+      content: "";
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      flex: none;
     }
     .run-status.is-active {
       color: var(--active);
@@ -384,6 +402,41 @@
     .table {
       width: 100%;
       border-collapse: collapse;
+    }
+    .desktop-table {
+      display: block;
+    }
+    .directory-card-list {
+      display: none;
+      gap: 12px;
+    }
+    .directory-card {
+      display: grid;
+      gap: 12px;
+      border: 1.5px solid var(--border-hard);
+      border-left: 4px solid var(--border-hard);
+      padding: 14px 16px;
+      background: var(--surface);
+    }
+    .directory-card-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    }
+    .directory-card-section {
+      display: grid;
+      gap: 3px;
+    }
+    .directory-card-label {
+      color: var(--text-3);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .directory-card-actions {
+      display: grid;
+      gap: 8px;
     }
     .table th,
     .table td {
@@ -631,19 +684,62 @@
       gap: 8px;
       margin-bottom: 16px;
     }
+    .graph-stage {
+      display: grid;
+      gap: 16px;
+    }
     .graph-diagram {
-      min-height: 1px;
+      height: clamp(360px, 48vh, 520px);
+      border: 1.5px solid var(--border-hard);
+      background: var(--surface);
     }
     .graph-metric {
       display: grid;
       gap: 2px;
       border: 1.5px solid var(--border-hard);
+      border-left: 4px solid var(--border-hard);
       padding: 10px 12px;
       background: var(--surface);
+    }
+    .graph-metric.is-pending {
+      border-left-color: var(--pending);
+    }
+    .graph-metric.is-active {
+      border-left-color: var(--active);
+    }
+    .graph-metric.is-approval {
+      border-left-color: var(--approval);
+    }
+    .graph-metric.is-success {
+      border-left-color: var(--success);
+    }
+    .graph-metric.is-error {
+      border-left-color: var(--error);
+    }
+    .graph-metric.is-muted {
+      border-left-color: var(--muted-state);
     }
     .graph-metric-value {
       font: 700 20px/1.1 var(--font-mono);
       color: var(--text-1);
+    }
+    .graph-metric.is-pending .graph-metric-value {
+      color: var(--pending);
+    }
+    .graph-metric.is-active .graph-metric-value {
+      color: var(--active);
+    }
+    .graph-metric.is-approval .graph-metric-value {
+      color: var(--approval);
+    }
+    .graph-metric.is-success .graph-metric-value {
+      color: var(--success);
+    }
+    .graph-metric.is-error .graph-metric-value {
+      color: var(--error);
+    }
+    .graph-metric.is-muted .graph-metric-value {
+      color: var(--muted-state);
     }
     .graph-board {
       display: grid;
@@ -710,16 +806,111 @@
       font-weight: 700;
       line-height: 1.3;
     }
-    .graph-node-meta {
-      display: flex;
-      flex-wrap: wrap;
+    .graph-node-facts {
+      display: grid;
       gap: 8px;
+      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    }
+    .graph-node-fact {
+      display: grid;
+      gap: 2px;
       color: var(--text-2);
       font-size: 12px;
+    }
+    .graph-node-fact-label {
+      color: var(--text-3);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
     .graph-headline {
       margin: 0 0 16px 0;
       color: var(--text-2);
+    }
+    .snapshot-summary {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .snapshot-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+    }
+    .snapshot-agent {
+      display: grid;
+      gap: 10px;
+      border: 1.5px solid var(--border-hard);
+      padding: 12px;
+      background: var(--surface);
+    }
+    .snapshot-agent-head {
+      display: grid;
+      gap: 4px;
+    }
+    .snapshot-agent-name {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+    .capability-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .team-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .team-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .team-card {
+      display: grid;
+      gap: 12px;
+    }
+    .team-agent-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .team-agent-name {
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.2;
+      text-transform: lowercase;
+    }
+    @media (max-width: 1179px) {
+      .team-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 767px) {
+      header {
+        padding: 8px 16px;
+      }
+      main {
+        padding: 24px 16px 40px;
+      }
+      .grid-two,
+      .team-summary-grid,
+      .team-grid {
+        grid-template-columns: 1fr;
+      }
+      .desktop-table {
+        display: none;
+      }
+      .directory-card-list {
+        display: grid;
+      }
+      .nav-spacer {
+        display: none;
+      }
     }
   </style>
 </head>
@@ -728,6 +919,7 @@
     <nav>
       <span class="nav-brand">gistclaw</span>
       <a href="/runs">Runs</a>
+      <a href="/team">Team</a>
       <a href="/control">Control</a>
       <a href="/sessions">Sessions</a>
       <a href="/approvals">Approvals</a>

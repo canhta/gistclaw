@@ -3,14 +3,14 @@
   <span class="page-eyebrow">Execution</span>
   <h1>Run Detail</h1>
   <div class="mono">{{.RunID}}</div>
-  <div class="run-status {{.StatusClass}}">{{.Status}}</div>
+  <div class="run-status {{.StatusClass}}" data-run-status-label>{{.Status}}</div>
 </section>
 
 <section class="page-section">
   <article id="run-live-banner" class="status-banner {{.StatusClass}}">
     <div class="button-row">
       <span class="page-eyebrow">Live Status</span>
-      <span class="run-status {{.StatusClass}}">{{.Status}}</span>
+      <span class="run-status {{.StatusClass}}" data-run-status-label>{{.Status}}</span>
     </div>
     <p id="run-live-status" class="muted">Watching live graph and turn updates.</p>
   </article>
@@ -20,62 +20,113 @@
   <div class="panel">
     <h2 class="section-title">Collaboration Graph</h2>
     <p id="run-graph-headline" class="graph-headline">{{.Graph.Headline}}</p>
-    <div id="run-graph-diagram" class="graph-diagram"></div>
     <div id="run-graph-summary" class="graph-summary">
       <article class="graph-metric">
         <span class="graph-metric-value">{{.Graph.Summary.Total}}</span>
         <span class="subtle">Visible runs</span>
       </article>
-      <article class="graph-metric">
+      <article class="graph-metric is-active">
         <span class="graph-metric-value">{{.Graph.Summary.Active}}</span>
         <span class="subtle">Active</span>
       </article>
-      <article class="graph-metric">
+      <article class="graph-metric is-approval">
         <span class="graph-metric-value">{{.Graph.Summary.NeedsApproval}}</span>
         <span class="subtle">Needs approval</span>
       </article>
-      <article class="graph-metric">
+      <article class="graph-metric is-pending">
         <span class="graph-metric-value">{{.Graph.Summary.Pending}}</span>
         <span class="subtle">Pending</span>
       </article>
-      <article class="graph-metric">
+      <article class="graph-metric is-success">
         <span class="graph-metric-value">{{.Graph.Summary.Completed}}</span>
         <span class="subtle">Completed</span>
       </article>
-      <article class="graph-metric">
+      <article class="graph-metric is-error">
         <span class="graph-metric-value">{{.Graph.Summary.Failed}}</span>
         <span class="subtle">Failed</span>
       </article>
+      <article class="graph-metric is-muted">
+        <span class="graph-metric-value">{{.Graph.Summary.Interrupted}}</span>
+        <span class="subtle">Interrupted</span>
+      </article>
     </div>
-    <div id="run-graph-board" class="graph-board" data-graph-url="{{.GraphURL}}">
-      {{range .Graph.Columns}}
-        <section class="graph-column" data-depth="{{.Depth}}">
-          <div class="graph-column-head">
-            <span class="graph-column-title">{{.Label}}</span>
-            <span class="mono subtle">{{len .Nodes}} run(s)</span>
-          </div>
-          <div class="graph-node-stack">
-            {{range .Nodes}}
-              <article class="graph-node {{.StatusClass}}" data-run-id="{{.ID}}">
-                <div class="graph-node-head">
-                  <div class="button-row">
-                    <span class="run-status {{.StatusClass}}">{{.Status}}</span>
-                    {{if .IsRoot}}<span class="badge badge-muted">root</span>{{end}}
+    <div class="graph-stage">
+      <div id="run-graph-diagram" class="graph-diagram" aria-label="Run collaboration diagram"></div>
+      <div id="run-graph-board" class="graph-board" data-graph-url="{{.GraphURL}}">
+        {{range .Graph.Columns}}
+          <section class="graph-column" data-depth="{{.Depth}}">
+            <div class="graph-column-head">
+              <span class="graph-column-title">{{.Label}}</span>
+              <span class="mono subtle">{{len .Nodes}} run(s)</span>
+            </div>
+            <div class="graph-node-stack">
+              {{range .Nodes}}
+                <article class="graph-node {{.StatusClass}}" data-run-id="{{.ID}}">
+                  <div class="graph-node-head">
+                    <div class="button-row">
+                      <span class="run-status {{.StatusClass}}">{{.Status}}</span>
+                      {{if .IsRoot}}<span class="badge badge-muted">root</span>{{end}}
+                    </div>
+                    <div class="mono subtle">{{.ID}}</div>
                   </div>
-                  <div class="mono subtle">{{.ID}}</div>
-                </div>
-                <div class="graph-node-title">{{if .Objective}}{{.Objective}}{{else}}{{.ID}}{{end}}</div>
-                <div class="graph-node-meta">
-                  <span>{{.AgentID}}</span>
-                  {{if .SessionID}}<span class="mono">session {{.SessionID}}</span>{{end}}
-                </div>
-                {{if .ParentLabel}}<div class="mono subtle">{{.ParentLabel}}</div>{{end}}
-              </article>
-            {{end}}
-          </div>
-        </section>
-      {{end}}
+                  <div class="graph-node-title">{{if .Objective}}{{.Objective}}{{else}}{{.ID}}{{end}}</div>
+                  <div class="graph-node-facts">
+                    <div class="graph-node-fact">
+                      <span class="graph-node-fact-label">Owner</span>
+                      <span>{{.AgentID}}</span>
+                    </div>
+                    {{if .SessionID}}
+                    <div class="graph-node-fact">
+                      <span class="graph-node-fact-label">Session</span>
+                      <span class="mono">{{.SessionID}}</span>
+                    </div>
+                    {{end}}
+                    {{if .ParentLabel}}
+                    <div class="graph-node-fact">
+                      <span class="graph-node-fact-label">Parent</span>
+                      <span class="mono">{{.ParentLabel}}</span>
+                    </div>
+                    {{end}}
+                  </div>
+                </article>
+              {{end}}
+            </div>
+          </section>
+        {{end}}
+      </div>
     </div>
+  </div>
+</section>
+
+<section class="page-section">
+  <div class="panel">
+    <h2 class="section-title">Execution Snapshot</h2>
+    <p class="graph-headline">Immutable team and capability snapshot bound when this run started.</p>
+    <div class="snapshot-summary">
+      <span class="page-eyebrow">Bound Team</span>
+      <div class="row-title">{{if .ExecutionSnapshot.TeamID}}{{.ExecutionSnapshot.TeamID}}{{else}}Unscoped run{{end}}</div>
+    </div>
+    {{if .ExecutionSnapshot.Agents}}
+      <div class="snapshot-grid">
+        {{range .ExecutionSnapshot.Agents}}
+          <article class="snapshot-agent">
+            <div class="snapshot-agent-head">
+              <div class="snapshot-agent-name">{{.ID}}</div>
+              <div class="mono subtle">{{.ToolProfile}}</div>
+            </div>
+            {{if .Capabilities}}
+              <div class="capability-list">
+                {{range .Capabilities}}
+                  <span class="badge badge-muted">{{.}}</span>
+                {{end}}
+              </div>
+            {{end}}
+          </article>
+        {{end}}
+      </div>
+    {{else}}
+      <p class="muted">No execution snapshot was recorded for this run.</p>
+    {{end}}
   </div>
 </section>
 
@@ -118,10 +169,13 @@
     </section>
   </div>
 </section>
+<script src="/assets/vendor/cytoscape.min.js"></script>
+<script src="/assets/vendor/dagre.min.js"></script>
+<script src="/assets/vendor/cytoscape-dagre.js"></script>
 <script>
 (() => {
   const root = document.getElementById("run-live-output");
-  if (!root || !window.EventSource) {
+  if (!root) {
     return;
   }
 
@@ -132,6 +186,7 @@
 
   const status = document.getElementById("run-live-status");
   const liveBanner = document.getElementById("run-live-banner");
+  const statusLabels = document.querySelectorAll("[data-run-status-label]");
   const turns = document.getElementById("run-turns");
   const turnsEmpty = document.getElementById("run-turns-empty");
   const liveDraft = document.getElementById("run-live-draft");
@@ -142,18 +197,43 @@
   const graphSummary = document.getElementById("run-graph-summary");
   const graphHeadline = document.getElementById("run-graph-headline");
   const graphURL = graphBoard ? graphBoard.dataset.graphUrl : "";
+  let cy = null;
+  let dagreRegistered = false;
   let draft = "";
   let graphPoll = null;
   let graphRefreshInFlight = false;
   let graphRefreshQueued = false;
+  let lastGraphSnapshot = null;
 
-  function setBannerTone(statusClass) {
+  function appendGraphFact(container, labelText, valueText, mono) {
+    if (!valueText) {
+      return;
+    }
+    const fact = document.createElement("div");
+    fact.className = "graph-node-fact";
+
+    const label = document.createElement("span");
+    label.className = "graph-node-fact-label";
+    label.textContent = labelText;
+    fact.appendChild(label);
+
+    const value = document.createElement("span");
+    if (mono) {
+      value.className = "mono";
+    }
+    value.textContent = valueText;
+    fact.appendChild(value);
+
+    container.appendChild(fact);
+  }
+
+  function setBannerTone(statusTone) {
     if (!liveBanner) {
       return;
     }
     liveBanner.className = "status-banner";
-    if (statusClass) {
-      liveBanner.classList.add(statusClass);
+    if (statusTone) {
+      liveBanner.classList.add(statusTone);
     }
   }
 
@@ -177,9 +257,24 @@
     }
   }
 
-  function renderGraphMetric(value, label) {
+  function syncStatusLabels(statusText) {
+    const tone = statusClass(statusText);
+    setBannerTone(tone);
+    for (const label of statusLabels) {
+      label.className = "run-status";
+      if (tone) {
+        label.classList.add(tone);
+      }
+      label.textContent = statusText || "unknown";
+    }
+  }
+
+  function renderGraphMetric(value, label, tone) {
     const card = document.createElement("article");
     card.className = "graph-metric";
+    if (tone) {
+      card.classList.add(tone);
+    }
 
     const metricValue = document.createElement("span");
     metricValue.className = "graph-metric-value";
@@ -194,29 +289,206 @@
     return card;
   }
 
-  function renderGraph(snapshot) {
-    if (!snapshot || !graphBoard || !graphSummary || !graphHeadline) {
+  function graphNodes(snapshot) {
+    if (Array.isArray(snapshot.nodes) && snapshot.nodes.length > 0) {
+      return snapshot.nodes;
+    }
+    const flattened = [];
+    for (const column of snapshot.columns || []) {
+      for (const node of column.nodes || []) {
+        flattened.push(node);
+      }
+    }
+    return flattened;
+  }
+
+  function graphLabel(node) {
+    const headline = node.objective || node.id || "Untitled run";
+    const details = [node.status || "unknown"];
+    if (node.agent_id) {
+      details.push(node.agent_id);
+    }
+    if (node.session_id) {
+      details.push(`session ${node.session_id}`);
+    }
+    return `${headline}\n${details.join(" · ")}`;
+  }
+
+  function graphPalette() {
+    const styles = window.getComputedStyle(document.documentElement);
+    return {
+      surface: styles.getPropertyValue("--surface").trim() || "#fffdf8",
+      borderHard: styles.getPropertyValue("--border-hard").trim() || "#1c1917",
+      borderSoft: styles.getPropertyValue("--border-soft").trim() || "#cfc5b6",
+      text: styles.getPropertyValue("--text-1").trim() || "#1c1917",
+      pending: styles.getPropertyValue("--pending").trim() || "#1c5dff",
+      active: styles.getPropertyValue("--active").trim() || "#0284c7",
+      approval: styles.getPropertyValue("--approval").trim() || "#b45309",
+      success: styles.getPropertyValue("--success").trim() || "#15803d",
+      error: styles.getPropertyValue("--error").trim() || "#dc2626",
+      muted: styles.getPropertyValue("--muted-state").trim() || "#6b7280",
+    };
+  }
+
+  function graphStyles() {
+    const palette = graphPalette();
+    return [
+      {
+        selector: "node",
+        style: {
+          "shape": "rectangle",
+          "width": 220,
+          "height": 84,
+          "background-color": palette.surface,
+          "border-color": palette.borderHard,
+          "border-width": 2,
+          "color": palette.text,
+          "font-family": "JetBrains Mono, Fira Code, monospace",
+          "font-size": 11,
+          "font-weight": 500,
+          "label": "data(label)",
+          "text-wrap": "wrap",
+          "text-max-width": 176,
+          "text-valign": "center",
+          "text-halign": "center"
+        }
+      },
+      {
+        selector: "node.is-root",
+        style: {
+          "border-width": 3
+        }
+      },
+      {
+        selector: "node.is-pending",
+        style: {
+          "border-color": palette.pending,
+          "color": palette.pending
+        }
+      },
+      {
+        selector: "node.is-active",
+        style: {
+          "border-color": palette.active,
+          "color": palette.active
+        }
+      },
+      {
+        selector: "node.is-approval",
+        style: {
+          "border-color": palette.approval,
+          "color": palette.approval
+        }
+      },
+      {
+        selector: "node.is-success",
+        style: {
+          "border-color": palette.success,
+          "color": palette.success
+        }
+      },
+      {
+        selector: "node.is-error",
+        style: {
+          "border-color": palette.error,
+          "color": palette.error
+        }
+      },
+      {
+        selector: "node.is-muted",
+        style: {
+          "border-color": palette.muted,
+          "color": palette.muted
+        }
+      },
+      {
+        selector: "edge",
+        style: {
+          "width": 2,
+          "line-color": palette.borderSoft,
+          "target-arrow-color": palette.borderHard,
+          "target-arrow-shape": "triangle",
+          "curve-style": "bezier"
+        }
+      }
+    ];
+  }
+
+  function ensureGraphEngine() {
+    if (dagreRegistered || !window.cytoscape || !window.cytoscapeDagre) {
+      return;
+    }
+    window.cytoscape.use(window.cytoscapeDagre);
+    dagreRegistered = true;
+  }
+
+  function renderDiagram(snapshot) {
+    if (!snapshot || !graphDiagram || !window.cytoscape) {
+      if (graphDiagram) {
+        graphDiagram.dataset.engine = "dom";
+      }
       return;
     }
 
-    if (graphDiagram) {
-      graphDiagram.dataset.engine = window.cytoscape ? "cytoscape" : "dom";
+    ensureGraphEngine();
+    graphDiagram.dataset.engine = "cytoscape";
+
+    if (cy) {
+      cy.destroy();
+      cy = null;
     }
 
-    if (snapshot.summary && typeof snapshot.summary.root_status === "string") {
-      setBannerTone(statusClass(snapshot.summary.root_status));
+    const elements = [];
+    for (const node of graphNodes(snapshot)) {
+      elements.push({
+        data: {
+          id: node.id,
+          label: graphLabel(node),
+        },
+        classes: [node.status_class, node.is_root ? "is-root" : ""].filter(Boolean).join(" "),
+      });
+    }
+    for (const edge of snapshot.edges || []) {
+      elements.push({
+        data: {
+          id: `${edge.from}->${edge.to}`,
+          source: edge.from,
+          target: edge.to,
+        },
+      });
     }
 
-    graphHeadline.textContent = snapshot.headline || "Graph status is available.";
+    cy = window.cytoscape({
+      container: graphDiagram,
+      elements,
+      style: graphStyles(),
+      layout: {
+        name: "dagre",
+        rankDir: "LR",
+        nodeSep: 40,
+        edgeSep: 18,
+        rankSep: 90,
+        fit: true,
+        padding: 24,
+        animate: false,
+      },
+      minZoom: 0.35,
+      wheelSensitivity: 0.18,
+    });
 
-    graphSummary.replaceChildren(
-      renderGraphMetric(snapshot.summary.total || 0, "Visible runs"),
-      renderGraphMetric(snapshot.summary.active || 0, "Active"),
-      renderGraphMetric(snapshot.summary.needs_approval || 0, "Needs approval"),
-      renderGraphMetric(snapshot.summary.pending || 0, "Pending"),
-      renderGraphMetric(snapshot.summary.completed || 0, "Completed"),
-      renderGraphMetric(snapshot.summary.failed || 0, "Failed")
-    );
+    cy.on("tap", "node", (event) => {
+      const runID = event.target.id();
+      if (!runID) {
+        return;
+      }
+      window.location.assign(`/runs/${encodeURIComponent(runID)}`);
+    });
+  }
+
+  function renderBoard(snapshot) {
+    if (!snapshot || !graphBoard) {
+      return;
+    }
 
     const columns = [];
     for (const column of snapshot.columns || []) {
@@ -277,28 +549,13 @@
         nodeTitle.textContent = node.objective || node.id || "Untitled run";
         card.appendChild(nodeTitle);
 
-        const meta = document.createElement("div");
-        meta.className = "graph-node-meta";
-        if (node.agent_id) {
-          const agent = document.createElement("span");
-          agent.textContent = node.agent_id;
-          meta.appendChild(agent);
-        }
-        if (node.session_id) {
-          const session = document.createElement("span");
-          session.className = "mono";
-          session.textContent = `session ${node.session_id}`;
-          meta.appendChild(session);
-        }
-        if (meta.childNodes.length > 0) {
-          card.appendChild(meta);
-        }
-
-        if (node.parent_label) {
-          const parent = document.createElement("div");
-          parent.className = "mono subtle";
-          parent.textContent = node.parent_label;
-          card.appendChild(parent);
+        const facts = document.createElement("div");
+        facts.className = "graph-node-facts";
+        appendGraphFact(facts, "Owner", node.agent_id || "", false);
+        appendGraphFact(facts, "Session", node.session_id || "", true);
+        appendGraphFact(facts, "Parent", node.parent_label || "", true);
+        if (facts.childNodes.length > 0) {
+          card.appendChild(facts);
         }
 
         stack.appendChild(card);
@@ -308,6 +565,30 @@
     }
 
     graphBoard.replaceChildren(...columns);
+  }
+
+  function renderGraph(snapshot) {
+    if (!snapshot || !graphSummary || !graphHeadline) {
+      return;
+    }
+
+    lastGraphSnapshot = snapshot;
+    if (snapshot.summary && typeof snapshot.summary.root_status === "string") {
+      syncStatusLabels(snapshot.summary.root_status);
+    }
+
+    graphHeadline.textContent = snapshot.headline || "Graph status is available.";
+    graphSummary.replaceChildren(
+      renderGraphMetric(snapshot.summary.total || 0, "Visible runs", ""),
+      renderGraphMetric(snapshot.summary.active || 0, "Active", "is-active"),
+      renderGraphMetric(snapshot.summary.needs_approval || 0, "Needs approval", "is-approval"),
+      renderGraphMetric(snapshot.summary.pending || 0, "Pending", "is-pending"),
+      renderGraphMetric(snapshot.summary.completed || 0, "Completed", "is-success"),
+      renderGraphMetric(snapshot.summary.failed || 0, "Failed", "is-error"),
+      renderGraphMetric(snapshot.summary.interrupted || 0, "Interrupted", "is-muted")
+    );
+    renderDiagram(snapshot);
+    renderBoard(snapshot);
 
     const busy = (snapshot.summary.active || 0) + (snapshot.summary.pending || 0) + (snapshot.summary.needs_approval || 0);
     if (busy === 0) {
@@ -401,6 +682,33 @@
     }
   }
 
+  if (window.MutationObserver) {
+    const observer = new MutationObserver(() => {
+      if (lastGraphSnapshot) {
+        renderDiagram(lastGraphSnapshot);
+      }
+    });
+    observer.observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
+  }
+
+  if (window.matchMedia) {
+    const darkMode = window.matchMedia("(prefers-color-scheme: dark)");
+    if (typeof darkMode.addEventListener === "function") {
+      darkMode.addEventListener("change", () => {
+        if (!document.documentElement.dataset.theme && lastGraphSnapshot) {
+          renderDiagram(lastGraphSnapshot);
+        }
+      });
+    }
+  }
+
+  void refreshGraph();
+  ensureGraphPolling();
+
+  if (!window.EventSource) {
+    return;
+  }
+
   const source = new EventSource(streamURL);
   source.onmessage = (message) => {
     let event;
@@ -473,9 +781,6 @@
       status.textContent = "Reconnecting to live updates...";
     }
   };
-
-  void refreshGraph();
-  ensureGraphPolling();
 })();
 </script>
 {{end}}

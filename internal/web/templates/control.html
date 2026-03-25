@@ -60,43 +60,74 @@
 <section class="panel">
   <h2 class="section-title">Route Directory</h2>
   {{if .ActiveRoutes}}
-  <table class="table">
-    <thead>
-      <tr>
-        <th>Route</th>
-        <th>Binding</th>
-        <th>Send</th>
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range .ActiveRoutes}}
-      <tr>
-        <td>
-          <div class="mono">{{.ID}}</div>
-          <div>{{.ConnectorID}} / {{.ExternalID}}</div>
-          <div class="muted mono">thread: {{.ThreadID}}</div>
-        </td>
-        <td>
+  <div class="desktop-table">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Route</th>
+          <th>Binding</th>
+          <th>Send</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .ActiveRoutes}}
+        <tr>
+          <td>
+            <div class="mono">{{.ID}}</div>
+            <div>{{.ConnectorID}} / {{.ExternalID}}</div>
+            <div class="muted mono">thread: {{.ThreadID}}</div>
+          </td>
+          <td>
+            <div class="mono"><a href="/sessions/{{.SessionID}}">{{.SessionID}}</a></div>
+            <div>{{.AgentID}} <span class="muted">({{.Role}})</span></div>
+            <div class="muted mono">conversation: {{.ConversationID}}</div>
+          </td>
+          <td>
+            <form class="inline-form" method="POST" action="/control/routes/{{.ID}}/messages">
+              <input type="text" name="body" placeholder="Message bound session">
+              <button class="btn btn-secondary" type="submit">Send</button>
+            </form>
+          </td>
+          <td>
+            <form class="inline-form" method="POST" action="/control/routes/{{.ID}}/deactivate">
+              <button class="btn btn-danger" type="submit">Deactivate</button>
+            </form>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  <div class="directory-card-list">
+    {{range .ActiveRoutes}}
+    <article class="directory-card">
+      <div class="directory-card-section">
+        <span class="directory-card-label">Route</span>
+        <div class="mono">{{.ID}}</div>
+        <div>{{.ConnectorID}} / {{.ExternalID}}</div>
+        <div class="muted mono">thread: {{.ThreadID}}</div>
+      </div>
+      <div class="directory-card-grid">
+        <div class="directory-card-section">
+          <span class="directory-card-label">Binding</span>
           <div class="mono"><a href="/sessions/{{.SessionID}}">{{.SessionID}}</a></div>
           <div>{{.AgentID}} <span class="muted">({{.Role}})</span></div>
           <div class="muted mono">conversation: {{.ConversationID}}</div>
-        </td>
-        <td>
-          <form class="inline-form" method="POST" action="/control/routes/{{.ID}}/messages">
-            <input type="text" name="body" placeholder="Message bound session">
-            <button class="btn btn-secondary" type="submit">Send</button>
-          </form>
-        </td>
-        <td>
-          <form class="inline-form" method="POST" action="/control/routes/{{.ID}}/deactivate">
-            <button class="btn btn-danger" type="submit">Deactivate</button>
-          </form>
-        </td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
+        </div>
+      </div>
+      <div class="directory-card-actions">
+        <form class="stack-sm" method="POST" action="/control/routes/{{.ID}}/messages">
+          <input type="text" name="body" placeholder="Message bound session">
+          <button class="btn btn-secondary" type="submit">Send</button>
+        </form>
+        <form method="POST" action="/control/routes/{{.ID}}/deactivate">
+          <button class="btn btn-danger" type="submit">Deactivate</button>
+        </form>
+      </div>
+    </article>
+    {{end}}
+  </div>
   {{if or .ActivePaging.HasPrev .ActivePaging.HasNext}}
   <div class="pager">
     {{if .ActivePaging.HasPrev}}<a href="{{.ActivePaging.PrevURL}}">Previous</a>{{end}}
@@ -111,44 +142,79 @@
 <section class="panel">
   <h2 class="section-title">Delivery Queue</h2>
   {{if .Deliveries}}
-  <table class="table">
-    <thead>
-      <tr>
-        <th>Delivery</th>
-        <th>Target</th>
-        <th>Status</th>
-        <th>Action</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range .Deliveries}}
-      <tr>
-        <td>
-          <div class="mono">{{.ID}}</div>
-          <div class="muted mono">run: {{.RunID}}</div>
-          <div class="muted mono">session: {{.SessionID}}</div>
-        </td>
-        <td>
+  <div class="desktop-table">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Delivery</th>
+          <th>Target</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .Deliveries}}
+        <tr>
+          <td>
+            <div class="mono">{{.ID}}</div>
+            <div class="muted mono">run: {{.RunID}}</div>
+            <div class="muted mono">session: {{.SessionID}}</div>
+          </td>
+          <td>
+            <div>{{.ConnectorID}} / {{.ChatID}}</div>
+            <div class="muted">{{.MessageText}}</div>
+          </td>
+          <td>
+            <div>{{.Status}}</div>
+            <div class="muted mono">attempts: {{.Attempts}}</div>
+          </td>
+          <td>
+            {{if eq .Status "terminal"}}
+            <form class="inline-form" method="POST" action="/control/deliveries/{{.ID}}/retry">
+              <button class="btn btn-secondary" type="submit">Retry</button>
+            </form>
+            {{else}}
+            <span class="muted">No action</span>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  <div class="directory-card-list">
+    {{range .Deliveries}}
+    <article class="directory-card">
+      <div class="directory-card-section">
+        <span class="directory-card-label">Delivery</span>
+        <div class="mono">{{.ID}}</div>
+        <div class="muted mono">run: {{.RunID}}</div>
+        <div class="muted mono">session: {{.SessionID}}</div>
+      </div>
+      <div class="directory-card-grid">
+        <div class="directory-card-section">
+          <span class="directory-card-label">Target</span>
           <div>{{.ConnectorID}} / {{.ChatID}}</div>
           <div class="muted">{{.MessageText}}</div>
-        </td>
-        <td>
+        </div>
+        <div class="directory-card-section">
+          <span class="directory-card-label">Status</span>
           <div>{{.Status}}</div>
           <div class="muted mono">attempts: {{.Attempts}}</div>
-        </td>
-        <td>
-          {{if eq .Status "terminal"}}
-          <form class="inline-form" method="POST" action="/control/deliveries/{{.ID}}/retry">
-            <button class="btn btn-secondary" type="submit">Retry</button>
-          </form>
-          {{else}}
-          <span class="muted">No action</span>
-          {{end}}
-        </td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
+        </div>
+      </div>
+      <div class="directory-card-actions">
+        {{if eq .Status "terminal"}}
+        <form method="POST" action="/control/deliveries/{{.ID}}/retry">
+          <button class="btn btn-secondary" type="submit">Retry</button>
+        </form>
+        {{else}}
+        <span class="muted">No action</span>
+        {{end}}
+      </div>
+    </article>
+    {{end}}
+  </div>
   {{if or .DeliveryPaging.HasPrev .DeliveryPaging.HasNext}}
   <div class="pager">
     {{if .DeliveryPaging.HasPrev}}<a href="{{.DeliveryPaging.PrevURL}}">Previous</a>{{end}}
@@ -163,41 +229,70 @@
 <section class="panel">
   <h2 class="section-title">Route History</h2>
   {{if .RouteHistory}}
-  <table class="table">
-    <thead>
-      <tr>
-        <th>Route</th>
-        <th>Status</th>
-        <th>Reason</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range .RouteHistory}}
-      <tr>
-        <td>
-          <div class="mono">{{.ID}}</div>
-          <div>{{.ConnectorID}} / {{.ExternalID}}</div>
-        </td>
-        <td>
+  <div class="desktop-table">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Route</th>
+          <th>Status</th>
+          <th>Reason</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{range .RouteHistory}}
+        <tr>
+          <td>
+            <div class="mono">{{.ID}}</div>
+            <div>{{.ConnectorID}} / {{.ExternalID}}</div>
+          </td>
+          <td>
+            <div>{{.Status}}</div>
+            {{if .DeactivatedAt}}
+            <div class="muted mono">{{.DeactivatedAt.Format "2006-01-02T15:04:05Z"}}</div>
+            {{end}}
+          </td>
+          <td>
+            {{if .DeactivationReason}}
+            <div>{{.DeactivationReason}}</div>
+            {{else}}
+            <div class="muted">unknown</div>
+            {{end}}
+            {{if .ReplacedByRouteID}}
+            <div class="muted mono">replaced by: {{.ReplacedByRouteID}}</div>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  <div class="directory-card-list">
+    {{range .RouteHistory}}
+    <article class="directory-card">
+      <div class="directory-card-section">
+        <span class="directory-card-label">Route</span>
+        <div class="mono">{{.ID}}</div>
+        <div>{{.ConnectorID}} / {{.ExternalID}}</div>
+      </div>
+      <div class="directory-card-grid">
+        <div class="directory-card-section">
+          <span class="directory-card-label">Status</span>
           <div>{{.Status}}</div>
-          {{if .DeactivatedAt}}
-          <div class="muted mono">{{.DeactivatedAt.Format "2006-01-02T15:04:05Z"}}</div>
-          {{end}}
-        </td>
-        <td>
+          {{if .DeactivatedAt}}<div class="muted mono">{{.DeactivatedAt.Format "2006-01-02T15:04:05Z"}}</div>{{end}}
+        </div>
+        <div class="directory-card-section">
+          <span class="directory-card-label">Reason</span>
           {{if .DeactivationReason}}
           <div>{{.DeactivationReason}}</div>
           {{else}}
           <div class="muted">unknown</div>
           {{end}}
-          {{if .ReplacedByRouteID}}
-          <div class="muted mono">replaced by: {{.ReplacedByRouteID}}</div>
-          {{end}}
-        </td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
+          {{if .ReplacedByRouteID}}<div class="muted mono">replaced by: {{.ReplacedByRouteID}}</div>{{end}}
+        </div>
+      </div>
+    </article>
+    {{end}}
+  </div>
   {{if or .HistoryPaging.HasPrev .HistoryPaging.HasNext}}
   <div class="pager">
     {{if .HistoryPaging.HasPrev}}<a href="{{.HistoryPaging.PrevURL}}">Previous</a>{{end}}

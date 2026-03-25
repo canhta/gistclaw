@@ -2,21 +2,58 @@
 <section class="page-header">
   <span class="page-eyebrow">Runtime</span>
   <h1>Runs</h1>
-  <p class="page-lede">Recent root runs with strong state signaling. The page background stays visible so the bordered rows feel like deliberate work objects.</p>
+  <p class="page-lede">The operational queue for recent runs. Filters and paging stay in the URL so you can share the exact slice you are reviewing.</p>
+</section>
+<section class="page-section">
+  <div class="panel">
+    <form class="inline-form" method="GET" action="/runs">
+      <input type="text" name="q" value="{{.Filters.Query}}" placeholder="Search run ID or objective">
+      <label>
+        Status
+        <select name="status">
+          <option value="" {{if eq .Filters.Status ""}}selected{{end}}>All</option>
+          <option value="pending" {{if eq .Filters.Status "pending"}}selected{{end}}>Pending</option>
+          <option value="active" {{if eq .Filters.Status "active"}}selected{{end}}>Active</option>
+          <option value="needs_approval" {{if eq .Filters.Status "needs_approval"}}selected{{end}}>Needs approval</option>
+          <option value="completed" {{if eq .Filters.Status "completed"}}selected{{end}}>Completed</option>
+          <option value="failed" {{if eq .Filters.Status "failed"}}selected{{end}}>Failed</option>
+          <option value="interrupted" {{if eq .Filters.Status "interrupted"}}selected{{end}}>Interrupted</option>
+        </select>
+      </label>
+      <label>
+        Page Size
+        <select name="limit">
+          <option value="10" {{if eq .Filters.Limit 10}}selected{{end}}>10</option>
+          <option value="20" {{if eq .Filters.Limit 20}}selected{{end}}>20</option>
+          <option value="50" {{if eq .Filters.Limit 50}}selected{{end}}>50</option>
+        </select>
+      </label>
+      <button class="btn btn-secondary" type="submit">Filter</button>
+      <a class="btn btn-ghost" href="/runs">Reset</a>
+    </form>
+  </div>
 </section>
 {{if .Runs}}
 <section class="page-stack">
   {{range .Runs}}
-    <article class="run-row{{if eq .Status "active"}} is-active{{else if eq .Status "needs_approval"}} is-approval{{else if eq .Status "completed"}} is-success{{else if or (eq .Status "failed") (eq .Status "error")}} is-error{{else if eq .Status "interrupted"}} is-muted{{end}}">
-      <a class="run-link" href="/runs/{{.ID}}">
+    <a class="run-link" href="/runs/{{.ID}}">
+      <article class="run-row {{.StatusClass}}">
         <div class="mono">{{.ID}}</div>
         <div class="row-title">{{.Objective}}</div>
         <div class="muted">{{.Summary}}</div>
-        <div class="run-status{{if eq .Status "active"}} is-active{{else if eq .Status "needs_approval"}} is-approval{{else if eq .Status "completed"}} is-success{{else if or (eq .Status "failed") (eq .Status "error")}} is-error{{else if eq .Status "interrupted"}} is-muted{{end}}">{{.Status}}</div>
-      </a>
-    </article>
+        <div class="run-status {{.StatusClass}}">{{.Status}}</div>
+      </article>
+    </a>
   {{end}}
 </section>
+{{if or .Paging.HasPrev .Paging.HasNext}}
+<section class="page-section">
+  <div class="pager">
+    {{if .Paging.HasPrev}}<a href="{{.Paging.PrevURL}}">Previous</a>{{end}}
+    {{if .Paging.HasNext}}<a href="{{.Paging.NextURL}}">Next</a>{{end}}
+  </div>
+</section>
+{{end}}
 {{else}}
 <section class="panel">
   <p>You haven't run any tasks yet.</p>

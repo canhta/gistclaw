@@ -72,6 +72,9 @@ func TestLayoutDefinesBrutalistPrimitives(t *testing.T) {
 		".graph-diagram {",
 		".graph-board {",
 		".graph-node {",
+		".desktop-table {",
+		".directory-card-list {",
+		".directory-card {",
 		".field {",
 		".btn {",
 		".btn-primary {",
@@ -80,6 +83,7 @@ func TestLayoutDefinesBrutalistPrimitives(t *testing.T) {
 		".badge {",
 		".choice-card {",
 		".pager {",
+		"@media (max-width: 767px) {",
 		"border-radius: 0;",
 	} {
 		if !strings.Contains(content, want) {

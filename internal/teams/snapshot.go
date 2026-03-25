@@ -2,11 +2,8 @@ package teams
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
 
 	"github.com/canhta/gistclaw/internal/model"
-	"go.yaml.in/yaml/v4"
 )
 
 type soulSpec struct {
@@ -17,42 +14,14 @@ func LoadExecutionSnapshot(teamDir string) (model.ExecutionSnapshot, error) {
 	if teamDir == "" {
 		return model.ExecutionSnapshot{}, nil
 	}
-
-	teamYAMLPath := filepath.Join(teamDir, "team.yaml")
-	data, err := os.ReadFile(teamYAMLPath)
-	if err != nil {
-		return model.ExecutionSnapshot{}, fmt.Errorf("team: read team.yaml: %w", err)
-	}
-	spec, err := LoadSpec(data)
+	cfg, err := LoadConfig(teamDir)
 	if err != nil {
 		return model.ExecutionSnapshot{}, err
 	}
-
-	snapshot := model.ExecutionSnapshot{
-		TeamID: spec.Name,
-		Agents: make(map[string]model.AgentProfile, len(spec.Agents)),
-	}
-	for _, agent := range spec.Agents {
-		soulPath := filepath.Join(teamDir, agent.SoulFile)
-		soulData, err := os.ReadFile(soulPath)
-		if err != nil {
-			return model.ExecutionSnapshot{}, fmt.Errorf("team: read soul %q: %w", agent.SoulFile, err)
-		}
-		profile, err := buildAgentProfile(agent, soulData)
-		if err != nil {
-			return model.ExecutionSnapshot{}, fmt.Errorf("team: agent %q: %w", agent.ID, err)
-		}
-		snapshot.Agents[agent.ID] = profile
-	}
-
-	return snapshot, nil
+	return cfg.Snapshot()
 }
 
-func buildAgentProfile(agent AgentSpec, soulData []byte) (model.AgentProfile, error) {
-	var soul soulSpec
-	if err := yaml.Unmarshal(soulData, &soul); err != nil {
-		return model.AgentProfile{}, fmt.Errorf("parse soul yaml: %w", err)
-	}
+func buildAgentProfile(agent AgentSpec, soul soulSpec) (model.AgentProfile, error) {
 	if soul.ToolPosture == "" {
 		return model.AgentProfile{}, fmt.Errorf("tool_posture is required")
 	}

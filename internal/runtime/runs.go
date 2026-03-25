@@ -110,6 +110,7 @@ type Runtime struct {
 	budget              BudgetGuard
 	contextWindowSize   int
 	contexts            ContextAssembler
+	teamDir             string
 	defaultSnapshot     model.ExecutionSnapshot
 	defaultSnapshotJSON []byte
 }

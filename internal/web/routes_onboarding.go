@@ -257,7 +257,7 @@ func (s *Server) onboardingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
 		// Allow onboarding paths and static assets through unconditionally.
-		if strings.HasPrefix(path, "/onboarding") || strings.HasPrefix(path, "/webhooks/") {
+		if strings.HasPrefix(path, "/assets/") || strings.HasPrefix(path, "/onboarding") || strings.HasPrefix(path, "/webhooks/") {
 			next.ServeHTTP(w, r)
 			return
 		}

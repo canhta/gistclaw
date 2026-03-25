@@ -153,22 +153,75 @@ State is communicated via a 4px solid left border. No background tint. The borde
 ## Layout
 
 - **Approach:** Grid-disciplined. Strict column structure. No editorial asymmetry.
-- **Desktop-first:** 1024px minimum width. No mobile reflow in v1.
+- **Responsive requirement:** The product must work cleanly on desktop, tablet, and mobile. Responsiveness is not deferred work.
 - **Max content width:** 1080px
 - **Nav height:** 44px top bar, full-width. `border-bottom: 1.5px solid var(--border-hard)`.
 - **Page padding:** 24px horizontal, 32px top.
 - **Shell rule:** Use the warm canvas as active negative space. Do not wrap an entire page in one oversized white panel. Prefer a page header on canvas plus smaller work panels beneath it.
 
+### Breakpoints
+
+| Range | Target | Layout behavior |
+|-------|--------|-----------------|
+| `>= 1180px` | Desktop | Full command-board layout, multi-column detail surfaces, full top nav |
+| `768px – 1179px` | Tablet | Stack some secondary panels, reduce graph/list density, keep top nav but allow wrapping/compression |
+| `< 768px` | Mobile | Single-column reading flow, collapsible non-critical metadata, graph and snapshot stack vertically, filters become 1-2 column rails |
+
+### Responsive rules
+
+- Never rely on horizontal page scrolling for primary workflows.
+- Top navigation may wrap or condense, but must remain usable without hiding core sections behind a desktop-only assumption.
+- `Team` cards collapse from a 3-column roster to 2 columns on tablet and 1 column on mobile.
+- Run detail switches from side-by-side lower panels to a stacked sequence on narrower screens.
+- Graph nodes must remain readable on small screens:
+  - compact content
+  - shorter metadata lines
+  - vertical stacking allowed
+- Filter rails reflow:
+  - desktop: search + filters + count + page size in one row
+  - tablet: split into two rows
+  - mobile: stacked fields with count/pagination controls still visible
+- Pagination controls must remain visible and operable on mobile; do not hide them behind “load more”.
+- Dense operator views can simplify secondary metadata at smaller sizes, but must preserve primary understanding: status, owner, objective, and bottleneck.
+
 ### Navigation structure
 
 ```
-gistclaw  |  Runs  |  Control  |  Sessions  |  Approvals  |  Settings   [spacer]  Theme: System / Light / Dark
+gistclaw  |  Runs  |  Team  |  Control  |  Sessions  |  Approvals  |  Settings   [spacer]  Theme: System / Light / Dark
 ```
 
 - No sidebar. Top bar only.
 - Brand anchor: `gistclaw` appears in a solid black block with off-white text.
 - Active nav item: bold weight (700), text underline offset 4px. No colored bottom border accent — underline directly on the text.
 - Theme switcher: segmented control in the shell. It uses the same brutalist button language as the rest of the product.
+- On smaller widths, the nav may wrap into multiple rows or a compact disclosure pattern, but it must still expose `Runs`, `Team`, `Approvals`, and `Settings` clearly.
+
+### Primary information architecture
+
+- **Runs** — primary operational queue. Filterable and paginated. This is where the operator sees what is active, blocked, completed, or failed.
+- **Team** — first-class team setup and inspection surface. This is not a hidden settings form. It defines the editable default team used for future runs.
+- **Control** — manual routing, operator intervention, and delivery controls.
+- **Sessions** — conversation/session history. Filterable and paginated.
+- **Approvals** — pending and resolved approval work. Filterable and paginated.
+- **Settings** — environment, provider, connector, and machine-level configuration.
+
+### Team surface
+
+The product must expose team setup as a primary concept.
+
+```
+[page heading + default team summary]
+[team roster grid: one card per agent/role]
+[add agent] [team policy controls] [model lane defaults]
+[next run uses this team]
+[recent snapshot references / linked run examples]
+```
+
+- `Team` is the editable default team configuration for upcoming runs.
+- Run detail pages must also show a **read-only execution snapshot** so the operator can see the exact team/config bound to that historical run.
+- Team cards are operational objects, not profile cards. Each card shows: role, agent name, model lane, tool policy, active/inactive state, and a compact summary of capability or responsibility.
+- Do not hide team composition behind accordions or “advanced settings”.
+- On mobile, the roster becomes a vertical stack; editing actions move below card content instead of competing in the header row.
 
 ### Run detail — layout per state
 
@@ -176,13 +229,15 @@ gistclaw  |  Runs  |  Control  |  Sessions  |  Approvals  |  Settings   [spacer]
 ACTIVE:
   [page heading (xl/700) + badge + run ID (mono-xs)]
   [live-status banner — full width, hard border, state-colored left rail]
-  [collaboration graph — full width, grouped by delegation depth, statuses live]
+  [collaboration graph — full width, realtime statuses live]
+  [execution snapshot panel — read-only team/config used by this run]
   [assistant output 50% left] [event timeline 50% right]
 
 NEEDS APPROVAL:
   [page heading + badge]
   [live-status banner — approval tone]
   [collaboration graph — approval nodes visible in place]
+  [execution snapshot panel]
   [approval card — full width, 4px amber left border, no amber bg fill]
   [diff block — code fill for legibility]
   [Approve / Deny buttons]
@@ -191,12 +246,14 @@ COMPLETED:
   [page heading + badge]
   [completion banner]
   [static graph with final statuses]
+  [execution snapshot panel]
   [assistant output 50% left] [event timeline 50% right]
 
 INTERRUPTED:
   [page heading + badge]
   [interrupted banner]
   [graph showing which branch stopped]
+  [execution snapshot panel]
   [partial replay below]
 ```
 
@@ -204,10 +261,46 @@ INTERRUPTED:
 
 - The graph is a command-board view, not a decorative network chart.
 - Group runs by delegation depth from left to right or top to bottom depending on viewport.
+- The graph itself may use a DAG layout engine, but the card content must stay compact and structured. No large centered paragraph blocks.
 - Each node shows: status, run ID, objective, agent ID, optional session ID, and parent relationship.
 - The graph headline must summarize the current bottleneck: active work, pending queue, approval gate, failure, or completion.
 - Live status matters more than edge artistry. If forced to choose, prioritize truthful state over fancy connectors.
 - Polling or SSE-backed refresh is acceptable as long as the operator sees status changes quickly and reliably.
+
+### Graph node anatomy
+
+Every orchestration node follows the same scan order:
+
+```
+[status chip] [role/root badge]
+[objective/title]
+[owner + session/model line]
+[parent/source OR waiting reason]
+```
+
+- Line 1 is always compact, uppercase, and state-driven.
+- Line 2 is the primary reading line and uses `base/700`.
+- Line 3 is metadata in `sm` or `mono-xs`.
+- Line 4 is optional context: `from parent`, `waiting on approval`, `queued`, `blocked by tool policy`, etc.
+- Titles must truncate or wrap cleanly; they should never force the whole node into a poster-like text block.
+
+### Long operational lists
+
+Runs, Sessions, Approvals, and any future history-heavy pages must use the same list control model.
+
+```
+[search] [status filter] [role/agent filter if relevant] [other scoped filter] [sort]
+[result count] [page size]
+[list/table/cards]
+[pagination footer: previous, current page, next]
+```
+
+- No one-off checkbox filters for important state. Replace them with segmented controls or explicit select inputs.
+- Filter state lives in the URL query string so refresh/share/back works correctly.
+- Pagination is mandatory for long lists. Do not rely on infinite scroll.
+- Empty state, filtered-empty state, and multi-page state must each be designed deliberately.
+- Use the same visual grammar across pages so the control rail feels like one system, not multiple custom widgets.
+- On mobile, cards may replace wide tabular rows where necessary, but filter and pagination behavior must stay the same.
 
 ## Border Radius
 
@@ -345,13 +438,14 @@ Keyboard: `Enter` = Approve, `Shift+Enter` = Deny. Document inline.
 - Shape: rectangle, `border-radius: 0`
 - Border: 1.5px `var(--border-hard)` default with a 4px left state rail
 - Background: `var(--surface)` always — no state-based background fill
-- State via text: status in `mono-2xs` uppercase, run title in `base/700`, agent/session metadata in `sm`, parent label in `mono-xs`
-- Layout: depth-grouped columns, not force-directed. The operator should read orchestration order immediately.
+- State via text: status in `mono-2xs` uppercase, run title in `base/700`, agent/session metadata in `sm`, parent label or waiting reason in `mono-xs`
+- Layout: depth-grouped columns or DAG layout with clear reading order. The operator should read orchestration order immediately.
 - Running state: 4px left accent in `var(--active)` — do not change background
 - Pending state: 4px left accent in `var(--brand)`
 - Approval state: 4px left accent in `var(--approval)`
 - Completed state: 4px left accent in `var(--success)`
 - Failed state: 4px left accent in `var(--error)`
+- Content density: compact and operational. Never center all copy. Never let a single node become a prose block.
 
 ### Segmented controls
 
@@ -368,6 +462,71 @@ Checkboxes are too weak for important state filters. Use segmented controls for 
   color: var(--surface);
 }
 ```
+
+### Filter rail
+
+The filter rail is a shared component used on long-list pages.
+
+```css
+.filter-rail {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) repeat(4, minmax(120px, 1fr)) auto auto;
+  gap: 8px;
+  align-items: end;
+}
+```
+
+- Search is always the leftmost, widest field.
+- Status comes before page-specific filters.
+- Use selects or segmented controls, not ad hoc toggles.
+- Result count and page size are part of the rail, not hidden in a footer.
+- At tablet width, the rail may wrap into two rows.
+- At mobile width, fields stack vertically with count and page size kept near the top, not buried below the list.
+
+### Pagination
+
+Pagination is a standard footer component, not an afterthought.
+
+```css
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+```
+
+- Show current page and total count.
+- Provide `Previous` and `Next` as explicit bordered controls.
+- Pagination must preserve the current filter query.
+- On mobile, pagination may become a compact row, but it must remain always visible at the end of the list.
+
+### Team cards
+
+The team roster uses structured operational cards.
+
+```css
+.team-card {
+  border: 1.5px solid var(--border-hard);
+  border-left: 4px solid var(--border-hard);
+  background: var(--surface);
+  padding: 16px;
+}
+```
+
+- Header: role badge + active/inactive state.
+- Title line: agent name or configured role title.
+- Meta line: model lane, tool policy, connector/provider if relevant.
+- Footer: short responsibility summary or scope note.
+- Cards should feel like deployable units, not people-profile tiles.
+
+### Execution snapshot
+
+Every run detail includes a read-only snapshot panel that explains what was actually bound at start.
+
+- Show: team spec, model lane choices, tool policy stance, and any relevant config lock-in.
+- This is historical truth, not editable state.
+- Present it as a compact bordered panel with section labels in mono uppercase.
 
 ### Settings rows
 
@@ -420,3 +579,9 @@ Full-width. 4px green left border. No green background.
 | 2026-03-25 | Added dual-theme system (`System`, `Light`, `Dark`) | Production operators need day/night choice without losing semantic consistency           |
 | 2026-03-25 | Delegation graph made first-class on run detail | Multi-agent coordination is the product differentiator and needs its own visual grammar  |
 | 2026-03-25 | Replaced binary binding checkbox with segmented state filter | Session binding is not a minor toggle; it is a structural filter                         |
+| 2026-03-25 | `Team` promoted to top-level navigation | Team composition is a core product object and must be visible/configurable without digging |
+| 2026-03-25 | Added read-only execution snapshot to run detail | Operators need to see which exact team/config a run used, not just the current default     |
+| 2026-03-25 | Standardized long lists around filter rails + pagination | Production readiness requires scalable, shared controls instead of ad hoc list behavior   |
+| 2026-03-25 | Graph node cards made compact and structured | Orchestration nodes must scan like operational units, not text-heavy posters              |
+| 2026-03-25 | No legacy UI support for one-off list controls | Important filters must use shared components; old checkbox-style controls are removed      |
+| 2026-03-25 | Responsiveness promoted to a core requirement | Desktop-only orchestration UI is insufficient for production operators who move across devices |

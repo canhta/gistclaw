@@ -1,0 +1,63 @@
+{{define "team_body"}}
+<section class="page-header">
+  <span class="page-eyebrow">Orchestration</span>
+  <h1>Team</h1>
+  <p class="page-lede">Configure the default agent team for future runs. Each card shows the live default role, tool posture, and collaboration edges for that agent.</p>
+</section>
+{{if .Error}}
+  <section class="error">{{.Error}}</section>
+{{end}}
+<form class="page-stack" method="POST" action="/team">
+  <section class="panel team-summary">
+    <div class="team-summary-grid">
+      <div class="field">
+        <label for="name">Team Name</label>
+        <input id="name" name="name" type="text" value="{{.Name}}">
+      </div>
+      <div class="field">
+        <label for="front_agent">Front Agent</label>
+        <select id="front_agent" name="front_agent">
+          {{range .Agents}}
+            <option value="{{.ID}}"{{if .IsFront}} selected{{end}}>{{.ID}}</option>
+          {{end}}
+        </select>
+      </div>
+    </div>
+    <p class="muted">The next run uses this team snapshot exactly as shown here. Historical runs keep their own bound execution snapshot.</p>
+  </section>
+
+  <section class="team-grid">
+    {{range .Agents}}
+      <article class="panel team-card">
+        <div class="team-agent-head">
+          <div>
+            <div class="team-agent-name">{{.ID}}</div>
+            <div class="mono subtle">{{if .IsFront}}front agent{{else}}specialist agent{{end}}</div>
+          </div>
+          {{if .IsFront}}<span class="badge">front</span>{{end}}
+        </div>
+        <div class="field">
+          <label for="agent_{{.ID}}_role">Role</label>
+          <input id="agent_{{.ID}}_role" name="agent_{{.ID}}_role" type="text" value="{{.Role}}">
+        </div>
+        <div class="field">
+          <label for="agent_{{.ID}}_tool_posture">Tool Posture</label>
+          <input id="agent_{{.ID}}_tool_posture" name="agent_{{.ID}}_tool_posture" type="text" value="{{.ToolPosture}}">
+        </div>
+        <div class="field">
+          <label for="agent_{{.ID}}_can_spawn">Can Spawn</label>
+          <input id="agent_{{.ID}}_can_spawn" name="agent_{{.ID}}_can_spawn" type="text" value="{{.CanSpawn}}">
+        </div>
+        <div class="field">
+          <label for="agent_{{.ID}}_can_message">Can Message</label>
+          <input id="agent_{{.ID}}_can_message" name="agent_{{.ID}}_can_message" type="text" value="{{.CanMessage}}">
+        </div>
+      </article>
+    {{end}}
+  </section>
+
+  <section class="button-row">
+    <button class="btn btn-primary" type="submit">Save Team</button>
+  </section>
+</form>
+{{end}}

@@ -1,87 +1,78 @@
 package web
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 )
 
 type approvalItem struct {
-	ID         string
-	RunID      string
-	ToolName   string
-	TargetPath string
-	Status     string
-	CreatedAt  time.Time
-}
-
-type auditItem struct {
-	ID         string
-	Actor      string
-	ResolvedAt time.Time
+	ID          string
+	RunID       string
+	ToolName    string
+	TargetPath  string
+	Status      string
+	StatusClass string
+	ResolvedBy  string
+	CreatedAt   time.Time
+	ResolvedAt  *time.Time
 }
 
 type approvalsPageData struct {
 	Approvals []approvalItem
-	Audit     []auditItem
+	Filters   approvalListFilters
+	Paging    pageLinks
 	Error     string
 }
 
 func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.db.RawDB().QueryContext(r.Context(),
-		`SELECT id, run_id, tool_name, COALESCE(target_path, ''), status, created_at
-		 FROM approvals WHERE status IN ('pending', 'expired')
-		 ORDER BY created_at DESC`,
-	)
+	filter := approvalListFilterFromRequest(r)
+	querySQL, args, err := buildApprovalListQuery(filter)
+	if err != nil {
+		http.Error(w, "failed to build approvals query", http.StatusInternalServerError)
+		return
+	}
+	rows, err := s.db.RawDB().QueryContext(r.Context(), querySQL, args...)
 	if err != nil {
 		http.Error(w, "failed to load approvals", http.StatusInternalServerError)
 		return
 	}
 	defer rows.Close()
 
-	items := make([]approvalItem, 0)
+	approvalRows := make([]approvalListRow, 0, filter.Limit+1)
 	for rows.Next() {
 		var item approvalItem
-		if err := rows.Scan(&item.ID, &item.RunID, &item.ToolName, &item.TargetPath, &item.Status, &item.CreatedAt); err != nil {
+		var createdAt string
+		var resolvedAt sql.NullTime
+		if err := rows.Scan(&item.ID, &item.RunID, &item.ToolName, &item.TargetPath, &item.Status, &item.ResolvedBy, &item.CreatedAt, &resolvedAt, &createdAt); err != nil {
 			http.Error(w, "failed to load approvals", http.StatusInternalServerError)
 			return
 		}
-		items = append(items, item)
+		item.StatusClass = approvalStatusClass(item.Status)
+		if resolvedAt.Valid {
+			item.ResolvedAt = &resolvedAt.Time
+		}
+		approvalRows = append(approvalRows, approvalListRow{Item: item, CreatedAt: createdAt})
 	}
 	if err := rows.Err(); err != nil {
 		http.Error(w, "failed to load approvals", http.StatusInternalServerError)
 		return
 	}
 
-	// Audit trail: resolved approvals from the last 24 hours.
-	aRows, err := s.db.RawDB().QueryContext(r.Context(),
-		`SELECT id, COALESCE(resolved_by, 'unknown'), resolved_at
-		 FROM approvals
-		 WHERE status IN ('approved', 'denied')
-		   AND resolved_at >= datetime('now', '-24 hours')
-		 ORDER BY resolved_at DESC`,
-	)
-	if err != nil {
-		http.Error(w, "failed to load audit trail", http.StatusInternalServerError)
-		return
-	}
-	defer aRows.Close()
-
-	audit := make([]auditItem, 0)
-	for aRows.Next() {
-		var a auditItem
-		if err := aRows.Scan(&a.ID, &a.Actor, &a.ResolvedAt); err != nil {
-			http.Error(w, "failed to load audit trail", http.StatusInternalServerError)
-			return
-		}
-		audit = append(audit, a)
-	}
-	if err := aRows.Err(); err != nil {
-		http.Error(w, "failed to load audit trail", http.StatusInternalServerError)
-		return
-	}
-
-	s.renderTemplate(w, "Approvals", "approvals_body", approvalsPageData{Approvals: items, Audit: audit})
+	items, paging := finalizeApprovalListPage(r.URL.Query(), filter, approvalRows)
+	s.renderTemplate(w, "Approvals", "approvals_body", approvalsPageData{
+		Approvals: items,
+		Filters: approvalListFilters{
+			Query:  filter.Query,
+			Status: filter.Status,
+			Limit:  filter.Limit,
+		},
+		Paging: paging,
+	})
 }
 
 func (s *Server) handleApprovalResolve(w http.ResponseWriter, r *http.Request) {
@@ -124,4 +115,162 @@ func (s *Server) handleApprovalResolve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/approvals", http.StatusSeeOther)
+}
+
+type approvalListFilters struct {
+	Query  string
+	Status string
+	Limit  int
+}
+
+type approvalListRequest struct {
+	Query     string
+	Status    string
+	Limit     int
+	Cursor    approvalListCursor
+	HasCursor bool
+	Direction string
+}
+
+type approvalListCursor struct {
+	CreatedAt string
+	ID        string
+}
+
+type approvalListRow struct {
+	Item      approvalItem
+	CreatedAt string
+}
+
+func approvalListFilterFromRequest(r *http.Request) approvalListRequest {
+	cursor, ok := parseApprovalListCursor(strings.TrimSpace(r.URL.Query().Get("cursor")))
+	direction := strings.TrimSpace(r.URL.Query().Get("direction"))
+	if direction != "prev" {
+		direction = "next"
+	}
+
+	return approvalListRequest{
+		Query:     strings.TrimSpace(r.URL.Query().Get("q")),
+		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
+		Limit:     requestNamedLimit(r, "limit", 20),
+		Cursor:    cursor,
+		HasCursor: ok,
+		Direction: direction,
+	}
+}
+
+func buildApprovalListQuery(filter approvalListRequest) (string, []any, error) {
+	var query strings.Builder
+	query.WriteString(`SELECT id, run_id, tool_name, COALESCE(target_path, ''), status, COALESCE(resolved_by, ''), created_at, resolved_at, created_at
+	 FROM approvals`)
+
+	clauses := []string{"1=1"}
+	args := make([]any, 0, 8)
+	if filter.Query != "" {
+		like := "%" + filter.Query + "%"
+		clauses = append(clauses, "(id LIKE ? OR run_id LIKE ? OR tool_name LIKE ? OR COALESCE(target_path, '') LIKE ?)")
+		args = append(args, like, like, like, like)
+	}
+	switch filter.Status {
+	case "", "all":
+	case "pending", "expired", "approved", "denied":
+		clauses = append(clauses, "status = ?")
+		args = append(args, filter.Status)
+	case "open":
+		clauses = append(clauses, "status IN ('pending', 'expired')")
+	default:
+		return "", nil, fmt.Errorf("unknown approval status filter %q", filter.Status)
+	}
+	if filter.HasCursor {
+		switch filter.Direction {
+		case "prev":
+			clauses = append(clauses, "(created_at > ? OR (created_at = ? AND id > ?))")
+		default:
+			clauses = append(clauses, "(created_at < ? OR (created_at = ? AND id < ?))")
+		}
+		args = append(args, filter.Cursor.CreatedAt, filter.Cursor.CreatedAt, filter.Cursor.ID)
+	}
+
+	query.WriteString(" WHERE ")
+	query.WriteString(strings.Join(clauses, " AND "))
+	if filter.Direction == "prev" {
+		query.WriteString(" ORDER BY created_at ASC, id ASC")
+	} else {
+		query.WriteString(" ORDER BY created_at DESC, id DESC")
+	}
+	query.WriteString(" LIMIT ?")
+	args = append(args, filter.Limit+1)
+	return query.String(), args, nil
+}
+
+func finalizeApprovalListPage(query url.Values, filter approvalListRequest, rows []approvalListRow) ([]approvalItem, pageLinks) {
+	hasExtra := len(rows) > filter.Limit
+	if hasExtra {
+		rows = rows[:filter.Limit]
+	}
+	if filter.Direction == "prev" {
+		for left, right := 0, len(rows)-1; left < right; left, right = left+1, right-1 {
+			rows[left], rows[right] = rows[right], rows[left]
+		}
+	}
+
+	items := make([]approvalItem, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, row.Item)
+	}
+
+	var nextCursor string
+	var prevCursor string
+	hasNext := false
+	hasPrev := false
+	if len(rows) > 0 {
+		first := rows[0]
+		last := rows[len(rows)-1]
+		prevCursor = encodeApprovalListCursor(first.CreatedAt, first.Item.ID)
+		nextCursor = encodeApprovalListCursor(last.CreatedAt, last.Item.ID)
+	}
+
+	switch filter.Direction {
+	case "prev":
+		hasPrev = hasExtra
+		hasNext = filter.HasCursor
+	default:
+		hasPrev = filter.HasCursor
+		hasNext = hasExtra
+	}
+
+	return items, buildPageLinks("/approvals", cloneQuery(query), "cursor", "direction", nextCursor, prevCursor, hasNext, hasPrev)
+}
+
+func parseApprovalListCursor(raw string) (approvalListCursor, bool) {
+	if raw == "" {
+		return approvalListCursor{}, false
+	}
+	parts := strings.SplitN(raw, "|", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return approvalListCursor{}, false
+	}
+	return approvalListCursor{CreatedAt: parts[0], ID: parts[1]}, true
+}
+
+func encodeApprovalListCursor(createdAt, id string) string {
+	if createdAt == "" || id == "" {
+		return ""
+	}
+	return createdAt + "|" + id
+}
+
+func approvalStatusClass(status string) string {
+	switch status {
+	case "pending":
+		return "is-approval"
+	case "approved":
+		return "is-success"
+	case "denied":
+		return "is-error"
+	case "expired":
+		return "is-muted"
+	default:
+		return ""
+	}
 }

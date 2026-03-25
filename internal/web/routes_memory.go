@@ -12,6 +12,7 @@ import (
 type memoryPageData struct {
 	Facts   []model.MemoryItem
 	Filter  memoryFilterForm
+	Paging  pageLinks
 	Error   string
 	Confirm *model.MemoryItem // non-nil when showing forget confirmation
 }
@@ -19,6 +20,8 @@ type memoryPageData struct {
 type memoryFilterForm struct {
 	Scope   string
 	AgentID string
+	Query   string
+	Limit   int
 }
 
 func (s *Server) handleMemoryList(w http.ResponseWriter, r *http.Request) {
@@ -29,10 +32,16 @@ func (s *Server) handleMemoryList(w http.ResponseWriter, r *http.Request) {
 
 	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
 	agentID := strings.TrimSpace(r.URL.Query().Get("agent_id"))
+	keyword := strings.TrimSpace(r.URL.Query().Get("q"))
+	limit := requestNamedLimit(r, "limit", 20)
 
-	facts, err := s.rt.Memory().Filter(r.Context(), memory.MemoryFilter{
-		Scope:   scope,
-		AgentID: agentID,
+	page, err := s.rt.Memory().SearchPage(r.Context(), memory.SearchPageQuery{
+		Scope:     scope,
+		AgentID:   agentID,
+		Keyword:   keyword,
+		Limit:     limit,
+		Cursor:    strings.TrimSpace(r.URL.Query().Get("cursor")),
+		Direction: strings.TrimSpace(r.URL.Query().Get("direction")),
 	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("load memory: %v", err), http.StatusInternalServerError)
@@ -40,11 +49,14 @@ func (s *Server) handleMemoryList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := memoryPageData{
-		Facts: facts,
+		Facts: page.Items,
 		Filter: memoryFilterForm{
 			Scope:   scope,
 			AgentID: agentID,
+			Query:   keyword,
+			Limit:   limit,
 		},
+		Paging: buildPageLinks("/memory", cloneQuery(r.URL.Query()), "cursor", "direction", page.NextCursor, page.PrevCursor, page.HasNext, page.HasPrev),
 	}
 	s.renderTemplate(w, "Memory", "memory_body", data)
 }
