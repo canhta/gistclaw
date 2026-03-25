@@ -130,6 +130,15 @@ type runCompletedPayload struct {
 	ModelLane    string  `json:"model_lane"`
 }
 
+type toolCallRecordedPayload struct {
+	ToolCallID string          `json:"tool_call_id"`
+	ToolName   string          `json:"tool_name"`
+	InputJSON  json.RawMessage `json:"input_json"`
+	OutputJSON json.RawMessage `json:"output_json"`
+	Decision   string          `json:"decision"`
+	ApprovalID string          `json:"approval_id"`
+}
+
 type summaryUpsertedPayload struct {
 	SummaryID  string `json:"summary_id"`
 	RunID      string `json:"run_id"`
@@ -233,6 +242,25 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 			     cost_usd = excluded.cost_usd,
 			     model_lane = excluded.model_lane`,
 			generateID(), evt.RunID, payload.InputTokens, payload.OutputTokens, payload.CostUSD, payload.ModelLane, evt.CreatedAt,
+		)
+		return err
+	case "tool_call_recorded":
+		var payload toolCallRecordedPayload
+		if err := decodePayload(evt.PayloadJSON, &payload); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO tool_calls
+			 (id, run_id, tool_name, input_json, output_json, decision, approval_id, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?)`,
+			evt.ID,
+			evt.RunID,
+			payload.ToolName,
+			payload.InputJSON,
+			payload.OutputJSON,
+			payload.Decision,
+			payload.ApprovalID,
+			evt.CreatedAt,
 		)
 		return err
 	case "run_interrupted":

@@ -246,6 +246,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 	objective := opts.objective
 	var cumulativeInput int
 	var cumulativeOutput int
+	runCtxEvents := make([]model.Event, 0, 16)
 
 	budgetStopped := false
 	for turn := 0; turn < 10; turn++ {
@@ -321,9 +322,11 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 		if err != nil {
 			return model.Run{}, err
 		}
+		conversationCtx := combineConversationContext(providerReq.ConversationCtx, runCtxEvents)
 		result, err := r.provider.Generate(ctx, GenerateRequest{
 			Instructions:    providerReq.Instructions,
-			ConversationCtx: providerReq.ConversationCtx,
+			ConversationCtx: conversationCtx,
+			ToolSpecs:       r.tools.List(),
 		}, nil)
 		if err != nil {
 			_ = r.convStore.AppendEvent(ctx, model.Event{
@@ -360,7 +363,13 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 		}); err != nil {
 			return model.Run{}, fmt.Errorf("journal turn_completed: %w", err)
 		}
-		if sessionID != "" && result.Content != "" {
+		runCtxEvents = append(runCtxEvents, model.Event{
+			ConversationID: conversationID,
+			RunID:          runID,
+			Kind:           "turn_completed",
+			PayloadJSON:    payload,
+		})
+		if sessionID != "" && result.Content != "" && (result.StopReason == "end_turn" || result.StopReason == "") {
 			messageID, err := r.appendSessionMessage(
 				ctx,
 				conversationID,
@@ -388,6 +397,15 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 				Kind:       "turn_completed",
 				OccurredAt: time.Now().UTC(),
 			})
+		}
+
+		if len(result.ToolCalls) > 0 {
+			toolEvents, err := r.executeToolCalls(ctx, runID, conversationID, agentID, result.ToolCalls)
+			if err != nil {
+				return model.Run{}, err
+			}
+			runCtxEvents = append(runCtxEvents, toolEvents...)
+			continue
 		}
 
 		if result.StopReason == "end_turn" || result.StopReason == "" {
@@ -447,6 +465,88 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 	}
 
 	return r.loadRun(ctx, runID)
+}
+
+func (r *Runtime) executeToolCalls(
+	ctx context.Context,
+	runID string,
+	conversationID string,
+	agentID string,
+	toolCalls []model.ToolCallRequest,
+) ([]model.Event, error) {
+	events := make([]model.Event, 0, len(toolCalls))
+	policy := &tools.Policy{}
+	agent := model.AgentProfile{AgentID: agentID}
+	runProfile := model.RunProfile{RunID: runID}
+
+	for _, tc := range toolCalls {
+		outputJSON := []byte(`{"output":"","error":"tool not found"}`)
+		decision := model.DecisionDeny
+
+		tool, ok := r.tools.Get(tc.ToolName)
+		if ok {
+			toolDecision := policy.Decide(agent, runProfile, tool.Spec())
+			decision = toolDecision.Mode
+			if toolDecision.Mode == model.DecisionAllow {
+				result, err := tool.Invoke(ctx, model.ToolCall{
+					ID:        tc.ID,
+					ToolName:  tc.ToolName,
+					InputJSON: tc.InputJSON,
+				})
+				if err != nil {
+					result.Error = err.Error()
+				}
+				raw, err := json.Marshal(result)
+				if err != nil {
+					return nil, fmt.Errorf("marshal tool result: %w", err)
+				}
+				outputJSON = raw
+			} else {
+				raw, err := json.Marshal(model.ToolResult{
+					Error: toolDecision.Reason,
+				})
+				if err != nil {
+					return nil, fmt.Errorf("marshal denied tool result: %w", err)
+				}
+				outputJSON = raw
+			}
+		}
+
+		payload, err := json.Marshal(map[string]any{
+			"tool_call_id": tc.ID,
+			"tool_name":    tc.ToolName,
+			"input_json":   json.RawMessage(tc.InputJSON),
+			"output_json":  json.RawMessage(outputJSON),
+			"decision":     string(decision),
+			"approval_id":  "",
+		})
+		if err != nil {
+			return nil, fmt.Errorf("marshal tool_call_recorded payload: %w", err)
+		}
+		evt := model.Event{
+			ID:             generateID(),
+			ConversationID: conversationID,
+			RunID:          runID,
+			Kind:           "tool_call_recorded",
+			PayloadJSON:    payload,
+		}
+		if err := r.convStore.AppendEvent(ctx, evt); err != nil {
+			return nil, fmt.Errorf("journal tool_call_recorded: %w", err)
+		}
+		events = append(events, evt)
+	}
+
+	return events, nil
+}
+
+func combineConversationContext(base []model.Event, extra []model.Event) []model.Event {
+	if len(extra) == 0 {
+		return append([]model.Event(nil), base...)
+	}
+	combined := make([]model.Event, 0, len(base)+len(extra))
+	combined = append(combined, base...)
+	combined = append(combined, extra...)
+	return combined
 }
 
 func mailboxToEvents(messages []model.SessionMessage) []model.Event {

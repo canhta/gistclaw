@@ -442,3 +442,62 @@ func TestProvider_ResponsesWireAPIParsesFunctionCalls(t *testing.T) {
 		t.Fatalf("tool call arguments: got %s", result.ToolCalls[0].InputJSON)
 	}
 }
+
+func TestProvider_ResponsesWireAPIToolCallEventsConvertedToInput(t *testing.T) {
+	var capturedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/responses" {
+			t.Fatalf("request path: got %q, want %q", r.URL.Path, "/v1/responses")
+		}
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"resp_test",
+			"status":"completed",
+			"output":[
+				{
+					"type":"message",
+					"id":"msg_test",
+					"status":"completed",
+					"role":"assistant",
+					"content":[
+						{"type":"output_text","text":"done","annotations":[]}
+					]
+				}
+			],
+			"usage":{"input_tokens":11,"output_tokens":7}
+		}`))
+	}))
+	defer srv.Close()
+
+	toolPayload, _ := json.Marshal(map[string]any{
+		"tool_call_id": "call_123",
+		"tool_name":    "read_file",
+		"input_json":   map[string]any{"path": "main.go"},
+		"output_json":  map[string]any{"output": "package main\n", "error": ""},
+		"decision":     "allow",
+	})
+
+	p := New("test-key", "cx/gpt-5.4", srv.URL, "responses")
+	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "Use tools when needed.",
+		MaxTokens:    256,
+		ConversationCtx: []model.Event{
+			{Kind: "tool_call_recorded", PayloadJSON: toolPayload},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	input, ok := capturedBody["input"].([]any)
+	if !ok || len(input) < 2 {
+		t.Fatalf("expected function_call and function_call_output input items, got %v", capturedBody["input"])
+	}
+	if input[0].(map[string]any)["type"] != "function_call" {
+		t.Fatalf("expected first input item to be function_call, got %v", input[0])
+	}
+	if input[1].(map[string]any)["type"] != "function_call_output" {
+		t.Fatalf("expected second input item to be function_call_output, got %v", input[1])
+	}
+}

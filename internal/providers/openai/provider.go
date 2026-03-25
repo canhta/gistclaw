@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	defaultEndpoint         = "https://api.openai.com"
-	defaultMaxTokens        = 8096
-	wireAPIChatCompletions  = "chat_completions"
-	wireAPIResponses        = "responses"
+	defaultEndpoint        = "https://api.openai.com"
+	defaultMaxTokens       = 8096
+	wireAPIChatCompletions = "chat_completions"
+	wireAPIResponses       = "responses"
 )
 
 // Provider calls any OpenAI-compatible Chat Completions or Responses API.
@@ -77,7 +77,7 @@ func (p *Provider) generateChatCompletions(ctx context.Context, req runtime.Gene
 	if req.Instructions != "" {
 		msgs = append(msgs, chatMessage{Role: "system", Content: req.Instructions})
 	}
-	msgs = append(msgs, eventsToMessages(req.ConversationCtx)...)
+	msgs = append(msgs, eventsToChatMessages(req.ConversationCtx)...)
 	// Ensure at least one non-system message so the API accepts the request.
 	if len(msgs) == 0 || (len(msgs) == 1 && msgs[0].Role == "system") {
 		msgs = append(msgs, chatMessage{Role: "user", Content: "begin"})
@@ -139,10 +139,10 @@ func (p *Provider) generateResponses(ctx context.Context, req runtime.GenerateRe
 		maxTokens = defaultMaxTokens
 	}
 
-	input := responseInputFromMessages(eventsToMessages(req.ConversationCtx))
+	input := eventsToResponseInput(req.ConversationCtx)
 	if len(input) == 0 {
-		input = []responseInputMessage{
-			{
+		input = []any{
+			responseInputMessage{
 				Role: "user",
 				Content: []responseInputText{
 					{Type: "input_text", Text: "begin"},
@@ -211,8 +211,10 @@ func (p *Provider) endpoint(path string) string {
 // ── Internal types ─────────────────────────────────────────────────────────────
 
 type chatMessage struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    any        `json:"content,omitempty"`
+	ToolCalls  []toolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
 }
 
 type openAITool struct {
@@ -302,7 +304,15 @@ type responseOutputContent struct {
 
 // ── Conversion helpers ──────────────────────────────────────────────────────────
 
-func eventsToMessages(events []model.Event) []chatMessage {
+type toolCallRecordedPayload struct {
+	ToolCallID string          `json:"tool_call_id"`
+	ToolName   string          `json:"tool_name"`
+	InputJSON  json.RawMessage `json:"input_json"`
+	OutputJSON json.RawMessage `json:"output_json"`
+	Decision   string          `json:"decision"`
+}
+
+func eventsToChatMessages(events []model.Event) []chatMessage {
 	var msgs []chatMessage
 	for _, ev := range events {
 		switch ev.Kind {
@@ -342,6 +352,27 @@ func eventsToMessages(events []model.Event) []chatMessage {
 				role = "assistant"
 			}
 			msgs = append(msgs, chatMessage{Role: role, Content: payload.Body})
+		case "tool_call_recorded":
+			var payload toolCallRecordedPayload
+			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil {
+				continue
+			}
+			if payload.ToolCallID == "" || payload.ToolName == "" {
+				continue
+			}
+			var tc toolCall
+			tc.ID = payload.ToolCallID
+			tc.Type = "function"
+			tc.Function.Name = payload.ToolName
+			tc.Function.Arguments = string(payload.InputJSON)
+			msgs = append(msgs,
+				chatMessage{Role: "assistant", ToolCalls: []toolCall{tc}},
+				chatMessage{
+					Role:       "tool",
+					ToolCallID: payload.ToolCallID,
+					Content:    renderToolResultContent(payload.OutputJSON),
+				},
+			)
 		}
 	}
 	return msgs
@@ -383,20 +414,105 @@ func toolSpecsToResponseTools(specs []model.ToolSpec) []responseTool {
 	return tools
 }
 
-func responseInputFromMessages(msgs []chatMessage) []responseInputMessage {
-	input := make([]responseInputMessage, 0, len(msgs))
-	for _, msg := range msgs {
-		if msg.Content == "" {
-			continue
+func eventsToResponseInput(events []model.Event) []any {
+	input := make([]any, 0, len(events))
+	for _, ev := range events {
+		switch ev.Kind {
+		case "run_started":
+			var payload struct {
+				Objective string `json:"objective"`
+			}
+			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil {
+				continue
+			}
+			if payload.Objective == "" {
+				continue
+			}
+			input = append(input, responseInputMessage{
+				Role: "user",
+				Content: []responseInputText{
+					{Type: "input_text", Text: payload.Objective},
+				},
+			})
+		case "turn_completed":
+			var payload struct {
+				Content string `json:"content"`
+			}
+			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil {
+				continue
+			}
+			if payload.Content == "" {
+				continue
+			}
+			input = append(input, responseInputMessage{
+				Role: "assistant",
+				Content: []responseInputText{
+					{Type: "input_text", Text: payload.Content},
+				},
+			})
+		case "session_message_added":
+			var payload struct {
+				Kind string `json:"kind"`
+				Body string `json:"body"`
+			}
+			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil {
+				continue
+			}
+			if payload.Body == "" {
+				continue
+			}
+			role := "user"
+			if payload.Kind == "assistant" {
+				role = "assistant"
+			}
+			input = append(input, responseInputMessage{
+				Role: role,
+				Content: []responseInputText{
+					{Type: "input_text", Text: payload.Body},
+				},
+			})
+		case "tool_call_recorded":
+			var payload toolCallRecordedPayload
+			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil {
+				continue
+			}
+			if payload.ToolCallID == "" || payload.ToolName == "" {
+				continue
+			}
+			input = append(input,
+				map[string]any{
+					"type":      "function_call",
+					"call_id":   payload.ToolCallID,
+					"name":      payload.ToolName,
+					"arguments": string(payload.InputJSON),
+				},
+				map[string]any{
+					"type":    "function_call_output",
+					"call_id": payload.ToolCallID,
+					"output":  renderToolResultContent(payload.OutputJSON),
+				},
+			)
 		}
-		input = append(input, responseInputMessage{
-			Role: msg.Role,
-			Content: []responseInputText{
-				{Type: "input_text", Text: msg.Content},
-			},
-		})
 	}
 	return input
+}
+
+func renderToolResultContent(raw json.RawMessage) string {
+	var result model.ToolResult
+	if err := json.Unmarshal(raw, &result); err == nil {
+		switch {
+		case result.Output != "" && result.Error != "":
+			return result.Output + "\n" + result.Error
+		case result.Output != "":
+			return result.Output
+		case result.Error != "":
+			return result.Error
+		}
+	}
+	if len(raw) == 0 {
+		return ""
+	}
+	return string(raw)
 }
 
 func parseChatCompletionsResponse(resp chatCompletionsAPIResponse) (runtime.GenerateResult, error) {

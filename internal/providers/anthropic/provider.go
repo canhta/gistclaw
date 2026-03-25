@@ -132,7 +132,7 @@ func (p *Provider) Generate(ctx context.Context, req runtime.GenerateRequest, _ 
 
 type message struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
 }
 
 type anthropicTool struct {
@@ -162,10 +162,17 @@ type contentBlock struct {
 	Input json.RawMessage `json:"input"`
 }
 
+type toolCallRecordedPayload struct {
+	ToolCallID string          `json:"tool_call_id"`
+	ToolName   string          `json:"tool_name"`
+	InputJSON  json.RawMessage `json:"input_json"`
+	OutputJSON json.RawMessage `json:"output_json"`
+	Decision   string          `json:"decision"`
+}
+
 // ── Conversion helpers ──────────────────────────────────────────────────────────
 
 // eventsToMessages converts journal events into Anthropic message pairs.
-// Only run_started (→ user) and turn_completed (→ assistant) events contribute.
 func eventsToMessages(events []model.Event) []message {
 	var msgs []message
 	for _, ev := range events {
@@ -206,9 +213,58 @@ func eventsToMessages(events []model.Event) []message {
 				role = "assistant"
 			}
 			msgs = append(msgs, message{Role: role, Content: payload.Body})
+		case "tool_call_recorded":
+			var payload toolCallRecordedPayload
+			if err := json.Unmarshal(ev.PayloadJSON, &payload); err != nil {
+				continue
+			}
+			if payload.ToolCallID == "" || payload.ToolName == "" {
+				continue
+			}
+			msgs = append(msgs,
+				message{
+					Role: "assistant",
+					Content: []map[string]any{
+						{
+							"type":  "tool_use",
+							"id":    payload.ToolCallID,
+							"name":  payload.ToolName,
+							"input": json.RawMessage(payload.InputJSON),
+						},
+					},
+				},
+				message{
+					Role: "user",
+					Content: []map[string]any{
+						{
+							"type":        "tool_result",
+							"tool_use_id": payload.ToolCallID,
+							"content":     renderToolResultContent(payload.OutputJSON),
+						},
+					},
+				},
+			)
 		}
 	}
 	return msgs
+}
+
+func renderToolResultContent(raw json.RawMessage) string {
+	var result model.ToolResult
+	if err := json.Unmarshal(raw, &result); err == nil {
+		switch {
+		case result.Output != "" && result.Error != "":
+			return result.Output + "\n" + result.Error
+		case result.Output != "":
+			return result.Output
+		case result.Error != "":
+			return result.Error
+		}
+	}
+	if len(raw) == 0 {
+		return ""
+	}
+	return string(raw)
 }
 
 func toolSpecsToAnthropicTools(specs []model.ToolSpec) []anthropicTool {
