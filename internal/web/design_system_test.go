@@ -111,6 +111,26 @@ func TestLayoutDefinesBrutalistPrimitives(t *testing.T) {
 	}
 }
 
+func TestLayoutDefinesUnifiedControlHeight(t *testing.T) {
+	t.Parallel()
+
+	body, err := os.ReadFile(templatePath(t, "layout.html"))
+	if err != nil {
+		t.Fatalf("read layout template: %v", err)
+	}
+
+	content := string(body)
+	for _, want := range []string{
+		"--control-height: 44px;",
+		"height: var(--control-height);",
+		"min-height: var(--control-height);",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected layout template to contain %q", want)
+		}
+	}
+}
+
 func TestCriticalTemplatesDefineConfirmationMessages(t *testing.T) {
 	t.Parallel()
 

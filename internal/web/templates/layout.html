@@ -37,6 +37,7 @@
       --error: #dc2626;
       --muted-state: #6b7280;
       --font-mono: "JetBrains Mono", "Fira Code", monospace;
+      --control-height: 44px;
     }
     :root[data-theme="dark"] {
       --bg: #12100e;
@@ -630,13 +631,24 @@
     input[type="text"],
     input[type="password"],
     input[type="number"],
-    textarea,
     select {
+      border: 1.5px solid var(--border-hard);
+      background: var(--surface);
+      color: var(--text-1);
+      height: var(--control-height);
+      padding: 0 12px;
+      font: inherit;
+      line-height: 1.2;
+      border-radius: 0;
+      width: 100%;
+    }
+    textarea {
       border: 1.5px solid var(--border-hard);
       background: var(--surface);
       color: var(--text-1);
       padding: 8px 12px;
       font: inherit;
+      line-height: 1.5;
       border-radius: 0;
       width: 100%;
     }
@@ -680,7 +692,8 @@
       justify-content: center;
       gap: 6px;
       border: 1.5px solid transparent;
-      padding: 7px 14px;
+      min-height: var(--control-height);
+      padding: 0 14px;
       background: transparent;
       color: var(--text-1);
       font-size: 13px;
