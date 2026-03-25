@@ -55,6 +55,8 @@ go vet ./...
 
 **No backward compatibility. No legacy support.** When refactoring, do it completely — no shims, no deprecated wrappers, no compatibility aliases. Delete the old code.
 
+**Real refactors only — no transport shims.** Every refactor must move logic to its correct home. Never satisfy a refactor by wrapping or delegating to the old location from the new one. If the call site changes but the logic does not move, it is not a refactor — undo it and do it properly.
+
 ## Naming Policy
 
 **No phase or version names in code.** Never embed milestone, phase, or version labels in identifiers, comments, or constants (e.g. no `phase1`, `m2Handler`, `v2Route`). Names must describe what something *is*, not when it was added. Exception: `// TODO(m3): ...` notes are allowed.
