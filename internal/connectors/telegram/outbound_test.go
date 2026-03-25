@@ -243,6 +243,64 @@ func TestOutbound_FinishedEventDelivers(t *testing.T) {
 	}
 }
 
+func TestOutbound_TurnDeltasFlushAsTelegramDrafts(t *testing.T) {
+	db := setupOutboundDB(t)
+	cs := conversations.NewConversationStore(db)
+
+	var draftCalls atomic.Int32
+	var draftText string
+	var draftID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.Contains(r.URL.Path, "sendMessageDraft"):
+			draftCalls.Add(1)
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse draft form: %v", err)
+			}
+			draftText = r.Form.Get("text")
+			draftID = r.Form.Get("draft_id")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+		case strings.Contains(r.URL.Path, "sendMessage"):
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":99}}`))
+		}
+	}))
+	defer srv.Close()
+
+	dispatcher := NewOutboundDispatcher("testtoken", db, cs)
+	dispatcher.bot.apiBase = srv.URL + "/bot"
+
+	if err := dispatcher.Notify(context.Background(), "999", model.ReplayDelta{
+		RunID:       "run-draft",
+		Kind:        "turn_delta",
+		PayloadJSON: []byte(`{"text":"Hel"}`),
+	}, ""); err != nil {
+		t.Fatalf("Notify first delta: %v", err)
+	}
+	if err := dispatcher.Notify(context.Background(), "999", model.ReplayDelta{
+		RunID:       "run-draft",
+		Kind:        "turn_delta",
+		PayloadJSON: []byte(`{"text":"lo"}`),
+	}, ""); err != nil {
+		t.Fatalf("Notify second delta: %v", err)
+	}
+
+	if err := dispatcher.FlushDrafts(context.Background()); err != nil {
+		t.Fatalf("FlushDrafts: %v", err)
+	}
+
+	if draftCalls.Load() != 1 {
+		t.Fatalf("expected 1 sendMessageDraft call, got %d", draftCalls.Load())
+	}
+	if draftText != "Hello" {
+		t.Fatalf("expected draft text %q, got %q", "Hello", draftText)
+	}
+	if draftID == "" || draftID == "0" {
+		t.Fatalf("expected non-zero draft id, got %q", draftID)
+	}
+}
+
 // ── Retry queue tests ─────────────────────────────────────────────────────────
 
 func TestRetry_RetriesOnAPIError(t *testing.T) {

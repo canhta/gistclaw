@@ -64,7 +64,8 @@ func Bootstrap(cfg Config) (*App, error) {
 	}
 
 	broadcaster := web.NewSSEBroadcaster()
-	rt := runtimeWiring(cfg, db, convStore, reg, mem, broadcaster)
+	connectorNotifier := newConnectorRouteNotifier(db)
+	rt := runtimeWiring(cfg, db, convStore, reg, mem, newRunEventFanout(broadcaster, connectorNotifier))
 	rp := replayWiring(db)
 
 	webSrv, err := web.NewServer(web.Options{
@@ -83,6 +84,7 @@ func Bootstrap(cfg Config) (*App, error) {
 	}
 
 	connectors := buildConnectors(cfg, db, convStore, rt)
+	connectorNotifier.SetConnectors(connectors)
 
 	return &App{
 		cfg:        cfg,

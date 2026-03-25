@@ -6,10 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"hash/crc32"
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	deliveryconnector "github.com/canhta/gistclaw/internal/connectors/delivery"
@@ -36,6 +39,15 @@ type OutboundDispatcher struct {
 	cs          *conversations.ConversationStore
 	maxAttempts int
 	retryDelay  time.Duration
+	draftMu     sync.Mutex
+	drafts      map[string]draftState
+}
+
+type draftState struct {
+	chatID    string
+	text      string
+	dirty     bool
+	completed bool
 }
 
 // ID returns the connector identifier stored in outbound_intents.connector_id.
@@ -63,6 +75,7 @@ func NewOutboundDispatcher(token string, db *store.DB, cs *conversations.Convers
 		cs:          cs,
 		maxAttempts: 5,
 		retryDelay:  2 * time.Second,
+		drafts:      make(map[string]draftState),
 	}
 }
 
@@ -70,6 +83,10 @@ func NewOutboundDispatcher(token string, db *store.DB, cs *conversations.Convers
 // The dedupeKey prevents re-delivery if the same key is seen again.
 // If the event kind is not in the allowed set, Notify is a no-op.
 func (d *OutboundDispatcher) Notify(ctx context.Context, chatID string, delta model.ReplayDelta, dedupeKey string) error {
+	if delta.Kind == "turn_delta" || delta.Kind == "turn_completed" {
+		return d.recordDraft(chatID, delta)
+	}
+
 	if !outboundAllowedKinds[delta.Kind] {
 		return nil
 	}
@@ -90,6 +107,46 @@ func (d *OutboundDispatcher) Notify(ctx context.Context, chatID string, delta mo
 	}
 
 	return d.deliverWithRetry(ctx, intentID, chatID, text, delta.Kind)
+}
+
+func (d *OutboundDispatcher) recordDraft(chatID string, delta model.ReplayDelta) error {
+	if chatID == "" || delta.RunID == "" {
+		return nil
+	}
+
+	var payload struct {
+		Text    string `json:"text"`
+		Content string `json:"content"`
+	}
+	if len(delta.PayloadJSON) > 0 {
+		if err := json.Unmarshal(delta.PayloadJSON, &payload); err != nil {
+			return fmt.Errorf("telegram: decode draft payload: %w", err)
+		}
+	}
+
+	d.draftMu.Lock()
+	defer d.draftMu.Unlock()
+
+	state := d.drafts[delta.RunID]
+	state.chatID = chatID
+	switch delta.Kind {
+	case "turn_delta":
+		if payload.Text == "" {
+			return nil
+		}
+		state.text += payload.Text
+	case "turn_completed":
+		if payload.Content != "" {
+			state.text = payload.Content
+		}
+		state.completed = true
+	}
+	if state.text == "" {
+		return nil
+	}
+	state.dirty = true
+	d.drafts[delta.RunID] = state
+	return nil
 }
 
 // Drain delivers all pending/retrying intents from a previous session.
@@ -119,6 +176,50 @@ func (d *OutboundDispatcher) Drain(ctx context.Context) error {
 	for _, it := range intents {
 		_ = d.deliverWithRetry(ctx, it.id, it.chatID, it.text, "")
 	}
+	return nil
+}
+
+func (d *OutboundDispatcher) FlushDrafts(ctx context.Context) error {
+	type pendingDraft struct {
+		runID     string
+		chatID    string
+		text      string
+		completed bool
+	}
+
+	d.draftMu.Lock()
+	pending := make([]pendingDraft, 0, len(d.drafts))
+	for runID, state := range d.drafts {
+		if !state.dirty || state.chatID == "" || state.text == "" {
+			continue
+		}
+		pending = append(pending, pendingDraft{
+			runID:     runID,
+			chatID:    state.chatID,
+			text:      state.text,
+			completed: state.completed,
+		})
+	}
+	d.draftMu.Unlock()
+
+	for _, draft := range pending {
+		if err := d.sendMessageDraft(ctx, draft.chatID, draftIDForRun(draft.runID), draft.text); err != nil {
+			return err
+		}
+
+		d.draftMu.Lock()
+		state, ok := d.drafts[draft.runID]
+		if ok && state.text == draft.text {
+			if draft.completed {
+				delete(d.drafts, draft.runID)
+			} else {
+				state.dirty = false
+				d.drafts[draft.runID] = state
+			}
+		}
+		d.draftMu.Unlock()
+	}
+
 	return nil
 }
 
@@ -221,6 +322,41 @@ func (d *OutboundDispatcher) sendMessage(ctx context.Context, chatID, text strin
 	return nil
 }
 
+func (d *OutboundDispatcher) sendMessageDraft(ctx context.Context, chatID string, draftID int64, text string) error {
+	apiURL := fmt.Sprintf("%s%s/sendMessageDraft", d.bot.apiBase, d.bot.token)
+
+	form := url.Values{}
+	form.Set("chat_id", chatID)
+	form.Set("draft_id", strconv.FormatInt(draftID, 10))
+	form.Set("text", text)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL,
+		strings.NewReader(form.Encode()))
+	if err != nil {
+		return fmt.Errorf("telegram: build sendMessageDraft: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := d.bot.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram: sendMessageDraft: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("telegram: sendMessageDraft status %d: %s", resp.StatusCode, body)
+	}
+
+	var result struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil || !result.OK {
+		return fmt.Errorf("telegram: sendMessageDraft not ok: %s", body)
+	}
+	return nil
+}
+
 func buildMessage(delta model.ReplayDelta) string {
 	switch delta.Kind {
 	case "run_started":
@@ -242,4 +378,12 @@ func generateIntentID() string {
 	buf := make([]byte, 16)
 	_, _ = rand.Read(buf)
 	return hex.EncodeToString(buf)
+}
+
+func draftIDForRun(runID string) int64 {
+	sum := crc32.ChecksumIEEE([]byte(runID))
+	if sum == 0 {
+		sum = 1
+	}
+	return int64(sum)
 }

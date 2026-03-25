@@ -44,7 +44,7 @@ func NewConnector(
 		sender:        outbound,
 		inbound:       inbound,
 		commands:      controlconnector.NewDispatcher(rt),
-		drainInterval: time.Second,
+		drainInterval: 250 * time.Millisecond,
 	}
 	outbound.bot.commandSpecs = controlconnector.DefaultCommandSpecs()
 
@@ -75,6 +75,10 @@ func (c *Connector) Start(ctx context.Context) error {
 	}()
 
 	for {
+		if err := c.outbound.FlushDrafts(ctx); err != nil {
+			log.Printf("telegram: draft flush warning: %v", err)
+		}
+
 		if err := c.Drain(ctx); err != nil {
 			log.Printf("telegram: drain warning: %v", err)
 		}
