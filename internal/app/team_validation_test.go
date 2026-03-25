@@ -222,6 +222,39 @@ func TestBootstrap_SeedsWorkspaceOwnedTeamDirFromWorkspaceDefault(t *testing.T) 
 	}
 }
 
+func TestBootstrap_SeedsWorkspaceOwnedTeamDirFromShippedDefaultWhenWorkspaceIsEmpty(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	cfg := Config{
+		DatabasePath:  ":memory:",
+		StateDir:      t.TempDir(),
+		WorkspaceRoot: workspaceRoot,
+	}
+
+	app, err := Bootstrap(cfg)
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	t.Cleanup(func() { _ = app.db.Close() })
+
+	workspaceTeamDir := filepath.Join(workspaceRoot, ".gistclaw", "teams", "default")
+	for _, name := range []string{"team.yaml", "coordinator.soul.yaml", "patcher.soul.yaml"} {
+		if _, err := os.Stat(filepath.Join(workspaceTeamDir, name)); err != nil {
+			t.Fatalf("expected workspace-owned team file %q to exist: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(workspaceRoot, ".git")); err != nil {
+		t.Fatalf("expected empty workspace git repo to exist: %v", err)
+	}
+
+	runtimeCfg, err := app.runtime.TeamConfig()
+	if err != nil {
+		t.Fatalf("load runtime team: %v", err)
+	}
+	if runtimeCfg.Name == "" {
+		t.Fatal("expected empty workspace to receive shipped default team")
+	}
+}
+
 func TestBootstrap_UsesWorkspaceOwnedTeamDirForEdits(t *testing.T) {
 	workspaceRoot := workspaceRootWithDefaultTeam(t)
 	cfg := Config{

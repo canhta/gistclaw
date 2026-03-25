@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -114,6 +116,9 @@ func RegisterProject(ctx context.Context, db *store.DB, workspaceRoot, name, sou
 	if workspaceRoot == "" {
 		return model.Project{}, fmt.Errorf("runtime: workspace_root is required")
 	}
+	if err := ensureWorkspaceRepo(ctx, workspaceRoot); err != nil {
+		return model.Project{}, err
+	}
 	if name == "" {
 		name = projectNameFromWorkspace(workspaceRoot)
 	}
@@ -152,6 +157,9 @@ func SetActiveProject(ctx context.Context, db *store.DB, projectID string) error
 			return fmt.Errorf("runtime: unknown project %q", projectID)
 		}
 		return fmt.Errorf("runtime: load project for activation: %w", err)
+	}
+	if err := ensureWorkspaceRepo(ctx, project.WorkspaceRoot); err != nil {
+		return err
 	}
 
 	if err := upsertProjectSetting(ctx, db, "active_project_id", project.ID); err != nil {
@@ -248,4 +256,31 @@ func projectNameFromWorkspace(workspaceRoot string) string {
 		return "project"
 	}
 	return name
+}
+
+func ensureWorkspaceRepo(ctx context.Context, workspaceRoot string) error {
+	if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
+		return fmt.Errorf("runtime: create workspace %q: %w", workspaceRoot, err)
+	}
+
+	gitDir := filepath.Join(workspaceRoot, ".git")
+	if info, err := os.Stat(gitDir); err == nil {
+		if !info.IsDir() {
+			return fmt.Errorf("runtime: git metadata path %q is not a directory", gitDir)
+		}
+		return nil
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("runtime: stat git metadata: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, "git", "init", "--quiet", "-b", "main", workspaceRoot)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		detail := strings.TrimSpace(string(output))
+		if detail != "" {
+			return fmt.Errorf("runtime: git init %q: %w: %s", workspaceRoot, err, detail)
+		}
+		return fmt.Errorf("runtime: git init %q: %w", workspaceRoot, err)
+	}
+	return nil
 }

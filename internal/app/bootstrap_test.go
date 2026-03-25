@@ -243,6 +243,9 @@ func TestBootstrap_CreatesStarterProjectAndLeavesOnboardingIncomplete(t *testing
 	if _, err := os.Stat(workspaceRoot); err != nil {
 		t.Fatalf("expected starter workspace directory to exist: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(workspaceRoot, ".git")); err != nil {
+		t.Fatalf("expected starter workspace git repo to exist: %v", err)
+	}
 	if activeProjectID := lookupDBSetting(app.db, "active_project_id"); activeProjectID == "" {
 		t.Fatal("expected active_project_id to be set")
 	}
@@ -251,6 +254,51 @@ func TestBootstrap_CreatesStarterProjectAndLeavesOnboardingIncomplete(t *testing
 	}
 	if completed := lookupDBSetting(app.db, "onboarding_completed_at"); completed != "" {
 		t.Fatalf("expected onboarding to stay incomplete, got %q", completed)
+	}
+}
+
+func TestBootstrap_SeedsStarterProjectWithShippedDefaultTeam(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfg := Config{
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+	}
+
+	app, err := Bootstrap(cfg)
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	t.Cleanup(func() {
+		app.runtime.WaitAsync()
+		if app.toolCloser != nil {
+			_ = app.toolCloser.Close()
+		}
+		_ = app.db.Close()
+	})
+
+	var workspaceRoot string
+	if err := app.db.RawDB().QueryRow("SELECT workspace_root FROM projects LIMIT 1").Scan(&workspaceRoot); err != nil {
+		t.Fatalf("query starter project workspace: %v", err)
+	}
+
+	workspaceTeamDir := filepath.Join(workspaceRoot, ".gistclaw", "teams", "default")
+	for _, name := range []string{"team.yaml", "coordinator.soul.yaml", "patcher.soul.yaml"} {
+		if _, err := os.Stat(filepath.Join(workspaceTeamDir, name)); err != nil {
+			t.Fatalf("expected starter workspace team file %q to exist: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(workspaceRoot, ".git")); err != nil {
+		t.Fatalf("expected starter workspace git repo to exist: %v", err)
+	}
+
+	runtimeCfg, err := app.runtime.TeamConfig()
+	if err != nil {
+		t.Fatalf("load runtime team: %v", err)
+	}
+	if runtimeCfg.Name == "" {
+		t.Fatal("expected starter workspace to load a default team")
 	}
 }
 

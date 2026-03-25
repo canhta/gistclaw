@@ -90,10 +90,13 @@ func TestRuns(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rr.Code)
 		}
-		for _, want := range []string{"Live orchestration strip", "No runs yet.", `href="/operate/start-task"`} {
+		for _, want := range []string{"Live orchestration strip", "No runs yet.", `href="/configure/team"`} {
 			if !strings.Contains(rr.Body.String(), want) {
 				t.Fatalf("expected empty state to contain %q, got:\n%s", want, rr.Body.String())
 			}
+		}
+		if strings.Contains(rr.Body.String(), `href="/operate/start-task"`) {
+			t.Fatalf("expected runs empty state to omit start-task CTA, got:\n%s", rr.Body.String())
 		}
 	})
 
@@ -1108,6 +1111,43 @@ func TestProjectSwitcher(t *testing.T) {
 		}
 	})
 
+	t.Run("runs page uses compact shell controls without visible project label", func(t *testing.T) {
+		h := newServerHarness(t)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+		body := rr.Body.String()
+		for _, want := range []string{
+			`--shell-control-height: 36px;`,
+			`.shell-project-select.shell-toolbar-control {`,
+			`class="shell-project-select shell-toolbar-control"`,
+			`onchange="this.form.requestSubmit()"`,
+			`aria-label="Active project"`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected runs page to contain %q, got:\n%s", want, body)
+			}
+		}
+		if strings.Contains(body, `class="shell-project-label"`) {
+			t.Fatalf("expected no visible shell project label, got:\n%s", body)
+		}
+		if strings.Contains(body, ">Switch<") {
+			t.Fatalf("expected no shell switch button, got:\n%s", body)
+		}
+		if strings.Contains(body, `class="btn btn-primary shell-start-task`) {
+			t.Fatalf("expected no shell start task button, got:\n%s", body)
+		}
+		if strings.Contains(body, `href="/operate/start-task"`) {
+			t.Fatalf("expected no runs-page start task CTA, got:\n%s", body)
+		}
+	})
+
 	t.Run("switching project updates active workspace", func(t *testing.T) {
 		h := newServerHarness(t)
 		otherRoot := t.TempDir()
@@ -1180,6 +1220,77 @@ func TestRequestPathWithQuery(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/operate/runs?scope=all&q=fix", nil)
 	if got := requestPathWithQuery(req); got != "/operate/runs?scope=all&q=fix" {
 		t.Fatalf("expected request path with query, got %q", got)
+	}
+
+	req = &http.Request{URL: &url.URL{Path: "/operate/runs"}}
+	if got := requestPathWithQuery(req); got != "/operate/runs" {
+		t.Fatalf("expected request path fallback without request URI, got %q", got)
+	}
+}
+
+func TestActionPaths(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name string
+		got  string
+		want string
+	}{
+		{name: "run dismiss", got: runDismissPath("run 1"), want: "/operate/runs/run%201/dismiss"},
+		{name: "session message", got: sessionMessagePath("session 1"), want: "/operate/sessions/session%201/messages"},
+		{name: "session retry delivery", got: sessionRetryDeliveryPath("session 1", "delivery/1"), want: "/operate/sessions/session%201/deliveries/delivery%2F1/retry"},
+		{name: "approval resolve", got: approvalResolvePath("approval/1"), want: "/recover/approvals/approval%2F1/resolve"},
+		{name: "route send", got: routeSendPath("route 1"), want: "/recover/routes-deliveries/routes/route%201/messages"},
+		{name: "route deactivate", got: routeDeactivatePath("route 1"), want: "/recover/routes-deliveries/routes/route%201/deactivate"},
+		{name: "delivery retry", got: deliveryRetryPath("delivery/1"), want: "/recover/routes-deliveries/deliveries/delivery%2F1/retry"},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if tc.got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, tc.got)
+			}
+		})
+	}
+}
+
+func TestSameOriginRequest(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		origin  string
+		referer string
+		host    string
+		want    bool
+	}{
+		{name: "matching origin", origin: "http://localhost:8080", host: "localhost:8080", want: true},
+		{name: "matching referer fallback", referer: "http://localhost:8080/operate/runs", host: "localhost:8080", want: true},
+		{name: "origin wins over referer", origin: "http://evil.example", referer: "http://localhost:8080/operate/runs", host: "localhost:8080", want: false},
+		{name: "invalid referer", referer: "://bad url", host: "localhost:8080", want: false},
+		{name: "missing origin and referer", host: "localhost:8080", want: false},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequest(http.MethodPost, "http://"+tc.host+"/operate/runs", nil)
+			req.Host = tc.host
+			if tc.origin != "" {
+				req.Header.Set("Origin", tc.origin)
+			}
+			if tc.referer != "" {
+				req.Header.Set("Referer", tc.referer)
+			}
+
+			if got := sameOriginRequest(req); got != tc.want {
+				t.Fatalf("expected sameOriginRequest=%t, got %t", tc.want, got)
+			}
+		})
 	}
 }
 

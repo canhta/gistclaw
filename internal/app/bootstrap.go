@@ -26,6 +26,7 @@ import (
 	"github.com/canhta/gistclaw/internal/teams"
 	"github.com/canhta/gistclaw/internal/tools"
 	"github.com/canhta/gistclaw/internal/web"
+	shippedteams "github.com/canhta/gistclaw/teams"
 )
 
 type App struct {
@@ -163,32 +164,39 @@ func prepareTeamDir(cfg Config) (string, error) {
 
 	sourceDir := filepath.Join(cfg.WorkspaceRoot, "teams", "default")
 	info, err := os.Stat(sourceDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return "", nil
+	if err == nil {
+		if !info.IsDir() {
+			return "", fmt.Errorf("bootstrap: source team dir %q is not a directory", sourceDir)
 		}
+		if err := copyDirectory(sourceDir, teamDir); err != nil {
+			return "", fmt.Errorf("bootstrap: seed workspace team dir: %w", err)
+		}
+		return teamDir, nil
+	}
+	if !os.IsNotExist(err) {
 		return "", fmt.Errorf("bootstrap: stat source team dir: %w", err)
 	}
-	if !info.IsDir() {
-		return "", fmt.Errorf("bootstrap: source team dir %q is not a directory", sourceDir)
-	}
-	if err := copyDirectory(sourceDir, teamDir); err != nil {
-		return "", fmt.Errorf("bootstrap: seed workspace team dir: %w", err)
+
+	if err := copyFS(shippedteams.Default(), teamDir); err != nil {
+		return "", fmt.Errorf("bootstrap: seed shipped team dir: %w", err)
 	}
 	return teamDir, nil
 }
 
 func copyDirectory(srcDir, dstDir string) error {
-	return filepath.WalkDir(srcDir, func(path string, d fs.DirEntry, err error) error {
+	return copyFS(os.DirFS(srcDir), dstDir)
+}
+
+func copyFS(src fs.FS, dstDir string) error {
+	return fs.WalkDir(src, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		relPath, err := filepath.Rel(srcDir, path)
-		if err != nil {
-			return fmt.Errorf("relative path: %w", err)
+		targetPath := dstDir
+		if path != "." {
+			targetPath = filepath.Join(dstDir, path)
 		}
-		targetPath := filepath.Join(dstDir, relPath)
 
 		if d.IsDir() {
 			if err := os.MkdirAll(targetPath, 0o755); err != nil {
@@ -200,7 +208,7 @@ func copyDirectory(srcDir, dstDir string) error {
 			return fmt.Errorf("unsupported team entry %q", path)
 		}
 
-		data, err := os.ReadFile(path)
+		data, err := fs.ReadFile(src, path)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", path, err)
 		}

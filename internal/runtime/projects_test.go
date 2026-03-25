@@ -2,6 +2,8 @@ package runtime
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/model"
@@ -32,8 +34,9 @@ func TestPrepareStartRun_UsesActiveWorkspaceWhenWorkspaceRootOmitted(t *testing.
 
 func TestActivateWorkspace_RegistersAndActivatesProject(t *testing.T) {
 	db, _, _, _ := setupRunTestDeps(t)
+	workspaceRoot := filepath.Join(t.TempDir(), "project-alpha")
 
-	project, err := ActivateWorkspace(context.Background(), db, "/tmp/project-alpha", "seo-test", "operator")
+	project, err := ActivateWorkspace(context.Background(), db, workspaceRoot, "seo-test", "operator")
 	if err != nil {
 		t.Fatalf("ActivateWorkspace: %v", err)
 	}
@@ -48,8 +51,8 @@ func TestActivateWorkspace_RegistersAndActivatesProject(t *testing.T) {
 	if active.ID != project.ID {
 		t.Fatalf("expected active project %q, got %q", project.ID, active.ID)
 	}
-	if active.WorkspaceRoot != "/tmp/project-alpha" {
-		t.Fatalf("expected active workspace root %q, got %q", "/tmp/project-alpha", active.WorkspaceRoot)
+	if active.WorkspaceRoot != workspaceRoot {
+		t.Fatalf("expected active workspace root %q, got %q", workspaceRoot, active.WorkspaceRoot)
 	}
 
 	projects, err := ListProjects(context.Background(), db)
@@ -61,6 +64,9 @@ func TestActivateWorkspace_RegistersAndActivatesProject(t *testing.T) {
 	}
 	if projects[0].Name != "seo-test" {
 		t.Fatalf("expected project name %q, got %q", "seo-test", projects[0].Name)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceRoot, ".git")); err != nil {
+		t.Fatalf("expected activated workspace to be initialized as a git repo: %v", err)
 	}
 }
 

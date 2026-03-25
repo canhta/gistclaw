@@ -24,9 +24,8 @@ type navLink struct {
 }
 
 type shellNavigation struct {
-	Groups    []navLink
-	Children  []navLink
-	StartTask navLink
+	Groups   []navLink
+	Children []navLink
 }
 
 func runDetailPath(runID string) string {
@@ -80,17 +79,14 @@ func navigationForPath(path string) shellNavigation {
 		{Label: "Recover", Href: pageRecoverApprovals},
 	}
 
-	startTask := navLink{Label: "Start Task", Href: pageOperateStartTask}
 	currentGroup := activeGroup(path)
 	for idx := range groups {
 		groups[idx].Active = currentGroup != "" && groups[idx].Label == currentGroup
 	}
-	startTask.Active = path == pageOperateStartTask
 
 	return shellNavigation{
-		Groups:    groups,
-		Children:  childNavigation(currentGroup, path),
-		StartTask: startTask,
+		Groups:   groups,
+		Children: childNavigation(currentGroup, path),
 	}
 }
 
