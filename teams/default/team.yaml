@@ -4,17 +4,21 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: coordinator.soul.yaml
-    can_spawn: [patcher, reviewer, verifier]
-    can_message: [patcher, reviewer, verifier]
+    can_spawn: [patcher, reviewer, verifier, researcher]
+    can_message: [patcher, reviewer, verifier, researcher]
   - id: patcher
     soul_file: patcher.soul.yaml
     can_spawn: []
-    can_message: [assistant, reviewer, verifier]
+    can_message: [assistant, reviewer, verifier, researcher]
   - id: reviewer
     soul_file: reviewer.soul.yaml
     can_spawn: []
-    can_message: [assistant, patcher, verifier]
+    can_message: [assistant, patcher, verifier, researcher]
   - id: verifier
     soul_file: verifier.soul.yaml
     can_spawn: []
-    can_message: [assistant, patcher, reviewer]
+    can_message: [assistant, patcher, reviewer, researcher]
+  - id: researcher
+    soul_file: researcher.soul.yaml
+    can_spawn: []
+    can_message: [assistant, patcher, reviewer, verifier]

@@ -3,6 +3,7 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -147,5 +148,54 @@ func TestTeamValidation_EmptyTeamDir(t *testing.T) {
 	}
 	if a != nil {
 		_ = a.db.Close()
+	}
+}
+
+func TestTeamValidation_DefaultTeamDirIncludesResearcher(t *testing.T) {
+	defaultTeamDir := filepath.Join(findModuleRootForAppTest(t), "teams", "default")
+	if err := validateTeamDir(defaultTeamDir); err != nil {
+		t.Fatalf("expected default team dir to validate, got %v", err)
+	}
+}
+
+func TestTeamValidation_ResearcherSoulFileMissing(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "team.yaml"), `
+name: default
+front_agent: assistant
+agents:
+  - id: assistant
+    soul_file: assistant.soul.yaml
+    can_spawn: [researcher]
+    can_message: [researcher]
+  - id: researcher
+    soul_file: researcher.soul.yaml
+    can_spawn: []
+    can_message: [assistant]
+`)
+	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\n")
+
+	err := bootstrapWithTeamDir(t, dir)
+	if err == nil || !strings.Contains(err.Error(), "researcher.soul.yaml") {
+		t.Fatalf("expected missing researcher soul error, got %v", err)
+	}
+}
+
+func findModuleRootForAppTest(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("cannot determine caller path")
+	}
+	dir := filepath.Dir(file)
+	for {
+		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			t.Fatal("go.mod not found")
+		}
+		dir = parent
 	}
 }

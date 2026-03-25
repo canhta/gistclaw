@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/tools"
 )
 
 func TestConfig_DefaultPath(t *testing.T) {
@@ -186,5 +189,134 @@ provider:
 	}
 	if cfg.Provider.WireAPI != "responses" {
 		t.Fatalf("expected wire_api %q, got %q", "responses", cfg.Provider.WireAPI)
+	}
+}
+
+func TestConfig_UnknownResearchProvider(t *testing.T) {
+	dir := t.TempDir()
+	wsDir := filepath.Join(dir, "workspace")
+	if err := os.Mkdir(wsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(cfgPath, []byte(`
+workspace_root: `+wsDir+`
+provider:
+  name: anthropic
+  api_key: sk-test-1234
+research:
+  provider: bing
+  api_key: research-key
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = LoadConfig(cfgPath)
+	if err == nil || !strings.Contains(err.Error(), "research") {
+		t.Fatalf("expected research validation error, got %v", err)
+	}
+}
+
+func TestConfig_ResearchProviderRequiresAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	wsDir := filepath.Join(dir, "workspace")
+	if err := os.Mkdir(wsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(cfgPath, []byte(`
+workspace_root: `+wsDir+`
+provider:
+  name: anthropic
+  api_key: sk-test-1234
+research:
+  provider: tavily
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = LoadConfig(cfgPath)
+	if err == nil || !strings.Contains(err.Error(), "api_key") {
+		t.Fatalf("expected research api_key error, got %v", err)
+	}
+}
+
+func TestConfig_RejectsUnknownMCPTransport(t *testing.T) {
+	cfg := Config{
+		WorkspaceRoot: t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "anthropic",
+			APIKey: "sk-test",
+		},
+		MCP: tools.MCPOptions{
+			Servers: []tools.MCPServerConfig{
+				{
+					ID:        "github",
+					Transport: "sse",
+					Command:   []string{"mcp-server"},
+				},
+			},
+		},
+	}
+
+	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "transport") {
+		t.Fatalf("expected transport validation error, got %v", err)
+	}
+}
+
+func TestConfig_RejectsDuplicateMCPAliases(t *testing.T) {
+	cfg := Config{
+		WorkspaceRoot: t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "anthropic",
+			APIKey: "sk-test",
+		},
+		MCP: tools.MCPOptions{
+			Servers: []tools.MCPServerConfig{
+				{
+					ID:        "github",
+					Transport: "stdio",
+					Command:   []string{"mcp-server"},
+					Tools: []tools.MCPToolConfig{
+						{Name: "one", Alias: "dup", Risk: model.RiskLow, Enabled: true},
+						{Name: "two", Alias: "dup", Risk: model.RiskLow, Enabled: true},
+					},
+				},
+			},
+		},
+	}
+
+	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("expected duplicate alias validation error, got %v", err)
+	}
+}
+
+func TestConfig_RejectsHighRiskMCPTool(t *testing.T) {
+	cfg := Config{
+		WorkspaceRoot: t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "anthropic",
+			APIKey: "sk-test",
+		},
+		MCP: tools.MCPOptions{
+			Servers: []tools.MCPServerConfig{
+				{
+					ID:        "github",
+					Transport: "stdio",
+					Command:   []string{"mcp-server"},
+					Tools: []tools.MCPToolConfig{
+						{Name: "danger", Alias: "danger", Risk: model.RiskHigh, Enabled: true},
+					},
+				},
+			},
+		},
+	}
+
+	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "risk") {
+		t.Fatalf("expected risk validation error, got %v", err)
 	}
 }

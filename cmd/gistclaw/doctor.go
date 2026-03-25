@@ -6,11 +6,15 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/canhta/gistclaw/internal/app"
 	"github.com/canhta/gistclaw/internal/store"
+	toolspkg "github.com/canhta/gistclaw/internal/tools"
 )
 
 // runDoctor runs six health checks and prints a structured report.
@@ -77,6 +81,46 @@ func runDoctor(configPath string, stdout, stderr io.Writer) int {
 			tmp.Close()
 			os.Remove(tmp.Name())
 			checks = append(checks, check{name: "workspace", status: "PASS", detail: cfg.WorkspaceRoot})
+		}
+	}
+
+	// 5. Telegram (optional) — prefer YAML config and fall back to DB-backed settings.
+	if cfg.Research.Provider != "" {
+		switch {
+		case cfg.Research.Provider != "tavily":
+			checks = append(checks, check{name: "research", status: "FAIL", detail: fmt.Sprintf("unknown provider %q", cfg.Research.Provider)})
+			anyFail = true
+		case cfg.Research.APIKey == "":
+			checks = append(checks, check{name: "research", status: "FAIL", detail: "api_key is required"})
+			anyFail = true
+		default:
+			checks = append(checks, check{name: "research", status: "PASS", detail: cfg.Research.Provider})
+		}
+	}
+
+	for _, server := range cfg.MCP.Servers {
+		if enabledMCPTools(server.Tools) == 0 {
+			continue
+		}
+		name := "mcp:" + server.ID
+		transport := server.Transport
+		if transport == "" {
+			transport = "stdio"
+		}
+		if transport != "stdio" {
+			checks = append(checks, check{name: name, status: "FAIL", detail: fmt.Sprintf("unsupported transport %q", transport)})
+			anyFail = true
+			continue
+		}
+		if len(server.Command) == 0 {
+			checks = append(checks, check{name: name, status: "FAIL", detail: "command is required"})
+			anyFail = true
+			continue
+		}
+		if resolved, err := resolveBinary(server.Command[0]); err != nil {
+			checks = append(checks, check{name: name, status: "WARN", detail: err.Error()})
+		} else {
+			checks = append(checks, check{name: name, status: "PASS", detail: resolved})
 		}
 	}
 
@@ -149,4 +193,31 @@ func lookupSettingFromDB(dbPath, key string) string {
 	var value string
 	_ = db.RawDB().QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
 	return value
+}
+
+func enabledMCPTools(tools []toolspkg.MCPToolConfig) int {
+	count := 0
+	for _, tool := range tools {
+		if tool.Enabled {
+			count++
+		}
+	}
+	return count
+}
+
+func resolveBinary(command string) (string, error) {
+	if command == "" {
+		return "", fmt.Errorf("binary is required")
+	}
+	if filepath.IsAbs(command) || strings.ContainsRune(command, os.PathSeparator) {
+		if _, err := os.Stat(command); err != nil {
+			return "", fmt.Errorf("binary not found: %s", command)
+		}
+		return command, nil
+	}
+	resolved, err := exec.LookPath(command)
+	if err != nil {
+		return "", fmt.Errorf("binary not found: %s", command)
+	}
+	return resolved, nil
 }

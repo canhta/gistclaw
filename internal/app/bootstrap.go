@@ -1,10 +1,12 @@
 package app
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net/http"
 	"sync"
 
@@ -30,6 +32,7 @@ type App struct {
 	replay     *replay.Service
 	webServer  *web.Server
 	connectors []model.Connector
+	toolCloser io.Closer
 	prepareMu  sync.Mutex
 	prepared   bool
 	webAddrMu  sync.RWMutex
@@ -54,7 +57,11 @@ func Bootstrap(cfg Config) (*App, error) {
 
 	convStore := conversations.NewConversationStore(db)
 	mem := memory.NewStore(db, convStore)
-	reg := tools.NewRegistry()
+	reg, toolCloser, err := buildToolRegistry(context.Background(), cfg, nil)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 
 	broadcaster := web.NewSSEBroadcaster()
 	rt := runtimeWiring(cfg, db, convStore, reg, mem, broadcaster)
@@ -68,6 +75,9 @@ func Bootstrap(cfg Config) (*App, error) {
 		WhatsAppWebhook: buildWhatsAppWebhook(cfg, db, convStore, rt),
 	})
 	if err != nil {
+		if toolCloser != nil {
+			_ = toolCloser.Close()
+		}
 		_ = db.Close()
 		return nil, fmt.Errorf("bootstrap: web server: %w", err)
 	}
@@ -82,6 +92,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		replay:     rp,
 		webServer:  webSrv,
 		connectors: connectors,
+		toolCloser: toolCloser,
 	}, nil
 }
 
@@ -168,6 +179,14 @@ func buildProvider(cfg ProviderConfig) runtime.Provider {
 
 func replayWiring(db *store.DB) *replay.Service {
 	return replay.NewService(db)
+}
+
+func buildToolRegistry(ctx context.Context, cfg Config, factory tools.MCPFactory) (*tools.Registry, io.Closer, error) {
+	return tools.BuildRegistry(ctx, tools.BuildOptions{
+		Research:   cfg.Research,
+		MCP:        cfg.MCP,
+		MCPFactory: factory,
+	})
 }
 
 func (a *App) WebAddress() string {

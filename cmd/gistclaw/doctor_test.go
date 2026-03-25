@@ -127,3 +127,87 @@ func TestDoctor_BadConfigFails(t *testing.T) {
 		t.Errorf("expected FAIL in output:\n%s", stdout.String())
 	}
 }
+
+func TestDoctor_ResearchProviderWithoutAPIKeyFails(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	exec.Command("git", "init", workspaceRoot).Run()
+	dbPath := filepath.Join(t.TempDir(), "gistclaw.db")
+
+	cfgDir := t.TempDir()
+	cfgPath := filepath.Join(cfgDir, "config.yaml")
+	content := strings.Join([]string{
+		"database_path: " + dbPath,
+		"workspace_root: " + workspaceRoot,
+		"provider:",
+		"  name: anthropic",
+		"  api_key: sk-test",
+		"research:",
+		"  provider: tavily",
+		"",
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runDoctor(cfgPath, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero exit for invalid research config")
+	}
+	if !strings.Contains(stdout.String(), "research") || !strings.Contains(stdout.String(), "FAIL") {
+		t.Fatalf("expected research FAIL check, got:\n%s", stdout.String())
+	}
+}
+
+func TestDoctor_MissingMCPBinaryWarns(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	exec.Command("git", "init", workspaceRoot).Run()
+	dbPath := filepath.Join(t.TempDir(), "gistclaw.db")
+
+	cfgDir := t.TempDir()
+	cfgPath := filepath.Join(cfgDir, "config.yaml")
+	content := strings.Join([]string{
+		"database_path: " + dbPath,
+		"workspace_root: " + workspaceRoot,
+		"provider:",
+		"  name: anthropic",
+		"  api_key: sk-test",
+		"mcp:",
+		"  servers:",
+		"    - id: github",
+		"      transport: stdio",
+		"      command: [\"definitely-not-a-real-mcp-binary\"]",
+		"      tools:",
+		"        - name: search_repositories",
+		"          alias: github_search_repositories",
+		"          risk: low",
+		"          enabled: true",
+		"",
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runDoctor(cfgPath, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected warn-only exit code, got %d", code)
+	}
+	if !strings.Contains(stdout.String(), "mcp:github") || !strings.Contains(stdout.String(), "WARN") {
+		t.Fatalf("expected mcp warn line, got:\n%s", stdout.String())
+	}
+}
+
+func TestDoctor_ResearchAndMCPChecksAreSkippedWhenUnconfigured(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	exec.Command("git", "init", workspaceRoot).Run()
+	dbPath := filepath.Join(t.TempDir(), "gistclaw.db")
+	cfgPath := makeValidConfig(t, dbPath, workspaceRoot)
+
+	var stdout, stderr bytes.Buffer
+	runDoctor(cfgPath, &stdout, &stderr)
+	output := stdout.String()
+	if strings.Contains(output, "research") || strings.Contains(output, "mcp:") {
+		t.Fatalf("expected research and mcp checks to be skipped, got:\n%s", output)
+	}
+}

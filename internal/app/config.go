@@ -5,19 +5,23 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/tools"
 	"go.yaml.in/yaml/v4"
 )
 
 type Config struct {
-	WorkspaceRoot string         `yaml:"workspace_root"`
-	StateDir      string         `yaml:"state_dir"`
-	DatabasePath  string         `yaml:"database_path"`
-	TeamDir       string         `yaml:"team_dir"`
-	Provider      ProviderConfig `yaml:"provider"`
-	Telegram      TelegramConfig `yaml:"telegram"`
-	WhatsApp      WhatsAppConfig `yaml:"whatsapp"`
-	Web           WebConfig      `yaml:"web"`
-	AdminToken    string         `yaml:"-"`
+	WorkspaceRoot string               `yaml:"workspace_root"`
+	StateDir      string               `yaml:"state_dir"`
+	DatabasePath  string               `yaml:"database_path"`
+	TeamDir       string               `yaml:"team_dir"`
+	Provider      ProviderConfig       `yaml:"provider"`
+	Research      tools.ResearchConfig `yaml:"research"`
+	MCP           tools.MCPOptions     `yaml:"mcp"`
+	Telegram      TelegramConfig       `yaml:"telegram"`
+	WhatsApp      WhatsAppConfig       `yaml:"whatsapp"`
+	Web           WebConfig            `yaml:"web"`
+	AdminToken    string               `yaml:"-"`
 }
 
 type ProviderConfig struct {
@@ -119,6 +123,17 @@ func (c *Config) validate() error {
 		c.Provider.WireAPI != "responses" {
 		return fmt.Errorf("config validation: unknown provider wire_api %q", c.Provider.WireAPI)
 	}
+	if c.Research.Provider != "" {
+		if c.Research.Provider != "tavily" {
+			return fmt.Errorf("config validation: unknown research provider %q", c.Research.Provider)
+		}
+		if c.Research.APIKey == "" {
+			return fmt.Errorf("config validation: research api_key is required for provider %q", c.Research.Provider)
+		}
+	}
+	if err := validateMCPConfig(c.MCP); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -139,6 +154,12 @@ func (c *Config) applyDefaults() {
 	if c.Provider.Name == "openai" && c.Provider.WireAPI == "" {
 		c.Provider.WireAPI = "chat_completions"
 	}
+	c.Research = normalizeResearchConfig(c.Research)
+	for i := range c.MCP.Servers {
+		if c.MCP.Servers[i].Transport == "" {
+			c.MCP.Servers[i].Transport = "stdio"
+		}
+	}
 
 	if c.Telegram.AgentID == "" {
 		c.Telegram.AgentID = "assistant"
@@ -149,4 +170,52 @@ func (c *Config) applyDefaults() {
 	if c.Web.ListenAddr == "" {
 		c.Web.ListenAddr = "127.0.0.1:8080"
 	}
+}
+
+func validateMCPConfig(cfg tools.MCPOptions) error {
+	aliases := make(map[string]bool)
+	for _, server := range cfg.Servers {
+		if server.ID == "" {
+			return fmt.Errorf("config validation: mcp server id is required")
+		}
+		transport := server.Transport
+		if transport == "" {
+			transport = "stdio"
+		}
+		if transport != "stdio" {
+			return fmt.Errorf("config validation: unknown mcp transport %q", server.Transport)
+		}
+		if len(server.Command) == 0 {
+			return fmt.Errorf("config validation: mcp server %q command is required", server.ID)
+		}
+		for _, tool := range server.Tools {
+			if !tool.Enabled {
+				continue
+			}
+			if tool.Name == "" {
+				return fmt.Errorf("config validation: mcp server %q tool name is required", server.ID)
+			}
+			if tool.Alias == "" {
+				return fmt.Errorf("config validation: mcp server %q tool %q alias is required", server.ID, tool.Name)
+			}
+			if tool.Risk != model.RiskLow {
+				return fmt.Errorf("config validation: mcp server %q tool %q risk must be %q", server.ID, tool.Name, model.RiskLow)
+			}
+			if aliases[tool.Alias] {
+				return fmt.Errorf("config validation: duplicate mcp tool alias %q", tool.Alias)
+			}
+			aliases[tool.Alias] = true
+		}
+	}
+	return nil
+}
+
+func normalizeResearchConfig(cfg tools.ResearchConfig) tools.ResearchConfig {
+	if cfg.MaxResults <= 0 {
+		cfg.MaxResults = 5
+	}
+	if cfg.TimeoutSec <= 0 {
+		cfg.TimeoutSec = 10
+	}
+	return cfg
 }

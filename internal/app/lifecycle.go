@@ -170,6 +170,11 @@ func (a *App) Start(ctx context.Context) error {
 }
 
 func (a *App) Stop() error {
+	if a.toolCloser != nil {
+		if err := a.toolCloser.Close(); err != nil {
+			return err
+		}
+	}
 	if a.db != nil {
 		return a.db.Close()
 	}

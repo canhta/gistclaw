@@ -1,9 +1,35 @@
 package app
 
 import (
+	"context"
 	"encoding/hex"
 	"testing"
+
+	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/tools"
 )
+
+type stubMCPFactory struct {
+	server *stubMCPConnection
+}
+
+func (f stubMCPFactory) Connect(_ context.Context, _ tools.MCPServerConfig) (tools.MCPConnection, error) {
+	return f.server, nil
+}
+
+type stubMCPConnection struct {
+	tools []tools.MCPRemoteTool
+}
+
+func (c *stubMCPConnection) ListTools(_ context.Context) ([]tools.MCPRemoteTool, error) {
+	return c.tools, nil
+}
+
+func (c *stubMCPConnection) CallTool(_ context.Context, _ string, _ map[string]any) (tools.MCPToolCallResult, error) {
+	return tools.MCPToolCallResult{Output: `{}`, IsError: false}, nil
+}
+
+func (c *stubMCPConnection) Close() error { return nil }
 
 func TestBootstrap_WiringFunctionsExist(t *testing.T) {
 	_, err := storeWiring(Config{DatabasePath: ":memory:"})
@@ -174,5 +200,38 @@ func TestBootstrap_WiresWhatsAppConnectorWhenConfigured(t *testing.T) {
 	}
 	if app.webServer == nil {
 		t.Fatal("expected web server to be wired")
+	}
+}
+
+func TestBuildToolRegistry_LoadsConfiguredMCPToolFromConfig(t *testing.T) {
+	reg, closer, err := buildToolRegistry(context.Background(), Config{
+		Research: tools.ResearchConfig{},
+		MCP: tools.MCPOptions{
+			Servers: []tools.MCPServerConfig{
+				{
+					ID:        "github",
+					Transport: "stdio",
+					Command:   []string{"fake-mcp"},
+					Tools: []tools.MCPToolConfig{
+						{Name: "search_repositories", Alias: "github_search_repositories", Risk: model.RiskLow, Enabled: true},
+					},
+				},
+			},
+		},
+	}, stubMCPFactory{
+		server: &stubMCPConnection{
+			tools: []tools.MCPRemoteTool{
+				{Name: "search_repositories", Description: "Search repos", InputSchemaJSON: `{"type":"object"}`},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("buildToolRegistry: %v", err)
+	}
+	if closer != nil {
+		defer closer.Close()
+	}
+	if _, ok := reg.Get("github_search_repositories"); !ok {
+		t.Fatal("expected configured MCP tool to be registered")
 	}
 }
