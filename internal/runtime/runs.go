@@ -464,10 +464,14 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			return model.Run{}, err
 		}
 		conversationCtx := combineConversationContext(providerReq.ConversationCtx, runCtxEvents)
+		agentProfile, err := r.agentProfileForRun(ctx, runID, agentID)
+		if err != nil {
+			return model.Run{}, err
+		}
 		result, err := r.provider.Generate(ctx, GenerateRequest{
 			Instructions:    providerReq.Instructions,
 			ConversationCtx: conversationCtx,
-			ToolSpecs:       r.tools.List(),
+			ToolSpecs:       r.visibleToolSpecs(agentProfile),
 		}, newReplayStreamSink(r.eventSink, runID))
 		if err != nil {
 			_ = r.convStore.AppendEvent(ctx, model.Event{
@@ -542,7 +546,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 		}
 
 		if len(result.ToolCalls) > 0 {
-			toolOutcome, err := r.executeToolCalls(ctx, runID, conversationID, agentID, workspaceRoot, result.ToolCalls)
+			toolOutcome, err := r.executeToolCalls(ctx, runID, conversationID, agentID, sessionID, workspaceRoot, result.ToolCalls)
 			if err != nil {
 				return model.Run{}, err
 			}
@@ -622,6 +626,7 @@ func (r *Runtime) executeToolCalls(
 	runID string,
 	conversationID string,
 	agentID string,
+	sessionID string,
 	workspaceRoot string,
 	toolCalls []model.ToolCallRequest,
 ) (toolCallOutcome, error) {
@@ -638,7 +643,7 @@ func (r *Runtime) executeToolCalls(
 	for _, tc := range toolCalls {
 		tool, ok := r.tools.Get(tc.ToolName)
 		if !ok {
-			event, err := r.recordToolCall(ctx, conversationID, runID, workspaceRoot, tc, nil, model.DecisionDeny, "tool not found", "")
+			event, err := r.recordToolCall(ctx, conversationID, runID, sessionID, workspaceRoot, agent, tc, nil, model.DecisionDeny, "tool not found", "")
 			if err != nil {
 				return outcome, err
 			}
@@ -649,7 +654,7 @@ func (r *Runtime) executeToolCalls(
 		toolDecision := policy.DecideCall(agent, runProfile, tool.Spec(), tc.InputJSON)
 		switch toolDecision.Mode {
 		case model.DecisionAllow:
-			event, err := r.recordToolCall(ctx, conversationID, runID, workspaceRoot, tc, tool, model.DecisionAllow, "", "")
+			event, err := r.recordToolCall(ctx, conversationID, runID, sessionID, workspaceRoot, agent, tc, tool, model.DecisionAllow, "", "")
 			if err != nil {
 				return outcome, err
 			}
@@ -670,7 +675,7 @@ func (r *Runtime) executeToolCalls(
 			outcome.pausedForApproval = true
 			return outcome, nil
 		default:
-			event, err := r.recordToolCall(ctx, conversationID, runID, workspaceRoot, tc, tool, model.DecisionDeny, toolDecision.Reason, "")
+			event, err := r.recordToolCall(ctx, conversationID, runID, sessionID, workspaceRoot, agent, tc, tool, model.DecisionDeny, toolDecision.Reason, "")
 			if err != nil {
 				return outcome, err
 			}
@@ -721,7 +726,9 @@ func (r *Runtime) recordToolCall(
 	ctx context.Context,
 	conversationID string,
 	runID string,
+	sessionID string,
 	workspaceRoot string,
+	agent model.AgentProfile,
 	tc model.ToolCallRequest,
 	tool tools.Tool,
 	decision model.DecisionMode,
@@ -733,7 +740,11 @@ func (r *Runtime) recordToolCall(
 		if tool == nil {
 			result.Error = "tool not found"
 		} else {
-			invokeCtx := tools.WithInvocationContext(ctx, tools.InvocationContext{WorkspaceRoot: workspaceRoot})
+			invokeCtx := tools.WithInvocationContext(ctx, tools.InvocationContext{
+				WorkspaceRoot: workspaceRoot,
+				SessionID:     sessionID,
+				Agent:         agent,
+			})
 			invoked, err := tool.Invoke(invokeCtx, model.ToolCall{
 				ID:        tc.ID,
 				ToolName:  tc.ToolName,
@@ -1003,6 +1014,23 @@ func (r *Runtime) agentProfileForRun(ctx context.Context, runID, agentID string)
 	return agentProfileFromSnapshot(run.ExecutionSnapshotJSON, agentID)
 }
 
+func (r *Runtime) visibleToolSpecs(agent model.AgentProfile) []model.ToolSpec {
+	if r == nil || r.tools == nil {
+		return nil
+	}
+	policy := &tools.Policy{}
+	specs := r.tools.List()
+	visible := make([]model.ToolSpec, 0, len(specs))
+	for _, spec := range specs {
+		decision := policy.Decide(agent, model.RunProfile{}, spec)
+		if decision.Mode == model.DecisionDeny {
+			continue
+		}
+		visible = append(visible, spec)
+	}
+	return visible
+}
+
 func agentProfileFromSnapshot(snapshotJSON []byte, agentID string) (model.AgentProfile, error) {
 	fallback := model.AgentProfile{AgentID: agentID}
 	if len(snapshotJSON) == 0 {
@@ -1130,8 +1158,12 @@ func (r *Runtime) ResolveApproval(ctx context.Context, ticketID, decision string
 		if err := r.appendRunResumed(ctx, run.ConversationID, run.ID, ticket.ID, decision); err != nil {
 			return err
 		}
+		agent, err := r.agentProfileForRun(ctx, run.ID, run.AgentID)
+		if err != nil {
+			return err
+		}
 		tool, _ := r.tools.Get(ticket.ToolName)
-		if _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.WorkspaceRoot, call, tool, model.DecisionAllow, "", ticket.ID); err != nil {
+		if _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.WorkspaceRoot, agent, call, tool, model.DecisionAllow, "", ticket.ID); err != nil {
 			return err
 		}
 		_, err = r.executeRunLoop(ctx, runLoopOpts{
@@ -1145,7 +1177,11 @@ func (r *Runtime) ResolveApproval(ctx context.Context, ticketID, decision string
 		})
 		return err
 	case "denied":
-		if _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.WorkspaceRoot, call, nil, model.DecisionDeny, "approval denied", ticket.ID); err != nil {
+		agent, err := r.agentProfileForRun(ctx, run.ID, run.AgentID)
+		if err != nil {
+			return err
+		}
+		if _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.WorkspaceRoot, agent, call, nil, model.DecisionDeny, "approval denied", ticket.ID); err != nil {
 			return err
 		}
 		if err := r.convStore.AppendEvent(ctx, model.Event{

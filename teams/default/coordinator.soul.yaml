@@ -10,7 +10,7 @@ decision_boundaries:
   - may delegate to patcher for workspace writes
   - may delegate to verifier for verification
   - must not apply workspace changes directly
-tool_posture: operator_facing
+tool_posture: read_heavy
 prohibitions:
   - must not call workspace_apply directly
   - must not skip clarification when task intent is unclear

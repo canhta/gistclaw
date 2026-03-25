@@ -91,6 +91,18 @@ func (t *workspaceAwareTool) Invoke(ctx context.Context, _ model.ToolCall) (mode
 	return model.ToolResult{Output: `{"ok":true}`}, nil
 }
 
+type specOnlyTool struct {
+	spec model.ToolSpec
+}
+
+func (t *specOnlyTool) Name() string { return t.spec.Name }
+
+func (t *specOnlyTool) Spec() model.ToolSpec { return t.spec }
+
+func (t *specOnlyTool) Invoke(context.Context, model.ToolCall) (model.ToolResult, error) {
+	return model.ToolResult{Output: `{"ok":true}`}, nil
+}
+
 func TestRunEngine_StartAndComplete(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(
@@ -124,6 +136,136 @@ func TestRunEngine_StartAndComplete(t *testing.T) {
 	}
 	if receiptCount != 1 {
 		t.Fatalf("expected 1 receipt, got %d", receiptCount)
+	}
+}
+
+func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "session_spawn", Risk: model.RiskLow}})
+	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "write_new_file", Risk: model.RiskMedium, SideEffect: "create"}})
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "delegating", InputTokens: 3, OutputTokens: 5, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-visible-tools",
+		AgentID:        "assistant",
+		Objective:      "coordinate the task",
+		WorkspaceRoot:  t.TempDir(),
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{
+			TeamID: "default",
+			Agents: map[string]model.AgentProfile{
+				"assistant": {
+					AgentID:      "assistant",
+					Capabilities: []model.AgentCapability{model.CapReadHeavy, model.CapSpawn},
+					ToolProfile:  "read_heavy",
+					CanSpawn:     []string{"researcher"},
+				},
+			},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if run.Status != model.RunStatusCompleted {
+		t.Fatalf("expected completed run, got %s", run.Status)
+	}
+
+	if len(prov.Requests) != 1 {
+		t.Fatalf("expected 1 provider request, got %d", len(prov.Requests))
+	}
+
+	gotNames := make(map[string]bool, len(prov.Requests[0].ToolSpecs))
+	for _, spec := range prov.Requests[0].ToolSpecs {
+		gotNames[spec.Name] = true
+	}
+	if !gotNames["session_spawn"] {
+		t.Fatalf("expected session_spawn to be visible, got %+v", gotNames)
+	}
+	if gotNames["write_new_file"] {
+		t.Fatalf("expected write_new_file to be hidden, got %+v", gotNames)
+	}
+}
+
+func TestRunEngine_SessionSpawnToolCreatesChildRun(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:       "call-spawn",
+						ToolName: "session_spawn",
+						InputJSON: []byte(`{
+							"agent_id":"researcher",
+							"prompt":"Research OpenClaw and report back."
+						}`),
+					},
+				},
+				InputTokens:  4,
+				OutputTokens: 6,
+			},
+			{Content: "OpenClaw uses first-class session tools.", InputTokens: 5, OutputTokens: 9, StopReason: "end_turn"},
+			{Content: "Research complete.", InputTokens: 6, OutputTokens: 10, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
+		Spawn: rt.SpawnTool,
+	})
+
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID: "default",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:      "assistant",
+				Capabilities: []model.AgentCapability{model.CapReadHeavy, model.CapSpawn},
+				ToolProfile:  "read_heavy",
+				CanSpawn:     []string{"researcher"},
+			},
+			"researcher": {
+				AgentID:      "researcher",
+				Capabilities: []model.AgentCapability{model.CapReadHeavy},
+				ToolProfile:  "read_heavy",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	run, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Coordinate research.",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+	if run.Status != model.RunStatusCompleted {
+		t.Fatalf("expected completed run, got %s", run.Status)
+	}
+
+	var childCount int
+	err = db.RawDB().QueryRow(
+		"SELECT count(*) FROM runs WHERE parent_run_id = ? AND agent_id = 'researcher'",
+		run.ID,
+	).Scan(&childCount)
+	if err != nil {
+		t.Fatalf("query child runs: %v", err)
+	}
+	if childCount != 1 {
+		t.Fatalf("expected 1 child researcher run, got %d", childCount)
 	}
 }
 

@@ -50,6 +50,12 @@ agents:
 	if !hasCapability(assistant.Capabilities, model.CapSpawn) {
 		t.Fatalf("expected assistant spawn capability, got %+v", assistant.Capabilities)
 	}
+	if len(assistant.CanSpawn) != 1 || assistant.CanSpawn[0] != "patcher" {
+		t.Fatalf("expected assistant can_spawn [patcher], got %#v", assistant.CanSpawn)
+	}
+	if len(assistant.CanMessage) != 1 || assistant.CanMessage[0] != "patcher" {
+		t.Fatalf("expected assistant can_message [patcher], got %#v", assistant.CanMessage)
+	}
 
 	patcher := snapshot.Agents["patcher"]
 	if patcher.ToolProfile != "workspace_write" {
@@ -57,6 +63,12 @@ agents:
 	}
 	if !hasCapability(patcher.Capabilities, model.CapWorkspaceWrite) {
 		t.Fatalf("expected patcher workspace_write capability, got %+v", patcher.Capabilities)
+	}
+	if len(patcher.CanSpawn) != 0 {
+		t.Fatalf("expected patcher can_spawn empty, got %#v", patcher.CanSpawn)
+	}
+	if len(patcher.CanMessage) != 1 || patcher.CanMessage[0] != "assistant" {
+		t.Fatalf("expected patcher can_message [assistant], got %#v", patcher.CanMessage)
 	}
 }
 

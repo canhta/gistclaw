@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -102,6 +103,103 @@ func TestPolicy_DeniesSpawnForAgentWithoutCapability(t *testing.T) {
 	decision := p.Decide(agent, model.RunProfile{}, spec)
 	if decision.Mode != model.DecisionDeny {
 		t.Fatalf("expected deny, got %s", decision.Mode)
+	}
+}
+
+func TestPolicy_AllowsSpawnForReadHeavyAgentWithCapability(t *testing.T) {
+	p := &Policy{}
+	agent := model.AgentProfile{
+		AgentID:      "assistant",
+		Capabilities: []model.AgentCapability{model.CapReadHeavy, model.CapSpawn},
+		ToolProfile:  "read_heavy",
+	}
+	spec := model.ToolSpec{Name: "session_spawn", Risk: model.RiskLow}
+
+	decision := p.Decide(agent, model.RunProfile{}, spec)
+	if decision.Mode != model.DecisionAllow {
+		t.Fatalf("expected allow, got %s", decision.Mode)
+	}
+}
+
+func TestRegisterCollaborationTools_RegistersSessionSpawn(t *testing.T) {
+	reg := NewRegistry()
+
+	RegisterCollaborationTools(reg, CollaborationHandlers{
+		Spawn: func(context.Context, SessionSpawnRequest) (SessionSpawnResult, error) {
+			return SessionSpawnResult{}, nil
+		},
+	})
+
+	if _, ok := reg.Get("session_spawn"); !ok {
+		t.Fatal("expected session_spawn to be registered")
+	}
+}
+
+func TestSessionSpawnTool_InvokeUsesAuthorizedSpawnTarget(t *testing.T) {
+	var got SessionSpawnRequest
+	tool := &SessionSpawnTool{
+		spawn: func(_ context.Context, req SessionSpawnRequest) (SessionSpawnResult, error) {
+			got = req
+			return SessionSpawnResult{
+				RunID:     "run-child",
+				SessionID: "session-child",
+				AgentID:   "researcher",
+				Status:    model.RunStatusCompleted,
+				Output:    "research complete",
+			}, nil
+		},
+	}
+
+	ctx := WithInvocationContext(context.Background(), InvocationContext{
+		SessionID: "session-parent",
+		Agent: model.AgentProfile{
+			AgentID:  "assistant",
+			CanSpawn: []string{"researcher"},
+		},
+	})
+	result, err := tool.Invoke(ctx, model.ToolCall{
+		ID:        "call-1",
+		ToolName:  "session_spawn",
+		InputJSON: []byte(`{"agent_id":"researcher","prompt":"inspect OpenClaw"}`),
+	})
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if got.ControllerSessionID != "session-parent" || got.AgentID != "researcher" || got.Prompt != "inspect OpenClaw" {
+		t.Fatalf("unexpected spawn request: %+v", got)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result.Output), &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if payload["run_id"] != "run-child" {
+		t.Fatalf("expected run-child output, got %+v", payload)
+	}
+}
+
+func TestSessionSpawnTool_InvokeRejectsUndeclaredTarget(t *testing.T) {
+	tool := &SessionSpawnTool{
+		spawn: func(context.Context, SessionSpawnRequest) (SessionSpawnResult, error) {
+			t.Fatal("spawn handler must not be called")
+			return SessionSpawnResult{}, nil
+		},
+	}
+
+	ctx := WithInvocationContext(context.Background(), InvocationContext{
+		SessionID: "session-parent",
+		Agent: model.AgentProfile{
+			AgentID:  "assistant",
+			CanSpawn: []string{"researcher"},
+		},
+	})
+	_, err := tool.Invoke(ctx, model.ToolCall{
+		ID:        "call-1",
+		ToolName:  "session_spawn",
+		InputJSON: []byte(`{"agent_id":"verifier","prompt":"inspect OpenClaw"}`),
+	})
+	if err == nil || err.Error() != "session_spawn: assistant cannot spawn verifier" {
+		t.Fatalf("expected unauthorized target error, got %v", err)
 	}
 }
 

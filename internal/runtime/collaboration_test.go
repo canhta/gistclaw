@@ -120,6 +120,38 @@ func TestRuntime_StartFrontSessionCreatesFrontRunAndSession(t *testing.T) {
 	}
 }
 
+func TestRuntime_SpawnToolReturnsLatestAssistantMessage(t *testing.T) {
+	rt, _ := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "Coordinator ready.", InputTokens: 2, OutputTokens: 3, StopReason: "end_turn"},
+		{Content: "Research findings ready.", InputTokens: 4, OutputTokens: 5, StopReason: "end_turn"},
+	})
+
+	parent := startFrontRun(t, rt, "Coordinate research")
+	result, err := rt.SpawnTool(context.Background(), tools.SessionSpawnRequest{
+		ControllerSessionID: parent.SessionID,
+		AgentID:             "researcher",
+		Prompt:              "Inspect OpenClaw",
+	})
+	if err != nil {
+		t.Fatalf("SpawnTool failed: %v", err)
+	}
+	if result.Output != "Research findings ready." {
+		t.Fatalf("expected latest assistant message, got %q", result.Output)
+	}
+}
+
+func TestRuntime_LatestAssistantMessageReturnsEmptyWhenMissing(t *testing.T) {
+	rt, _ := newCollaborationRuntime(t, nil)
+
+	body, err := rt.latestAssistantMessage(context.Background(), "missing-session")
+	if err != nil {
+		t.Fatalf("latestAssistantMessage failed: %v", err)
+	}
+	if body != "" {
+		t.Fatalf("expected empty body, got %q", body)
+	}
+}
+
 func TestRuntime_InspectConversationReturnsMissingWhenConversationDoesNotExist(t *testing.T) {
 	rt, _ := newCollaborationRuntime(t, nil)
 

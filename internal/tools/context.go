@@ -3,10 +3,14 @@ package tools
 import (
 	"context"
 	"fmt"
+
+	"github.com/canhta/gistclaw/internal/model"
 )
 
 type InvocationContext struct {
 	WorkspaceRoot string
+	SessionID     string
+	Agent         model.AgentProfile
 }
 
 type invocationContextKey struct{}

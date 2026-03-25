@@ -87,6 +87,9 @@ func Bootstrap(cfg Config) (*App, error) {
 	broadcaster := web.NewSSEBroadcaster()
 	connectorNotifier := newConnectorRouteNotifier(db)
 	rt := runtimeWiring(cfg, db, convStore, reg, mem, newRunEventFanout(broadcaster, connectorNotifier))
+	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
+		Spawn: rt.SpawnTool,
+	})
 	rt.SetTeamDir(teamDir)
 	if teamDir != "" {
 		snapshot, err := teams.LoadExecutionSnapshot(teamDir)

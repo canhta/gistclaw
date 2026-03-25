@@ -302,6 +302,8 @@ type AgentProfile struct {
 	Capabilities []AgentCapability
 	ToolProfile  string
 	MemoryScope  string
+	CanSpawn     []string
+	CanMessage   []string
 }
 
 type ExecutionSnapshot struct {

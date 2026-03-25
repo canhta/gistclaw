@@ -40,6 +40,8 @@ func buildAgentProfile(agent AgentSpec, soul soulSpec) (model.AgentProfile, erro
 		AgentID:      agent.ID,
 		Capabilities: capabilities,
 		ToolProfile:  soul.ToolPosture,
+		CanSpawn:     append([]string(nil), agent.CanSpawn...),
+		CanMessage:   append([]string(nil), agent.CanMessage...),
 	}, nil
 }
 
