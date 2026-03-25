@@ -5,7 +5,9 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/canhta/gistclaw/internal/model"
@@ -109,6 +111,28 @@ func VerifyTicket(ctx context.Context, db *store.DB, ticketID string, currentFin
 func computeFingerprint(toolName string, argsJSON []byte, targetPath string) string {
 	sum := sha256.Sum256([]byte(toolName + ":" + string(argsJSON) + ":" + targetPath))
 	return fmt.Sprintf("%x", sum)
+}
+
+func ApprovalTargetPath(_ string, argsJSON []byte) string {
+	var payload map[string]any
+	if err := json.Unmarshal(argsJSON, &payload); err != nil {
+		return ""
+	}
+	for _, key := range []string{"path", "to", "target", "file"} {
+		value, ok := payload[key]
+		if !ok {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok {
+			continue
+		}
+		text = strings.TrimSpace(text)
+		if text != "" {
+			return text
+		}
+	}
+	return ""
 }
 
 func toolsGenerateID() string {

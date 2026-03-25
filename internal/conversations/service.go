@@ -263,6 +263,18 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 			evt.CreatedAt,
 		)
 		return err
+	case "approval_requested":
+		_, err := tx.ExecContext(ctx,
+			"UPDATE runs SET status = 'needs_approval', updated_at = ? WHERE id = ?",
+			evt.CreatedAt, evt.RunID,
+		)
+		return err
+	case "run_resumed":
+		_, err := tx.ExecContext(ctx,
+			"UPDATE runs SET status = 'active', updated_at = ? WHERE id = ?",
+			evt.CreatedAt, evt.RunID,
+		)
+		return err
 	case "run_interrupted":
 		_, err := tx.ExecContext(ctx,
 			"UPDATE runs SET status = 'interrupted', updated_at = ? WHERE id = ?",

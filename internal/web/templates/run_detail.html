@@ -20,6 +20,7 @@
   <div class="panel">
     <h2 class="section-title">Collaboration Graph</h2>
     <p id="run-graph-headline" class="graph-headline">{{.Graph.Headline}}</p>
+    <div id="run-graph-diagram" class="graph-diagram"></div>
     <div id="run-graph-summary" class="graph-summary">
       <article class="graph-metric">
         <span class="graph-metric-value">{{.Graph.Summary.Total}}</span>
@@ -136,6 +137,7 @@
   const liveDraft = document.getElementById("run-live-draft");
   const liveText = document.getElementById("run-live-text");
   const events = document.getElementById("run-events");
+  const graphDiagram = document.getElementById("run-graph-diagram");
   const graphBoard = document.getElementById("run-graph-board");
   const graphSummary = document.getElementById("run-graph-summary");
   const graphHeadline = document.getElementById("run-graph-headline");
@@ -195,6 +197,10 @@
   function renderGraph(snapshot) {
     if (!snapshot || !graphBoard || !graphSummary || !graphHeadline) {
       return;
+    }
+
+    if (graphDiagram) {
+      graphDiagram.dataset.engine = window.cytoscape ? "cytoscape" : "dom";
     }
 
     if (snapshot.summary && typeof snapshot.summary.root_status === "string") {

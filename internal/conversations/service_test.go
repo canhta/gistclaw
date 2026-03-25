@@ -299,6 +299,70 @@ func TestConversationStore_AppendEventProjectsRunLifecycle(t *testing.T) {
 	}
 }
 
+func TestConversationStore_AppendEventProjectsApprovalLifecycle(t *testing.T) {
+	db := setupTestStore(t)
+	cs := NewConversationStore(db)
+	ctx := context.Background()
+
+	startPayload, err := json.Marshal(map[string]any{
+		"agent_id":       "agent-a",
+		"objective":      "edit repo",
+		"workspace_root": t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("marshal start payload: %v", err)
+	}
+
+	if err := cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-approval-run-started",
+		ConversationID: "conv-approval",
+		RunID:          "run-approval",
+		Kind:           "run_started",
+		PayloadJSON:    startPayload,
+	}); err != nil {
+		t.Fatalf("AppendEvent run_started failed: %v", err)
+	}
+
+	if err := cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-approval-requested",
+		ConversationID: "conv-approval",
+		RunID:          "run-approval",
+		Kind:           "approval_requested",
+		PayloadJSON:    []byte(`{"approval_id":"ticket-1"}`),
+	}); err != nil {
+		t.Fatalf("AppendEvent approval_requested failed: %v", err)
+	}
+
+	var status string
+	if err := db.RawDB().QueryRowContext(ctx,
+		"SELECT status FROM runs WHERE id = 'run-approval'",
+	).Scan(&status); err != nil {
+		t.Fatalf("query needs approval status: %v", err)
+	}
+	if status != "needs_approval" {
+		t.Fatalf("expected needs_approval after approval_requested, got %q", status)
+	}
+
+	if err := cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-run-resumed",
+		ConversationID: "conv-approval",
+		RunID:          "run-approval",
+		Kind:           "run_resumed",
+		PayloadJSON:    []byte(`{"approval_id":"ticket-1","decision":"approved"}`),
+	}); err != nil {
+		t.Fatalf("AppendEvent run_resumed failed: %v", err)
+	}
+
+	if err := db.RawDB().QueryRowContext(ctx,
+		"SELECT status FROM runs WHERE id = 'run-approval'",
+	).Scan(&status); err != nil {
+		t.Fatalf("query resumed status: %v", err)
+	}
+	if status != "active" {
+		t.Fatalf("expected active after run_resumed, got %q", status)
+	}
+}
+
 func TestConversationStore_AppendEventProjectsSummary(t *testing.T) {
 	db := setupTestStore(t)
 	cs := NewConversationStore(db)

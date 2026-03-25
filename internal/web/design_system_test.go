@@ -68,6 +68,8 @@ func TestLayoutDefinesBrutalistPrimitives(t *testing.T) {
 		".run-status {",
 		".theme-switcher {",
 		".segmented-control {",
+		".run-link {",
+		".graph-diagram {",
 		".graph-board {",
 		".graph-node {",
 		".field {",

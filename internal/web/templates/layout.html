@@ -293,6 +293,15 @@
     .run-row.is-muted {
       border-left-color: var(--muted-state);
     }
+    .run-link {
+      display: grid;
+      gap: 4px;
+      color: inherit;
+      text-decoration: none;
+    }
+    .run-link:hover {
+      color: inherit;
+    }
     .row-title {
       font-size: 15px;
       font-weight: 700;
@@ -621,6 +630,9 @@
       grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
       gap: 8px;
       margin-bottom: 16px;
+    }
+    .graph-diagram {
+      min-height: 1px;
     }
     .graph-metric {
       display: grid;

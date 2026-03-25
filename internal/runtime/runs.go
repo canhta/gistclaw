@@ -3,8 +3,10 @@ package runtime
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -329,13 +331,37 @@ func (s *replayStreamSink) OnComplete() error {
 
 func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.Run, error) {
 	runID := opts.runID
+	run, err := r.loadRun(ctx, runID)
+	if err != nil {
+		return model.Run{}, err
+	}
+
 	conversationID := opts.conversationID
+	if conversationID == "" {
+		conversationID = run.ConversationID
+	}
 	agentID := opts.agentID
+	if agentID == "" {
+		agentID = run.AgentID
+	}
 	sessionID := opts.sessionID
+	if sessionID == "" {
+		sessionID = run.SessionID
+	}
 	objective := opts.objective
-	var cumulativeInput int
-	var cumulativeOutput int
-	runCtxEvents := make([]model.Event, 0, 16)
+	if objective == "" {
+		objective = run.Objective
+	}
+	workspaceRoot := opts.workspaceRoot
+	if workspaceRoot == "" {
+		workspaceRoot = run.WorkspaceRoot
+	}
+	cumulativeInput := run.InputTokens
+	cumulativeOutput := run.OutputTokens
+	runCtxEvents, err := r.loadRunContextEvents(ctx, runID)
+	if err != nil {
+		return model.Run{}, err
+	}
 
 	budgetStopped := false
 	for turn := 0; turn < 10; turn++ {
@@ -405,7 +431,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			SessionID:     sessionID,
 			AgentID:       agentID,
 			Objective:     objective,
-			WorkspaceRoot: opts.workspaceRoot,
+			WorkspaceRoot: workspaceRoot,
 			MemoryView:    contextView,
 		})
 		if err != nil {
@@ -490,11 +516,14 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 		}
 
 		if len(result.ToolCalls) > 0 {
-			toolEvents, err := r.executeToolCalls(ctx, runID, conversationID, agentID, opts.workspaceRoot, result.ToolCalls)
+			toolOutcome, err := r.executeToolCalls(ctx, runID, conversationID, agentID, workspaceRoot, result.ToolCalls)
 			if err != nil {
 				return model.Run{}, err
 			}
-			runCtxEvents = append(runCtxEvents, toolEvents...)
+			runCtxEvents = append(runCtxEvents, toolOutcome.events...)
+			if toolOutcome.pausedForApproval {
+				return r.loadRun(ctx, runID)
+			}
 			continue
 		}
 
@@ -557,6 +586,11 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 	return r.loadRun(ctx, runID)
 }
 
+type toolCallOutcome struct {
+	events            []model.Event
+	pausedForApproval bool
+}
+
 func (r *Runtime) executeToolCalls(
 	ctx context.Context,
 	runID string,
@@ -564,74 +598,242 @@ func (r *Runtime) executeToolCalls(
 	agentID string,
 	workspaceRoot string,
 	toolCalls []model.ToolCallRequest,
-) ([]model.Event, error) {
-	events := make([]model.Event, 0, len(toolCalls))
+) (toolCallOutcome, error) {
+	outcome := toolCallOutcome{
+		events: make([]model.Event, 0, len(toolCalls)),
+	}
 	policy := &tools.Policy{}
 	runProfile := model.RunProfile{RunID: runID}
 	agent, err := r.agentProfileForRun(ctx, runID, agentID)
 	if err != nil {
-		return nil, err
+		return outcome, err
 	}
 
 	for _, tc := range toolCalls {
-		outputJSON := []byte(`{"output":"","error":"tool not found"}`)
-		decision := model.DecisionDeny
-
 		tool, ok := r.tools.Get(tc.ToolName)
-		if ok {
-			toolDecision := policy.DecideCall(agent, runProfile, tool.Spec(), tc.InputJSON)
-			decision = toolDecision.Mode
-			if toolDecision.Mode == model.DecisionAllow {
-				invokeCtx := tools.WithInvocationContext(ctx, tools.InvocationContext{WorkspaceRoot: workspaceRoot})
-				result, err := tool.Invoke(invokeCtx, model.ToolCall{
-					ID:        tc.ID,
-					ToolName:  tc.ToolName,
-					InputJSON: tc.InputJSON,
-				})
-				if err != nil {
-					result.Error = err.Error()
-				}
-				raw, err := json.Marshal(result)
-				if err != nil {
-					return nil, fmt.Errorf("marshal tool result: %w", err)
-				}
-				outputJSON = raw
-			} else {
-				raw, err := json.Marshal(model.ToolResult{
-					Error: toolDecision.Reason,
-				})
-				if err != nil {
-					return nil, fmt.Errorf("marshal denied tool result: %w", err)
-				}
-				outputJSON = raw
+		if !ok {
+			event, err := r.recordToolCall(ctx, conversationID, runID, workspaceRoot, tc, nil, model.DecisionDeny, "tool not found", "")
+			if err != nil {
+				return outcome, err
 			}
+			outcome.events = append(outcome.events, event)
+			continue
 		}
 
-		payload, err := json.Marshal(map[string]any{
-			"tool_call_id": tc.ID,
-			"tool_name":    tc.ToolName,
-			"input_json":   json.RawMessage(tc.InputJSON),
-			"output_json":  json.RawMessage(outputJSON),
-			"decision":     string(decision),
-			"approval_id":  "",
-		})
-		if err != nil {
-			return nil, fmt.Errorf("marshal tool_call_recorded payload: %w", err)
+		toolDecision := policy.DecideCall(agent, runProfile, tool.Spec(), tc.InputJSON)
+		switch toolDecision.Mode {
+		case model.DecisionAllow:
+			event, err := r.recordToolCall(ctx, conversationID, runID, workspaceRoot, tc, tool, model.DecisionAllow, "", "")
+			if err != nil {
+				return outcome, err
+			}
+			outcome.events = append(outcome.events, event)
+		case model.DecisionAsk:
+			ticket, err := tools.CreateTicket(ctx, r.store, model.ApprovalRequest{
+				RunID:      runID,
+				ToolName:   tc.ToolName,
+				ArgsJSON:   tc.InputJSON,
+				TargetPath: tools.ApprovalTargetPath(tc.ToolName, tc.InputJSON),
+			})
+			if err != nil {
+				return outcome, fmt.Errorf("create approval ticket: %w", err)
+			}
+			if err := r.appendApprovalRequested(ctx, conversationID, runID, tc, ticket, toolDecision.Reason); err != nil {
+				return outcome, err
+			}
+			outcome.pausedForApproval = true
+			return outcome, nil
+		default:
+			event, err := r.recordToolCall(ctx, conversationID, runID, workspaceRoot, tc, tool, model.DecisionDeny, toolDecision.Reason, "")
+			if err != nil {
+				return outcome, err
+			}
+			outcome.events = append(outcome.events, event)
 		}
-		evt := model.Event{
-			ID:             generateID(),
-			ConversationID: conversationID,
-			RunID:          runID,
-			Kind:           "tool_call_recorded",
-			PayloadJSON:    payload,
-		}
-		if err := r.convStore.AppendEvent(ctx, evt); err != nil {
-			return nil, fmt.Errorf("journal tool_call_recorded: %w", err)
+	}
+
+	return outcome, nil
+}
+
+func (r *Runtime) loadRunContextEvents(ctx context.Context, runID string) ([]model.Event, error) {
+	rows, err := r.store.RawDB().QueryContext(ctx,
+		`SELECT id, conversation_id, COALESCE(run_id, ''), COALESCE(parent_run_id, ''), kind,
+		        COALESCE(payload_json, x''), created_at
+		 FROM events
+		 WHERE run_id = ? AND kind IN ('turn_completed', 'tool_call_recorded')
+		 ORDER BY created_at ASC, id ASC`,
+		runID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load run context events: %w", err)
+	}
+	defer rows.Close()
+
+	events := make([]model.Event, 0, 16)
+	for rows.Next() {
+		var evt model.Event
+		if err := rows.Scan(
+			&evt.ID,
+			&evt.ConversationID,
+			&evt.RunID,
+			&evt.ParentRunID,
+			&evt.Kind,
+			&evt.PayloadJSON,
+			&evt.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan run context event: %w", err)
 		}
 		events = append(events, evt)
 	}
-
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate run context events: %w", err)
+	}
 	return events, nil
+}
+
+func (r *Runtime) recordToolCall(
+	ctx context.Context,
+	conversationID string,
+	runID string,
+	workspaceRoot string,
+	tc model.ToolCallRequest,
+	tool tools.Tool,
+	decision model.DecisionMode,
+	denyReason string,
+	approvalID string,
+) (model.Event, error) {
+	result := model.ToolResult{}
+	if decision == model.DecisionAllow {
+		if tool == nil {
+			result.Error = "tool not found"
+		} else {
+			invokeCtx := tools.WithInvocationContext(ctx, tools.InvocationContext{WorkspaceRoot: workspaceRoot})
+			invoked, err := tool.Invoke(invokeCtx, model.ToolCall{
+				ID:        tc.ID,
+				ToolName:  tc.ToolName,
+				InputJSON: tc.InputJSON,
+			})
+			if err != nil {
+				invoked.Error = err.Error()
+			}
+			result = invoked
+		}
+	} else {
+		result.Error = denyReason
+	}
+
+	outputJSON, err := json.Marshal(result)
+	if err != nil {
+		return model.Event{}, fmt.Errorf("marshal tool result: %w", err)
+	}
+	payload, err := json.Marshal(map[string]any{
+		"tool_call_id": tc.ID,
+		"tool_name":    tc.ToolName,
+		"input_json":   json.RawMessage(tc.InputJSON),
+		"output_json":  json.RawMessage(outputJSON),
+		"decision":     string(decision),
+		"approval_id":  approvalID,
+	})
+	if err != nil {
+		return model.Event{}, fmt.Errorf("marshal tool_call_recorded payload: %w", err)
+	}
+	evt := model.Event{
+		ID:             generateID(),
+		ConversationID: conversationID,
+		RunID:          runID,
+		Kind:           "tool_call_recorded",
+		PayloadJSON:    payload,
+	}
+	if err := r.convStore.AppendEvent(ctx, evt); err != nil {
+		return model.Event{}, fmt.Errorf("journal tool_call_recorded: %w", err)
+	}
+	return evt, nil
+}
+
+func (r *Runtime) appendApprovalRequested(
+	ctx context.Context,
+	conversationID string,
+	runID string,
+	tc model.ToolCallRequest,
+	ticket model.ApprovalTicket,
+	reason string,
+) error {
+	payload, err := json.Marshal(map[string]any{
+		"approval_id":  ticket.ID,
+		"tool_call_id": tc.ID,
+		"tool_name":    tc.ToolName,
+		"input_json":   json.RawMessage(tc.InputJSON),
+		"target_path":  ticket.TargetPath,
+		"reason":       reason,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal approval_requested payload: %w", err)
+	}
+	if err := r.convStore.AppendEvent(ctx, model.Event{
+		ID:             generateID(),
+		ConversationID: conversationID,
+		RunID:          runID,
+		Kind:           "approval_requested",
+		PayloadJSON:    payload,
+	}); err != nil {
+		return fmt.Errorf("journal approval_requested: %w", err)
+	}
+	return nil
+}
+
+func (r *Runtime) appendRunResumed(ctx context.Context, conversationID, runID, approvalID, decision string) error {
+	payload, err := json.Marshal(map[string]any{
+		"approval_id": approvalID,
+		"decision":    decision,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal run_resumed payload: %w", err)
+	}
+	if err := r.convStore.AppendEvent(ctx, model.Event{
+		ID:             generateID(),
+		ConversationID: conversationID,
+		RunID:          runID,
+		Kind:           "run_resumed",
+		PayloadJSON:    payload,
+	}); err != nil {
+		return fmt.Errorf("journal run_resumed: %w", err)
+	}
+	return nil
+}
+
+func (r *Runtime) loadApprovalToolCallID(ctx context.Context, runID, approvalID string) (string, error) {
+	rows, err := r.store.RawDB().QueryContext(ctx,
+		`SELECT payload_json
+		 FROM events
+		 WHERE run_id = ? AND kind = 'approval_requested'
+		 ORDER BY created_at ASC, id ASC`,
+		runID,
+	)
+	if err != nil {
+		return "", fmt.Errorf("load approval event: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var payloadJSON []byte
+		if err := rows.Scan(&payloadJSON); err != nil {
+			return "", fmt.Errorf("scan approval event: %w", err)
+		}
+		var payload struct {
+			ApprovalID string `json:"approval_id"`
+			ToolCallID string `json:"tool_call_id"`
+		}
+		if err := json.Unmarshal(payloadJSON, &payload); err != nil {
+			return "", fmt.Errorf("decode approval event: %w", err)
+		}
+		if payload.ApprovalID == approvalID {
+			return payload.ToolCallID, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("iterate approval events: %w", err)
+	}
+	return "", nil
 }
 
 func combineConversationContext(base []model.Event, extra []model.Event) []model.Event {
@@ -868,7 +1070,70 @@ func (r *Runtime) SubmitTask(ctx context.Context, objective, workspaceRoot strin
 // ResolveApproval approves or denies a pending approval ticket by its ID.
 // decision must be "approved" or "denied".
 func (r *Runtime) ResolveApproval(ctx context.Context, ticketID, decision string) error {
-	return tools.ResolveTicket(ctx, r.store, ticketID, decision)
+	ticket, err := tools.LoadTicket(ctx, r.store, ticketID)
+	if err != nil {
+		return err
+	}
+	if err := tools.ResolveTicket(ctx, r.store, ticketID, decision); err != nil {
+		return err
+	}
+
+	run, err := r.loadRun(ctx, ticket.RunID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+
+	toolCallID, err := r.loadApprovalToolCallID(ctx, run.ID, ticket.ID)
+	if err != nil {
+		return err
+	}
+	if toolCallID == "" {
+		toolCallID = ticket.ID
+	}
+	call := model.ToolCallRequest{
+		ID:        toolCallID,
+		ToolName:  ticket.ToolName,
+		InputJSON: ticket.ArgsJSON,
+	}
+
+	switch decision {
+	case "approved":
+		if err := r.appendRunResumed(ctx, run.ConversationID, run.ID, ticket.ID, decision); err != nil {
+			return err
+		}
+		tool, _ := r.tools.Get(ticket.ToolName)
+		if _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.WorkspaceRoot, call, tool, model.DecisionAllow, "", ticket.ID); err != nil {
+			return err
+		}
+		_, err = r.executeRunLoop(ctx, runLoopOpts{
+			runID:             run.ID,
+			conversationID:    run.ConversationID,
+			agentID:           run.AgentID,
+			sessionID:         run.SessionID,
+			objective:         run.Objective,
+			workspaceRoot:     run.WorkspaceRoot,
+			verificationAgent: false,
+		})
+		return err
+	case "denied":
+		if _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.WorkspaceRoot, call, nil, model.DecisionDeny, "approval denied", ticket.ID); err != nil {
+			return err
+		}
+		if err := r.convStore.AppendEvent(ctx, model.Event{
+			ID:             generateID(),
+			ConversationID: run.ConversationID,
+			RunID:          run.ID,
+			Kind:           "run_interrupted",
+		}); err != nil {
+			return fmt.Errorf("journal run_interrupted: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("runtime: invalid approval decision %q", decision)
+	}
 }
 
 // UpdateSettings persists operator-editable settings to the database.

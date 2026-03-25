@@ -42,6 +42,9 @@ func TestRuns(t *testing.T) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
 			}
 		}
+		if !strings.Contains(body, `href="/runs/run-known"`) {
+			t.Fatalf("expected runs list to link to run detail:\n%s", body)
+		}
 	})
 
 	t.Run("list renders front session summary", func(t *testing.T) {
@@ -114,9 +117,11 @@ func TestRuns(t *testing.T) {
 			"run_started",
 			"Draft the rollout plan.",
 			`id="run-live-output"`,
+			`id="run-graph-diagram"`,
 			`id="run-graph-board"`,
 			`data-graph-url="/runs/run-detail/graph"`,
 			`/runs/run-detail/events`,
+			`window.cytoscape`,
 			`fetch(graphURL`,
 			`new EventSource(streamURL)`,
 		} {
@@ -154,11 +159,16 @@ func TestRuns(t *testing.T) {
 				Active        int `json:"active"`
 				NeedsApproval int `json:"needs_approval"`
 			} `json:"summary"`
+			Edges []struct {
+				From string `json:"from"`
+				To   string `json:"to"`
+			} `json:"edges"`
 			Columns []struct {
 				Depth int `json:"depth"`
 				Nodes []struct {
-					ID     string `json:"id"`
-					Status string `json:"status"`
+					ID          string `json:"id"`
+					Status      string `json:"status"`
+					StatusClass string `json:"status_class"`
 				} `json:"nodes"`
 			} `json:"columns"`
 		}
@@ -176,6 +186,12 @@ func TestRuns(t *testing.T) {
 		}
 		if resp.Columns[0].Nodes[0].ID != "run-root" || resp.Columns[1].Nodes[0].ID != "run-worker" {
 			t.Fatalf("unexpected graph nodes: %+v", resp.Columns)
+		}
+		if len(resp.Edges) != 1 || resp.Edges[0].From != "run-root" || resp.Edges[0].To != "run-worker" {
+			t.Fatalf("unexpected graph edges: %+v", resp.Edges)
+		}
+		if resp.Columns[1].Nodes[0].StatusClass != "is-approval" {
+			t.Fatalf("expected approval status class for worker node, got %+v", resp.Columns[1].Nodes[0])
 		}
 	})
 

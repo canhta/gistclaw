@@ -49,7 +49,13 @@ type runGraphView struct {
 	RootRunID string               `json:"root_run_id"`
 	Headline  string               `json:"headline"`
 	Summary   runGraphSummaryView  `json:"summary"`
+	Edges     []runGraphEdgeView   `json:"edges"`
 	Columns   []runGraphColumnView `json:"columns"`
+}
+
+type runGraphEdgeView struct {
+	From string `json:"from"`
+	To   string `json:"to"`
 }
 
 type runGraphSummaryView struct {
@@ -293,7 +299,14 @@ func marshalReplayDelta(evt model.ReplayDelta) ([]byte, error) {
 func buildRunGraphView(snapshot replay.RunGraphSnapshot) runGraphView {
 	view := runGraphView{
 		RootRunID: snapshot.RootRunID,
+		Edges:     make([]runGraphEdgeView, 0, len(snapshot.Edges)),
 		Columns:   make([]runGraphColumnView, 0, len(snapshot.Nodes)),
+	}
+	for _, edge := range snapshot.Edges {
+		view.Edges = append(view.Edges, runGraphEdgeView{
+			From: edge.From,
+			To:   edge.To,
+		})
 	}
 
 	columnIndex := make(map[int]int, len(snapshot.Nodes))

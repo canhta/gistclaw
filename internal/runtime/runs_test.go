@@ -127,6 +127,75 @@ func TestRunEngine_StartAndComplete(t *testing.T) {
 	}
 }
 
+func TestRunEngine_ContinueAndResumeLoadRun(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "done", InputTokens: 5, OutputTokens: 7, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	ctx := context.Background()
+
+	run, err := rt.Start(ctx, StartRun{
+		ConversationID: "conv-continue",
+		AgentID:        "agent-a",
+		Objective:      "finish task",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	continued, err := rt.Continue(ctx, ContinueRun{RunID: run.ID})
+	if err != nil {
+		t.Fatalf("Continue failed: %v", err)
+	}
+	if continued.ID != run.ID || continued.Status != model.RunStatusCompleted {
+		t.Fatalf("unexpected continued run: %+v", continued)
+	}
+
+	resumed, err := rt.Resume(ctx, ResumeRun{RunID: run.ID})
+	if err != nil {
+		t.Fatalf("Resume failed: %v", err)
+	}
+	if resumed.ID != run.ID || resumed.Status != model.RunStatusCompleted {
+		t.Fatalf("unexpected resumed run: %+v", resumed)
+	}
+}
+
+func TestRunEngine_SubmitTaskStartsWebConversation(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "done", InputTokens: 5, OutputTokens: 7, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	ctx := context.Background()
+
+	run, err := rt.SubmitTask(ctx, "review repository", t.TempDir())
+	if err != nil {
+		t.Fatalf("SubmitTask failed: %v", err)
+	}
+	if run.Status != model.RunStatusCompleted {
+		t.Fatalf("expected completed run, got %q", run.Status)
+	}
+
+	var key string
+	if err := db.RawDB().QueryRowContext(ctx,
+		"SELECT key FROM conversations WHERE id = ?",
+		run.ConversationID,
+	).Scan(&key); err != nil {
+		t.Fatalf("query conversation key: %v", err)
+	}
+	if key != "web:local:default:main" {
+		t.Fatalf("unexpected submit task conversation key %q", key)
+	}
+}
+
 func TestRunEngine_PassesWorkspaceRootIntoToolInvocationContext(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	tool := &workspaceAwareTool{}

@@ -154,6 +154,29 @@ func TestApproval_SingleUse(t *testing.T) {
 	}
 }
 
+func TestApprovalTargetPath(t *testing.T) {
+	tests := []struct {
+		name     string
+		argsJSON []byte
+		want     string
+	}{
+		{name: "path", argsJSON: []byte(`{"path":"README.md"}`), want: "README.md"},
+		{name: "to", argsJSON: []byte(`{"to":"dst/file.txt"}`), want: "dst/file.txt"},
+		{name: "target", argsJSON: []byte(`{"target":" ./tmp/output.txt "}`), want: "./tmp/output.txt"},
+		{name: "file", argsJSON: []byte(`{"file":"notes.md"}`), want: "notes.md"},
+		{name: "missing", argsJSON: []byte(`{"command":"go test ./..."}`), want: ""},
+		{name: "invalid json", argsJSON: []byte(`{`), want: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := ApprovalTargetPath("tool", tt.argsJSON); got != tt.want {
+				t.Fatalf("ApprovalTargetPath() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWorkspaceApplier_RejectsEscapeAttempt(t *testing.T) {
 	wsRoot := t.TempDir()
 	applier := NewWorkspaceApplier(wsRoot)
