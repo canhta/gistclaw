@@ -413,7 +413,7 @@ func sessionListFilterFromRequest(r *http.Request, fallbackLimit int) sessions.S
 		Status:         strings.TrimSpace(r.URL.Query().Get("status")),
 		ConnectorID:    strings.TrimSpace(r.URL.Query().Get("connector_id")),
 		Query:          strings.TrimSpace(r.URL.Query().Get("q")),
-		BoundOnly:      requestBool(r, "bound_only"),
+		Binding:        strings.TrimSpace(r.URL.Query().Get("binding")),
 		Cursor:         strings.TrimSpace(r.URL.Query().Get("cursor")),
 		Direction:      strings.TrimSpace(r.URL.Query().Get("direction")),
 		Limit:          requestLimit(r, fallbackLimit),

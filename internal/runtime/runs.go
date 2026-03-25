@@ -99,15 +99,17 @@ func (b *BudgetGuard) RecordIdleBurn(context.Context, string, time.Duration) err
 }
 
 type Runtime struct {
-	store             *store.DB
-	convStore         *conversations.ConversationStore
-	tools             *tools.Registry
-	memory            *memory.Store
-	provider          Provider
-	eventSink         model.RunEventSink
-	budget            BudgetGuard
-	contextWindowSize int
-	contexts          ContextAssembler
+	store               *store.DB
+	convStore           *conversations.ConversationStore
+	tools               *tools.Registry
+	memory              *memory.Store
+	provider            Provider
+	eventSink           model.RunEventSink
+	budget              BudgetGuard
+	contextWindowSize   int
+	contexts            ContextAssembler
+	defaultSnapshot     model.ExecutionSnapshot
+	defaultSnapshotJSON []byte
 }
 
 func New(
@@ -140,6 +142,21 @@ func (r *Runtime) Memory() *memory.Store {
 	return r.memory
 }
 
+func (r *Runtime) SetDefaultExecutionSnapshot(snapshot model.ExecutionSnapshot) error {
+	if len(snapshot.Agents) == 0 && snapshot.TeamID == "" {
+		r.defaultSnapshot = model.ExecutionSnapshot{}
+		r.defaultSnapshotJSON = nil
+		return nil
+	}
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		return fmt.Errorf("runtime: marshal default execution snapshot: %w", err)
+	}
+	r.defaultSnapshot = snapshot
+	r.defaultSnapshotJSON = raw
+	return nil
+}
+
 func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
 	runID := generateID()
 	if err := r.createRun(ctx, runID, "", cmd); err != nil {
@@ -164,6 +181,11 @@ func (r *Runtime) createRun(ctx context.Context, runID, parentRunID string, cmd 
 }
 
 func (r *Runtime) createRunAt(ctx context.Context, runID, parentRunID string, cmd StartRun, now time.Time) error {
+	prepared, err := r.prepareStartRun(ctx, parentRunID, cmd)
+	if err != nil {
+		return err
+	}
+	cmd = prepared
 	if err := r.prepareRunStart(ctx, parentRunID, cmd); err != nil {
 		return err
 	}
@@ -187,6 +209,35 @@ func (r *Runtime) createRunAt(ctx context.Context, runID, parentRunID string, cm
 	}
 
 	return nil
+}
+
+func (r *Runtime) prepareStartRun(ctx context.Context, parentRunID string, cmd StartRun) (StartRun, error) {
+	if len(cmd.ExecutionSnapshotJSON) == 0 {
+		switch {
+		case parentRunID != "":
+			parent, err := r.loadRun(ctx, parentRunID)
+			if err != nil {
+				return StartRun{}, fmt.Errorf("prepare run start: load parent snapshot: %w", err)
+			}
+			cmd.ExecutionSnapshotJSON = append([]byte(nil), parent.ExecutionSnapshotJSON...)
+			if cmd.TeamID == "" {
+				cmd.TeamID = parent.TeamID
+			}
+		case len(r.defaultSnapshotJSON) > 0:
+			cmd.ExecutionSnapshotJSON = append([]byte(nil), r.defaultSnapshotJSON...)
+			if cmd.TeamID == "" {
+				cmd.TeamID = r.defaultSnapshot.TeamID
+			}
+		}
+	}
+	if len(cmd.ExecutionSnapshotJSON) > 0 && cmd.TeamID == "" {
+		snapshot, err := decodeExecutionSnapshot(cmd.ExecutionSnapshotJSON)
+		if err != nil {
+			return StartRun{}, fmt.Errorf("prepare run start: %w", err)
+		}
+		cmd.TeamID = snapshot.TeamID
+	}
+	return cmd, nil
 }
 
 func (r *Runtime) prepareRunStart(ctx context.Context, parentRunID string, cmd StartRun) error {
@@ -516,8 +567,11 @@ func (r *Runtime) executeToolCalls(
 ) ([]model.Event, error) {
 	events := make([]model.Event, 0, len(toolCalls))
 	policy := &tools.Policy{}
-	agent := model.AgentProfile{AgentID: agentID}
 	runProfile := model.RunProfile{RunID: runID}
+	agent, err := r.agentProfileForRun(ctx, runID, agentID)
+	if err != nil {
+		return nil, err
+	}
 
 	for _, tc := range toolCalls {
 		outputJSON := []byte(`{"output":"","error":"tool not found"}`)
@@ -685,7 +739,7 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 	var status string
 	err := r.store.RawDB().QueryRowContext(ctx,
 		`SELECT id, conversation_id, agent_id, COALESCE(session_id, ''), COALESCE(team_id, ''), COALESCE(parent_run_id, ''),
-		 COALESCE(objective, ''), COALESCE(workspace_root, ''), status,
+		 COALESCE(objective, ''), COALESCE(workspace_root, ''), status, COALESCE(execution_snapshot_json, x''),
 		 input_tokens, output_tokens, created_at, updated_at
 		 FROM runs WHERE id = ?`,
 		runID,
@@ -699,6 +753,7 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 		&run.Objective,
 		&run.WorkspaceRoot,
 		&status,
+		&run.ExecutionSnapshotJSON,
 		&run.InputTokens,
 		&run.OutputTokens,
 		&run.CreatedAt,
@@ -710,6 +765,44 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 
 	run.Status = model.RunStatus(status)
 	return run, nil
+}
+
+func (r *Runtime) agentProfileForRun(ctx context.Context, runID, agentID string) (model.AgentProfile, error) {
+	run, err := r.loadRun(ctx, runID)
+	if err != nil {
+		return model.AgentProfile{}, fmt.Errorf("runtime: load run agent profile: %w", err)
+	}
+	return agentProfileFromSnapshot(run.ExecutionSnapshotJSON, agentID)
+}
+
+func agentProfileFromSnapshot(snapshotJSON []byte, agentID string) (model.AgentProfile, error) {
+	fallback := model.AgentProfile{AgentID: agentID}
+	if len(snapshotJSON) == 0 {
+		return fallback, nil
+	}
+	snapshot, err := decodeExecutionSnapshot(snapshotJSON)
+	if err != nil {
+		return model.AgentProfile{}, err
+	}
+	profile, ok := snapshot.Agents[agentID]
+	if !ok {
+		return fallback, nil
+	}
+	if profile.AgentID == "" {
+		profile.AgentID = agentID
+	}
+	return profile, nil
+}
+
+func decodeExecutionSnapshot(snapshotJSON []byte) (model.ExecutionSnapshot, error) {
+	var snapshot model.ExecutionSnapshot
+	if err := json.Unmarshal(snapshotJSON, &snapshot); err != nil {
+		return model.ExecutionSnapshot{}, fmt.Errorf("decode execution snapshot: %w", err)
+	}
+	if snapshot.Agents == nil {
+		snapshot.Agents = map[string]model.AgentProfile{}
+	}
+	return snapshot, nil
 }
 
 func (r *Runtime) queueOutboundIntent(

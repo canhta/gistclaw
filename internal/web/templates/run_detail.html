@@ -3,42 +3,118 @@
   <span class="page-eyebrow">Execution</span>
   <h1>Run Detail</h1>
   <div class="mono">{{.RunID}}</div>
-  <div class="muted">{{.Status}}</div>
+  <div class="run-status {{.StatusClass}}">{{.Status}}</div>
 </section>
-<section class="panel">
-  <h2 class="section-title">Assistant Output</h2>
-  <p id="run-live-status" class="muted">Watching for live turn updates.</p>
-  <div id="run-live-output" data-stream-url="{{.StreamURL}}">
-    <div id="run-turns">
-      {{if .Turns}}
-        {{range .Turns}}
-          <article class="run-row">
-            <div class="muted">Completed turn</div>
-            <pre class="run-output-text">{{.Content}}</pre>
-          </article>
-        {{end}}
-      {{else}}
-        <p id="run-turns-empty" class="muted">No assistant output yet.</p>
+
+<section class="page-section">
+  <article id="run-live-banner" class="status-banner {{.StatusClass}}">
+    <div class="button-row">
+      <span class="page-eyebrow">Live Status</span>
+      <span class="run-status {{.StatusClass}}">{{.Status}}</span>
+    </div>
+    <p id="run-live-status" class="muted">Watching live graph and turn updates.</p>
+  </article>
+</section>
+
+<section class="page-section">
+  <div class="panel">
+    <h2 class="section-title">Collaboration Graph</h2>
+    <p id="run-graph-headline" class="graph-headline">{{.Graph.Headline}}</p>
+    <div id="run-graph-summary" class="graph-summary">
+      <article class="graph-metric">
+        <span class="graph-metric-value">{{.Graph.Summary.Total}}</span>
+        <span class="subtle">Visible runs</span>
+      </article>
+      <article class="graph-metric">
+        <span class="graph-metric-value">{{.Graph.Summary.Active}}</span>
+        <span class="subtle">Active</span>
+      </article>
+      <article class="graph-metric">
+        <span class="graph-metric-value">{{.Graph.Summary.NeedsApproval}}</span>
+        <span class="subtle">Needs approval</span>
+      </article>
+      <article class="graph-metric">
+        <span class="graph-metric-value">{{.Graph.Summary.Pending}}</span>
+        <span class="subtle">Pending</span>
+      </article>
+      <article class="graph-metric">
+        <span class="graph-metric-value">{{.Graph.Summary.Completed}}</span>
+        <span class="subtle">Completed</span>
+      </article>
+      <article class="graph-metric">
+        <span class="graph-metric-value">{{.Graph.Summary.Failed}}</span>
+        <span class="subtle">Failed</span>
+      </article>
+    </div>
+    <div id="run-graph-board" class="graph-board" data-graph-url="{{.GraphURL}}">
+      {{range .Graph.Columns}}
+        <section class="graph-column" data-depth="{{.Depth}}">
+          <div class="graph-column-head">
+            <span class="graph-column-title">{{.Label}}</span>
+            <span class="mono subtle">{{len .Nodes}} run(s)</span>
+          </div>
+          <div class="graph-node-stack">
+            {{range .Nodes}}
+              <article class="graph-node {{.StatusClass}}" data-run-id="{{.ID}}">
+                <div class="graph-node-head">
+                  <div class="button-row">
+                    <span class="run-status {{.StatusClass}}">{{.Status}}</span>
+                    {{if .IsRoot}}<span class="badge badge-muted">root</span>{{end}}
+                  </div>
+                  <div class="mono subtle">{{.ID}}</div>
+                </div>
+                <div class="graph-node-title">{{if .Objective}}{{.Objective}}{{else}}{{.ID}}{{end}}</div>
+                <div class="graph-node-meta">
+                  <span>{{.AgentID}}</span>
+                  {{if .SessionID}}<span class="mono">session {{.SessionID}}</span>{{end}}
+                </div>
+                {{if .ParentLabel}}<div class="mono subtle">{{.ParentLabel}}</div>{{end}}
+              </article>
+            {{end}}
+          </div>
+        </section>
       {{end}}
     </div>
-    <article id="run-live-draft" class="run-row" hidden>
-      <div class="muted">Streaming turn</div>
-      <pre id="run-live-text" class="run-output-text"></pre>
-    </article>
   </div>
 </section>
-<section class="panel">
-  <h2 class="section-title">Events</h2>
-  <div id="run-events">
-    {{if .Events}}
-      {{range .Events}}
-        <article class="run-row">
-          <div>{{.Kind}}</div>
+
+<section class="page-section">
+  <div class="grid-two">
+    <section class="panel">
+      <h2 class="section-title">Assistant Output</h2>
+      <div id="run-live-output" data-stream-url="{{.StreamURL}}">
+        <div id="run-turns">
+          {{if .Turns}}
+            {{range .Turns}}
+              <article class="run-row">
+                <div class="muted">Completed turn</div>
+                <pre class="run-output-text">{{.Content}}</pre>
+              </article>
+            {{end}}
+          {{else}}
+            <p id="run-turns-empty" class="muted">No assistant output yet.</p>
+          {{end}}
+        </div>
+        <article id="run-live-draft" class="run-row" hidden>
+          <div class="muted">Streaming turn</div>
+          <pre id="run-live-text" class="run-output-text"></pre>
         </article>
-      {{end}}
-    {{else}}
-      <p class="muted">No events recorded yet.</p>
-    {{end}}
+      </div>
+    </section>
+    <section class="panel">
+      <h2 class="section-title">Events</h2>
+      <div id="run-events">
+        {{if .Events}}
+          {{range .Events}}
+            <article class="run-row">
+              <div>{{.Kind}}</div>
+            </article>
+          {{end}}
+        {{else}}
+          <p class="muted">No events recorded yet.</p>
+        {{end}}
+      </div>
+    </section>
   </div>
 </section>
 <script>
@@ -54,12 +130,228 @@
   }
 
   const status = document.getElementById("run-live-status");
+  const liveBanner = document.getElementById("run-live-banner");
   const turns = document.getElementById("run-turns");
   const turnsEmpty = document.getElementById("run-turns-empty");
   const liveDraft = document.getElementById("run-live-draft");
   const liveText = document.getElementById("run-live-text");
   const events = document.getElementById("run-events");
+  const graphBoard = document.getElementById("run-graph-board");
+  const graphSummary = document.getElementById("run-graph-summary");
+  const graphHeadline = document.getElementById("run-graph-headline");
+  const graphURL = graphBoard ? graphBoard.dataset.graphUrl : "";
   let draft = "";
+  let graphPoll = null;
+  let graphRefreshInFlight = false;
+  let graphRefreshQueued = false;
+
+  function setBannerTone(statusClass) {
+    if (!liveBanner) {
+      return;
+    }
+    liveBanner.className = "status-banner";
+    if (statusClass) {
+      liveBanner.classList.add(statusClass);
+    }
+  }
+
+  function statusClass(statusText) {
+    switch (statusText) {
+      case "pending":
+        return "is-pending";
+      case "active":
+        return "is-active";
+      case "needs_approval":
+        return "is-approval";
+      case "completed":
+        return "is-success";
+      case "failed":
+      case "error":
+        return "is-error";
+      case "interrupted":
+        return "is-muted";
+      default:
+        return "";
+    }
+  }
+
+  function renderGraphMetric(value, label) {
+    const card = document.createElement("article");
+    card.className = "graph-metric";
+
+    const metricValue = document.createElement("span");
+    metricValue.className = "graph-metric-value";
+    metricValue.textContent = String(value);
+    card.appendChild(metricValue);
+
+    const metricLabel = document.createElement("span");
+    metricLabel.className = "subtle";
+    metricLabel.textContent = label;
+    card.appendChild(metricLabel);
+
+    return card;
+  }
+
+  function renderGraph(snapshot) {
+    if (!snapshot || !graphBoard || !graphSummary || !graphHeadline) {
+      return;
+    }
+
+    if (snapshot.summary && typeof snapshot.summary.root_status === "string") {
+      setBannerTone(statusClass(snapshot.summary.root_status));
+    }
+
+    graphHeadline.textContent = snapshot.headline || "Graph status is available.";
+
+    graphSummary.replaceChildren(
+      renderGraphMetric(snapshot.summary.total || 0, "Visible runs"),
+      renderGraphMetric(snapshot.summary.active || 0, "Active"),
+      renderGraphMetric(snapshot.summary.needs_approval || 0, "Needs approval"),
+      renderGraphMetric(snapshot.summary.pending || 0, "Pending"),
+      renderGraphMetric(snapshot.summary.completed || 0, "Completed"),
+      renderGraphMetric(snapshot.summary.failed || 0, "Failed")
+    );
+
+    const columns = [];
+    for (const column of snapshot.columns || []) {
+      const columnRoot = document.createElement("section");
+      columnRoot.className = "graph-column";
+      columnRoot.dataset.depth = String(column.depth || 0);
+
+      const head = document.createElement("div");
+      head.className = "graph-column-head";
+
+      const title = document.createElement("span");
+      title.className = "graph-column-title";
+      title.textContent = column.label || `Depth ${column.depth || 0}`;
+      head.appendChild(title);
+
+      const count = document.createElement("span");
+      count.className = "mono subtle";
+      count.textContent = `${(column.nodes || []).length} run(s)`;
+      head.appendChild(count);
+
+      columnRoot.appendChild(head);
+
+      const stack = document.createElement("div");
+      stack.className = "graph-node-stack";
+      for (const node of column.nodes || []) {
+        const card = document.createElement("article");
+        card.className = `graph-node ${node.status_class || ""}`.trim();
+        card.dataset.runId = node.id || "";
+
+        const nodeHead = document.createElement("div");
+        nodeHead.className = "graph-node-head";
+
+        const labels = document.createElement("div");
+        labels.className = "button-row";
+
+        const statusLabel = document.createElement("span");
+        statusLabel.className = `run-status ${node.status_class || ""}`.trim();
+        statusLabel.textContent = node.status || "unknown";
+        labels.appendChild(statusLabel);
+
+        if (node.is_root) {
+          const rootBadge = document.createElement("span");
+          rootBadge.className = "badge badge-muted";
+          rootBadge.textContent = "root";
+          labels.appendChild(rootBadge);
+        }
+
+        nodeHead.appendChild(labels);
+
+        const idLabel = document.createElement("div");
+        idLabel.className = "mono subtle";
+        idLabel.textContent = node.id || "";
+        nodeHead.appendChild(idLabel);
+        card.appendChild(nodeHead);
+
+        const nodeTitle = document.createElement("div");
+        nodeTitle.className = "graph-node-title";
+        nodeTitle.textContent = node.objective || node.id || "Untitled run";
+        card.appendChild(nodeTitle);
+
+        const meta = document.createElement("div");
+        meta.className = "graph-node-meta";
+        if (node.agent_id) {
+          const agent = document.createElement("span");
+          agent.textContent = node.agent_id;
+          meta.appendChild(agent);
+        }
+        if (node.session_id) {
+          const session = document.createElement("span");
+          session.className = "mono";
+          session.textContent = `session ${node.session_id}`;
+          meta.appendChild(session);
+        }
+        if (meta.childNodes.length > 0) {
+          card.appendChild(meta);
+        }
+
+        if (node.parent_label) {
+          const parent = document.createElement("div");
+          parent.className = "mono subtle";
+          parent.textContent = node.parent_label;
+          card.appendChild(parent);
+        }
+
+        stack.appendChild(card);
+      }
+      columnRoot.appendChild(stack);
+      columns.push(columnRoot);
+    }
+
+    graphBoard.replaceChildren(...columns);
+
+    const busy = (snapshot.summary.active || 0) + (snapshot.summary.pending || 0) + (snapshot.summary.needs_approval || 0);
+    if (busy === 0) {
+      stopGraphPolling();
+    } else {
+      ensureGraphPolling();
+    }
+  }
+
+  async function refreshGraph() {
+    if (!graphURL || !window.fetch) {
+      return;
+    }
+    if (graphRefreshInFlight) {
+      graphRefreshQueued = true;
+      return;
+    }
+    graphRefreshInFlight = true;
+    try {
+      const response = await fetch(graphURL, {headers: {"Accept": "application/json"}, cache: "no-store"});
+      if (!response.ok) {
+        return;
+      }
+      renderGraph(await response.json());
+    } catch (_err) {
+    } finally {
+      graphRefreshInFlight = false;
+      if (graphRefreshQueued) {
+        graphRefreshQueued = false;
+        void refreshGraph();
+      }
+    }
+  }
+
+  function ensureGraphPolling() {
+    if (graphPoll || !graphURL || !window.fetch) {
+      return;
+    }
+    graphPoll = window.setInterval(() => {
+      void refreshGraph();
+    }, 2000);
+  }
+
+  function stopGraphPolling() {
+    if (!graphPoll) {
+      return;
+    }
+    window.clearInterval(graphPoll);
+    graphPoll = null;
+  }
 
   function appendTurn(content) {
     if (!content || !turns) {
@@ -134,6 +426,7 @@
     }
 
     appendEvent(event.kind);
+    void refreshGraph();
 
     if (event.kind === "turn_completed") {
       const content = event.payload && typeof event.payload.content === "string" && event.payload.content
@@ -154,6 +447,7 @@
       if (status) {
         status.textContent = "Run completed.";
       }
+      stopGraphPolling();
       source.close();
       return;
     }
@@ -163,6 +457,7 @@
       if (status) {
         status.textContent = "Run stopped before completion.";
       }
+      stopGraphPolling();
       source.close();
     }
   };
@@ -172,6 +467,9 @@
       status.textContent = "Reconnecting to live updates...";
     }
   };
+
+  void refreshGraph();
+  ensureGraphPolling();
 })();
 </script>
 {{end}}

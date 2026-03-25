@@ -110,6 +110,7 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("POST /api/sessions/{id}/deliveries/{delivery_id}/retry", s.adminAuth(http.HandlerFunc(s.handleSessionRetryDelivery)))
 	s.mux.HandleFunc("GET /runs", s.handleRunsIndex)
 	s.mux.HandleFunc("GET /runs/{id}", s.handleRunDetail)
+	s.mux.HandleFunc("GET /runs/{id}/graph", s.handleRunGraph)
 	s.mux.HandleFunc("GET /runs/{id}/events", s.handleRunEvents)
 	s.mux.Handle("POST /runs/{id}/dismiss", s.adminAuth(http.HandlerFunc(s.handleRunDismiss)))
 	s.mux.HandleFunc("GET /approvals", s.handleApprovals)

@@ -114,12 +114,68 @@ func TestRuns(t *testing.T) {
 			"run_started",
 			"Draft the rollout plan.",
 			`id="run-live-output"`,
+			`id="run-graph-board"`,
+			`data-graph-url="/runs/run-detail/graph"`,
 			`/runs/run-detail/events`,
+			`fetch(graphURL`,
 			`new EventSource(streamURL)`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
 			}
+		}
+	})
+
+	t.Run("graph endpoint renders lineage snapshot with statuses", func(t *testing.T) {
+		h := newServerHarness(t)
+		h.insertRun(t, "run-root", "conv-graph", "review the repo", "active")
+		if _, err := h.db.RawDB().Exec(
+			`INSERT INTO runs
+			 (id, conversation_id, agent_id, session_id, team_id, parent_run_id, objective, workspace_root, status, created_at, updated_at)
+			 VALUES (?, ?, 'researcher', 'sess-worker', 'repo-task-team', ?, ?, ?, ?, datetime('now'), datetime('now'))`,
+			"run-worker", "conv-graph", "run-root", "Inspect docs.", h.workspaceRoot, "needs_approval",
+		); err != nil {
+			t.Fatalf("insert worker run: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/runs/run-root/graph", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			RootRunID string `json:"root_run_id"`
+			Summary   struct {
+				Total         int `json:"total"`
+				Active        int `json:"active"`
+				NeedsApproval int `json:"needs_approval"`
+			} `json:"summary"`
+			Columns []struct {
+				Depth int `json:"depth"`
+				Nodes []struct {
+					ID     string `json:"id"`
+					Status string `json:"status"`
+				} `json:"nodes"`
+			} `json:"columns"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal graph response: %v", err)
+		}
+		if resp.RootRunID != "run-root" {
+			t.Fatalf("expected root run id run-root, got %q", resp.RootRunID)
+		}
+		if resp.Summary.Total != 2 || resp.Summary.Active != 1 || resp.Summary.NeedsApproval != 1 {
+			t.Fatalf("unexpected graph summary: %+v", resp.Summary)
+		}
+		if len(resp.Columns) != 2 {
+			t.Fatalf("expected 2 graph columns, got %d", len(resp.Columns))
+		}
+		if resp.Columns[0].Nodes[0].ID != "run-root" || resp.Columns[1].Nodes[0].ID != "run-worker" {
+			t.Fatalf("unexpected graph nodes: %+v", resp.Columns)
 		}
 	})
 
@@ -1738,10 +1794,13 @@ func TestSessionPages(t *testing.T) {
 			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 		}
 		body := rr.Body.String()
-		for _, want := range []string{"Sessions", front.SessionID, worker.SessionID, "assistant", "researcher"} {
+		for _, want := range []string{"Sessions", front.SessionID, worker.SessionID, "assistant", "researcher", "Any", "Bound", "Unbound"} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected session directory to contain %q:\n%s", want, body)
 			}
+		}
+		if strings.Contains(body, "Bound only") {
+			t.Fatalf("expected segmented binding filter instead of legacy checkbox:\n%s", body)
 		}
 	})
 
@@ -1751,7 +1810,7 @@ func TestSessionPages(t *testing.T) {
 		worker := h.spawnWorkerSession(t, run.SessionID, "researcher", "Inspect docs.")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions?connector_id=telegram&bound_only=1", nil)
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions?connector_id=telegram&binding=bound", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -1764,6 +1823,28 @@ func TestSessionPages(t *testing.T) {
 		}
 		if strings.Contains(body, worker.SessionID) {
 			t.Fatalf("expected unbound worker session to be filtered out:\n%s", body)
+		}
+	})
+
+	t.Run("GET /sessions can filter for unbound sessions", func(t *testing.T) {
+		h := newServerHarness(t)
+		run, _, _ := h.seedControlPlaneRoute(t)
+		worker := h.spawnWorkerSession(t, run.SessionID, "researcher", "Inspect docs.")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/sessions?binding=unbound", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		if strings.Contains(body, run.SessionID) {
+			t.Fatalf("expected bound front session to be filtered out:\n%s", body)
+		}
+		if !strings.Contains(body, worker.SessionID) {
+			t.Fatalf("expected unbound worker session to appear:\n%s", body)
 		}
 	})
 

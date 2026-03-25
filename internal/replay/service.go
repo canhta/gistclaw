@@ -2,7 +2,9 @@ package replay
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/store"
@@ -16,6 +18,23 @@ type RunReplay struct {
 
 type ReplayGraph struct {
 	RootRunID string
+	Edges     []GraphEdge
+}
+
+type GraphNode struct {
+	ID          string
+	ParentRunID string
+	AgentID     string
+	SessionID   string
+	Objective   string
+	Status      model.RunStatus
+	Depth       int
+	UpdatedAt   time.Time
+}
+
+type RunGraphSnapshot struct {
+	RootRunID string
+	Nodes     []GraphNode
 	Edges     []GraphEdge
 }
 
@@ -80,41 +99,81 @@ func (s *Service) LoadRun(ctx context.Context, runID string) (RunReplay, error) 
 }
 
 func (s *Service) LoadGraph(ctx context.Context, rootRunID string) (ReplayGraph, error) {
+	snapshot, err := s.LoadGraphSnapshot(ctx, rootRunID)
+	if err != nil {
+		return ReplayGraph{}, err
+	}
+
+	return ReplayGraph{
+		RootRunID: snapshot.RootRunID,
+		Edges:     snapshot.Edges,
+	}, nil
+}
+
+func (s *Service) LoadGraphSnapshot(ctx context.Context, rootRunID string) (RunGraphSnapshot, error) {
 	rows, err := s.db.RawDB().QueryContext(ctx,
-		`WITH RECURSIVE lineage(id, parent_run_id, created_at) AS (
-			SELECT id, COALESCE(parent_run_id, ''), created_at
+		`WITH RECURSIVE lineage(id, parent_run_id, agent_id, session_id, objective, status, updated_at, created_at, depth) AS (
+			SELECT id,
+			       COALESCE(parent_run_id, ''),
+			       agent_id,
+			       COALESCE(session_id, ''),
+			       COALESCE(objective, ''),
+			       status,
+			       updated_at,
+			       created_at,
+			       0
 			FROM runs
 			WHERE id = ?
 			UNION ALL
-			SELECT r.id, COALESCE(r.parent_run_id, ''), r.created_at
+			SELECT r.id,
+			       COALESCE(r.parent_run_id, ''),
+			       r.agent_id,
+			       COALESCE(r.session_id, ''),
+			       COALESCE(r.objective, ''),
+			       r.status,
+			       r.updated_at,
+			       r.created_at,
+			       lineage.depth + 1
 			FROM runs r
-			INNER JOIN lineage l ON r.parent_run_id = l.id
+			INNER JOIN lineage ON r.parent_run_id = lineage.id
 		)
-		SELECT id, parent_run_id
+		SELECT id, parent_run_id, agent_id, session_id, objective, status, updated_at, depth
 		FROM lineage
-		WHERE id != ?
-		ORDER BY created_at ASC`,
-		rootRunID, rootRunID,
+		ORDER BY depth ASC, created_at ASC, id ASC`,
+		rootRunID,
 	)
 	if err != nil {
-		return ReplayGraph{}, fmt.Errorf("replay: load graph lineage: %w", err)
+		return RunGraphSnapshot{}, fmt.Errorf("replay: load graph lineage: %w", err)
 	}
 	defer rows.Close()
 
-	graph := ReplayGraph{RootRunID: rootRunID}
+	graph := RunGraphSnapshot{RootRunID: rootRunID}
 	for rows.Next() {
-		var runID string
-		var parentRunID string
-		if err := rows.Scan(&runID, &parentRunID); err != nil {
-			return ReplayGraph{}, fmt.Errorf("replay: scan graph lineage: %w", err)
+		var node GraphNode
+		var status string
+		if err := rows.Scan(
+			&node.ID,
+			&node.ParentRunID,
+			&node.AgentID,
+			&node.SessionID,
+			&node.Objective,
+			&status,
+			&node.UpdatedAt,
+			&node.Depth,
+		); err != nil {
+			return RunGraphSnapshot{}, fmt.Errorf("replay: scan graph lineage: %w", err)
 		}
-		if parentRunID == "" {
-			continue
+		node.Status = model.RunStatus(status)
+		graph.Nodes = append(graph.Nodes, node)
+		if node.ParentRunID != "" {
+			graph.Edges = append(graph.Edges, GraphEdge{From: node.ParentRunID, To: node.ID})
 		}
-		graph.Edges = append(graph.Edges, GraphEdge{From: parentRunID, To: runID})
 	}
 	if err := rows.Err(); err != nil {
-		return ReplayGraph{}, fmt.Errorf("replay: iterate graph lineage: %w", err)
+		return RunGraphSnapshot{}, fmt.Errorf("replay: iterate graph lineage: %w", err)
+	}
+	if len(graph.Nodes) == 0 {
+		return RunGraphSnapshot{}, sql.ErrNoRows
 	}
 
 	return graph, nil

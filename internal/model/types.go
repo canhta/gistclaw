@@ -295,6 +295,11 @@ type AgentProfile struct {
 	MemoryScope  string
 }
 
+type ExecutionSnapshot struct {
+	TeamID string                  `json:"team_id"`
+	Agents map[string]AgentProfile `json:"agents"`
+}
+
 type ToolSpec struct {
 	Name            string
 	Description     string

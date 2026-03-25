@@ -27,10 +27,23 @@
       </select>
     </label>
     <input type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="Connector ID">
-    <label>
-      <input type="checkbox" name="bound_only" value="1" {{if .Filters.BoundOnly}}checked{{end}}>
-      Bound only
-    </label>
+    <fieldset class="filter-cluster">
+      <legend class="filter-legend">Binding</legend>
+      <div class="segmented-control">
+        <label class="segmented-option">
+          <input type="radio" name="binding" value="any" {{if or (eq .Filters.Binding "") (eq .Filters.Binding "any")}}checked{{end}}>
+          <span>Any</span>
+        </label>
+        <label class="segmented-option">
+          <input type="radio" name="binding" value="bound" {{if eq .Filters.Binding "bound"}}checked{{end}}>
+          <span>Bound</span>
+        </label>
+        <label class="segmented-option">
+          <input type="radio" name="binding" value="unbound" {{if eq .Filters.Binding "unbound"}}checked{{end}}>
+          <span>Unbound</span>
+        </label>
+      </div>
+    </fieldset>
     <button class="btn btn-secondary" type="submit">Filter</button>
     <a class="btn btn-ghost" href="/sessions">Reset</a>
   </form>

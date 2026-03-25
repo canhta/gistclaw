@@ -34,7 +34,7 @@ type sessionPageIndexFilters struct {
 	Role        string
 	Status      string
 	ConnectorID string
-	BoundOnly   bool
+	Binding     string
 }
 
 func (s *Server) handleSessionPageIndex(w http.ResponseWriter, r *http.Request) {
@@ -146,7 +146,7 @@ func (s *Server) loadSessionPageIndexData(r *http.Request) (sessionPageIndexData
 			Role:        filter.Role,
 			Status:      filter.Status,
 			ConnectorID: filter.ConnectorID,
-			BoundOnly:   filter.BoundOnly,
+			Binding:     filter.Binding,
 		},
 		Paging: buildPageLinks(
 			"/sessions",

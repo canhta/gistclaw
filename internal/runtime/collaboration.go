@@ -401,7 +401,7 @@ func (r *Runtime) loadPreferredRunForSession(ctx context.Context, sessionID stri
 	var status string
 	err := r.store.RawDB().QueryRowContext(ctx,
 		`SELECT id, conversation_id, agent_id, COALESCE(session_id, ''), COALESCE(team_id, ''), COALESCE(parent_run_id, ''),
-		        COALESCE(objective, ''), COALESCE(workspace_root, ''), status,
+		        COALESCE(objective, ''), COALESCE(workspace_root, ''), status, COALESCE(execution_snapshot_json, x''),
 		        input_tokens, output_tokens, created_at, updated_at
 		 FROM runs
 		 WHERE session_id = ?
@@ -425,6 +425,7 @@ func (r *Runtime) loadPreferredRunForSession(ctx context.Context, sessionID stri
 		&run.Objective,
 		&run.WorkspaceRoot,
 		&status,
+		&run.ExecutionSnapshotJSON,
 		&run.InputTokens,
 		&run.OutputTokens,
 		&run.CreatedAt,
@@ -556,6 +557,10 @@ func (r *Runtime) startInboundRun(ctx context.Context, opts inboundRunOptions) (
 		Objective:      opts.body,
 		WorkspaceRoot:  opts.workspaceRoot,
 		AccountID:      opts.key.AccountID,
+	}
+	start, err := r.prepareStartRun(ctx, "", start)
+	if err != nil {
+		return model.Run{}, err
 	}
 	if err := r.prepareRunStart(ctx, "", start); err != nil {
 		return model.Run{}, err

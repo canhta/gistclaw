@@ -20,6 +20,7 @@ import (
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
 	"github.com/canhta/gistclaw/internal/store"
+	"github.com/canhta/gistclaw/internal/teams"
 	"github.com/canhta/gistclaw/internal/tools"
 	"github.com/canhta/gistclaw/internal/web"
 )
@@ -66,6 +67,23 @@ func Bootstrap(cfg Config) (*App, error) {
 	broadcaster := web.NewSSEBroadcaster()
 	connectorNotifier := newConnectorRouteNotifier(db)
 	rt := runtimeWiring(cfg, db, convStore, reg, mem, newRunEventFanout(broadcaster, connectorNotifier))
+	if cfg.TeamDir != "" {
+		snapshot, err := teams.LoadExecutionSnapshot(cfg.TeamDir)
+		if err != nil {
+			if toolCloser != nil {
+				_ = toolCloser.Close()
+			}
+			_ = db.Close()
+			return nil, fmt.Errorf("bootstrap: load execution snapshot: %w", err)
+		}
+		if err := rt.SetDefaultExecutionSnapshot(snapshot); err != nil {
+			if toolCloser != nil {
+				_ = toolCloser.Close()
+			}
+			_ = db.Close()
+			return nil, fmt.Errorf("bootstrap: set execution snapshot: %w", err)
+		}
+	}
 	rp := replayWiring(db)
 
 	webSrv, err := web.NewServer(web.Options{

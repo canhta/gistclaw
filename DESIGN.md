@@ -9,11 +9,11 @@
 
 ## Aesthetic Direction
 
-- **Direction:** Workshop Brutalism
+- **Direction:** Orchestrated Workshop Brutalism
 - **Decoration level:** None — raw structure is the aesthetic. Hard borders, sharp corners, stark weight contrasts. No gradients, no textures, no illustration, no shadows.
-- **Mood:** A serious instrument laid out on a workbench. The UI communicates confidence through structure, not polish. Every border is load-bearing, but the page should not collapse into one giant white slab.
+- **Mood:** A serious instrument laid out on a workbench, but with a visible command board for coordination. The UI should explain who owns the work right now, where delegation happened, and what is blocking progress.
 - **What to avoid:** Rounded corners (anywhere), drop shadows, subtle tint backgrounds for status, gradient buttons, soft hover states, any animation that isn't information, friendly onboarding iconography.
-- **Key differentiator:** Most developer tools are either cold-brutalist (black/white, pure contrast) or polish-minimal (Linear-style). GistClaw uses warm stone neutrals with brutalist structure and darker anchors. The warmth signals "workshop"; the structure signals "instrument."
+- **Key differentiator:** Most developer tools are either cold-brutalist (black/white, pure contrast) or polish-minimal (Linear-style). GistClaw uses warm stone neutrals with brutalist structure, darker anchors, and explicit orchestration surfaces. The warmth signals "workshop"; the graph and lane system signal "control room."
 
 ## Typography
 
@@ -61,6 +61,22 @@
 | `border-hard`   | `#1c1917` | UI chrome borders (cards, buttons, inputs)  |
 | `border-soft`   | `#cfc5b6` | Row separators, subtle dividers             |
 
+### Dark palette
+
+Dark mode is not a simple inversion. It should feel like a night-shift control room while preserving the same structural semantics.
+
+| Token           | Value     | Usage                                               |
+|-----------------|-----------|-----------------------------------------------------|
+| `bg`            | `#12100e` | Page background — warm black canvas                 |
+| `surface`       | `#1b1815` | Cards and graph nodes                               |
+| `border-hard`   | `#f5f0e8` | High-contrast borders and header anchors            |
+| `border-soft`   | `#4a433c` | Dividers and graph connectors                       |
+| `text-1`        | `#f5f0e8` | Primary text                                        |
+| `text-2`        | `#b6aa9a` | Secondary text                                      |
+| `text-3`        | `#8f8477` | Tertiary/meta text                                  |
+| `brand`         | `#6ea0ff` | Interactive highlight in dark mode                  |
+| `brand-hover`   | `#8bb4ff` | Hover accent in dark mode                           |
+
 ### Text
 
 | Token    | Value     | Usage                          |
@@ -78,12 +94,20 @@
 
 Brand color is used ONLY on interactive elements (buttons in primary state, active nav link, focused inputs). It is not used as a background fill.
 
+### Theme system
+
+- **Modes:** `System`, `Light`, `Dark`
+- **Default:** Follow system preference unless the operator explicitly overrides it
+- **Persistence:** Store the override locally in the browser so long-running operators are not forced to re-toggle every session
+- **Rule:** Both themes must preserve the same information hierarchy and state semantics. Theme changes should not change what a color means.
+
 ### Semantic — Run states
 
 State is communicated via border color and text color only. No background fills.
 
 | Token       | Value     | Usage                                            |
 |-------------|-----------|--------------------------------------------------|
+| `pending`   | `#1c5dff` | Queued run/node border and text                  |
 | `active`    | `#0284c7` | Active run left border (4px) + status text       |
 | `approval`  | `#b45309` | Approval card left border (4px) + heading text   |
 | `success`   | `#15803d` | Completed left border (4px) + receipt heading    |
@@ -138,39 +162,52 @@ State is communicated via a 4px solid left border. No background tint. The borde
 ### Navigation structure
 
 ```
-gistclaw  |  Runs  |  Approvals ●N  |  Settings         [spacer]  ● idle / ● 2 active
+gistclaw  |  Runs  |  Control  |  Sessions  |  Approvals  |  Settings   [spacer]  Theme: System / Light / Dark
 ```
 
 - No sidebar. Top bar only.
 - Brand anchor: `gistclaw` appears in a solid black block with off-white text.
 - Active nav item: bold weight (700), text underline offset 4px. No colored bottom border accent — underline directly on the text.
-- Approval badge: circular, uses `var(--approval)` as background, white text. Appears only when there are pending approvals.
-- Idle indicator: monospace, right-aligned. `● idle` (text-3) when no model calls. `● 2 active` (text-1, pulsing dot in `var(--active)`) when runs are live.
+- Theme switcher: segmented control in the shell. It uses the same brutalist button language as the rest of the product.
 
 ### Run detail — layout per state
 
 ```
 ACTIVE:
   [page heading (xl/700) + badge + run ID (mono-xs)]
-  [current-step bar — full width, hard black border, no fill]
-  [replay graph 50% left] [timeline 50% right]
+  [live-status banner — full width, hard border, state-colored left rail]
+  [collaboration graph — full width, grouped by delegation depth, statuses live]
+  [assistant output 50% left] [event timeline 50% right]
 
 NEEDS APPROVAL:
   [page heading + badge]
+  [live-status banner — approval tone]
+  [collaboration graph — approval nodes visible in place]
   [approval card — full width, 4px amber left border, no amber bg fill]
   [diff block — code fill for legibility]
   [Approve / Deny buttons]
 
 COMPLETED:
   [page heading + badge]
-  [receipt — full width, 4px green left border, no green bg]
-  [static graph 50% left] [timeline 50% right]
+  [completion banner]
+  [static graph with final statuses]
+  [assistant output 50% left] [event timeline 50% right]
 
 INTERRUPTED:
   [page heading + badge]
-  [status message] [resume/rerun/dismiss buttons]
+  [interrupted banner]
+  [graph showing which branch stopped]
   [partial replay below]
 ```
+
+### Orchestration graph
+
+- The graph is a command-board view, not a decorative network chart.
+- Group runs by delegation depth from left to right or top to bottom depending on viewport.
+- Each node shows: status, run ID, objective, agent ID, optional session ID, and parent relationship.
+- The graph headline must summarize the current bottleneck: active work, pending queue, approval gate, failure, or completion.
+- Live status matters more than edge artistry. If forced to choose, prioritize truthful state over fancy connectors.
+- Polling or SSE-backed refresh is acceptable as long as the operator sees status changes quickly and reliably.
 
 ## Border Radius
 
@@ -306,11 +343,31 @@ Keyboard: `Enter` = Approve, `Shift+Enter` = Deny. Document inline.
 ### Replay graph nodes
 
 - Shape: rectangle, `border-radius: 0`
-- Border: 1.5px `var(--border-hard)` for read-only agents, 1.5px `var(--brand)` for write-capable agents
+- Border: 1.5px `var(--border-hard)` default with a 4px left state rail
 - Background: `var(--surface)` always — no state-based background fill
-- State via text: role label in `mono-2xs` uppercase (text-3), name in `base/700` (text-1), status in `mono-xs` with state color
-- Layout: vertical top-down flow, not force-directed. Arrows are 1px `var(--border-soft)` vertical lines.
-- Running state: 1px left accent in `var(--active)` — do not change background
+- State via text: status in `mono-2xs` uppercase, run title in `base/700`, agent/session metadata in `sm`, parent label in `mono-xs`
+- Layout: depth-grouped columns, not force-directed. The operator should read orchestration order immediately.
+- Running state: 4px left accent in `var(--active)` — do not change background
+- Pending state: 4px left accent in `var(--brand)`
+- Approval state: 4px left accent in `var(--approval)`
+- Completed state: 4px left accent in `var(--success)`
+- Failed state: 4px left accent in `var(--error)`
+
+### Segmented controls
+
+Checkboxes are too weak for important state filters. Use segmented controls for mutually exclusive filters like theme and binding state.
+
+```css
+.segmented-control {
+  display: inline-flex;
+  border: 1.5px solid var(--border-hard);
+  background: var(--surface);
+}
+.segmented-option input:checked + span {
+  background: var(--border-hard);
+  color: var(--surface);
+}
+```
 
 ### Settings rows
 
@@ -359,3 +416,7 @@ Full-width. 4px green left border. No green background.
 | 2026-03-24 | Weight jumps: 400/700 primarily            | Brutalist typography — weight contrast, not weight gradation                             |
 | 2026-03-24 | Light mode as default                      | Warm brutalism on light bg; "calm" reads as light, not dark terminal                     |
 | 2026-03-24 | No emoji anywhere                          | Operator tool tone; explicitly specified                                                 |
+| 2026-03-25 | Direction evolved to Orchestrated Workshop Brutalism | The UI must explain multi-agent collaboration, not just present records                  |
+| 2026-03-25 | Added dual-theme system (`System`, `Light`, `Dark`) | Production operators need day/night choice without losing semantic consistency           |
+| 2026-03-25 | Delegation graph made first-class on run detail | Multi-agent coordination is the product differentiator and needs its own visual grammar  |
+| 2026-03-25 | Replaced binary binding checkbox with segmented state filter | Session binding is not a minor toggle; it is a structural filter                         |

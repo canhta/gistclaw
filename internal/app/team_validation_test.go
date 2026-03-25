@@ -35,8 +35,8 @@ agents:
     can_spawn: []
     can_message: [assistant]
 `)
-	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\n")
-	writeFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\n")
+	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\ntool_posture: operator_facing\n")
+	writeFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: workspace_write\n")
 	return dir
 }
 
@@ -124,7 +124,7 @@ agents:
     can_spawn: []
     can_message: [ghost]
 `)
-	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\n")
+	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\ntool_posture: operator_facing\n")
 	err := bootstrapWithTeamDir(t, dir)
 	if err == nil {
 		t.Fatal("expected error for unknown message target, got nil")
@@ -173,11 +173,30 @@ agents:
     can_spawn: []
     can_message: [assistant]
 `)
-	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\n")
+	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\ntool_posture: operator_facing\n")
 
 	err := bootstrapWithTeamDir(t, dir)
 	if err == nil || !strings.Contains(err.Error(), "researcher.soul.yaml") {
 		t.Fatalf("expected missing researcher soul error, got %v", err)
+	}
+}
+
+func TestTeamValidation_RejectsUnknownToolPosture(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "team.yaml"), `
+name: default
+front_agent: assistant
+agents:
+  - id: assistant
+    soul_file: assistant.soul.yaml
+    can_spawn: []
+    can_message: []
+`)
+	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\ntool_posture: unsafe_mode\n")
+
+	err := bootstrapWithTeamDir(t, dir)
+	if err == nil || !strings.Contains(err.Error(), "unsafe_mode") {
+		t.Fatalf("expected unknown tool posture error, got %v", err)
 	}
 }
 

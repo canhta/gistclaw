@@ -74,7 +74,7 @@ type SessionListFilter struct {
 	Status         string
 	ConnectorID    string
 	Query          string
-	BoundOnly      bool
+	Binding        string
 	Cursor         string
 	Direction      string
 	Limit          int
@@ -246,6 +246,7 @@ func (s *Service) ListSessionsPage(ctx context.Context, filter SessionListFilter
 	if filter.Limit <= 0 {
 		filter.Limit = 100
 	}
+	filter.Binding = normalizeSessionBinding(filter.Binding)
 
 	createdMicrosExpr := sqliteMicros("sess.created_at")
 	updatedMicrosExpr := "COALESCE(activity.updated_at_micros, " + createdMicrosExpr + ")"
@@ -297,7 +298,20 @@ func (s *Service) ListSessionsPage(ctx context.Context, filter SessionListFilter
 		   AND sess.status = ?`
 		args = append(args, filter.Status)
 	}
-	if filter.BoundOnly || filter.ConnectorID != "" {
+	switch {
+	case filter.Binding == "unbound":
+		query += `
+		   AND NOT EXISTS (
+		       SELECT 1
+		       FROM session_bindings bind
+		       WHERE bind.session_id = sess.id
+		         AND bind.status = 'active'
+		   )`
+		if filter.ConnectorID != "" {
+			query += `
+		   AND 1 = 0`
+		}
+	case filter.Binding == "bound" || filter.ConnectorID != "":
 		query += `
 		   AND EXISTS (
 		       SELECT 1
@@ -482,6 +496,19 @@ func (s *Service) ListSessionsPage(ctx context.Context, filter SessionListFilter
 	}
 
 	return page, nil
+}
+
+func normalizeSessionBinding(value string) string {
+	switch strings.TrimSpace(value) {
+	case "", "any":
+		return "any"
+	case "bound":
+		return "bound"
+	case "unbound":
+		return "unbound"
+	default:
+		return "any"
+	}
 }
 
 func (s *Service) LoadRouteBySession(ctx context.Context, sessionID string) (model.SessionRoute, error) {

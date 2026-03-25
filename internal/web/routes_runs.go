@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/replay"
 )
 
 type runListItem struct {
@@ -24,11 +25,14 @@ type runsPageData struct {
 }
 
 type runDetailPageData struct {
-	RunID     string
-	Status    string
-	StreamURL string
-	Turns     []runTurnView
-	Events    []runEventView
+	RunID       string
+	Status      string
+	StatusClass string
+	StreamURL   string
+	GraphURL    string
+	Turns       []runTurnView
+	Events      []runEventView
+	Graph       runGraphView
 }
 
 type runEventView struct {
@@ -39,6 +43,43 @@ type runEventView struct {
 type runTurnView struct {
 	Content   string
 	CreatedAt time.Time
+}
+
+type runGraphView struct {
+	RootRunID string               `json:"root_run_id"`
+	Headline  string               `json:"headline"`
+	Summary   runGraphSummaryView  `json:"summary"`
+	Columns   []runGraphColumnView `json:"columns"`
+}
+
+type runGraphSummaryView struct {
+	Total         int    `json:"total"`
+	Pending       int    `json:"pending"`
+	Active        int    `json:"active"`
+	NeedsApproval int    `json:"needs_approval"`
+	Completed     int    `json:"completed"`
+	Failed        int    `json:"failed"`
+	Interrupted   int    `json:"interrupted"`
+	RootStatus    string `json:"root_status"`
+}
+
+type runGraphColumnView struct {
+	Depth int                `json:"depth"`
+	Label string             `json:"label"`
+	Nodes []runGraphNodeView `json:"nodes"`
+}
+
+type runGraphNodeView struct {
+	ID          string `json:"id"`
+	ParentRunID string `json:"parent_run_id"`
+	AgentID     string `json:"agent_id"`
+	SessionID   string `json:"session_id,omitempty"`
+	Objective   string `json:"objective"`
+	Status      string `json:"status"`
+	StatusClass string `json:"status_class"`
+	Depth       int    `json:"depth"`
+	IsRoot      bool   `json:"is_root"`
+	ParentLabel string `json:"parent_label,omitempty"`
 }
 
 func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
@@ -120,14 +161,42 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 			CreatedAt: evt.CreatedAt,
 		})
 	}
+	graphSnapshot, err := s.replay.LoadGraphSnapshot(r.Context(), runID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "failed to load run graph", http.StatusInternalServerError)
+		return
+	}
 
 	s.renderTemplate(w, "Run Detail", "run_detail_body", runDetailPageData{
-		RunID:     replayRun.RunID,
-		Status:    string(replayRun.Status),
-		StreamURL: "/runs/" + url.PathEscape(replayRun.RunID) + "/events",
-		Turns:     turns,
-		Events:    events,
+		RunID:       replayRun.RunID,
+		Status:      string(replayRun.Status),
+		StatusClass: runStatusClass(string(replayRun.Status)),
+		StreamURL:   "/runs/" + url.PathEscape(replayRun.RunID) + "/events",
+		GraphURL:    "/runs/" + url.PathEscape(replayRun.RunID) + "/graph",
+		Turns:       turns,
+		Events:      events,
+		Graph:       buildRunGraphView(graphSnapshot),
 	})
+}
+
+func (s *Server) handleRunGraph(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("id")
+
+	graphSnapshot, err := s.replay.LoadGraphSnapshot(r.Context(), runID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "failed to load run graph", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, buildRunGraphView(graphSnapshot))
 }
 
 func turnContent(payload []byte) (string, bool) {
@@ -219,4 +288,112 @@ func marshalReplayDelta(evt model.ReplayDelta) ([]byte, error) {
 		envelope.Payload = json.RawMessage(evt.PayloadJSON)
 	}
 	return json.Marshal(envelope)
+}
+
+func buildRunGraphView(snapshot replay.RunGraphSnapshot) runGraphView {
+	view := runGraphView{
+		RootRunID: snapshot.RootRunID,
+		Columns:   make([]runGraphColumnView, 0, len(snapshot.Nodes)),
+	}
+
+	columnIndex := make(map[int]int, len(snapshot.Nodes))
+	for _, node := range snapshot.Nodes {
+		graphNode := runGraphNodeView{
+			ID:          node.ID,
+			ParentRunID: node.ParentRunID,
+			AgentID:     node.AgentID,
+			SessionID:   node.SessionID,
+			Objective:   node.Objective,
+			Status:      string(node.Status),
+			StatusClass: runStatusClass(string(node.Status)),
+			Depth:       node.Depth,
+			IsRoot:      node.ID == snapshot.RootRunID,
+		}
+		if graphNode.ParentRunID != "" {
+			graphNode.ParentLabel = "from " + graphNode.ParentRunID
+		}
+
+		switch node.Status {
+		case model.RunStatusPending:
+			view.Summary.Pending++
+		case model.RunStatusActive:
+			view.Summary.Active++
+		case model.RunStatusNeedsApproval:
+			view.Summary.NeedsApproval++
+		case model.RunStatusCompleted:
+			view.Summary.Completed++
+		case model.RunStatusFailed:
+			view.Summary.Failed++
+		case model.RunStatusInterrupted:
+			view.Summary.Interrupted++
+		}
+		view.Summary.Total++
+		if graphNode.IsRoot {
+			view.Summary.RootStatus = graphNode.Status
+		}
+
+		idx, ok := columnIndex[node.Depth]
+		if !ok {
+			view.Columns = append(view.Columns, runGraphColumnView{
+				Depth: node.Depth,
+				Label: runGraphColumnLabel(node.Depth),
+				Nodes: []runGraphNodeView{},
+			})
+			idx = len(view.Columns) - 1
+			columnIndex[node.Depth] = idx
+		}
+		view.Columns[idx].Nodes = append(view.Columns[idx].Nodes, graphNode)
+	}
+
+	view.Headline = runGraphHeadline(view.Summary)
+	return view
+}
+
+func runGraphColumnLabel(depth int) string {
+	switch depth {
+	case 0:
+		return "Front Session"
+	case 1:
+		return "Delegated Workers"
+	default:
+		return fmt.Sprintf("Depth %d", depth)
+	}
+}
+
+func runGraphHeadline(summary runGraphSummaryView) string {
+	switch {
+	case summary.NeedsApproval > 0:
+		return fmt.Sprintf("%d run(s) waiting on approval.", summary.NeedsApproval)
+	case summary.Active > 0:
+		return fmt.Sprintf("%d run(s) actively working.", summary.Active)
+	case summary.Pending > 0:
+		return fmt.Sprintf("%d run(s) queued to start.", summary.Pending)
+	case summary.Failed > 0:
+		return fmt.Sprintf("%d run(s) failed in this execution graph.", summary.Failed)
+	case summary.Interrupted > 0:
+		return fmt.Sprintf("%d run(s) were interrupted.", summary.Interrupted)
+	case summary.Completed == summary.Total && summary.Total > 0:
+		return "All visible runs completed."
+	default:
+		return "Graph status is available."
+	}
+}
+
+func runStatusClass(status string) string {
+	switch status {
+	case string(model.RunStatusPending):
+		return "is-pending"
+	case string(model.RunStatusActive):
+		return "is-active"
+	case string(model.RunStatusNeedsApproval):
+		return "is-approval"
+	case string(model.RunStatusCompleted):
+		return "is-success"
+	case string(model.RunStatusFailed), "error":
+		return "is-error"
+	case string(model.RunStatusInterrupted):
+		return "is-muted"
+	default:
+		return ""
+	}
 }

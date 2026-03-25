@@ -830,7 +830,7 @@ func TestService_ListSessionsAppliesDirectoryFilters(t *testing.T) {
 
 	list, err := svc.ListSessions(ctx, SessionListFilter{
 		ConnectorID: "telegram",
-		BoundOnly:   true,
+		Binding:     "bound",
 		Limit:       10,
 	})
 	if err != nil {
@@ -838,6 +838,17 @@ func TestService_ListSessionsAppliesDirectoryFilters(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].ID != frontTelegram.ID {
 		t.Fatalf("expected only telegram-bound front session, got %+v", list)
+	}
+
+	list, err = svc.ListSessions(ctx, SessionListFilter{
+		Binding: "unbound",
+		Limit:   10,
+	})
+	if err != nil {
+		t.Fatalf("ListSessions unbound failed: %v", err)
+	}
+	if len(list) != 2 {
+		t.Fatalf("expected 2 unbound sessions, got %+v", list)
 	}
 
 	list, err = svc.ListSessions(ctx, SessionListFilter{
