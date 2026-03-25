@@ -43,7 +43,7 @@ func TestRuns(t *testing.T) {
 		}
 
 		body := rr.Body.String()
-		for _, want := range []string{"Runs", "run-known", "review the repo"} {
+		for _, want := range []string{"Runs", "Live orchestration strip", "run-known", "review the repo"} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
 			}
@@ -90,8 +90,10 @@ func TestRuns(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rr.Code)
 		}
-		if !strings.Contains(rr.Body.String(), "You haven't run any tasks yet.") {
-			t.Fatalf("expected empty state, got:\n%s", rr.Body.String())
+		for _, want := range []string{"Live orchestration strip", "No runs yet.", `href="/operate/start-task"`} {
+			if !strings.Contains(rr.Body.String(), want) {
+				t.Fatalf("expected empty state to contain %q, got:\n%s", want, rr.Body.String())
+			}
 		}
 	})
 
@@ -366,6 +368,24 @@ func TestApprovals(t *testing.T) {
 		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected approvals page to contain %q:\n%s", want, body)
+			}
+		}
+	})
+
+	t.Run("page renders empty recovery state", func(t *testing.T) {
+		h := newServerHarness(t)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/recover/approvals", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+		for _, want := range []string{"No approval work right now.", `href="/operate/runs"`} {
+			if !strings.Contains(rr.Body.String(), want) {
+				t.Fatalf("expected empty approvals state to contain %q, got:\n%s", want, rr.Body.String())
 			}
 		}
 	})

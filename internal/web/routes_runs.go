@@ -20,13 +20,24 @@ type runListItem struct {
 	Objective   string
 	Summary     string
 	Status      string
+	StatusLabel string
 	StatusClass string
+	IsRoot      bool
 }
 
 type runsPageData struct {
-	Runs    []runListItem
-	Filters runListFilters
-	Paging  pageLinks
+	Runs       []runListItem
+	Filters    runListFilters
+	Paging     pageLinks
+	QueueStrip runQueueStripView
+}
+
+type runQueueStripView struct {
+	Headline     string
+	RootRuns     int
+	WorkerRuns   int
+	RecoveryRuns int
+	Summary      runGraphSummaryView
 }
 
 type runDetailPageData struct {
@@ -141,6 +152,8 @@ func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to load runs", http.StatusInternalServerError)
 			return
 		}
+		item.IsRoot = parentRunID == ""
+		item.StatusLabel = humanizeRunStatus(item.Status)
 		item.Summary = formatRunSummary(parentRunID, item.ID, workerCount)
 		item.StatusClass = runStatusClass(item.Status)
 		runRows = append(runRows, runListRow{Item: item, CreatedAt: createdAt})
@@ -152,9 +165,10 @@ func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 
 	items, paging := finalizeRunListPage(r.URL.Query(), filter, runRows)
 	s.renderTemplate(w, r, "Runs", "runs_body", runsPageData{
-		Runs:    items,
-		Filters: runListFilters{Query: filter.Query, Status: filter.Status, Limit: filter.Limit},
-		Paging:  paging,
+		Runs:       items,
+		Filters:    runListFilters{Query: filter.Query, Status: filter.Status, Limit: filter.Limit},
+		Paging:     paging,
+		QueueStrip: buildRunQueueStrip(items),
 	})
 }
 
@@ -170,6 +184,57 @@ func formatWorkerCount(count int) string {
 		return "1 worker run"
 	}
 	return fmt.Sprintf("%d worker runs", count)
+}
+
+func humanizeRunStatus(status string) string {
+	switch status {
+	case "needs_approval":
+		return "needs approval"
+	default:
+		return strings.ReplaceAll(status, "_", " ")
+	}
+}
+
+func buildRunQueueStrip(items []runListItem) runQueueStripView {
+	view := runQueueStripView{}
+	for _, item := range items {
+		if item.IsRoot {
+			view.RootRuns++
+		} else {
+			view.WorkerRuns++
+		}
+		switch item.Status {
+		case "pending":
+			view.Summary.Pending++
+		case "active":
+			view.Summary.Active++
+		case "needs_approval":
+			view.Summary.NeedsApproval++
+			view.RecoveryRuns++
+		case "completed":
+			view.Summary.Completed++
+		case "failed":
+			view.Summary.Failed++
+			view.RecoveryRuns++
+		case "interrupted":
+			view.Summary.Interrupted++
+			view.RecoveryRuns++
+		}
+		view.Summary.Total++
+	}
+
+	switch {
+	case view.Summary.Total == 0:
+		view.Headline = "No live collaboration yet. Start a task to spin up the queue, graph, and recovery surface."
+	case view.RecoveryRuns > 0:
+		view.Headline = "Recovery work is visible in the queue. Review blocked or interrupted runs before starting new work."
+	case view.Summary.Active > 0 || view.Summary.Pending > 0:
+		view.Headline = "The queue is active. Root runs, delegated workers, and completion states are visible in one strip."
+	default:
+		view.Headline = "Recent work is settled. Use this strip to scan collaboration shape before opening a run detail."
+	}
+
+	return view
 }
 
 func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {

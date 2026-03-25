@@ -5,9 +5,59 @@
   <p class="page-lede">The operational queue for recent runs. Filters and paging stay in the URL so you can share the exact slice you are reviewing.</p>
 </section>
 <section class="page-section">
-  <div class="panel">
-    <form class="inline-form" method="GET" action="/operate/runs">
-      <input type="text" name="q" value="{{.Filters.Query}}" placeholder="Search run ID or objective">
+  <div class="panel queue-strip">
+    <div class="queue-strip-head">
+      <div class="page-stack">
+        <span class="panel-kicker">Live orchestration strip</span>
+        <h2 class="section-title">Current collaboration shape</h2>
+        <p class="panel-note">{{.QueueStrip.Headline}}</p>
+      </div>
+      <div class="metric-strip">
+        <article class="metric-card is-active">
+          <span class="metric-label">Visible runs</span>
+          <span class="metric-value">{{.QueueStrip.Summary.Total}}</span>
+        </article>
+        <article class="metric-card is-active">
+          <span class="metric-label">Active</span>
+          <span class="metric-value">{{.QueueStrip.Summary.Active}}</span>
+        </article>
+        <article class="metric-card is-approval">
+          <span class="metric-label">Needs approval</span>
+          <span class="metric-value">{{.QueueStrip.Summary.NeedsApproval}}</span>
+        </article>
+        <article class="metric-card is-success">
+          <span class="metric-label">Completed</span>
+          <span class="metric-value">{{.QueueStrip.Summary.Completed}}</span>
+        </article>
+      </div>
+    </div>
+    <div class="queue-stage-board">
+      <article class="queue-stage-card">
+        <span class="panel-kicker">Front</span>
+        <span class="queue-stage-value">{{.QueueStrip.RootRuns}}</span>
+        <p class="panel-note">Root runs started by the operator.</p>
+      </article>
+      <article class="queue-stage-card">
+        <span class="panel-kicker">Workers</span>
+        <span class="queue-stage-value">{{.QueueStrip.WorkerRuns}}</span>
+        <p class="panel-note">Delegated specialist runs visible in this queue slice.</p>
+      </article>
+      <article class="queue-stage-card is-approval">
+        <span class="panel-kicker">Recovery</span>
+        <span class="queue-stage-value">{{.QueueStrip.RecoveryRuns}}</span>
+        <p class="panel-note">Runs currently blocked, failed, or waiting for intervention.</p>
+      </article>
+    </div>
+  </div>
+</section>
+<section class="page-section">
+  <div class="panel filter-panel">
+    <span class="panel-kicker">Queue filters</span>
+    <form class="filter-grid" method="GET" action="/operate/runs">
+      <div class="field filter-search">
+        <label for="run-query">Search</label>
+        <input id="run-query" type="text" name="q" value="{{.Filters.Query}}" placeholder="Search run ID or objective">
+      </div>
       <label>
         Status
         <select name="status">
@@ -28,8 +78,10 @@
           <option value="50" {{if eq .Filters.Limit 50}}selected{{end}}>50</option>
         </select>
       </label>
-      <button class="btn btn-secondary" type="submit">Filter</button>
-      <a class="btn btn-ghost" href="/operate/runs">Reset</a>
+      <div class="filter-actions">
+        <button class="btn btn-secondary" type="submit">Filter</button>
+        <a class="btn btn-subtle" href="/operate/runs">Reset</a>
+      </div>
     </form>
   </div>
 </section>
@@ -41,7 +93,7 @@
         <div class="mono">{{.ID}}</div>
         <div class="row-title">{{.Objective}}</div>
         <div class="muted">{{.Summary}}</div>
-        <div class="run-status {{.StatusClass}}">{{.Status}}</div>
+        <div class="run-status {{.StatusClass}}">{{.StatusLabel}}</div>
       </article>
     </a>
   {{end}}
@@ -55,8 +107,28 @@
 </section>
 {{end}}
 {{else}}
-<section class="panel">
-  <p>You haven't run any tasks yet.</p>
+<section class="panel empty-state">
+  <span class="panel-kicker">Queue</span>
+  <h2 class="section-title">No runs yet.</h2>
+  <p class="empty-state-copy">Start a task to create the first root run. Once work is live, this queue becomes the fastest way to scan ownership, blockage, and completion state.</p>
+  <div class="empty-state-grid">
+    <div class="empty-state-fact">
+      <span class="metric-label">Operate</span>
+      <span class="panel-note">Run detail will lead with the full collaboration graph.</span>
+    </div>
+    <div class="empty-state-fact">
+      <span class="metric-label">Configure</span>
+      <span class="panel-note">Team and memory shape what happens before the next run starts.</span>
+    </div>
+    <div class="empty-state-fact">
+      <span class="metric-label">Recover</span>
+      <span class="panel-note">Approvals and delivery recovery appear when intervention is needed.</span>
+    </div>
+  </div>
+  <div class="empty-state-actions">
+    <a class="btn btn-primary" href="/operate/start-task">Start Task</a>
+    <a class="btn btn-ghost" href="/configure/team">Review Team</a>
+  </div>
 </section>
 {{end}}
 {{end}}

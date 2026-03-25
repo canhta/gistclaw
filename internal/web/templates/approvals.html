@@ -8,7 +8,8 @@
   <section class="error">{{.Error}}</section>
 {{end}}
 <section class="page-section">
-  <div class="panel">
+  <div class="panel filter-panel">
+    <span class="panel-kicker">Decision queue</span>
     <form class="approval-filter-rail" method="GET" action="/recover/approvals">
       <div class="approval-filter-grid">
         <div class="field approval-filter-search">
@@ -36,7 +37,7 @@
         </div>
         <div class="approval-filter-actions">
           <button class="btn btn-secondary" type="submit">Filter</button>
-          <a class="btn btn-ghost" href="/recover/approvals">Reset</a>
+          <a class="btn btn-subtle" href="/recover/approvals">Reset</a>
         </div>
       </div>
     </form>
@@ -78,8 +79,14 @@
 </section>
 {{end}}
 {{else}}
-<section class="panel">
-  <p class="muted">No approvals match this filter.</p>
+<section class="panel empty-state">
+  <span class="panel-kicker">Recovery</span>
+  <h2 class="section-title">No approval work right now.</h2>
+  <p class="empty-state-copy">There are no risky workspace actions waiting on an operator decision in this view. When a run reaches a protected boundary, the ticket will appear here first.</p>
+  <div class="empty-state-actions">
+    <a class="btn btn-secondary" href="/operate/runs">Review Runs</a>
+    <a class="btn btn-ghost" href="/recover/routes-deliveries">Open Routes &amp; Deliveries</a>
+  </div>
 </section>
 {{end}}
 {{end}}

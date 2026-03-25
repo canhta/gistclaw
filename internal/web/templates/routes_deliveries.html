@@ -6,10 +6,47 @@
 </section>
 
 <section class="page-section">
-  <div class="panel">
-  <form class="inline-form" method="GET" action="/recover/routes-deliveries">
-    <input type="text" name="q" value="{{.Filters.Query}}" placeholder="Search routes or deliveries">
-    <input type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="Connector ID">
+  <div class="panel queue-strip">
+    <div class="queue-strip-head">
+      <div class="page-stack">
+        <span class="panel-kicker">Intervention board</span>
+        <h2 class="section-title">Recovery status strip</h2>
+        <p class="panel-note">Use this page to confirm whether messages are still flowing, whether any route is misbound, and whether queued deliveries need intervention.</p>
+      </div>
+      <div class="metric-strip">
+        <article class="metric-card">
+          <span class="metric-label">Connectors</span>
+          <span class="metric-value">{{len .Health}}</span>
+        </article>
+        <article class="metric-card is-active">
+          <span class="metric-label">Active routes</span>
+          <span class="metric-value">{{len .ActiveRoutes}}</span>
+        </article>
+        <article class="metric-card is-approval">
+          <span class="metric-label">Queued deliveries</span>
+          <span class="metric-value">{{len .Deliveries}}</span>
+        </article>
+        <article class="metric-card is-muted">
+          <span class="metric-label">Route history</span>
+          <span class="metric-value">{{len .RouteHistory}}</span>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="page-section">
+  <div class="panel filter-panel">
+  <span class="panel-kicker">Recovery filters</span>
+  <form class="filter-grid" method="GET" action="/recover/routes-deliveries">
+    <div class="field filter-search">
+      <label for="recovery-query">Search</label>
+      <input id="recovery-query" type="text" name="q" value="{{.Filters.Query}}" placeholder="Search routes or deliveries">
+    </div>
+    <div class="field">
+      <label for="recovery-connector-id">Connector ID</label>
+      <input id="recovery-connector-id" type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="Connector ID">
+    </div>
     <label>
       Routes
       <select name="route_status">
@@ -27,8 +64,10 @@
         <option value="terminal" {{if eq .Filters.DeliveryStatus "terminal"}}selected{{end}}>Terminal</option>
       </select>
     </label>
-    <button class="btn btn-secondary" type="submit">Filter</button>
-    <a class="btn btn-ghost" href="/recover/routes-deliveries">Reset</a>
+    <div class="filter-actions">
+      <button class="btn btn-secondary" type="submit">Filter</button>
+      <a class="btn btn-subtle" href="/recover/routes-deliveries">Reset</a>
+    </div>
   </form>
   </div>
 </section>
@@ -53,7 +92,10 @@
     {{end}}
   </div>
   {{else}}
-  <p class="muted">No connector delivery state yet.</p>
+  <div class="empty-state is-compact">
+    <span class="panel-kicker">Health</span>
+    <p class="empty-state-copy">No connector delivery pressure is visible yet. Once external messages begin flowing, backlog and failure counts will appear here.</p>
+  </div>
   {{end}}
 </section>
 
@@ -135,7 +177,10 @@
   </div>
   {{end}}
   {{else}}
-  <p class="muted">No active routes.</p>
+  <div class="empty-state is-compact">
+    <span class="panel-kicker">Routes</span>
+    <p class="empty-state-copy">No active route bindings match this filter. When sessions are bound to live connectors, the operator message and deactivate controls appear here.</p>
+  </div>
   {{end}}
 </section>
 
@@ -222,7 +267,10 @@
   </div>
   {{end}}
   {{else}}
-  <p class="muted">No queued deliveries.</p>
+  <div class="empty-state is-compact">
+    <span class="panel-kicker">Deliveries</span>
+    <p class="empty-state-copy">There are no queued or terminal deliveries in this slice. Retry controls only appear when a connector has already failed or stalled.</p>
+  </div>
   {{end}}
 </section>
 
@@ -300,7 +348,10 @@
   </div>
   {{end}}
   {{else}}
-  <p class="muted">No inactive route history yet.</p>
+  <div class="empty-state is-compact">
+    <span class="panel-kicker">History</span>
+    <p class="empty-state-copy">Inactive route history is empty right now. Past bindings will appear here once an operator closes or rotates them.</p>
+  </div>
   {{end}}
 </section>
 {{end}}

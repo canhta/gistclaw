@@ -15,6 +15,7 @@
   <section class="panel team-summary">
     <div class="team-summary-head">
       <div class="team-summary-intro">
+        <span class="panel-kicker">Editable runtime copy</span>
         <span class="field-label">Team File</span>
         <p class="muted">Import or export the editable team definition without mixing those file operations into the primary editing actions.</p>
       </div>
@@ -58,7 +59,7 @@
   <section class="team-grid">
     {{range .Agents}}
       {{$agent := .}}
-      <article class="panel team-card">
+      <article class="panel team-card{{if .IsFront}} is-front{{else}} is-specialist{{end}}">
         <div class="team-agent-head">
           <div>
             <div class="team-agent-name">{{.ID}}</div>
@@ -72,6 +73,7 @@
           </div>
         </div>
         <div class="team-card-meta">
+          <span class="panel-kicker">Soul</span>
           <span class="field-label">Soul File</span>
           <span class="mono subtle">{{.SoulFile}}</span>
         </div>
@@ -95,6 +97,7 @@
             </select>
           </div>
           <div class="field team-link-group">
+            <span class="panel-kicker">Delegation</span>
             <span class="field-label">Can Spawn</span>
             <div class="choice-chip-grid">
               {{if .CanSpawnOptions}}
@@ -110,6 +113,7 @@
             </div>
           </div>
           <div class="field team-link-group">
+            <span class="panel-kicker">Messaging</span>
             <span class="field-label">Can Message</span>
             <div class="choice-chip-grid">
               {{if .CanMessageOptions}}
