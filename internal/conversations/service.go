@@ -510,6 +510,71 @@ func (s *ConversationStore) ActiveRootRun(ctx context.Context, conversationID st
 	return ref, nil
 }
 
+func (s *ConversationStore) ResetConversation(ctx context.Context, conversationID string) error {
+	deletes := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "tool_calls",
+			query: `DELETE FROM tool_calls WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`,
+		},
+		{
+			name:  "approvals",
+			query: `DELETE FROM approvals WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`,
+		},
+		{
+			name:  "receipts",
+			query: `DELETE FROM receipts WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`,
+		},
+		{
+			name:  "outbound_intents",
+			query: `DELETE FROM outbound_intents WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`,
+		},
+		{
+			name:  "run_summaries",
+			query: `DELETE FROM run_summaries WHERE run_id IN (SELECT id FROM runs WHERE conversation_id = ?)`,
+		},
+		{
+			name:  "session_messages",
+			query: `DELETE FROM session_messages WHERE session_id IN (SELECT id FROM sessions WHERE conversation_id = ?)`,
+		},
+		{
+			name:  "session_bindings",
+			query: `DELETE FROM session_bindings WHERE conversation_id = ?`,
+		},
+		{
+			name:  "inbound_receipts",
+			query: `DELETE FROM inbound_receipts WHERE conversation_id = ?`,
+		},
+		{
+			name:  "events",
+			query: `DELETE FROM events WHERE conversation_id = ?`,
+		},
+		{
+			name:  "sessions",
+			query: `DELETE FROM sessions WHERE conversation_id = ?`,
+		},
+		{
+			name:  "runs",
+			query: `DELETE FROM runs WHERE conversation_id = ?`,
+		},
+		{
+			name:  "conversations",
+			query: `DELETE FROM conversations WHERE id = ?`,
+		},
+	}
+
+	return s.db.Tx(ctx, func(tx *sql.Tx) error {
+		for _, del := range deletes {
+			if _, err := tx.ExecContext(ctx, del.query, conversationID); err != nil {
+				return fmt.Errorf("delete %s: %w", del.name, err)
+			}
+		}
+		return nil
+	})
+}
+
 func (s *ConversationStore) DB() *store.DB {
 	return s.db
 }

@@ -14,11 +14,17 @@ type stubInspector struct {
 	status runtime.ConversationStatus
 	err    error
 	key    conversations.ConversationKey
+	reset  runtime.ConversationResetOutcome
 }
 
 func (s *stubInspector) InspectConversation(_ context.Context, key conversations.ConversationKey) (runtime.ConversationStatus, error) {
 	s.key = key
 	return s.status, s.err
+}
+
+func (s *stubInspector) ResetConversation(_ context.Context, key conversations.ConversationKey) (runtime.ConversationResetOutcome, error) {
+	s.key = key
+	return s.reset, s.err
 }
 
 func TestDispatcherDispatch(t *testing.T) {
@@ -40,7 +46,7 @@ func TestDispatcherDispatch(t *testing.T) {
 				Text:           "/help",
 			},
 			wantHandled:  true,
-			wantContains: []string{"Message me naturally", "/status"},
+			wantContains: []string{"Message me naturally", "/status", "/reset"},
 		},
 		{
 			name: "status command",
@@ -80,11 +86,29 @@ func TestDispatcherDispatch(t *testing.T) {
 			},
 			wantHandled: false,
 		},
+		{
+			name: "reset command success",
+			env: model.Envelope{
+				ConnectorID:    "telegram",
+				AccountID:      "acct-4",
+				ConversationID: "chat-4",
+				ThreadID:       "main",
+				Text:           "/reset",
+			},
+			wantHandled:  true,
+			wantContains: []string{"Chat reset", "History cleared"},
+			wantKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-4",
+				ExternalID:  "chat-4",
+				ThreadID:    "main",
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			inspector := &stubInspector{status: tt.status}
+			inspector := &stubInspector{status: tt.status, reset: runtime.ConversationResetCleared}
 			dispatcher := NewDispatcher(inspector)
 
 			reply, handled, err := dispatcher.Dispatch(context.Background(), tt.env)
@@ -101,6 +125,50 @@ func TestDispatcherDispatch(t *testing.T) {
 			}
 			if tt.wantKey != (conversations.ConversationKey{}) && inspector.key != tt.wantKey {
 				t.Fatalf("expected inspect key %+v, got %+v", tt.wantKey, inspector.key)
+			}
+		})
+	}
+}
+
+func TestDispatcherDispatchResetOutcomeMessages(t *testing.T) {
+	tests := []struct {
+		name         string
+		outcome      runtime.ConversationResetOutcome
+		err          error
+		wantContains []string
+	}{
+		{
+			name:         "missing conversation",
+			outcome:      runtime.ConversationResetMissing,
+			wantContains: []string{"Nothing to reset"},
+		},
+		{
+			name:         "busy conversation",
+			outcome:      runtime.ConversationResetBusy,
+			wantContains: []string{"active run", "Retry /reset"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dispatcher := NewDispatcher(&stubInspector{reset: tt.outcome, err: tt.err})
+			reply, handled, err := dispatcher.Dispatch(context.Background(), model.Envelope{
+				ConnectorID:    "telegram",
+				AccountID:      "acct-1",
+				ConversationID: "chat-1",
+				ThreadID:       "main",
+				Text:           "/reset",
+			})
+			if err != nil {
+				t.Fatalf("Dispatch: %v", err)
+			}
+			if !handled {
+				t.Fatal("expected reset to be handled")
+			}
+			for _, want := range tt.wantContains {
+				if !strings.Contains(reply, want) {
+					t.Fatalf("expected reply to include %q, got:\n%s", want, reply)
+				}
 			}
 		})
 	}

@@ -689,3 +689,135 @@ func TestRuntime_RetrySessionDeliveryRequeuesTerminalIntent(t *testing.T) {
 
 	assertRunEvent(t, db, run.ID, "delivery_redrive_requested")
 }
+
+func TestRuntime_ResetConversationReturnsMissingWhenConversationDoesNotExist(t *testing.T) {
+	rt, _ := newCollaborationRuntime(t, nil)
+
+	outcome, err := rt.ResetConversation(context.Background(), conversations.ConversationKey{
+		ConnectorID: "telegram",
+		AccountID:   "acct-1",
+		ExternalID:  "chat-1",
+		ThreadID:    "main",
+	})
+	if err != nil {
+		t.Fatalf("ResetConversation failed: %v", err)
+	}
+	if outcome != ConversationResetMissing {
+		t.Fatalf("expected missing outcome, got %q", outcome)
+	}
+}
+
+func TestRuntime_ResetConversationReturnsBusyForActiveRun(t *testing.T) {
+	rt, db := newCollaborationRuntime(t, nil)
+	ctx := context.Background()
+
+	conv, err := rt.convStore.Resolve(ctx, conversations.ConversationKey{
+		ConnectorID: "telegram",
+		AccountID:   "acct-1",
+		ExternalID:  "chat-1",
+		ThreadID:    "main",
+	})
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	if _, err := db.RawDB().ExecContext(ctx,
+		`INSERT INTO runs (id, conversation_id, agent_id, status, created_at, updated_at)
+		 VALUES ('run-active', ?, 'assistant', 'active', datetime('now'), datetime('now'))`,
+		conv.ID,
+	); err != nil {
+		t.Fatalf("insert active run: %v", err)
+	}
+
+	outcome, err := rt.ResetConversation(ctx, conversations.ConversationKey{
+		ConnectorID: "telegram",
+		AccountID:   "acct-1",
+		ExternalID:  "chat-1",
+		ThreadID:    "main",
+	})
+	if err != nil {
+		t.Fatalf("ResetConversation failed: %v", err)
+	}
+	if outcome != ConversationResetBusy {
+		t.Fatalf("expected busy outcome, got %q", outcome)
+	}
+
+	var count int
+	if err := db.RawDB().QueryRowContext(ctx,
+		`SELECT count(*) FROM conversations WHERE id = ?`,
+		conv.ID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count conversations: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected busy reset to preserve conversation, got %d rows", count)
+	}
+}
+
+func TestRuntime_ResetConversationClearsHistoryButPreservesMemory(t *testing.T) {
+	rt, db := newCollaborationRuntime(t, nil)
+	ctx := context.Background()
+
+	conv, err := rt.convStore.Resolve(ctx, conversations.ConversationKey{
+		ConnectorID: "telegram",
+		AccountID:   "acct-1",
+		ExternalID:  "chat-1",
+		ThreadID:    "main",
+	})
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+	for _, stmt := range []string{
+		`INSERT INTO runs (id, conversation_id, agent_id, session_id, status, created_at, updated_at)
+		 VALUES ('run-reset', 'CONV_ID', 'assistant', 'sess-reset', 'completed', datetime('now'), datetime('now'))`,
+		`INSERT INTO sessions (id, conversation_id, key, agent_id, role, status, created_at)
+		 VALUES ('sess-reset', 'CONV_ID', 'front-reset', 'assistant', 'front', 'active', datetime('now'))`,
+		`INSERT INTO events (id, conversation_id, run_id, kind, payload_json, created_at)
+		 VALUES ('evt-reset', 'CONV_ID', 'run-reset', 'run_started', x'7b7d', datetime('now'))`,
+	} {
+		if _, err := db.RawDB().ExecContext(ctx, strings.ReplaceAll(stmt, "CONV_ID", conv.ID)); err != nil {
+			t.Fatalf("seed fixture: %v", err)
+		}
+	}
+	if _, err := db.RawDB().ExecContext(ctx,
+		`INSERT INTO memory_items (id, agent_id, scope, content, source, created_at, updated_at)
+		 VALUES ('memory-1', 'assistant', 'local', 'keep memory', 'manual', datetime('now'), datetime('now'))`,
+	); err != nil {
+		t.Fatalf("insert memory: %v", err)
+	}
+
+	outcome, err := rt.ResetConversation(ctx, conversations.ConversationKey{
+		ConnectorID: "telegram",
+		AccountID:   "acct-1",
+		ExternalID:  "chat-1",
+		ThreadID:    "main",
+	})
+	if err != nil {
+		t.Fatalf("ResetConversation failed: %v", err)
+	}
+	if outcome != ConversationResetCleared {
+		t.Fatalf("expected cleared outcome, got %q", outcome)
+	}
+
+	status, err := rt.InspectConversation(ctx, conversations.ConversationKey{
+		ConnectorID: "telegram",
+		AccountID:   "acct-1",
+		ExternalID:  "chat-1",
+		ThreadID:    "main",
+	})
+	if err != nil {
+		t.Fatalf("InspectConversation failed: %v", err)
+	}
+	if status.Exists {
+		t.Fatalf("expected reset conversation to disappear, got %+v", status)
+	}
+
+	var memoryCount int
+	if err := db.RawDB().QueryRowContext(ctx,
+		`SELECT count(*) FROM memory_items WHERE id = 'memory-1'`,
+	).Scan(&memoryCount); err != nil {
+		t.Fatalf("count memory items: %v", err)
+	}
+	if memoryCount != 1 {
+		t.Fatalf("expected memory to survive reset, got %d rows", memoryCount)
+	}
+}

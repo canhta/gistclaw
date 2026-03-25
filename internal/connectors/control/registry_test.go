@@ -7,6 +7,7 @@ func TestRegistryParse(t *testing.T) {
 		CommandSpec{Name: "start", Description: "Show help and how to use the bot"},
 		CommandSpec{Name: "help", Description: "Show the available commands"},
 		CommandSpec{Name: "status", Description: "Show the latest status for this chat"},
+		CommandSpec{Name: "reset", Description: "Clear the current chat history and temp state"},
 	)
 
 	tests := []struct {
@@ -30,6 +31,12 @@ func TestRegistryParse(t *testing.T) {
 			name: "known command with args",
 			text: "/start onboarding",
 			want: Command{Name: "start", Args: "onboarding"},
+			ok:   true,
+		},
+		{
+			name: "reset command",
+			text: "/reset",
+			want: Command{Name: "reset"},
 			ok:   true,
 		},
 		{
@@ -73,16 +80,20 @@ func TestRegistrySpecsPreserveDescriptions(t *testing.T) {
 		CommandSpec{Name: "start", Description: "Show help and how to use the bot"},
 		CommandSpec{Name: "help", Description: "Show the available commands"},
 		CommandSpec{Name: "status", Description: "Show the latest status for this chat"},
+		CommandSpec{Name: "reset", Description: "Clear the current chat history and temp state"},
 	)
 
 	specs := registry.Specs()
-	if len(specs) != 3 {
-		t.Fatalf("expected 3 specs, got %d", len(specs))
+	if len(specs) != 4 {
+		t.Fatalf("expected 4 specs, got %d", len(specs))
 	}
 	if specs[0].Name != "start" || specs[0].Description == "" {
 		t.Fatalf("expected first spec to preserve name and description, got %+v", specs[0])
 	}
 	if specs[2].Name != "status" || specs[2].Description != "Show the latest status for this chat" {
 		t.Fatalf("expected status description to be preserved, got %+v", specs[2])
+	}
+	if specs[3].Name != "reset" || specs[3].Description != "Clear the current chat history and temp state" {
+		t.Fatalf("expected reset description to be preserved, got %+v", specs[3])
 	}
 }

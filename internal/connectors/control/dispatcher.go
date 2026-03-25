@@ -14,6 +14,7 @@ var defaultCommandSpecs = []CommandSpec{
 	{Name: "start", Description: "Show help and how to use the bot"},
 	{Name: "help", Description: "Show the available commands"},
 	{Name: "status", Description: "Show the latest status for this chat"},
+	{Name: "reset", Description: "Clear the current chat history and temp state"},
 }
 
 var defaultRegistry = NewRegistry(defaultCommandSpecs...)
@@ -23,6 +24,7 @@ var defaultRegistry = NewRegistry(defaultCommandSpecs...)
 
 type ConversationInspector interface {
 	InspectConversation(ctx context.Context, key conversations.ConversationKey) (runtime.ConversationStatus, error)
+	ResetConversation(ctx context.Context, key conversations.ConversationKey) (runtime.ConversationResetOutcome, error)
 }
 
 type Dispatcher struct {
@@ -47,16 +49,17 @@ func (d *Dispatcher) Dispatch(ctx context.Context, env model.Envelope) (string, 
 	case "start", "help":
 		return helpText(), true, nil
 	case "status":
-		status, err := d.statuses.InspectConversation(ctx, conversations.ConversationKey{
-			ConnectorID: env.ConnectorID,
-			AccountID:   env.AccountID,
-			ExternalID:  env.ConversationID,
-			ThreadID:    env.ThreadID,
-		})
+		status, err := d.statuses.InspectConversation(ctx, conversationKeyFromEnvelope(env))
 		if err != nil {
 			return "", false, fmt.Errorf("control: inspect conversation status: %w", err)
 		}
 		return formatConversationStatus(status), true, nil
+	case "reset":
+		outcome, err := d.statuses.ResetConversation(ctx, conversationKeyFromEnvelope(env))
+		if err != nil {
+			return "", false, fmt.Errorf("control: reset conversation: %w", err)
+		}
+		return formatResetOutcome(outcome), true, nil
 	default:
 		return "", false, nil
 	}
@@ -69,7 +72,17 @@ func helpText() string {
 		"Native commands:",
 		"/help   Show this help",
 		"/status Show the latest status for this chat",
+		"/reset  Clear this chat's history and temp state",
 	}, "\n")
+}
+
+func conversationKeyFromEnvelope(env model.Envelope) conversations.ConversationKey {
+	return conversations.ConversationKey{
+		ConnectorID: env.ConnectorID,
+		AccountID:   env.AccountID,
+		ExternalID:  env.ConversationID,
+		ThreadID:    env.ThreadID,
+	}
 }
 
 func formatConversationStatus(status runtime.ConversationStatus) string {
@@ -122,6 +135,17 @@ func displayObjective(objective string) string {
 		return "no objective recorded"
 	}
 	return trimmed
+}
+
+func formatResetOutcome(outcome runtime.ConversationResetOutcome) string {
+	switch outcome {
+	case runtime.ConversationResetMissing:
+		return "Nothing to reset for this chat."
+	case runtime.ConversationResetBusy:
+		return "This chat has an active run right now. Retry /reset in a moment."
+	default:
+		return "Chat reset. History cleared for this chat."
+	}
 }
 
 func DefaultCommandSpecs() []CommandSpec {

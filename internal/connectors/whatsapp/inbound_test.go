@@ -17,6 +17,8 @@ type stubInboundReceiver struct {
 	mu     sync.Mutex
 	calls  []runtime.InboundMessageCommand
 	status runtime.ConversationStatus
+	reset  runtime.ConversationResetOutcome
+	key    conversations.ConversationKey
 }
 
 func (s *stubInboundReceiver) ReceiveInboundMessage(_ context.Context, req runtime.InboundMessageCommand) (model.Run, error) {
@@ -34,6 +36,13 @@ func (s *stubInboundReceiver) callCount() int {
 
 func (s *stubInboundReceiver) InspectConversation(context.Context, conversations.ConversationKey) (runtime.ConversationStatus, error) {
 	return s.status, nil
+}
+
+func (s *stubInboundReceiver) ResetConversation(_ context.Context, key conversations.ConversationKey) (runtime.ConversationResetOutcome, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.key = key
+	return s.reset, nil
 }
 
 type stubWhatsAppSender struct {
@@ -224,5 +233,59 @@ func TestWebhookHandler_RoutesHelpCommandToNativeReply(t *testing.T) {
 	}
 	if !strings.Contains(sender.first(), "Message me naturally") {
 		t.Fatalf("unexpected native reply: %q", sender.first())
+	}
+}
+
+func TestWebhookHandler_RoutesResetCommandToNativeReply(t *testing.T) {
+	receiver := &stubInboundReceiver{reset: runtime.ConversationResetCleared}
+	sender := &stubWhatsAppSender{}
+	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), receiver, sender)
+
+	body := `{
+	  "object":"whatsapp_business_account",
+	  "entry":[{
+	    "changes":[{
+	      "field":"messages",
+	      "value":{
+	        "metadata":{"phone_number_id":"phone-123"},
+	        "messages":[{
+	          "from":"15551234567",
+	          "id":"wamid.reset",
+	          "timestamp":"1711296000",
+	          "type":"text",
+	          "text":{"body":"/reset"}
+	        }]
+	      }
+	    }]
+	  }]
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/webhooks/whatsapp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if receiver.callCount() != 0 {
+		t.Fatalf("expected no inbound runtime calls for /reset, got %d", receiver.callCount())
+	}
+	if sender.callCount() != 1 {
+		t.Fatalf("expected 1 native reply, got %d", sender.callCount())
+	}
+	reply := sender.first()
+	for _, want := range []string{"Chat reset", "History cleared"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("expected reset reply to include %q, got %q", want, reply)
+		}
+	}
+	if receiver.key != (conversations.ConversationKey{
+		ConnectorID: "whatsapp",
+		AccountID:   "phone-123",
+		ExternalID:  "15551234567",
+		ThreadID:    "main",
+	}) {
+		t.Fatalf("unexpected reset conversation key: %+v", receiver.key)
 	}
 }

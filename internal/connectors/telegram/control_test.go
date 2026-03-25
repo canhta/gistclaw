@@ -18,6 +18,9 @@ type stubTelegramRuntime struct {
 	status       runtime.ConversationStatus
 	statusErr    error
 	inspectedKey conversations.ConversationKey
+	reset        runtime.ConversationResetOutcome
+	resetErr     error
+	resetKey     conversations.ConversationKey
 }
 
 func (s *stubTelegramRuntime) ReceiveInboundMessage(_ context.Context, req runtime.InboundMessageCommand) (model.Run, error) {
@@ -32,6 +35,13 @@ func (s *stubTelegramRuntime) InspectConversation(_ context.Context, key convers
 	defer s.mu.Unlock()
 	s.inspectedKey = key
 	return s.status, s.statusErr
+}
+
+func (s *stubTelegramRuntime) ResetConversation(_ context.Context, key conversations.ConversationKey) (runtime.ConversationResetOutcome, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resetKey = key
+	return s.reset, s.resetErr
 }
 
 func (s *stubTelegramRuntime) callCount() int {
@@ -154,6 +164,44 @@ func TestConnector_HandleEnvelopeRoutesStatusToNativeReply(t *testing.T) {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("expected status reply to include %q, got:\n%s", want, reply)
 		}
+	}
+}
+
+func TestConnector_HandleEnvelopeRoutesResetToNativeReply(t *testing.T) {
+	rt := &stubTelegramRuntime{reset: runtime.ConversationResetCleared}
+	connector := newTelegramControlConnector(t, rt)
+	sender := &stubTelegramSender{}
+	connector.sender = sender
+
+	err := connector.handleEnvelope(context.Background(), model.Envelope{
+		ConnectorID:    "telegram",
+		AccountID:      "123",
+		ConversationID: "123",
+		ThreadID:       "main",
+		Text:           "/reset",
+	})
+	if err != nil {
+		t.Fatalf("handleEnvelope: %v", err)
+	}
+	if rt.callCount() != 0 {
+		t.Fatalf("expected no inbound run for /reset, got %d calls", rt.callCount())
+	}
+	if sender.sentCount() != 1 {
+		t.Fatalf("expected 1 native reply, got %d", sender.sentCount())
+	}
+	reply := sender.first().text
+	for _, want := range []string{"Chat reset", "History cleared"} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("expected reset reply to include %q, got:\n%s", want, reply)
+		}
+	}
+	if rt.resetKey != (conversations.ConversationKey{
+		ConnectorID: "telegram",
+		AccountID:   "123",
+		ExternalID:  "123",
+		ThreadID:    "main",
+	}) {
+		t.Fatalf("unexpected reset conversation key: %+v", rt.resetKey)
 	}
 }
 

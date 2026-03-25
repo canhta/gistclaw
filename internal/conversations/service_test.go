@@ -866,3 +866,144 @@ func TestConversationStore_DBAccessor(t *testing.T) {
 		t.Fatal("expected DB accessor to return underlying db")
 	}
 }
+
+func TestConversationStore_ResetConversationDeletesOnlyTargetData(t *testing.T) {
+	db := setupTestStore(t)
+	cs := NewConversationStore(db)
+	ctx := context.Background()
+
+	for _, stmt := range []string{
+		`INSERT INTO conversations (id, key, created_at)
+		 VALUES ('conv-reset', 'telegram|acct-1|chat-1|main', datetime('now')),
+		        ('conv-keep', 'telegram|acct-2|chat-2|main', datetime('now'))`,
+		`INSERT INTO runs (id, conversation_id, agent_id, session_id, status, created_at, updated_at)
+		 VALUES ('run-reset', 'conv-reset', 'assistant', 'sess-reset', 'completed', datetime('now'), datetime('now')),
+		        ('run-keep', 'conv-keep', 'assistant', 'sess-keep', 'completed', datetime('now'), datetime('now'))`,
+		`INSERT INTO sessions (id, conversation_id, key, agent_id, role, status, created_at)
+		 VALUES ('sess-reset', 'conv-reset', 'front-reset', 'assistant', 'front', 'active', datetime('now')),
+		        ('sess-keep', 'conv-keep', 'front-keep', 'assistant', 'front', 'active', datetime('now'))`,
+		`INSERT INTO session_messages (id, session_id, sender_session_id, kind, body, created_at)
+		 VALUES ('msg-reset', 'sess-reset', '', 'user', 'reset me', datetime('now')),
+		        ('msg-keep', 'sess-keep', '', 'user', 'keep me', datetime('now'))`,
+		`INSERT INTO session_bindings (id, conversation_id, thread_id, session_id, connector_id, account_id, external_id, status, created_at)
+		 VALUES ('bind-reset', 'conv-reset', 'main', 'sess-reset', 'telegram', 'acct-1', 'chat-1', 'active', datetime('now')),
+		        ('bind-keep', 'conv-keep', 'main', 'sess-keep', 'telegram', 'acct-2', 'chat-2', 'active', datetime('now'))`,
+		`INSERT INTO inbound_receipts (id, conversation_id, connector_id, account_id, thread_id, source_message_id, run_id, session_id, session_message_id, created_at)
+		 VALUES ('receipt-reset', 'conv-reset', 'telegram', 'acct-1', 'main', 'tg-1', 'run-reset', 'sess-reset', 'msg-reset', datetime('now')),
+		        ('receipt-keep', 'conv-keep', 'telegram', 'acct-2', 'main', 'tg-2', 'run-keep', 'sess-keep', 'msg-keep', datetime('now'))`,
+		`INSERT INTO tool_calls (id, run_id, tool_name, decision, created_at)
+		 VALUES ('tool-reset', 'run-reset', 'exec', 'allow', datetime('now')),
+		        ('tool-keep', 'run-keep', 'exec', 'allow', datetime('now'))`,
+		`INSERT INTO approvals (id, run_id, tool_name, fingerprint, status, created_at)
+		 VALUES ('approval-reset', 'run-reset', 'exec', 'fp-reset', 'approved', datetime('now')),
+		        ('approval-keep', 'run-keep', 'exec', 'fp-keep', 'approved', datetime('now'))`,
+		`INSERT INTO receipts (id, run_id, created_at)
+		 VALUES ('run-receipt-reset', 'run-reset', datetime('now')),
+		        ('run-receipt-keep', 'run-keep', datetime('now'))`,
+		`INSERT INTO outbound_intents (id, run_id, connector_id, chat_id, message_text, status, attempts, created_at)
+		 VALUES ('intent-reset', 'run-reset', 'telegram', 'chat-1', 'reset reply', 'pending', 0, datetime('now')),
+		        ('intent-keep', 'run-keep', 'telegram', 'chat-2', 'keep reply', 'pending', 0, datetime('now'))`,
+		`INSERT INTO run_summaries (id, run_id, content, token_count, created_at, updated_at)
+		 VALUES ('summary-reset', 'run-reset', 'reset summary', 10, datetime('now'), datetime('now')),
+		        ('summary-keep', 'run-keep', 'keep summary', 10, datetime('now'), datetime('now'))`,
+		`INSERT INTO events (id, conversation_id, run_id, kind, payload_json, created_at)
+		 VALUES ('evt-reset', 'conv-reset', 'run-reset', 'run_started', x'7b7d', datetime('now')),
+		        ('evt-keep', 'conv-keep', 'run-keep', 'run_started', x'7b7d', datetime('now'))`,
+		`INSERT INTO memory_items (id, agent_id, scope, content, source, created_at, updated_at)
+		 VALUES ('memory-1', 'assistant', 'local', 'keep memory', 'manual', datetime('now'), datetime('now'))`,
+	} {
+		if _, err := db.RawDB().ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("seed fixture: %v", err)
+		}
+	}
+
+	if err := cs.ResetConversation(ctx, "conv-reset"); err != nil {
+		t.Fatalf("ResetConversation failed: %v", err)
+	}
+
+	tests := []struct {
+		name  string
+		query string
+		want  int
+	}{
+		{name: "reset conversation deleted", query: `SELECT count(*) FROM conversations WHERE id = 'conv-reset'`, want: 0},
+		{name: "reset runs deleted", query: `SELECT count(*) FROM runs WHERE conversation_id = 'conv-reset'`, want: 0},
+		{name: "reset sessions deleted", query: `SELECT count(*) FROM sessions WHERE conversation_id = 'conv-reset'`, want: 0},
+		{name: "reset session messages deleted", query: `SELECT count(*) FROM session_messages WHERE session_id = 'sess-reset'`, want: 0},
+		{name: "reset bindings deleted", query: `SELECT count(*) FROM session_bindings WHERE conversation_id = 'conv-reset'`, want: 0},
+		{name: "reset inbound receipts deleted", query: `SELECT count(*) FROM inbound_receipts WHERE conversation_id = 'conv-reset'`, want: 0},
+		{name: "reset tool calls deleted", query: `SELECT count(*) FROM tool_calls WHERE run_id = 'run-reset'`, want: 0},
+		{name: "reset approvals deleted", query: `SELECT count(*) FROM approvals WHERE run_id = 'run-reset'`, want: 0},
+		{name: "reset receipts deleted", query: `SELECT count(*) FROM receipts WHERE run_id = 'run-reset'`, want: 0},
+		{name: "reset outbound intents deleted", query: `SELECT count(*) FROM outbound_intents WHERE run_id = 'run-reset'`, want: 0},
+		{name: "reset summaries deleted", query: `SELECT count(*) FROM run_summaries WHERE run_id = 'run-reset'`, want: 0},
+		{name: "reset events deleted", query: `SELECT count(*) FROM events WHERE conversation_id = 'conv-reset'`, want: 0},
+		{name: "keep conversation preserved", query: `SELECT count(*) FROM conversations WHERE id = 'conv-keep'`, want: 1},
+		{name: "keep runs preserved", query: `SELECT count(*) FROM runs WHERE conversation_id = 'conv-keep'`, want: 1},
+		{name: "memory preserved", query: `SELECT count(*) FROM memory_items WHERE id = 'memory-1'`, want: 1},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got int
+			if err := db.RawDB().QueryRowContext(ctx, tt.query).Scan(&got); err != nil {
+				t.Fatalf("query count: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("%s: got %d, want %d", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConversationStore_ResetConversationIsAtomic(t *testing.T) {
+	db := setupTestStore(t)
+	cs := NewConversationStore(db)
+	ctx := context.Background()
+
+	for _, stmt := range []string{
+		`INSERT INTO conversations (id, key, created_at)
+		 VALUES ('conv-reset', 'telegram|acct-1|chat-1|main', datetime('now'))`,
+		`INSERT INTO runs (id, conversation_id, agent_id, session_id, status, created_at, updated_at)
+		 VALUES ('run-reset', 'conv-reset', 'assistant', 'sess-reset', 'completed', datetime('now'), datetime('now'))`,
+		`INSERT INTO sessions (id, conversation_id, key, agent_id, role, status, created_at)
+		 VALUES ('sess-reset', 'conv-reset', 'front-reset', 'assistant', 'front', 'active', datetime('now'))`,
+		`INSERT INTO session_messages (id, session_id, sender_session_id, kind, body, created_at)
+		 VALUES ('msg-reset', 'sess-reset', '', 'user', 'reset me', datetime('now'))`,
+		`CREATE TRIGGER fail_runs_delete
+		 BEFORE DELETE ON runs
+		 BEGIN
+		   SELECT RAISE(ABORT, 'forced runs delete failure');
+		 END;`,
+	} {
+		if _, err := db.RawDB().ExecContext(ctx, stmt); err != nil {
+			t.Fatalf("seed fixture: %v", err)
+		}
+	}
+
+	err := cs.ResetConversation(ctx, "conv-reset")
+	if err == nil || !strings.Contains(err.Error(), "delete runs") {
+		t.Fatalf("expected delete runs failure, got %v", err)
+	}
+
+	for _, tt := range []struct {
+		name  string
+		query string
+		want  int
+	}{
+		{name: "conversation restored", query: `SELECT count(*) FROM conversations WHERE id = 'conv-reset'`, want: 1},
+		{name: "run restored", query: `SELECT count(*) FROM runs WHERE id = 'run-reset'`, want: 1},
+		{name: "session restored", query: `SELECT count(*) FROM sessions WHERE id = 'sess-reset'`, want: 1},
+		{name: "session message restored", query: `SELECT count(*) FROM session_messages WHERE id = 'msg-reset'`, want: 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var got int
+			if err := db.RawDB().QueryRowContext(ctx, tt.query).Scan(&got); err != nil {
+				t.Fatalf("query count: %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("%s: got %d, want %d", tt.name, got, tt.want)
+			}
+		})
+	}
+}

@@ -39,6 +39,10 @@ func (s *stubFrontSessionStarter) InspectConversation(context.Context, conversat
 	return runtime.ConversationStatus{}, nil
 }
 
+func (s *stubFrontSessionStarter) ResetConversation(context.Context, conversations.ConversationKey) (runtime.ConversationResetOutcome, error) {
+	return runtime.ConversationResetMissing, nil
+}
+
 func newTelegramConnectorTestDB(t *testing.T) (*store.DB, *conversations.ConversationStore) {
 	t.Helper()
 	db, err := store.Open(":memory:")
@@ -165,13 +169,16 @@ func TestConnector_StartPublishesTelegramCommandMenu(t *testing.T) {
 	if setCommandsCalls.Load() != 1 {
 		t.Fatalf("expected 1 setMyCommands call, got %d", setCommandsCalls.Load())
 	}
-	if len(publishedCommands) != 3 {
-		t.Fatalf("expected 3 published commands, got %d", len(publishedCommands))
+	if len(publishedCommands) != 4 {
+		t.Fatalf("expected 4 published commands, got %d", len(publishedCommands))
 	}
 	if publishedCommands[0]["command"] != "start" || publishedCommands[0]["description"] == "" {
 		t.Fatalf("unexpected first published command: %+v", publishedCommands[0])
 	}
 	if publishedCommands[2]["command"] != "status" {
+		t.Fatalf("unexpected published commands: %+v", publishedCommands)
+	}
+	if publishedCommands[3]["command"] != "reset" {
 		t.Fatalf("unexpected published commands: %+v", publishedCommands)
 	}
 }

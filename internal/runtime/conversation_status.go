@@ -17,6 +17,14 @@ type ConversationStatus struct {
 	PendingApprovals int
 }
 
+type ConversationResetOutcome string
+
+const (
+	ConversationResetCleared ConversationResetOutcome = "cleared"
+	ConversationResetMissing ConversationResetOutcome = "missing"
+	ConversationResetBusy    ConversationResetOutcome = "busy"
+)
+
 func (r *Runtime) InspectConversation(ctx context.Context, key conversations.ConversationKey) (ConversationStatus, error) {
 	conv, found, err := r.convStore.Find(ctx, key)
 	if err != nil {
@@ -63,6 +71,29 @@ func (r *Runtime) InspectConversation(ctx context.Context, key conversations.Con
 	}
 
 	return status, nil
+}
+
+func (r *Runtime) ResetConversation(ctx context.Context, key conversations.ConversationKey) (ConversationResetOutcome, error) {
+	conv, found, err := r.convStore.Find(ctx, key)
+	if err != nil {
+		return "", fmt.Errorf("reset conversation: %w", err)
+	}
+	if !found {
+		return ConversationResetMissing, nil
+	}
+
+	active, err := r.convStore.ActiveRootRun(ctx, conv.ID)
+	if err != nil {
+		return "", fmt.Errorf("reset conversation: %w", err)
+	}
+	if active.ID != "" {
+		return ConversationResetBusy, nil
+	}
+
+	if err := r.convStore.ResetConversation(ctx, conv.ID); err != nil {
+		return "", fmt.Errorf("reset conversation: %w", err)
+	}
+	return ConversationResetCleared, nil
 }
 
 func (r *Runtime) loadConversationRun(ctx context.Context, conversationID, query string) (model.Run, error) {

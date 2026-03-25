@@ -19,6 +19,7 @@ type MessageSender interface {
 type ConnectorRuntime interface {
 	ReceiveInboundMessage(ctx context.Context, req runtime.InboundMessageCommand) (model.Run, error)
 	InspectConversation(ctx context.Context, key conversations.ConversationKey) (runtime.ConversationStatus, error)
+	ResetConversation(ctx context.Context, key conversations.ConversationKey) (runtime.ConversationResetOutcome, error)
 }
 
 type Connector struct {
