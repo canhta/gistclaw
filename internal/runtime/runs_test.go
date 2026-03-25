@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -67,6 +68,29 @@ func (p *streamingProvider) Generate(ctx context.Context, _ GenerateRequest, str
 	}, nil
 }
 
+type workspaceAwareTool struct {
+	root string
+}
+
+func (t *workspaceAwareTool) Name() string { return "workspace_aware" }
+
+func (t *workspaceAwareTool) Spec() model.ToolSpec {
+	return model.ToolSpec{
+		Name:       t.Name(),
+		Risk:       model.RiskLow,
+		SideEffect: "read",
+	}
+}
+
+func (t *workspaceAwareTool) Invoke(ctx context.Context, _ model.ToolCall) (model.ToolResult, error) {
+	meta, ok := tools.InvocationContextFrom(ctx)
+	if !ok {
+		return model.ToolResult{}, fmt.Errorf("missing invocation context")
+	}
+	t.root = meta.WorkspaceRoot
+	return model.ToolResult{Output: `{"ok":true}`}, nil
+}
+
 func TestRunEngine_StartAndComplete(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(
@@ -100,6 +124,38 @@ func TestRunEngine_StartAndComplete(t *testing.T) {
 	}
 	if receiptCount != 1 {
 		t.Fatalf("expected 1 receipt, got %d", receiptCount)
+	}
+}
+
+func TestRunEngine_PassesWorkspaceRootIntoToolInvocationContext(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	tool := &workspaceAwareTool{}
+	reg.Register(tool)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				ToolCalls: []model.ToolCallRequest{
+					{ID: "call-root", ToolName: tool.Name(), InputJSON: []byte(`{}`)},
+				},
+				StopReason: "tool_calls",
+			},
+			{Content: "done", StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+
+	workspaceRoot := t.TempDir()
+	if _, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-workspace-tool",
+		AgentID:        "agent-a",
+		Objective:      "use tool",
+		WorkspaceRoot:  workspaceRoot,
+	}); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if tool.root != workspaceRoot {
+		t.Fatalf("expected tool to receive workspace root %q, got %q", workspaceRoot, tool.root)
 	}
 }
 

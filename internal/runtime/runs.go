@@ -439,7 +439,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 		}
 
 		if len(result.ToolCalls) > 0 {
-			toolEvents, err := r.executeToolCalls(ctx, runID, conversationID, agentID, result.ToolCalls)
+			toolEvents, err := r.executeToolCalls(ctx, runID, conversationID, agentID, opts.workspaceRoot, result.ToolCalls)
 			if err != nil {
 				return model.Run{}, err
 			}
@@ -511,6 +511,7 @@ func (r *Runtime) executeToolCalls(
 	runID string,
 	conversationID string,
 	agentID string,
+	workspaceRoot string,
 	toolCalls []model.ToolCallRequest,
 ) ([]model.Event, error) {
 	events := make([]model.Event, 0, len(toolCalls))
@@ -524,10 +525,11 @@ func (r *Runtime) executeToolCalls(
 
 		tool, ok := r.tools.Get(tc.ToolName)
 		if ok {
-			toolDecision := policy.Decide(agent, runProfile, tool.Spec())
+			toolDecision := policy.DecideCall(agent, runProfile, tool.Spec(), tc.InputJSON)
 			decision = toolDecision.Mode
 			if toolDecision.Mode == model.DecisionAllow {
-				result, err := tool.Invoke(ctx, model.ToolCall{
+				invokeCtx := tools.WithInvocationContext(ctx, tools.InvocationContext{WorkspaceRoot: workspaceRoot})
+				result, err := tool.Invoke(invokeCtx, model.ToolCall{
 					ID:        tc.ID,
 					ToolName:  tc.ToolName,
 					InputJSON: tc.InputJSON,

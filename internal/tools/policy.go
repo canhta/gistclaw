@@ -10,6 +10,14 @@ type Policy struct {
 }
 
 func (p *Policy) Decide(agent model.AgentProfile, _ model.RunProfile, spec model.ToolSpec) model.ToolDecision {
+	return p.decide(agent, spec, classifyToolSpec(spec))
+}
+
+func (p *Policy) DecideCall(agent model.AgentProfile, _ model.RunProfile, spec model.ToolSpec, inputJSON []byte) model.ToolDecision {
+	return p.decide(agent, spec, classifyToolCall(spec, inputJSON))
+}
+
+func (p *Policy) decide(agent model.AgentProfile, spec model.ToolSpec, effect string) model.ToolDecision {
 	if p.Overrides != nil {
 		if mode, ok := p.Overrides[spec.Name]; ok {
 			return model.ToolDecision{Mode: mode, Reason: "override"}
@@ -27,7 +35,7 @@ func (p *Policy) Decide(agent model.AgentProfile, _ model.RunProfile, spec model
 		}
 	}
 
-	if spec.Risk == model.RiskLow {
+	if isReadEffect(effect) {
 		return model.ToolDecision{Mode: model.DecisionAllow, Reason: "low risk tool"}
 	}
 
@@ -43,15 +51,21 @@ func (p *Policy) Decide(agent model.AgentProfile, _ model.RunProfile, spec model
 			Reason: "profile denies risky tools",
 		}
 	case "workspace_write":
-		return model.ToolDecision{
-			Mode:   model.DecisionAsk,
-			Reason: "workspace_write requires approval for risky tools",
-		}
-	case "operator_facing", "elevated":
-		if spec.Risk == model.RiskHigh {
+		if spec.Name == "shell_exec" && effect == effectExecWrite {
 			return model.ToolDecision{
 				Mode:   model.DecisionAsk,
-				Reason: "high risk requires approval",
+				Reason: "workspace_write requires approval for mutating shell commands",
+			}
+		}
+		return model.ToolDecision{
+			Mode:   model.DecisionAllow,
+			Reason: "workspace_write allows workspace mutations",
+		}
+	case "operator_facing", "elevated":
+		if spec.Name == "shell_exec" && effect == effectExecWrite {
+			return model.ToolDecision{
+				Mode:   model.DecisionAsk,
+				Reason: "mutating shell commands require approval",
 			}
 		}
 		return model.ToolDecision{Mode: model.DecisionAllow, Reason: "elevated profile"}
