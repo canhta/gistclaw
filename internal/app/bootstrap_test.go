@@ -3,9 +3,13 @@ package app
 import (
 	"context"
 	"encoding/hex"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/runtime"
 	"github.com/canhta/gistclaw/internal/tools"
 )
 
@@ -124,7 +128,7 @@ func TestBootstrap_AdminTokenNotRegeneratedIfExists(t *testing.T) {
 }
 
 func TestSeedOperatorSettings(t *testing.T) {
-	t.Run("seeds workspace and telegram settings from config when missing", func(t *testing.T) {
+	t.Run("seeds telegram setting from config without projecting workspace", func(t *testing.T) {
 		db, err := storeWiring(Config{DatabasePath: ":memory:"})
 		if err != nil {
 			t.Fatalf("storeWiring: %v", err)
@@ -141,12 +145,8 @@ func TestSeedOperatorSettings(t *testing.T) {
 			t.Fatalf("seedOperatorSettings: %v", err)
 		}
 
-		var workspaceRoot string
-		if err := db.RawDB().QueryRow("SELECT value FROM settings WHERE key = 'workspace_root'").Scan(&workspaceRoot); err != nil {
-			t.Fatalf("query workspace_root: %v", err)
-		}
-		if workspaceRoot != cfg.WorkspaceRoot {
-			t.Fatalf("expected workspace_root %q, got %q", cfg.WorkspaceRoot, workspaceRoot)
+		if workspaceRoot := lookupDBSetting(db, "workspace_root"); workspaceRoot != "" {
+			t.Fatalf("expected seedOperatorSettings to leave workspace_root unset, got %q", workspaceRoot)
 		}
 
 		var telegramToken string
@@ -183,10 +183,7 @@ func TestSeedOperatorSettings(t *testing.T) {
 			t.Fatalf("seedOperatorSettings: %v", err)
 		}
 
-		var workspaceRoot string
-		if err := db.RawDB().QueryRow("SELECT value FROM settings WHERE key = 'workspace_root'").Scan(&workspaceRoot); err != nil {
-			t.Fatalf("query workspace_root: %v", err)
-		}
+		workspaceRoot := lookupDBSetting(db, "workspace_root")
 		if workspaceRoot != "/tmp/operator-workspace" {
 			t.Fatalf("expected existing workspace_root to be preserved, got %q", workspaceRoot)
 		}
@@ -199,6 +196,126 @@ func TestSeedOperatorSettings(t *testing.T) {
 			t.Fatalf("expected existing telegram_bot_token to be preserved, got %q", telegramToken)
 		}
 	})
+}
+
+func TestBootstrap_CreatesStarterProjectAndLeavesOnboardingIncomplete(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	cfg := Config{
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+	}
+
+	app, err := Bootstrap(cfg)
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	t.Cleanup(func() {
+		app.runtime.WaitAsync()
+		if app.toolCloser != nil {
+			_ = app.toolCloser.Close()
+		}
+		_ = app.db.Close()
+	})
+
+	var count int
+	if err := app.db.RawDB().QueryRow("SELECT COUNT(*) FROM projects").Scan(&count); err != nil {
+		t.Fatalf("query starter projects: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 starter project, got %d", count)
+	}
+
+	var projectName string
+	var workspaceRoot string
+	if err := app.db.RawDB().QueryRow("SELECT name, workspace_root FROM projects LIMIT 1").Scan(&projectName, &workspaceRoot); err != nil {
+		t.Fatalf("query starter project: %v", err)
+	}
+	if projectName == "" {
+		t.Fatal("expected starter project name to be set")
+	}
+
+	wantPrefix := filepath.Join(home, ".gistclaw", "projects") + string(os.PathSeparator)
+	if !strings.HasPrefix(workspaceRoot, wantPrefix) {
+		t.Fatalf("expected starter workspace under %q, got %q", wantPrefix, workspaceRoot)
+	}
+	if _, err := os.Stat(workspaceRoot); err != nil {
+		t.Fatalf("expected starter workspace directory to exist: %v", err)
+	}
+	if activeProjectID := lookupDBSetting(app.db, "active_project_id"); activeProjectID == "" {
+		t.Fatal("expected active_project_id to be set")
+	}
+	if activeWorkspace := lookupDBSetting(app.db, "workspace_root"); activeWorkspace != workspaceRoot {
+		t.Fatalf("expected workspace_root projection %q, got %q", workspaceRoot, activeWorkspace)
+	}
+	if completed := lookupDBSetting(app.db, "onboarding_completed_at"); completed != "" {
+		t.Fatalf("expected onboarding to stay incomplete, got %q", completed)
+	}
+}
+
+func TestEnsureProjectState_UsesConfiguredWorkspaceWhenNoActiveProjectExists(t *testing.T) {
+	db, err := storeWiring(Config{DatabasePath: ":memory:"})
+	if err != nil {
+		t.Fatalf("storeWiring: %v", err)
+	}
+	defer db.Close()
+
+	workspaceRoot := t.TempDir()
+	project, err := ensureProjectState(context.Background(), db, Config{WorkspaceRoot: workspaceRoot})
+	if err != nil {
+		t.Fatalf("ensureProjectState: %v", err)
+	}
+	if project.WorkspaceRoot != workspaceRoot {
+		t.Fatalf("expected configured workspace_root %q, got %q", workspaceRoot, project.WorkspaceRoot)
+	}
+	if lookupDBSetting(db, "active_project_id") == "" {
+		t.Fatal("expected configured workspace to become the active project")
+	}
+}
+
+func TestEnsureProjectState_PrefersStoredActiveProjectOverConfigWorkspace(t *testing.T) {
+	db, err := storeWiring(Config{DatabasePath: ":memory:"})
+	if err != nil {
+		t.Fatalf("storeWiring: %v", err)
+	}
+	defer db.Close()
+
+	storedRoot := t.TempDir()
+	storedProject, err := runtime.ActivateWorkspace(context.Background(), db, storedRoot, "stored-project", "operator")
+	if err != nil {
+		t.Fatalf("ActivateWorkspace: %v", err)
+	}
+
+	configRoot := t.TempDir()
+	project, err := ensureProjectState(context.Background(), db, Config{WorkspaceRoot: configRoot})
+	if err != nil {
+		t.Fatalf("ensureProjectState: %v", err)
+	}
+	if project.ID != storedProject.ID {
+		t.Fatalf("expected stored active project %q, got %q", storedProject.ID, project.ID)
+	}
+	if project.WorkspaceRoot != storedRoot {
+		t.Fatalf("expected stored workspace_root %q, got %q", storedRoot, project.WorkspaceRoot)
+	}
+	if got := lookupDBSetting(db, "workspace_root"); got != storedRoot {
+		t.Fatalf("expected workspace_root projection %q, got %q", storedRoot, got)
+	}
+}
+
+func TestGenerateStarterProjectName_IncludesEntropySuffix(t *testing.T) {
+	name, err := generateStarterProjectName()
+	if err != nil {
+		t.Fatalf("generateStarterProjectName: %v", err)
+	}
+
+	parts := strings.Split(name, "-")
+	if len(parts) != 3 {
+		t.Fatalf("expected starter project name with adjective-noun-suffix shape, got %q", name)
+	}
+	if len(parts[2]) != 4 {
+		t.Fatalf("expected 4-character entropy suffix, got %q", parts[2])
+	}
 }
 
 func TestBootstrap_DoesNotWireDeferredConnectorsOrScheduler(t *testing.T) {

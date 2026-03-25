@@ -44,11 +44,6 @@ type App struct {
 }
 
 func Bootstrap(cfg Config) (*App, error) {
-	teamDir, err := prepareTeamDir(cfg)
-	if err != nil {
-		return nil, err
-	}
-
 	db, err := storeWiring(cfg)
 	if err != nil {
 		return nil, err
@@ -63,6 +58,18 @@ func Bootstrap(cfg Config) (*App, error) {
 		return nil, err
 	}
 
+	project, err := ensureProjectState(context.Background(), db, cfg)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	cfg.WorkspaceRoot = project.WorkspaceRoot
+
+	teamDir, err := prepareTeamDir(cfg)
+	if err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if err := validateTeamDir(teamDir); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -245,9 +252,6 @@ func ensureAdminToken(db *store.DB) error {
 }
 
 func seedOperatorSettings(db *store.DB, cfg Config) error {
-	if err := insertSettingIfMissing(db, "workspace_root", cfg.WorkspaceRoot); err != nil {
-		return fmt.Errorf("bootstrap: seed workspace_root: %w", err)
-	}
 	if err := insertSettingIfMissing(db, "telegram_bot_token", cfg.Telegram.BotToken); err != nil {
 		return fmt.Errorf("bootstrap: seed telegram_bot_token: %w", err)
 	}
@@ -292,6 +296,97 @@ func runtimeWiring(
 ) *runtime.Runtime {
 	prov := buildProvider(cfg.Provider)
 	return runtime.New(db, cs, reg, mem, prov, sink)
+}
+
+func ensureProjectState(ctx context.Context, db *store.DB, cfg Config) (model.Project, error) {
+	activeProject, err := runtime.ActiveProject(ctx, db)
+	if err != nil {
+		return model.Project{}, fmt.Errorf("bootstrap: load active project: %w", err)
+	}
+	if activeProject.ID != "" {
+		if err := runtime.SetActiveProject(ctx, db, activeProject.ID); err != nil {
+			return model.Project{}, fmt.Errorf("bootstrap: sync active project: %w", err)
+		}
+		return activeProject, nil
+	}
+	if activeProject.WorkspaceRoot != "" {
+		project, err := runtime.ActivateWorkspace(ctx, db, activeProject.WorkspaceRoot, activeProject.Name, "migrated")
+		if err != nil {
+			return model.Project{}, fmt.Errorf("bootstrap: migrate legacy workspace: %w", err)
+		}
+		return project, nil
+	}
+	if cfg.WorkspaceRoot != "" {
+		project, err := runtime.ActivateWorkspace(ctx, db, cfg.WorkspaceRoot, "", "config")
+		if err != nil {
+			return model.Project{}, fmt.Errorf("bootstrap: activate configured workspace: %w", err)
+		}
+		return project, nil
+	}
+	project, err := createStarterProject(ctx, db)
+	if err != nil {
+		return model.Project{}, err
+	}
+	return project, nil
+}
+
+func createStarterProject(ctx context.Context, db *store.DB) (model.Project, error) {
+	projectsRoot := defaultProjectsRoot()
+	if err := os.MkdirAll(projectsRoot, 0o755); err != nil {
+		return model.Project{}, fmt.Errorf("bootstrap: create projects root: %w", err)
+	}
+
+	for attempt := 0; attempt < 32; attempt++ {
+		name, err := generateStarterProjectName()
+		if err != nil {
+			return model.Project{}, fmt.Errorf("bootstrap: generate starter project name: %w", err)
+		}
+		workspaceRoot := filepath.Join(projectsRoot, name)
+		if err := os.Mkdir(workspaceRoot, 0o755); err != nil {
+			if os.IsExist(err) {
+				continue
+			}
+			return model.Project{}, fmt.Errorf("bootstrap: create starter workspace: %w", err)
+		}
+		project, err := runtime.ActivateWorkspace(ctx, db, workspaceRoot, name, "starter")
+		if err != nil {
+			return model.Project{}, fmt.Errorf("bootstrap: activate starter project: %w", err)
+		}
+		return project, nil
+	}
+
+	return model.Project{}, fmt.Errorf("bootstrap: could not allocate a unique starter project name")
+}
+
+func generateStarterProjectName() (string, error) {
+	adjectives := []string{"amber", "quiet", "silver", "steady", "bright", "cedar", "winter", "cinder"}
+	nouns := []string{"fox", "harbor", "river", "forge", "meadow", "summit", "trail", "canvas"}
+
+	adjective, err := randomWord(adjectives)
+	if err != nil {
+		return "", err
+	}
+	noun, err := randomWord(nouns)
+	if err != nil {
+		return "", err
+	}
+
+	suffix := make([]byte, 2)
+	if _, err := rand.Read(suffix); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s-%s-%x", adjective, noun, suffix), nil
+}
+
+func randomWord(words []string) (string, error) {
+	if len(words) == 0 {
+		return "", fmt.Errorf("empty word list")
+	}
+	buf := make([]byte, 1)
+	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return words[int(buf[0])%len(words)], nil
 }
 
 // buildProvider instantiates the correct runtime.Provider from the config.

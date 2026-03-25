@@ -2,7 +2,7 @@
 <section class="page-header">
   <span class="page-eyebrow">Operate</span>
   <h1>Runs</h1>
-  <p class="page-lede">The operational queue for recent runs. Filters and paging stay in the URL so you can share the exact slice you are reviewing.</p>
+  <p class="page-lede">The operational queue for recent runs. Filters and paging stay in the URL so you can share the exact slice you are reviewing. {{if .ActiveProjectName}}Current project: <strong>{{.ActiveProjectName}}</strong>.{{end}}</p>
 </section>
 <section class="page-section">
   <div class="panel queue-strip">
@@ -76,6 +76,13 @@
           <option value="10" {{if eq .Filters.Limit 10}}selected{{end}}>10</option>
           <option value="20" {{if eq .Filters.Limit 20}}selected{{end}}>20</option>
           <option value="50" {{if eq .Filters.Limit 50}}selected{{end}}>50</option>
+        </select>
+      </label>
+      <label>
+        Scope
+        <select name="scope">
+          <option value="active" {{if eq .Filters.Scope "active"}}selected{{end}}>Active project</option>
+          <option value="all" {{if eq .Filters.Scope "all"}}selected{{end}}>All projects</option>
         </select>
       </label>
       <div class="filter-action-group">

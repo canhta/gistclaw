@@ -13,6 +13,7 @@ import (
 
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/replay"
+	"github.com/canhta/gistclaw/internal/runtime"
 )
 
 type runListItem struct {
@@ -26,10 +27,12 @@ type runListItem struct {
 }
 
 type runsPageData struct {
-	Runs       []runListItem
-	Filters    runListFilters
-	Paging     pageLinks
-	QueueStrip runQueueStripView
+	Runs                []runListItem
+	Filters             runListFilters
+	Paging              pageLinks
+	QueueStrip          runQueueStripView
+	ActiveProjectName   string
+	ActiveWorkspaceRoot string
 }
 
 type runQueueStripView struct {
@@ -121,6 +124,7 @@ type runListFilters struct {
 	Query  string
 	Status string
 	Limit  int
+	Scope  string
 }
 
 type runListRow struct {
@@ -130,7 +134,12 @@ type runListRow struct {
 
 func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 	filter := runListFilterFromRequest(r)
-	querySQL, args, err := buildRunListQuery(filter)
+	activeProject, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		http.Error(w, "failed to load active project", http.StatusInternalServerError)
+		return
+	}
+	querySQL, args, err := buildRunListQuery(filter, activeProject.WorkspaceRoot)
 	if err != nil {
 		http.Error(w, "failed to build runs query", http.StatusInternalServerError)
 		return
@@ -165,10 +174,12 @@ func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 
 	items, paging := finalizeRunListPage(r.URL.Query(), filter, runRows)
 	s.renderTemplate(w, r, "Runs", "runs_body", runsPageData{
-		Runs:       items,
-		Filters:    runListFilters{Query: filter.Query, Status: filter.Status, Limit: filter.Limit},
-		Paging:     paging,
-		QueueStrip: buildRunQueueStrip(items),
+		Runs:                items,
+		Filters:             runListFilters{Query: filter.Query, Status: filter.Status, Limit: filter.Limit, Scope: filter.Scope},
+		Paging:              paging,
+		QueueStrip:          buildRunQueueStrip(items),
+		ActiveProjectName:   activeProject.Name,
+		ActiveWorkspaceRoot: activeProject.WorkspaceRoot,
 	})
 }
 
@@ -366,6 +377,7 @@ type runListRequest struct {
 	Query     string
 	Status    string
 	Limit     int
+	Scope     string
 	Cursor    runListCursor
 	HasCursor bool
 	Direction string
@@ -387,13 +399,21 @@ func runListFilterFromRequest(r *http.Request) runListRequest {
 		Query:     strings.TrimSpace(r.URL.Query().Get("q")),
 		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
 		Limit:     requestNamedLimit(r, "limit", 20),
+		Scope:     runScopeFromRequest(r),
 		Cursor:    cursor,
 		HasCursor: ok,
 		Direction: direction,
 	}
 }
 
-func buildRunListQuery(filter runListRequest) (string, []any, error) {
+func runScopeFromRequest(r *http.Request) string {
+	if strings.TrimSpace(r.URL.Query().Get("scope")) == "all" {
+		return "all"
+	}
+	return "active"
+}
+
+func buildRunListQuery(filter runListRequest, activeWorkspaceRoot string) (string, []any, error) {
 	var query strings.Builder
 	query.WriteString(`SELECT id, COALESCE(objective, ''), COALESCE(parent_run_id, ''), status, created_at,
 	        (SELECT count(*) FROM runs child WHERE child.parent_run_id = runs.id) AS worker_count
@@ -409,6 +429,10 @@ func buildRunListQuery(filter runListRequest) (string, []any, error) {
 	if filter.Status != "" {
 		clauses = append(clauses, "status = ?")
 		args = append(args, filter.Status)
+	}
+	if filter.Scope != "all" && activeWorkspaceRoot != "" {
+		clauses = append(clauses, "COALESCE(workspace_root, '') = ?")
+		args = append(args, activeWorkspaceRoot)
 	}
 	if filter.HasCursor {
 		switch filter.Direction {

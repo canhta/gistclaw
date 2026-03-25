@@ -29,7 +29,6 @@ Today the repo already ships a working daemon, CLI, local web control plane, rep
 Create a config file at `~/.config/gistclaw/config.yaml`:
 
 ```yaml
-workspace_root: /absolute/path/to/repo
 provider:
   name: openai
   api_key: REPLACE_WITH_REAL_KEY
@@ -44,7 +43,7 @@ mcp:
   servers: []
 ```
 
-Only `workspace_root` and `provider` are required. If you omit `database_path`, GistClaw stores state at `~/.local/share/gistclaw/runtime.db`.
+Only `provider` is required. `workspace_root` is optional: on first boot, GistClaw creates a starter project under `~/.gistclaw/projects/<name>` and keeps onboarding separate from workspace existence. If you omit `database_path`, GistClaw stores state at `~/.local/share/gistclaw/runtime.db`.
 
 Start the daemon:
 
@@ -54,7 +53,7 @@ go run ./cmd/gistclaw serve
 
 Then open `http://127.0.0.1:8080`. You can override the config path with `GISTCLAW_CONFIG` or `gistclaw -c /path/to/config.yaml ...`.
 
-From there, you can submit a task from the web UI or from the CLI and use the local operator surface for runs, approvals, session inspection, team configuration, memory, and delivery recovery.
+From there, you can keep the starter project, bind an existing repo, or create a new project elsewhere during onboarding. The shell project switcher changes the active project context without burying that job in Settings. You can then submit a task from the web UI or from the CLI and use the local operator surface for runs, approvals, session inspection, team configuration, memory, and delivery recovery.
 
 ## CLI Surface
 

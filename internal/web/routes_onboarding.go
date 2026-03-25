@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/canhta/gistclaw/internal/runtime"
+	"github.com/canhta/gistclaw/internal/store"
 )
 
 // TaskCandidate is a suggested task from the repo-signal scan.
@@ -15,6 +17,12 @@ type TaskCandidate struct {
 	Kind        string // "explain", "review", or "improve"
 	Description string
 	Signal      string // why this candidate was suggested
+}
+
+type onboardingStep1Data struct {
+	Error               string
+	ActiveProjectName   string
+	ActiveWorkspaceRoot string
 }
 
 // scanRepoSignals reads the local filesystem of workspaceRoot and produces
@@ -127,14 +135,14 @@ func fallbackTrio(workspaceRoot string) []TaskCandidate {
 	}
 }
 
-// handleOnboarding renders step 1 of the onboarding wizard (workspace bind).
-// If a workspace is already bound, redirects to the main Operate queue.
+// handleOnboarding renders step 1 of the onboarding wizard.
+// Once onboarding is complete, it redirects to the main Operate queue.
 func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
-	if lookupSetting(s.db, "workspace_root") != "" {
+	if onboardingCompleted(s.db) {
 		http.Redirect(w, r, pageOperateRuns, http.StatusSeeOther)
 		return
 	}
-	s.renderTemplate(w, r, "Bind Workspace", "onboarding_step1_body", nil)
+	s.renderOnboardingStep1(w, r, http.StatusOK, "")
 }
 
 // handleOnboardingStep1Submit validates and persists the submitted workspace path.
@@ -143,29 +151,56 @@ func (s *Server) handleOnboardingStep1Submit(w http.ResponseWriter, r *http.Requ
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
 	}
-	workspaceRoot := strings.TrimSpace(r.FormValue("workspace_root"))
-	if workspaceRoot == "" {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.renderTemplate(w, r, "Bind Workspace", "onboarding_step1_body", map[string]any{
-			"Error": "workspace path is required",
-		})
-		return
+	action := strings.TrimSpace(r.FormValue("action"))
+	switch action {
+	case "use_starter":
+		project, err := runtime.ActiveProject(r.Context(), s.db)
+		if err != nil {
+			http.Error(w, "failed to load starter project", http.StatusInternalServerError)
+			return
+		}
+		if project.WorkspaceRoot == "" {
+			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, "starter project is not ready yet")
+			return
+		}
+	case "create_new":
+		workspaceRoot := strings.TrimSpace(r.FormValue("new_workspace_root"))
+		if workspaceRoot == "" {
+			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, "new project path is required")
+			return
+		}
+		if errMsg := validateNewWorkspacePath(workspaceRoot); errMsg != "" {
+			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, errMsg)
+			return
+		}
+		if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
+			http.Error(w, "failed to create project directory", http.StatusInternalServerError)
+			return
+		}
+		if _, err := runtime.ActivateWorkspace(r.Context(), s.db, workspaceRoot, "", "operator"); err != nil {
+			http.Error(w, "failed to save project", http.StatusInternalServerError)
+			return
+		}
+	default:
+		workspaceRoot := strings.TrimSpace(r.FormValue("workspace_root"))
+		if workspaceRoot == "" {
+			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, "workspace path is required")
+			return
+		}
+
+		if errMsg := validateWorkspacePath(workspaceRoot); errMsg != "" {
+			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, errMsg)
+			return
+		}
+
+		if _, err := runtime.ActivateWorkspace(r.Context(), s.db, workspaceRoot, "", "operator"); err != nil {
+			http.Error(w, "failed to save workspace", http.StatusInternalServerError)
+			return
+		}
 	}
 
-	if errMsg := validateWorkspacePath(workspaceRoot); errMsg != "" {
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.renderTemplate(w, r, "Bind Workspace", "onboarding_step1_body", map[string]any{
-			"Error": errMsg,
-		})
-		return
-	}
-
-	if _, err := s.db.RawDB().ExecContext(r.Context(),
-		`INSERT INTO settings (key, value, updated_at) VALUES ('workspace_root', ?, datetime('now'))
-		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-		workspaceRoot,
-	); err != nil {
-		http.Error(w, "failed to save workspace", http.StatusInternalServerError)
+	if err := markOnboardingCompleted(r.Context(), s.db); err != nil {
+		http.Error(w, "failed to save onboarding state", http.StatusInternalServerError)
 		return
 	}
 	http.Redirect(w, r, "/onboarding/step/2", http.StatusSeeOther)
@@ -194,6 +229,41 @@ func validateWorkspacePath(path string) string {
 	}
 	tmp.Close()
 	os.Remove(tmp.Name())
+	return ""
+}
+
+func validateNewWorkspacePath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return "new project path is required"
+	}
+	if info, err := os.Stat(path); err == nil {
+		if !info.IsDir() {
+			return fmt.Sprintf("%q is not a directory", path)
+		}
+		entries, err := os.ReadDir(path)
+		if err != nil {
+			return fmt.Sprintf("cannot inspect %q", path)
+		}
+		if len(entries) > 0 {
+			return fmt.Sprintf("%q is not empty; bind it as an existing repo instead", path)
+		}
+		return ""
+	} else if !os.IsNotExist(err) {
+		return fmt.Sprintf("cannot access path: %v", err)
+	}
+
+	parent := filepath.Dir(path)
+	info, err := os.Stat(parent)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Sprintf("parent path %q does not exist", parent)
+		}
+		return fmt.Sprintf("cannot access parent path: %v", err)
+	}
+	if !info.IsDir() {
+		return fmt.Sprintf("parent path %q is not a directory", parent)
+	}
 	return ""
 }
 
@@ -261,11 +331,38 @@ func (s *Server) onboardingMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		// If no workspace is bound, redirect to onboarding.
-		if lookupSetting(s.db, "workspace_root") == "" {
+		if !onboardingCompleted(s.db) {
 			http.Redirect(w, r, "/onboarding", http.StatusSeeOther)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) renderOnboardingStep1(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
+	project, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		http.Error(w, "failed to load onboarding state", http.StatusInternalServerError)
+		return
+	}
+	s.renderTemplateStatus(w, r, status, "Choose Project", "onboarding_step1_body", onboardingStep1Data{
+		Error:               errMsg,
+		ActiveProjectName:   project.Name,
+		ActiveWorkspaceRoot: project.WorkspaceRoot,
+	})
+}
+
+func onboardingCompleted(db *store.DB) bool {
+	return lookupSetting(db, "onboarding_completed_at") != ""
+}
+
+func markOnboardingCompleted(ctx context.Context, db *store.DB) error {
+	_, err := db.RawDB().ExecContext(ctx,
+		`INSERT INTO settings (key, value, updated_at) VALUES ('onboarding_completed_at', datetime('now'), datetime('now'))
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+	)
+	if err != nil {
+		return fmt.Errorf("save onboarding_completed_at: %w", err)
+	}
+	return nil
 }

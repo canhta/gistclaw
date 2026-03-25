@@ -39,9 +39,23 @@ type Server struct {
 }
 
 type layoutData struct {
-	Title      string
-	Body       template.HTML
-	Navigation shellNavigation
+	Title       string
+	Body        template.HTML
+	CurrentPath string
+	Navigation  shellNavigation
+	Project     shellProjectLayout
+}
+
+type shellProjectLayout struct {
+	ActiveName          string
+	ActiveWorkspaceRoot string
+	Options             []shellProjectOption
+}
+
+type shellProjectOption struct {
+	ID     string
+	Name   string
+	Active bool
 }
 
 func NewServer(opts Options) (*Server, error) {
@@ -133,6 +147,7 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("POST "+pageConfigureSettings, s.adminAuth(http.HandlerFunc(s.handleSettingsUpdate)))
 	s.mux.HandleFunc("GET "+pageOperateStartTask, s.handleRunForm)
 	s.mux.Handle("POST "+pageOperateStartTask, s.adminAuth(http.HandlerFunc(s.handleRunSubmit)))
+	s.mux.Handle("POST /projects/activate", s.adminAuth(http.HandlerFunc(s.handleProjectActivate)))
 	s.mux.HandleFunc("GET /onboarding", s.handleOnboarding)
 	s.mux.HandleFunc("POST /onboarding", s.handleOnboardingStep1Submit)
 	s.mux.HandleFunc("GET /onboarding/step/2", s.handleOnboardingStep2)
@@ -155,11 +170,18 @@ func (s *Server) renderTemplateStatus(w http.ResponseWriter, r *http.Request, st
 		http.Error(w, fmt.Sprintf("template render failed: %v", err), http.StatusInternalServerError)
 		return
 	}
+	projectLayout, err := s.projectLayoutData(r)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("template render failed: %v", err), http.StatusInternalServerError)
+		return
+	}
 	w.WriteHeader(status)
 	if err := s.templates.ExecuteTemplate(w, "layout", layoutData{
-		Title:      title,
-		Body:       template.HTML(body.String()),
-		Navigation: navigationForPath(r.URL.Path),
+		Title:       title,
+		Body:        template.HTML(body.String()),
+		CurrentPath: requestPathWithQuery(r),
+		Navigation:  navigationForPath(r.URL.Path),
+		Project:     projectLayout,
 	}); err != nil {
 		http.Error(w, fmt.Sprintf("template render failed: %v", err), http.StatusInternalServerError)
 	}
@@ -244,6 +266,43 @@ func shouldIssueHostAdminCookie(r *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+func (s *Server) projectLayoutData(r *http.Request) (shellProjectLayout, error) {
+	project, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		return shellProjectLayout{}, fmt.Errorf("load active project: %w", err)
+	}
+	projects, err := runtime.ListProjects(r.Context(), s.db)
+	if err != nil {
+		return shellProjectLayout{}, fmt.Errorf("list projects: %w", err)
+	}
+
+	layout := shellProjectLayout{
+		ActiveName:          project.Name,
+		ActiveWorkspaceRoot: project.WorkspaceRoot,
+	}
+	for _, candidate := range projects {
+		if candidate.ID == "" {
+			continue
+		}
+		layout.Options = append(layout.Options, shellProjectOption{
+			ID:     candidate.ID,
+			Name:   candidate.Name,
+			Active: candidate.ID == project.ID || (project.ID == "" && candidate.WorkspaceRoot == project.WorkspaceRoot),
+		})
+	}
+	return layout, nil
+}
+
+func requestPathWithQuery(r *http.Request) string {
+	if r == nil || r.URL == nil {
+		return pageOperateRuns
+	}
+	if raw := r.URL.RequestURI(); raw != "" {
+		return raw
+	}
+	return r.URL.Path
 }
 
 func (s *Server) authorizedByBearer(r *http.Request, adminToken string) bool {

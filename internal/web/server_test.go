@@ -131,11 +131,35 @@ func TestRuns(t *testing.T) {
 			t.Fatalf("expected second page 200, got %d", rr.Code)
 		}
 		body = rr.Body.String()
-		if !strings.Contains(body, "run-oldest") {
+		if !strings.Contains(body, `href="/operate/runs/run-oldest"`) {
 			t.Fatalf("expected second filtered page to contain oldest run, got:\n%s", body)
 		}
-		if strings.Contains(body, "run-newest") || strings.Contains(body, "run-middle") {
+		if strings.Contains(body, `href="/operate/runs/run-newest"`) || strings.Contains(body, `href="/operate/runs/run-middle"`) {
 			t.Fatalf("expected second filtered page to contain only oldest filtered run, got:\n%s", body)
+		}
+	})
+
+	t.Run("list defaults to active project", func(t *testing.T) {
+		h := newServerHarness(t)
+		otherRoot := t.TempDir()
+		h.insertProject(t, "seo-test", otherRoot)
+		h.insertRun(t, "run-active-project", "conv-active-project", "review main project", "active")
+		h.insertRunInWorkspace(t, "run-other-project", "conv-other-project", "review seo project", "active", otherRoot)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, "run-active-project") {
+			t.Fatalf("expected active project run to be visible, got:\n%s", body)
+		}
+		if strings.Contains(body, "run-other-project") {
+			t.Fatalf("expected non-active project runs to be hidden, got:\n%s", body)
 		}
 	})
 
@@ -291,7 +315,7 @@ func TestPageRouteMap(t *testing.T) {
 			path string
 			want []string
 		}{
-			{path: "/operate/runs", want: []string{"Operate", "Configure", "Recover", `href="/operate/runs"`, `href="/operate/sessions"`}},
+			{path: "/operate/runs", want: []string{"Operate", "Configure", "Recover", `href="/operate/runs"`, `href="/operate/sessions"`, `name="project_id"`}},
 			{path: "/configure/team", want: []string{"Team", `href="/configure/team"`, `href="/configure/settings"`}},
 			{path: "/recover/routes-deliveries", want: []string{"Routes &amp; Deliveries", `href="/recover/approvals"`}},
 			{path: "/operate/start-task", want: []string{"Start Task"}},
@@ -407,10 +431,10 @@ func TestApprovals(t *testing.T) {
 			t.Fatalf("expected 200, got %d", rr.Code)
 		}
 		body := rr.Body.String()
-		if !strings.Contains(body, "ticket-run-approval-new") {
+		if !strings.Contains(body, `action="/recover/approvals/ticket-run-approval-new/resolve"`) {
 			t.Fatalf("expected first approval page to contain newest pending approval, got:\n%s", body)
 		}
-		if strings.Contains(body, "ticket-run-approval-mid") || strings.Contains(body, "ticket-run-approval-old") {
+		if strings.Contains(body, `action="/recover/approvals/ticket-run-approval-mid/resolve"`) || strings.Contains(body, `action="/recover/approvals/ticket-run-approval-old/resolve"`) {
 			t.Fatalf("expected first approval page to contain only newest filtered approval, got:\n%s", body)
 		}
 		if !strings.Contains(body, "direction=next") || !strings.Contains(body, "limit=1") {
@@ -426,10 +450,10 @@ func TestApprovals(t *testing.T) {
 			t.Fatalf("expected second approval page 200, got %d", rr.Code)
 		}
 		body = rr.Body.String()
-		if !strings.Contains(body, "ticket-run-approval-old") {
+		if !strings.Contains(body, `action="/recover/approvals/ticket-run-approval-old/resolve"`) {
 			t.Fatalf("expected second approval page to contain older pending approval, got:\n%s", body)
 		}
-		if strings.Contains(body, "ticket-run-approval-new") || strings.Contains(body, "ticket-run-approval-mid") {
+		if strings.Contains(body, `action="/recover/approvals/ticket-run-approval-new/resolve"`) || strings.Contains(body, `action="/recover/approvals/ticket-run-approval-mid/resolve"`) {
 			t.Fatalf("expected second approval page to contain only older filtered approval, got:\n%s", body)
 		}
 	})
@@ -1046,6 +1070,139 @@ func TestSettingsUpdate(t *testing.T) {
 			t.Fatalf("raw admin token should not appear in settings page")
 		}
 	})
+
+	t.Run("settings page demotes workspace editing to advanced override copy", func(t *testing.T) {
+		h := newServerHarness(t)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/configure/settings", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+		if !strings.Contains(rr.Body.String(), "advanced workspace override") {
+			t.Fatalf("expected advanced workspace override copy, got:\n%s", rr.Body.String())
+		}
+	})
+}
+
+func TestProjectSwitcher(t *testing.T) {
+	t.Run("runs page renders shell project switcher", func(t *testing.T) {
+		h := newServerHarness(t)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+		body := rr.Body.String()
+		for _, want := range []string{`name="project_id"`, "starter-project"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected runs page to contain %q, got:\n%s", want, body)
+			}
+		}
+	})
+
+	t.Run("switching project updates active workspace", func(t *testing.T) {
+		h := newServerHarness(t)
+		otherRoot := t.TempDir()
+		otherProjectID := h.insertProject(t, "seo-test", otherRoot)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/projects/activate",
+			strings.NewReader("project_id="+url.QueryEscape(otherProjectID)+"&redirect_to=%2Foperate%2Fruns"))
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if rr.Header().Get("Location") != "/operate/runs" {
+			t.Fatalf("expected redirect back to runs, got %q", rr.Header().Get("Location"))
+		}
+		if got := lookupSetting(h.db, "active_project_id"); got != otherProjectID {
+			t.Fatalf("expected active_project_id %q, got %q", otherProjectID, got)
+		}
+		if got := lookupSetting(h.db, "workspace_root"); got != otherRoot {
+			t.Fatalf("expected workspace_root %q, got %q", otherRoot, got)
+		}
+	})
+
+	t.Run("missing project id returns bad request", func(t *testing.T) {
+		h := newServerHarness(t)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/projects/activate", strings.NewReader("redirect_to=%2Foperate%2Fruns"))
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("invalid redirect falls back to runs", func(t *testing.T) {
+		h := newServerHarness(t)
+		otherRoot := t.TempDir()
+		otherProjectID := h.insertProject(t, "seo-test", otherRoot)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/projects/activate",
+			strings.NewReader("project_id="+url.QueryEscape(otherProjectID)+"&redirect_to=https%3A%2F%2Fevil.example"))
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if rr.Header().Get("Location") != "/operate/runs" {
+			t.Fatalf("expected invalid redirect to fall back to /operate/runs, got %q", rr.Header().Get("Location"))
+		}
+	})
+}
+
+func TestRequestPathWithQuery(t *testing.T) {
+	if got := requestPathWithQuery(nil); got != "/operate/runs" {
+		t.Fatalf("expected nil request fallback %q, got %q", "/operate/runs", got)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/operate/runs?scope=all&q=fix", nil)
+	if got := requestPathWithQuery(req); got != "/operate/runs?scope=all&q=fix" {
+		t.Fatalf("expected request path with query, got %q", got)
+	}
+}
+
+func TestProjectLayoutData_FallsBackToLegacyWorkspaceSetting(t *testing.T) {
+	h := newServerHarness(t)
+	if _, err := h.db.RawDB().Exec("DELETE FROM projects"); err != nil {
+		t.Fatalf("delete projects: %v", err)
+	}
+	if _, err := h.db.RawDB().Exec("DELETE FROM settings WHERE key = 'active_project_id'"); err != nil {
+		t.Fatalf("delete active_project_id: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
+	layout, err := h.server.projectLayoutData(req)
+	if err != nil {
+		t.Fatalf("projectLayoutData: %v", err)
+	}
+	if layout.ActiveName != filepath.Base(h.workspaceRoot) {
+		t.Fatalf("expected legacy active project name %q, got %q", filepath.Base(h.workspaceRoot), layout.ActiveName)
+	}
+	if len(layout.Options) != 0 {
+		t.Fatalf("expected no switcher options for legacy fallback, got %d", len(layout.Options))
+	}
 }
 
 func TestSettingsBudget(t *testing.T) {
@@ -2778,10 +2935,20 @@ func newServerHarnessWithProvider(t *testing.T, prov runtime.Provider) *serverHa
 	adminToken := "test-admin-token"
 	workspaceRoot := t.TempDir()
 	teamDir := writeTeamFixture(t)
+	const activeProjectID = "proj-primary"
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO projects (id, name, workspace_root, source, created_at, last_used_at)
+		 VALUES (?, ?, ?, 'starter', datetime('now'), datetime('now'))`,
+		activeProjectID, "starter-project", workspaceRoot,
+	); err != nil {
+		t.Fatalf("seed primary project: %v", err)
+	}
 	seedSettings(t, db, map[string]string{
-		"admin_token":    adminToken,
-		"workspace_root": workspaceRoot,
-		"team_name":      "Repo Task Team",
+		"admin_token":             adminToken,
+		"active_project_id":       activeProjectID,
+		"workspace_root":          workspaceRoot,
+		"team_name":               "Repo Task Team",
+		"onboarding_completed_at": "2026-03-25 00:00:00",
 	})
 
 	cs := conversations.NewConversationStore(db)
@@ -2821,6 +2988,20 @@ func newServerHarnessWithProvider(t *testing.T, prov runtime.Provider) *serverHa
 		teamDir:       teamDir,
 		workspaceRoot: workspaceRoot,
 	}
+}
+
+func (h *serverHarness) insertProject(t *testing.T, name, workspaceRoot string) string {
+	t.Helper()
+
+	projectID := "proj-" + strconv.Itoa(time.Now().Nanosecond())
+	if _, err := h.db.RawDB().Exec(
+		`INSERT INTO projects (id, name, workspace_root, source, created_at, last_used_at)
+		 VALUES (?, ?, ?, 'operator', datetime('now'), datetime('now'))`,
+		projectID, name, workspaceRoot,
+	); err != nil {
+		t.Fatalf("insert project: %v", err)
+	}
+	return projectID
 }
 
 func waitForRunStatus(t *testing.T, db *store.DB, runID string, want string) {
@@ -2982,6 +3163,20 @@ func (h *serverHarness) insertRunAt(t *testing.T, runID, conversationID, objecti
 	)
 	if err != nil {
 		t.Fatalf("insert run at %s: %v", createdAt, err)
+	}
+}
+
+func (h *serverHarness) insertRunInWorkspace(t *testing.T, runID, conversationID, objective, status, workspaceRoot string) {
+	t.Helper()
+
+	_, err := h.db.RawDB().Exec(
+		`INSERT INTO runs
+		 (id, conversation_id, agent_id, team_id, objective, workspace_root, status, created_at, updated_at)
+		 VALUES (?, ?, 'agent-1', 'repo-task-team', ?, ?, ?, datetime('now'), datetime('now'))`,
+		runID, conversationID, objective, workspaceRoot, status,
+	)
+	if err != nil {
+		t.Fatalf("insert run in workspace: %v", err)
 	}
 }
 

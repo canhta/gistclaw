@@ -32,12 +32,13 @@ The system nouns still matter, but they live one level down instead of all compe
 ### Top-Level Navigation
 
 ```text
-gistclaw | Operate | Configure | Recover                         [Start Task] [Theme]
+gistclaw | Operate | Configure | Recover             [Project Switcher] [Start Task] [Theme]
 ```
 
 - `Operate` is for active work and runtime inspection.
 - `Configure` is for shaping future behavior.
 - `Recover` is for approvals, routing, and delivery intervention.
+- The project switcher lives in the shell, beside `Start Task`, because active project context is global operator state.
 - `Start Task` is a persistent primary action. It is not buried as just another page.
 
 ### Second-Level Navigation
@@ -58,7 +59,7 @@ gistclaw | Operate | Configure | Recover                         [Start Task] [T
 - Use job-oriented labels at the top level.
 - Use precise system nouns inside each section.
 - Rename the current `Control` page to **Routes & Deliveries**. The new name says exactly what the page is for.
-- Treat `Onboarding` as a temporary setup flow, not a peer destination once the workspace is bound.
+- Treat `Onboarding` as a temporary setup flow, not a peer destination once the operator has chosen a starter project or replacement repo.
 
 ## Page Roles
 
@@ -75,7 +76,7 @@ Every page must have one primary sentence of purpose. If a page cannot be descri
 
 - **Team:** The builder for future runs. This is where the operator shapes default collaboration behavior.
 - **Memory:** Editable remembered facts that shape future assistant behavior.
-- **Settings:** Machine-level and runtime-level configuration only.
+- **Settings:** Machine-level and runtime-level configuration only. Raw workspace editing is an advanced override, not the primary project-switching workflow.
 
 ### Recover
 

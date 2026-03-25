@@ -231,6 +231,15 @@ func (r *Runtime) createRunAt(ctx context.Context, runID, parentRunID string, cm
 }
 
 func (r *Runtime) prepareStartRun(ctx context.Context, parentRunID string, cmd StartRun) (StartRun, error) {
+	if cmd.WorkspaceRoot == "" {
+		project, err := ActiveProject(ctx, r.store)
+		if err != nil {
+			return StartRun{}, fmt.Errorf("prepare run start: resolve active project: %w", err)
+		}
+		if project.WorkspaceRoot != "" {
+			cmd.WorkspaceRoot = project.WorkspaceRoot
+		}
+	}
 	if len(cmd.ExecutionSnapshotJSON) == 0 {
 		switch {
 		case parentRunID != "":
@@ -1156,6 +1165,13 @@ func (r *Runtime) ResolveApproval(ctx context.Context, ticketID, decision string
 // UpdateSettings persists operator-editable settings to the database.
 // The admin_token key is explicitly rejected to prevent accidental exposure.
 func (r *Runtime) UpdateSettings(ctx context.Context, updates map[string]string) error {
+	if workspaceRoot, ok := updates["workspace_root"]; ok {
+		project, err := ActivateWorkspace(ctx, r.store, workspaceRoot, "", "operator")
+		if err != nil {
+			return fmt.Errorf("runtime: update workspace_root: %w", err)
+		}
+		updates["workspace_root"] = project.WorkspaceRoot
+	}
 	for key, value := range updates {
 		if key == "admin_token" {
 			return fmt.Errorf("runtime: admin_token cannot be updated via settings")

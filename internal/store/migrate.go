@@ -72,6 +72,10 @@ func Migrate(db *DB) error {
 		currentVersion = version
 	}
 
+	if err := ensureProjectSchema(db); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -90,4 +94,64 @@ func SchemaVersion(db *DB) (int, error) {
 		return 0, fmt.Errorf("migrate: parse version %q: %w", value, err)
 	}
 	return version, nil
+}
+
+func ensureProjectSchema(db *DB) error {
+	for _, stmt := range []string{
+		`CREATE TABLE IF NOT EXISTS projects (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			workspace_root TEXT NOT NULL UNIQUE,
+			source TEXT NOT NULL DEFAULT '',
+			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+			last_used_at DATETIME NOT NULL DEFAULT (datetime('now'))
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_projects_last_used_at ON projects(last_used_at, created_at)`,
+	} {
+		if _, err := db.db.Exec(stmt); err != nil {
+			return fmt.Errorf("migrate: ensure project schema: %w", err)
+		}
+	}
+
+	hasProjectID, err := tableHasColumn(db, "runs", "project_id")
+	if err != nil {
+		return err
+	}
+	if !hasProjectID {
+		if _, err := db.db.Exec(`ALTER TABLE runs ADD COLUMN project_id TEXT`); err != nil {
+			return fmt.Errorf("migrate: add runs.project_id: %w", err)
+		}
+	}
+	if _, err := db.db.Exec(`CREATE INDEX IF NOT EXISTS idx_runs_project_id_status_updated_at ON runs(project_id, status, updated_at)`); err != nil {
+		return fmt.Errorf("migrate: create runs.project_id index: %w", err)
+	}
+
+	return nil
+}
+
+func tableHasColumn(db *DB, tableName, columnName string) (bool, error) {
+	rows, err := db.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
+	if err != nil {
+		return false, fmt.Errorf("migrate: table info %s: %w", tableName, err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var cid int
+		var name string
+		var columnType string
+		var notNull int
+		var defaultValue sql.NullString
+		var primaryKey int
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			return false, fmt.Errorf("migrate: scan table info %s: %w", tableName, err)
+		}
+		if name == columnName {
+			return true, nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("migrate: table info rows %s: %w", tableName, err)
+	}
+	return false, nil
 }

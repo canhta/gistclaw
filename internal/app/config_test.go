@@ -23,7 +23,7 @@ func TestConfig_DefaultPath(t *testing.T) {
 	}
 }
 
-func TestConfig_MissingWorkspaceRoot(t *testing.T) {
+func TestConfig_OptionalWorkspaceRoot(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(cfgPath, []byte(`
@@ -38,12 +38,15 @@ provider:
 		t.Fatal(err)
 	}
 
-	_, err = LoadConfig(cfgPath)
-	if err == nil {
-		t.Fatal("expected error for missing workspace_root, got nil")
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("unexpected error for missing workspace_root: %v", err)
 	}
-	if !strings.Contains(err.Error(), "workspace_root") {
-		t.Fatalf("error should mention workspace_root, got: %s", err.Error())
+	if cfg.WorkspaceRoot != "" {
+		t.Fatalf("expected empty workspace_root, got %q", cfg.WorkspaceRoot)
+	}
+	if cfg.StateDir == "" {
+		t.Fatal("expected StateDir to have a default value")
 	}
 }
 

@@ -97,16 +97,14 @@ func LoadConfigRaw(path string) (Config, error) {
 }
 
 func (c *Config) validate() error {
-	if c.WorkspaceRoot == "" {
-		return fmt.Errorf("config validation: workspace_root is required")
-	}
-
-	info, err := os.Stat(c.WorkspaceRoot)
-	if err != nil {
-		return fmt.Errorf("config validation: workspace_root %q: %w", c.WorkspaceRoot, err)
-	}
-	if !info.IsDir() {
-		return fmt.Errorf("config validation: workspace_root %q is not a directory", c.WorkspaceRoot)
+	if c.WorkspaceRoot != "" {
+		info, err := os.Stat(c.WorkspaceRoot)
+		if err != nil {
+			return fmt.Errorf("config validation: workspace_root %q: %w", c.WorkspaceRoot, err)
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("config validation: workspace_root %q is not a directory", c.WorkspaceRoot)
+		}
 	}
 
 	if c.Provider.Name == "" {
@@ -170,6 +168,14 @@ func (c *Config) applyDefaults() {
 	if c.Web.ListenAddr == "" {
 		c.Web.ListenAddr = "127.0.0.1:8080"
 	}
+}
+
+func defaultProjectsRoot() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(".gistclaw", "projects")
+	}
+	return filepath.Join(home, ".gistclaw", "projects")
 }
 
 func validateMCPConfig(cfg tools.MCPOptions) error {

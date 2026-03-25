@@ -1,11 +1,26 @@
 {{define "onboarding_step1_body"}}
 <section class="page-header">
   <span class="page-eyebrow">Onboarding</span>
-  <h1>Bind Workspace</h1>
-  <p class="page-lede">Start by binding the local repo. The page stays on the canvas; the decision lives in one work panel.</p>
+  <h1>Choose Project</h1>
+  <p class="page-lede">We created a starter project for local work. Keep it, bind an existing repo, or create a new workspace elsewhere.</p>
 </section>
 {{if .Error}}
 <p class="error">{{.Error}}</p>
+{{end}}
+{{if .ActiveWorkspaceRoot}}
+<section class="panel stack-md">
+  <div>
+    <span class="panel-kicker">Starter project</span>
+    <h2>{{if .ActiveProjectName}}{{.ActiveProjectName}}{{else}}starter project{{end}}</h2>
+    <p class="panel-note">Ready at <span class="mono">{{.ActiveWorkspaceRoot}}</span>. Use this if you want to start from a blank local project.</p>
+  </div>
+  <form method="POST" action="/onboarding">
+    <input type="hidden" name="action" value="use_starter">
+    <div class="button-row">
+      <button class="btn btn-secondary" type="submit" data-confirm="Use the starter project for this operator session?">Use Starter Project</button>
+    </div>
+  </form>
+</section>
 {{end}}
 <section class="panel">
   <form class="stack-md" method="POST" action="/onboarding">
@@ -16,6 +31,19 @@
     </div>
     <div class="button-row">
       <button class="btn btn-primary" type="submit" data-confirm="Bind this workspace for local operations?">Bind Workspace</button>
+    </div>
+  </form>
+</section>
+<section class="panel">
+  <form class="stack-md" method="POST" action="/onboarding">
+    <input type="hidden" name="action" value="create_new">
+    <div class="field">
+      <label for="new_workspace_root">Create Project Elsewhere</label>
+      <input class="input-wide" type="text" id="new_workspace_root" name="new_workspace_root" placeholder="/home/you/projects/new-project">
+      <p class="field-help">Path may be new or an empty directory. GistClaw will create the workspace and make it active.</p>
+    </div>
+    <div class="button-row">
+      <button class="btn btn-secondary" type="submit" data-confirm="Create and activate this new project workspace?">Create Project</button>
     </div>
   </form>
 </section>

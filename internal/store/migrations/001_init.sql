@@ -14,12 +14,22 @@ CREATE TABLE IF NOT EXISTS events (
     created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    workspace_root TEXT NOT NULL UNIQUE,
+    source TEXT NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    last_used_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS runs (
     id TEXT PRIMARY KEY,
     conversation_id TEXT NOT NULL,
     agent_id TEXT NOT NULL,
     session_id TEXT,
     team_id TEXT,
+    project_id TEXT,
     parent_run_id TEXT,
     objective TEXT,
     workspace_root TEXT,
@@ -172,7 +182,9 @@ CREATE TABLE IF NOT EXISTS run_summaries (
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_run_id_created_at ON events(run_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_projects_last_used_at ON projects(last_used_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_runs_conversation_id_status ON runs(conversation_id, status);
+CREATE INDEX IF NOT EXISTS idx_runs_project_id_status_updated_at ON runs(project_id, status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_conversation_id_status ON sessions(conversation_id, status);
 CREATE INDEX IF NOT EXISTS idx_session_messages_session_id_created_at ON session_messages(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_session_bindings_conversation_id_thread_id_status ON session_bindings(conversation_id, thread_id, status);

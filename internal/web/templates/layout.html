@@ -170,6 +170,27 @@
       align-items: center;
       margin-left: auto;
     }
+    .shell-project-switcher {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .shell-project-label {
+      color: var(--text-3);
+      font: 700 10px/1.2 var(--font-mono);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .shell-project-select {
+      min-width: 180px;
+      height: var(--control-height);
+      border: 1.5px solid var(--border-hard);
+      background: var(--surface);
+      color: var(--text-1);
+      padding: 0 12px;
+      font: 400 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
     .shell-start-task {
       min-width: fit-content;
     }
@@ -1389,6 +1410,12 @@
         width: 100%;
         justify-content: space-between;
       }
+      .shell-project-switcher {
+        width: 100%;
+      }
+      .shell-project-select {
+        flex: 1 1 220px;
+      }
     }
   </style>
 </head>
@@ -1405,6 +1432,18 @@
       {{end}}
       </div>
       <div class="shell-toolbar">
+      {{if .Project.Options}}
+      <form class="shell-project-switcher" method="POST" action="/projects/activate">
+        <input type="hidden" name="redirect_to" value="{{.CurrentPath}}">
+        <span class="shell-project-label">Project</span>
+        <select class="shell-project-select" name="project_id" aria-label="Active project">
+          {{range .Project.Options}}
+          <option value="{{.ID}}" {{if .Active}}selected{{end}}>{{.Name}}</option>
+          {{end}}
+        </select>
+        <button class="btn btn-secondary" type="submit">Switch</button>
+      </form>
+      {{end}}
       <a class="btn btn-primary shell-start-task{{if .Navigation.StartTask.Active}} is-active{{end}}" href="{{.Navigation.StartTask.Href}}">{{.Navigation.StartTask.Label}}</a>
       <div class="theme-switcher" role="group" aria-label="Color theme">
         <button class="theme-toggle" type="button" data-theme-option="system">System</button>

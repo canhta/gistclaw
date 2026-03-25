@@ -10,20 +10,54 @@ import (
 	"testing"
 )
 
-// newServerHarnessNoWorkspace returns a harness with no workspace_root setting —
-// used to test the onboarding redirect behavior.
-func newServerHarnessNoWorkspace(t *testing.T) *serverHarness {
+// newServerHarnessOnboardingPending returns a harness with an active workspace
+// but no completed onboarding state.
+func newServerHarnessOnboardingPending(t *testing.T) *serverHarness {
 	t.Helper()
 	h := newServerHarness(t)
-	// Remove the workspace_root that newServerHarness seeds by default.
+	if _, err := h.db.RawDB().Exec("DELETE FROM settings WHERE key = 'onboarding_completed_at'"); err != nil {
+		t.Fatalf("remove onboarding_completed_at: %v", err)
+	}
+	return h
+}
+
+// newServerHarnessNoWorkspace returns a harness with no workspace_root setting
+// and no completed onboarding state.
+func newServerHarnessNoWorkspace(t *testing.T) *serverHarness {
+	t.Helper()
+	h := newServerHarnessOnboardingPending(t)
 	if _, err := h.db.RawDB().Exec("DELETE FROM settings WHERE key = 'workspace_root'"); err != nil {
 		t.Fatalf("remove workspace_root: %v", err)
 	}
 	return h
 }
 
-// TestOnboarding_RedirectsWhenNoWorkspace verifies that when no workspace is
-// bound in settings, all non-static requests redirect to /onboarding.
+// TestOnboarding_RedirectsWhenIncomplete verifies that onboarding gating keys
+// off explicit onboarding state rather than only a missing workspace.
+func TestOnboarding_RedirectsWhenIncomplete(t *testing.T) {
+	h := newServerHarnessOnboardingPending(t)
+
+	paths := []string{"/operate/runs", "/operate/start-task", "/recover/approvals", "/configure/settings"}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			w := httptest.NewRecorder()
+			h.server.ServeHTTP(w, req)
+			got := w.Code
+			if got != http.StatusSeeOther {
+				t.Fatalf("%s: expected redirect 303 when no workspace bound, got %d", path, got)
+			}
+			loc := w.Header().Get("Location")
+			if !strings.HasPrefix(loc, "/onboarding") {
+				t.Fatalf("%s: expected redirect to /onboarding, got %q", path, loc)
+			}
+		})
+	}
+}
+
+// TestOnboarding_RedirectsWhenNoWorkspace verifies that when onboarding is
+// incomplete and no workspace is available, non-static requests redirect to
+// /onboarding.
 func TestOnboarding_RedirectsWhenNoWorkspace(t *testing.T) {
 	h := newServerHarnessNoWorkspace(t)
 
@@ -57,6 +91,22 @@ func TestOnboardingStep1_Renders(t *testing.T) {
 	body := w.Body.String()
 	if !strings.Contains(body, "form") {
 		t.Fatalf("expected form element in onboarding page, got: %s", truncate(body, 200))
+	}
+}
+
+func TestOnboardingStep1_RendersWhenStarterProjectExists(t *testing.T) {
+	h := newServerHarnessOnboardingPending(t)
+	req := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
+	w := httptest.NewRecorder()
+	h.server.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 when onboarding is pending, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "form") {
+		t.Fatalf("expected onboarding page to render even with starter project, got: %s", truncate(w.Body.String(), 200))
+	}
+	if !strings.Contains(strings.ToLower(w.Body.String()), "starter project") {
+		t.Fatalf("expected onboarding page to mention starter project, got: %s", truncate(w.Body.String(), 300))
 	}
 }
 
@@ -206,15 +256,16 @@ func TestOnboardingStep3_NoModelCallsDuringScan(t *testing.T) {
 	}
 }
 
-// TestOnboarding_RedirectsToOperateRunsWhenBound verifies that GET /onboarding redirects
-// to /operate/runs when a workspace is already bound in settings.
-func TestOnboarding_RedirectsToOperateRunsWhenBound(t *testing.T) {
-	h := newServerHarness(t) // workspace_root is seeded by default
+// TestOnboarding_RedirectsToOperateRunsWhenCompleted verifies that GET
+// /onboarding redirects to /operate/runs only after onboarding has been
+// explicitly completed.
+func TestOnboarding_RedirectsToOperateRunsWhenCompleted(t *testing.T) {
+	h := newServerHarness(t)
 	req := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
 	w := httptest.NewRecorder()
 	h.server.ServeHTTP(w, req)
 	if w.Code != http.StatusSeeOther {
-		t.Fatalf("expected 303 redirect when workspace bound, got %d body=%s", w.Code, w.Body.String())
+		t.Fatalf("expected 303 redirect when onboarding is completed, got %d body=%s", w.Code, w.Body.String())
 	}
 	loc := w.Header().Get("Location")
 	if loc != "/operate/runs" {

@@ -15,7 +15,7 @@ If you are evaluating GistClaw as a tool, the current value is:
 ## What Ships Today
 
 - A single Go binary, `gistclaw`, with daemon and operator commands.
-- A local web host with onboarding plus operator-job pages grouped under Operate, Configure, and Recover.
+- A local web host with starter-project onboarding plus operator-job pages grouped under Operate, Configure, and Recover.
 - A journal-backed runtime that records runs, session collaboration, approvals, receipts, route bindings, and outbound delivery state in SQLite.
 - Provider adapters for Anthropic and OpenAI-compatible endpoints.
 - A tool registry with built-in web fetch, optional Tavily search, and optional MCP stdio tools.
@@ -44,13 +44,14 @@ If you are evaluating GistClaw as a tool, the current value is:
 
 ### Web
 
-- `/onboarding` binds the workspace and walks through the first run.
-- `/operate/runs` and `/operate/runs/{id}` show run state and live replay, with the orchestration graph kept on runs and run detail.
+- `/onboarding` starts with a starter project, then lets the operator keep it, bind an existing repo, or create a new project elsewhere before the first run.
+- The shell includes a project switcher that updates the active workspace context without turning project selection into a primary Settings job.
+- `/operate/runs` and `/operate/runs/{id}` show run state and live replay, with the orchestration graph kept on runs and run detail. The runs queue defaults to the active project with an explicit all-projects filter.
 - `/operate/sessions` and `/operate/sessions/{id}` expose session mailbox history, route state, and delivery failures.
 - `/operate/start-task` starts a new operator task from the web surface.
 - `/configure/team` edits and exports the runtime team definition.
 - `/configure/memory` lists, edits, and forgets stored facts.
-- `/configure/settings` updates operator-managed settings such as workspace root and budgets.
+- `/configure/settings` updates machine-level operator settings such as budgets and tokens, and keeps raw workspace editing only as an advanced override.
 - `/recover/approvals` resolves risky tool actions.
 - `/recover/routes-deliveries` exposes connector health, route bindings, route history, and delivery retry actions.
 

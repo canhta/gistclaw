@@ -255,6 +255,15 @@ type RunRef struct {
 	Status RunStatus
 }
 
+type Project struct {
+	ID            string
+	Name          string
+	WorkspaceRoot string
+	Source        string
+	CreatedAt     time.Time
+	LastUsedAt    time.Time
+}
+
 type Run struct {
 	ID                    string
 	ConversationID        string

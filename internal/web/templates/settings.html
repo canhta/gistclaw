@@ -2,7 +2,7 @@
 <section class="page-header">
   <span class="page-eyebrow">Configure</span>
   <h1>Settings</h1>
-  <p class="page-lede">Operator configuration, workspace binding, and local credentials. Each concern gets its own work panel.</p>
+  <p class="page-lede">Machine-level operator configuration and local credentials. Project switching now lives in the shell; this page keeps the advanced workspace override only.</p>
 </section>
 {{if .Error}}
   <section class="error">{{.Error}}</section>
@@ -11,11 +11,13 @@
   <div class="panel">
   <div class="stack-sm">
     <p class="muted">Team composition and agent collaboration defaults now live in Configure &gt; Team.</p>
+    <p class="muted">Use the shell project switcher for normal project changes. This field is an advanced workspace override for recovery and debugging.</p>
   </div>
   <form method="POST" action="/configure/settings">
     <div class="field">
       <label for="workspace_root">Workspace Root</label>
       <input type="text" id="workspace_root" name="workspace_root" value="{{.WorkspaceRoot}}">
+      <span class="field-help">advanced workspace override</span>
     </div>
     <div class="field">
       <label for="per_run_token_budget">Per-Run Token Budget</label>
