@@ -84,7 +84,15 @@ func (s *Server) handleSessionsIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := s.rt.ListAllSessionsPage(r.Context(), sessionListFilterFromRequest(r, 50))
+	activeProject, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		http.Error(w, "failed to load active project", http.StatusInternalServerError)
+		return
+	}
+	filter := sessionListFilterFromRequest(r, 50)
+	filter.ProjectID = activeProject.ID
+	filter.WorkspaceRoot = activeProject.WorkspaceRoot
+	page, err := s.rt.ListAllSessionsPage(r.Context(), filter)
 	if err != nil {
 		http.Error(w, "failed to load sessions", http.StatusInternalServerError)
 		return
@@ -120,7 +128,15 @@ func (s *Server) handleRoutesIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := s.rt.ListRoutesPage(r.Context(), routeListFilterFromRequest(r, 50))
+	activeProject, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		http.Error(w, "failed to load active project", http.StatusInternalServerError)
+		return
+	}
+	filter := routeListFilterFromRequest(r, 50)
+	filter.ProjectID = activeProject.ID
+	filter.WorkspaceRoot = activeProject.WorkspaceRoot
+	page, err := s.rt.ListRoutesPage(r.Context(), filter)
 	if err != nil {
 		http.Error(w, "failed to load routes", http.StatusInternalServerError)
 		return
@@ -178,7 +194,15 @@ func (s *Server) handleDeliveryIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := s.rt.ListDeliveriesPage(r.Context(), deliveryQueueFilterFromRequest(r, 50))
+	activeProject, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		http.Error(w, "failed to load active project", http.StatusInternalServerError)
+		return
+	}
+	filter := deliveryQueueFilterFromRequest(r, 50)
+	filter.ProjectID = activeProject.ID
+	filter.WorkspaceRoot = activeProject.WorkspaceRoot
+	page, err := s.rt.ListDeliveriesPage(r.Context(), filter)
 	if err != nil {
 		http.Error(w, "failed to load deliveries", http.StatusInternalServerError)
 		return
@@ -196,6 +220,15 @@ func (s *Server) handleDeliveryIndex(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRouteDeactivate(w http.ResponseWriter, r *http.Request) {
 	if s.rt == nil {
 		http.Error(w, "runtime not configured", http.StatusInternalServerError)
+		return
+	}
+	visible, err := s.routeVisibleInActiveProject(r.Context(), r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "failed to load route", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
 		return
 	}
 
@@ -222,6 +255,15 @@ func (s *Server) handleRouteDeactivate(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRouteSend(w http.ResponseWriter, r *http.Request) {
 	if s.rt == nil {
 		http.Error(w, "runtime not configured", http.StatusInternalServerError)
+		return
+	}
+	visible, err := s.routeVisibleInActiveProject(r.Context(), r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "failed to load route", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
 		return
 	}
 
@@ -267,6 +309,15 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionID := r.PathValue("id")
+	visible, err := s.sessionVisibleInActiveProject(r.Context(), sessionID)
+	if err != nil {
+		http.Error(w, "failed to load session", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
+		return
+	}
 	session, messages, err := s.rt.SessionHistory(r.Context(), sessionID, requestLimit(r, 100))
 	if err != nil {
 		if errors.Is(err, sessions.ErrSessionNotFound) {
@@ -304,6 +355,15 @@ func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleSessionSend(w http.ResponseWriter, r *http.Request) {
 	if s.rt == nil {
 		http.Error(w, "runtime not configured", http.StatusInternalServerError)
+		return
+	}
+	visible, err := s.sessionVisibleInActiveProject(r.Context(), r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "failed to load session", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
 		return
 	}
 
@@ -346,6 +406,15 @@ func (s *Server) handleSessionRetryDelivery(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "runtime not configured", http.StatusInternalServerError)
 		return
 	}
+	visible, err := s.sessionVisibleInActiveProject(r.Context(), r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "failed to load session", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
+		return
+	}
 
 	delivery, err := s.rt.RetrySessionDelivery(r.Context(), r.PathValue("id"), r.PathValue("delivery_id"))
 	if err != nil {
@@ -370,6 +439,15 @@ func (s *Server) handleSessionRetryDelivery(w http.ResponseWriter, r *http.Reque
 func (s *Server) handleDeliveryRetry(w http.ResponseWriter, r *http.Request) {
 	if s.rt == nil {
 		http.Error(w, "runtime not configured", http.StatusInternalServerError)
+		return
+	}
+	visible, err := s.deliveryVisibleInActiveProject(r.Context(), r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "failed to load delivery", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
 		return
 	}
 

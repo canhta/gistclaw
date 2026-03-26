@@ -1,15 +1,13 @@
 package conversations
 
-import (
-	"fmt"
-	"strings"
-)
+import "strings"
 
 type ConversationKey struct {
 	ConnectorID string
 	AccountID   string
 	ExternalID  string
 	ThreadID    string
+	ProjectID   string
 }
 
 func (k ConversationKey) Normalize() string {
@@ -22,10 +20,15 @@ func (k ConversationKey) Normalize() string {
 		return strings.ReplaceAll(s, ":", "%3A")
 	}
 
-	return fmt.Sprintf("%s:%s:%s:%s",
+	parts := []string{
 		escape(k.ConnectorID),
 		escape(k.AccountID),
 		escape(k.ExternalID),
 		escape(thread),
-	)
+	}
+	if k.ProjectID != "" {
+		parts = append(parts, escape(k.ProjectID))
+	}
+
+	return strings.Join(parts, ":")
 }

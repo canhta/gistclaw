@@ -652,7 +652,7 @@ func TestRunEngine_SubmitTaskStartsWebConversation(t *testing.T) {
 	).Scan(&key); err != nil {
 		t.Fatalf("query conversation key: %v", err)
 	}
-	if key != "web:local:default:main" {
+	if !strings.HasPrefix(key, "web:local:default:main:") {
 		t.Fatalf("unexpected submit task conversation key %q", key)
 	}
 }
@@ -1342,6 +1342,7 @@ func TestStartFrontSession_ProviderContextUsesSessionMailboxNotConversationWideE
 	)
 	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
+	workspaceRoot := t.TempDir()
 
 	first, err := rt.StartFrontSession(ctx, StartFrontSession{
 		ConversationKey: conversations.ConversationKey{
@@ -1352,7 +1353,7 @@ func TestStartFrontSession_ProviderContextUsesSessionMailboxNotConversationWideE
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "First prompt.",
-		WorkspaceRoot: t.TempDir(),
+		WorkspaceRoot: workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("first StartFrontSession failed: %v", err)
@@ -1375,7 +1376,7 @@ func TestStartFrontSession_ProviderContextUsesSessionMailboxNotConversationWideE
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Second prompt.",
-		WorkspaceRoot: t.TempDir(),
+		WorkspaceRoot: workspaceRoot,
 	}); err != nil {
 		t.Fatalf("second StartFrontSession failed: %v", err)
 	}

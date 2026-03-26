@@ -242,6 +242,23 @@ func TestRuns(t *testing.T) {
 		}
 	})
 
+	t.Run("detail hides non-active project run", func(t *testing.T) {
+		h := newServerHarness(t)
+		otherRoot := t.TempDir()
+		h.insertProject(t, "seo-test", otherRoot)
+		h.insertRunInWorkspace(t, "run-other-project-detail", "conv-other-project-detail", "review seo project", "active", otherRoot)
+		h.insertEventAt(t, "evt-other-project-detail", "conv-other-project-detail", "run-other-project-detail", "run_started", "2026-03-25 08:00:00")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-other-project-detail", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for non-active project run detail, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+
 	t.Run("graph endpoint renders lineage snapshot with statuses", func(t *testing.T) {
 		h := newServerHarness(t)
 		h.insertRunAt(t, "082b1c314823744cc779ece2f90e80e7", "conv-graph", "review the repo", "active", "2026-03-25 08:00:00")
@@ -342,6 +359,265 @@ func TestRuns(t *testing.T) {
 
 		if rr.Code != http.StatusNotFound {
 			t.Fatalf("expected 404, got %d", rr.Code)
+		}
+	})
+}
+
+func TestSessionsProjectScoping(t *testing.T) {
+	t.Run("sessions page hides other project sessions", func(t *testing.T) {
+		h := newServerHarness(t)
+		mainRun := h.startFrontSession(t, "review the main project")
+
+		otherRoot := t.TempDir()
+		h.insertProject(t, "seo-test", otherRoot)
+		otherRun, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-other",
+				ExternalID:  "chat-other",
+				ThreadID:    "thread-other",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "review the seo project",
+			WorkspaceRoot: otherRoot,
+		})
+		if err != nil {
+			t.Fatalf("start other-project front session: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/operate/sessions", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, mainRun.SessionID) {
+			t.Fatalf("expected active project session to be visible, got:\n%s", body)
+		}
+		if strings.Contains(body, otherRun.SessionID) || strings.Contains(body, otherRun.ConversationID) {
+			t.Fatalf("expected other project session to be hidden, got:\n%s", body)
+		}
+	})
+
+	t.Run("session detail hides other project session", func(t *testing.T) {
+		h := newServerHarness(t)
+		otherRoot := t.TempDir()
+		h.insertProject(t, "seo-test", otherRoot)
+		otherRun, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-other",
+				ExternalID:  "chat-other",
+				ThreadID:    "thread-other",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "review the seo project",
+			WorkspaceRoot: otherRoot,
+		})
+		if err != nil {
+			t.Fatalf("start other-project front session: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/operate/sessions/"+otherRun.SessionID, nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for non-active project session detail, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("team page follows active project workspace", func(t *testing.T) {
+		h := newServerHarness(t)
+		otherRoot := t.TempDir()
+		otherProjectID := h.insertProject(t, "seo-test", otherRoot)
+		writeTestFile(t, filepath.Join(otherRoot, ".gistclaw", "teams", "default", "team.yaml"), `
+name: SEO Task Team
+front_agent: assistant
+agents:
+  - id: assistant
+    soul_file: assistant.soul.yaml
+    role: coordinator
+    tool_posture: read_heavy
+`)
+		writeTestFile(t, filepath.Join(otherRoot, ".gistclaw", "teams", "default", "assistant.soul.yaml"), "role: coordinator\ntool_posture: read_heavy\n")
+		if err := runtime.SetActiveProject(context.Background(), h.db, otherProjectID); err != nil {
+			t.Fatalf("set active project: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/configure/team", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if !strings.Contains(rr.Body.String(), "SEO Task Team") {
+			t.Fatalf("expected active project team config, got:\n%s", rr.Body.String())
+		}
+	})
+}
+
+func TestRoutesDeliveriesProjectScoping(t *testing.T) {
+	h := newServerHarness(t)
+	_, route, intentID := h.seedRoutesDeliveriesData(t)
+
+	otherRoot := t.TempDir()
+	h.insertProject(t, "seo-test", otherRoot)
+	otherRun, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-other",
+			ExternalID:  "chat-other",
+			ThreadID:    "thread-other",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "inspect other delivery",
+		WorkspaceRoot: otherRoot,
+	})
+	if err != nil {
+		t.Fatalf("start other-project route flow: %v", err)
+	}
+
+	var otherRouteID string
+	if err := h.db.RawDB().QueryRow(
+		`SELECT id FROM session_bindings WHERE conversation_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+		otherRun.ConversationID,
+	).Scan(&otherRouteID); err != nil {
+		t.Fatalf("load other route id: %v", err)
+	}
+	var otherIntentID string
+	if err := h.db.RawDB().QueryRow(
+		`SELECT id FROM outbound_intents WHERE run_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+		otherRun.ID,
+	).Scan(&otherIntentID); err != nil {
+		t.Fatalf("load other delivery id: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/recover/routes-deliveries?connector_id=telegram&route_status=all&delivery_status=all", nil)
+
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, route.ID) || !strings.Contains(body, intentID) {
+		t.Fatalf("expected active project route and delivery to be visible, got:\n%s", body)
+	}
+	if strings.Contains(body, otherRouteID) || strings.Contains(body, otherIntentID) || strings.Contains(body, "chat-other") {
+		t.Fatalf("expected other project routes and deliveries to be hidden, got:\n%s", body)
+	}
+}
+
+func TestProjectScopedAPIAccess(t *testing.T) {
+	t.Run("session detail api hides other project session", func(t *testing.T) {
+		h := newServerHarness(t)
+		otherRoot := t.TempDir()
+		h.insertProject(t, "seo-test", otherRoot)
+		otherRun, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-other",
+				ExternalID:  "chat-other",
+				ThreadID:    "thread-other",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "review the seo project",
+			WorkspaceRoot: otherRoot,
+		})
+		if err != nil {
+			t.Fatalf("start other-project front session: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+otherRun.SessionID, nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for non-active project session api detail, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("route send api hides other project route", func(t *testing.T) {
+		h := newServerHarness(t)
+		otherRoot := t.TempDir()
+		h.insertProject(t, "seo-test", otherRoot)
+		otherRun, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-other",
+				ExternalID:  "chat-other",
+				ThreadID:    "thread-other",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "inspect other route",
+			WorkspaceRoot: otherRoot,
+		})
+		if err != nil {
+			t.Fatalf("start other-project route flow: %v", err)
+		}
+		var otherRouteID string
+		if err := h.db.RawDB().QueryRow(
+			`SELECT id FROM session_bindings WHERE conversation_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+			otherRun.ConversationID,
+		).Scan(&otherRouteID); err != nil {
+			t.Fatalf("load other route id: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/routes/"+otherRouteID+"/messages", strings.NewReader(`{"body":"hi"}`))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for non-active project route send, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("delivery retry api hides other project delivery", func(t *testing.T) {
+		h := newServerHarness(t)
+		otherRoot := t.TempDir()
+		h.insertProject(t, "seo-test", otherRoot)
+		otherRun, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-other",
+				ExternalID:  "chat-other",
+				ThreadID:    "thread-other",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "inspect other delivery",
+			WorkspaceRoot: otherRoot,
+		})
+		if err != nil {
+			t.Fatalf("start other-project delivery flow: %v", err)
+		}
+		var otherIntentID string
+		if err := h.db.RawDB().QueryRow(
+			`SELECT id FROM outbound_intents WHERE run_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+			otherRun.ID,
+		).Scan(&otherIntentID); err != nil {
+			t.Fatalf("load other delivery id: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/deliveries/"+otherIntentID+"/retry", nil)
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for non-active project delivery retry, got %d body=%s", rr.Code, rr.Body.String())
 		}
 	})
 }
@@ -1277,6 +1553,28 @@ func TestRequestPathWithQuery(t *testing.T) {
 	req = &http.Request{URL: &url.URL{Path: "/operate/runs"}}
 	if got := requestPathWithQuery(req); got != "/operate/runs" {
 		t.Fatalf("expected request path fallback without request URI, got %q", got)
+	}
+}
+
+func TestRequestBool(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		raw  string
+		want bool
+	}{
+		{name: "one", raw: "1", want: true},
+		{name: "true", raw: "true", want: true},
+		{name: "yes", raw: "yes", want: true},
+		{name: "on", raw: "on", want: true},
+		{name: "false", raw: "false", want: false},
+		{name: "empty", raw: "", want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/operate/runs?flag="+url.QueryEscape(tt.raw), nil)
+			if got := requestBool(req, "flag"); got != tt.want {
+				t.Fatalf("expected %v, got %v", tt.want, got)
+			}
+		})
 	}
 }
 
@@ -3441,6 +3739,7 @@ func (h *serverHarness) markOutboundIntentTerminal(t *testing.T, intentID string
 
 func (h *serverHarness) insertApproval(t *testing.T, runID, toolName, targetPath string) string {
 	t.Helper()
+	h.ensureRunForApproval(t, runID)
 
 	id := "ticket-" + runID
 	_, err := h.db.RawDB().Exec(
@@ -3456,6 +3755,7 @@ func (h *serverHarness) insertApproval(t *testing.T, runID, toolName, targetPath
 
 func (h *serverHarness) insertApprovalAt(t *testing.T, runID, toolName, targetPath, status, resolvedBy, createdAt string) string {
 	t.Helper()
+	h.ensureRunForApproval(t, runID)
 
 	id := "ticket-" + runID
 	var resolvedAt any
@@ -3472,6 +3772,19 @@ func (h *serverHarness) insertApprovalAt(t *testing.T, runID, toolName, targetPa
 		t.Fatalf("insert approval at %s: %v", createdAt, err)
 	}
 	return id
+}
+
+func (h *serverHarness) ensureRunForApproval(t *testing.T, runID string) {
+	t.Helper()
+
+	var count int
+	if err := h.db.RawDB().QueryRow(`SELECT count(*) FROM runs WHERE id = ?`, runID).Scan(&count); err != nil {
+		t.Fatalf("count approval run: %v", err)
+	}
+	if count > 0 {
+		return
+	}
+	h.insertRun(t, runID, "conv-"+runID, "approval test run", "needs_approval")
 }
 
 func (h *serverHarness) insertEvent(t *testing.T, eventID, conversationID, runID, kind string) {

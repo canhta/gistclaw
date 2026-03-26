@@ -111,6 +111,7 @@ type runStartedPayload struct {
 	AgentID               string `json:"agent_id"`
 	SessionID             string `json:"session_id"`
 	TeamID                string `json:"team_id"`
+	ProjectID             string `json:"project_id"`
 	Objective             string `json:"objective"`
 	WorkspaceRoot         string `json:"workspace_root"`
 	ExecutionSnapshotJSON []byte `json:"execution_snapshot_json"`
@@ -201,9 +202,9 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 		}
 		_, err := tx.ExecContext(ctx,
 			`INSERT INTO runs
-			 (id, conversation_id, agent_id, session_id, team_id, parent_run_id, objective, workspace_root, status, execution_snapshot_json, created_at, updated_at)
-			 VALUES (?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), ?, ?, 'active', ?, ?, ?)`,
-			evt.RunID, evt.ConversationID, payload.AgentID, payload.SessionID, payload.TeamID, evt.ParentRunID,
+			 (id, conversation_id, agent_id, session_id, team_id, project_id, parent_run_id, objective, workspace_root, status, execution_snapshot_json, created_at, updated_at)
+			 VALUES (?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, 'active', ?, ?, ?)`,
+			evt.RunID, evt.ConversationID, payload.AgentID, payload.SessionID, payload.TeamID, payload.ProjectID, evt.ParentRunID,
 			payload.Objective, payload.WorkspaceRoot, payload.ExecutionSnapshotJSON, evt.CreatedAt, evt.CreatedAt,
 		)
 		return err

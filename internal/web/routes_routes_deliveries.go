@@ -47,6 +47,15 @@ func (s *Server) handleRoutesDeliveriesRouteSend(w http.ResponseWriter, r *http.
 		http.Error(w, "runtime not configured", http.StatusInternalServerError)
 		return
 	}
+	visible, err := s.routeVisibleInActiveProject(r.Context(), r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "failed to load route", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "invalid form", http.StatusBadRequest)
 		return
@@ -81,8 +90,17 @@ func (s *Server) handleRoutesDeliveriesRouteDeactivate(w http.ResponseWriter, r 
 		http.Error(w, "runtime not configured", http.StatusInternalServerError)
 		return
 	}
+	visible, err := s.routeVisibleInActiveProject(r.Context(), r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "failed to load route", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
+		return
+	}
 
-	_, err := s.rt.DeactivateRoute(r.Context(), r.PathValue("id"))
+	_, err = s.rt.DeactivateRoute(r.Context(), r.PathValue("id"))
 	if err != nil {
 		switch {
 		case errors.Is(err, runtime.ErrRouteNotFound):
@@ -103,8 +121,17 @@ func (s *Server) handleRoutesDeliveriesDeliveryRetry(w http.ResponseWriter, r *h
 		http.Error(w, "runtime not configured", http.StatusInternalServerError)
 		return
 	}
+	visible, err := s.deliveryVisibleInActiveProject(r.Context(), r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "failed to load delivery", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
+		return
+	}
 
-	_, err := s.rt.RetryDelivery(r.Context(), r.PathValue("id"))
+	_, err = s.rt.RetryDelivery(r.Context(), r.PathValue("id"))
 	if err != nil {
 		switch {
 		case errors.Is(err, runtime.ErrDeliveryNotFound):
@@ -144,14 +171,22 @@ func (s *Server) loadRoutesDeliveriesPageData(r *http.Request) (routesDeliveries
 		HistoryLimit:   requestNamedLimit(r, "history_limit", 25),
 		DeliveryLimit:  requestNamedLimit(r, "delivery_limit", 50),
 	}
+	activeProject, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		return routesDeliveriesPageData{}, errors.New("failed to load active project")
+	}
 	baseRouteFilter := sessions.RouteListFilter{
-		ConnectorID: filters.ConnectorID,
-		Query:       filters.Query,
+		ProjectID:     activeProject.ID,
+		WorkspaceRoot: activeProject.WorkspaceRoot,
+		ConnectorID:   filters.ConnectorID,
+		Query:         filters.Query,
 	}
 	baseDeliveryFilter := sessions.DeliveryQueueFilter{
-		ConnectorID: filters.ConnectorID,
-		Status:      filters.DeliveryStatus,
-		Query:       filters.Query,
+		ProjectID:     activeProject.ID,
+		WorkspaceRoot: activeProject.WorkspaceRoot,
+		ConnectorID:   filters.ConnectorID,
+		Status:        filters.DeliveryStatus,
+		Query:         filters.Query,
 	}
 
 	health, err := s.rt.ConnectorDeliveryHealth(r.Context())

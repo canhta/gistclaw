@@ -64,6 +64,15 @@ func (s *Server) handleSessionPageSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "runtime not configured", http.StatusInternalServerError)
 		return
 	}
+	visible, err := s.sessionVisibleInActiveProject(r.Context(), r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "failed to load session", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "invalid form", http.StatusBadRequest)
 		return
@@ -100,8 +109,17 @@ func (s *Server) handleSessionPageRetryDelivery(w http.ResponseWriter, r *http.R
 		http.Error(w, "runtime not configured", http.StatusInternalServerError)
 		return
 	}
+	visible, err := s.sessionVisibleInActiveProject(r.Context(), r.PathValue("id"))
+	if err != nil {
+		http.Error(w, "failed to load session", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
+		return
+	}
 
-	_, err := s.rt.RetrySessionDelivery(r.Context(), r.PathValue("id"), r.PathValue("delivery_id"))
+	_, err = s.rt.RetrySessionDelivery(r.Context(), r.PathValue("id"), r.PathValue("delivery_id"))
 	if err != nil {
 		switch {
 		case errors.Is(err, sessions.ErrSessionNotFound), errors.Is(err, runtime.ErrDeliveryNotFound):
@@ -133,6 +151,12 @@ func (s *Server) loadSessionPageIndexData(r *http.Request) (sessionPageIndexData
 	}
 
 	filter := sessionListFilterFromRequest(r, 100)
+	activeProject, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		return sessionPageIndexData{}, errors.New("failed to load active project")
+	}
+	filter.ProjectID = activeProject.ID
+	filter.WorkspaceRoot = activeProject.WorkspaceRoot
 	page, err := s.rt.ListAllSessionsPage(r.Context(), filter)
 	if err != nil {
 		return sessionPageIndexData{}, errors.New("failed to load sessions")
@@ -167,6 +191,13 @@ func (s *Server) loadSessionPageDetailData(r *http.Request) (sessionPageDetailDa
 	}
 
 	sessionID := r.PathValue("id")
+	visible, err := s.sessionVisibleInActiveProject(r.Context(), sessionID)
+	if err != nil {
+		return sessionPageDetailData{}, http.StatusInternalServerError, errors.New("failed to load session")
+	}
+	if !visible {
+		return sessionPageDetailData{}, http.StatusNotFound, sessions.ErrSessionNotFound
+	}
 	session, messages, err := s.rt.SessionHistory(r.Context(), sessionID, 100)
 	if err != nil {
 		if errors.Is(err, sessions.ErrSessionNotFound) {

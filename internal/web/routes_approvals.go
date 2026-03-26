@@ -8,6 +8,10 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/projectscope"
+	"github.com/canhta/gistclaw/internal/runtime"
 )
 
 type approvalItem struct {
@@ -31,7 +35,12 @@ type approvalsPageData struct {
 
 func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 	filter := approvalListFilterFromRequest(r)
-	querySQL, args, err := buildApprovalListQuery(filter)
+	activeProject, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		http.Error(w, "failed to load active project", http.StatusInternalServerError)
+		return
+	}
+	querySQL, args, err := buildApprovalListQuery(filter, activeProject)
 	if err != nil {
 		http.Error(w, "failed to build approvals query", http.StatusInternalServerError)
 		return
@@ -77,6 +86,15 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleApprovalResolve(w http.ResponseWriter, r *http.Request) {
 	ticketID := r.PathValue("id")
+	visible, err := s.approvalVisibleInActiveProject(r.Context(), ticketID)
+	if err != nil {
+		http.Error(w, "failed to load approval", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
+		return
+	}
 
 	// Guard: check if approval is expired before attempting to resolve.
 	var currentStatus string
@@ -159,34 +177,38 @@ func approvalListFilterFromRequest(r *http.Request) approvalListRequest {
 	}
 }
 
-func buildApprovalListQuery(filter approvalListRequest) (string, []any, error) {
+func buildApprovalListQuery(filter approvalListRequest, activeProject model.Project) (string, []any, error) {
 	var query strings.Builder
-	query.WriteString(`SELECT id, run_id, tool_name, COALESCE(target_path, ''), status, COALESCE(resolved_by, ''), created_at, resolved_at, created_at
-	 FROM approvals`)
+	query.WriteString(`SELECT approvals.id, approvals.run_id, approvals.tool_name, COALESCE(approvals.target_path, ''), approvals.status, COALESCE(approvals.resolved_by, ''), approvals.created_at, approvals.resolved_at, approvals.created_at
+	 FROM approvals
+	 JOIN runs ON runs.id = approvals.run_id`)
 
 	clauses := []string{"1=1"}
 	args := make([]any, 0, 8)
+	condition, scopeArgs := projectscope.RunCondition(activeProject, "runs")
+	clauses = append(clauses, condition)
+	args = append(args, scopeArgs...)
 	if filter.Query != "" {
 		like := "%" + filter.Query + "%"
-		clauses = append(clauses, "(id LIKE ? OR run_id LIKE ? OR tool_name LIKE ? OR COALESCE(target_path, '') LIKE ?)")
+		clauses = append(clauses, "(approvals.id LIKE ? OR approvals.run_id LIKE ? OR approvals.tool_name LIKE ? OR COALESCE(approvals.target_path, '') LIKE ?)")
 		args = append(args, like, like, like, like)
 	}
 	switch filter.Status {
 	case "", "all":
 	case "pending", "expired", "approved", "denied":
-		clauses = append(clauses, "status = ?")
+		clauses = append(clauses, "approvals.status = ?")
 		args = append(args, filter.Status)
 	case "open":
-		clauses = append(clauses, "status IN ('pending', 'expired')")
+		clauses = append(clauses, "approvals.status IN ('pending', 'expired')")
 	default:
 		return "", nil, fmt.Errorf("unknown approval status filter %q", filter.Status)
 	}
 	if filter.HasCursor {
 		switch filter.Direction {
 		case "prev":
-			clauses = append(clauses, "(created_at > ? OR (created_at = ? AND id > ?))")
+			clauses = append(clauses, "(approvals.created_at > ? OR (approvals.created_at = ? AND approvals.id > ?))")
 		default:
-			clauses = append(clauses, "(created_at < ? OR (created_at = ? AND id < ?))")
+			clauses = append(clauses, "(approvals.created_at < ? OR (approvals.created_at = ? AND approvals.id < ?))")
 		}
 		args = append(args, filter.Cursor.CreatedAt, filter.Cursor.CreatedAt, filter.Cursor.ID)
 	}
@@ -194,9 +216,9 @@ func buildApprovalListQuery(filter approvalListRequest) (string, []any, error) {
 	query.WriteString(" WHERE ")
 	query.WriteString(strings.Join(clauses, " AND "))
 	if filter.Direction == "prev" {
-		query.WriteString(" ORDER BY created_at ASC, id ASC")
+		query.WriteString(" ORDER BY approvals.created_at ASC, approvals.id ASC")
 	} else {
-		query.WriteString(" ORDER BY created_at DESC, id DESC")
+		query.WriteString(" ORDER BY approvals.created_at DESC, approvals.id DESC")
 	}
 	query.WriteString(" LIMIT ?")
 	args = append(args, filter.Limit+1)

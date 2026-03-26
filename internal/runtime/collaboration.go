@@ -60,6 +60,15 @@ type SendSessionCommand struct {
 }
 
 func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) (model.Run, error) {
+	scopedKey, project, err := r.scopeConversationKey(ctx, cmd.ConversationKey, cmd.WorkspaceRoot)
+	if err != nil {
+		return model.Run{}, err
+	}
+	cmd.ConversationKey = scopedKey
+	if cmd.WorkspaceRoot == "" {
+		cmd.WorkspaceRoot = project.WorkspaceRoot
+	}
+
 	conv, err := r.convStore.Resolve(ctx, cmd.ConversationKey)
 	if err != nil {
 		return model.Run{}, fmt.Errorf("resolve conversation: %w", err)
@@ -129,6 +138,15 @@ func (r *Runtime) ReceiveInboundMessageAsync(ctx context.Context, cmd InboundMes
 }
 
 func (r *Runtime) receiveInboundMessage(ctx context.Context, cmd InboundMessageCommand, detached bool) (model.Run, error) {
+	scopedKey, project, err := r.scopeConversationKey(ctx, cmd.ConversationKey, cmd.WorkspaceRoot)
+	if err != nil {
+		return model.Run{}, err
+	}
+	cmd.ConversationKey = scopedKey
+	if cmd.WorkspaceRoot == "" {
+		cmd.WorkspaceRoot = project.WorkspaceRoot
+	}
+
 	conv, err := r.convStore.Resolve(ctx, cmd.ConversationKey)
 	if err != nil {
 		return model.Run{}, fmt.Errorf("resolve conversation: %w", err)

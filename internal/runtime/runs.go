@@ -28,6 +28,7 @@ type StartRun struct {
 	AgentID               string
 	SessionID             string
 	TeamID                string
+	ProjectID             string
 	Objective             string
 	WorkspaceRoot         string
 	AccountID             string
@@ -232,12 +233,23 @@ func (r *Runtime) createRunAt(ctx context.Context, runID, parentRunID string, cm
 }
 
 func (r *Runtime) prepareStartRun(ctx context.Context, parentRunID string, cmd StartRun) (StartRun, error) {
-	if cmd.WorkspaceRoot == "" {
+	if cmd.ProjectID == "" && cmd.WorkspaceRoot != "" {
+		project, err := RegisterProject(ctx, r.store, cmd.WorkspaceRoot, "", "runtime")
+		if err != nil {
+			return StartRun{}, fmt.Errorf("prepare run start: register workspace: %w", err)
+		}
+		cmd.ProjectID = project.ID
+		cmd.WorkspaceRoot = project.WorkspaceRoot
+	}
+	if cmd.ProjectID == "" || cmd.WorkspaceRoot == "" {
 		project, err := ActiveProject(ctx, r.store)
 		if err != nil {
 			return StartRun{}, fmt.Errorf("prepare run start: resolve active project: %w", err)
 		}
-		if project.WorkspaceRoot != "" {
+		if cmd.ProjectID == "" && project.ID != "" {
+			cmd.ProjectID = project.ID
+		}
+		if cmd.WorkspaceRoot == "" && project.WorkspaceRoot != "" {
 			cmd.WorkspaceRoot = project.WorkspaceRoot
 		}
 	}
@@ -252,10 +264,16 @@ func (r *Runtime) prepareStartRun(ctx context.Context, parentRunID string, cmd S
 			if cmd.TeamID == "" {
 				cmd.TeamID = parent.TeamID
 			}
-		case len(r.defaultSnapshotJSON) > 0:
-			cmd.ExecutionSnapshotJSON = append([]byte(nil), r.defaultSnapshotJSON...)
+		default:
+			snapshot, rawSnapshot, err := r.executionSnapshotForContext(ctx)
+			if err != nil {
+				return StartRun{}, fmt.Errorf("prepare run start: %w", err)
+			}
+			if len(rawSnapshot) > 0 {
+				cmd.ExecutionSnapshotJSON = append([]byte(nil), rawSnapshot...)
+			}
 			if cmd.TeamID == "" {
-				cmd.TeamID = r.defaultSnapshot.TeamID
+				cmd.TeamID = snapshot.TeamID
 			}
 		}
 	}
@@ -288,6 +306,7 @@ func newRunStartedEvent(conversationID, runID, parentRunID string, cmd StartRun,
 		"agent_id":                cmd.AgentID,
 		"session_id":              cmd.SessionID,
 		"team_id":                 cmd.TeamID,
+		"project_id":              cmd.ProjectID,
 		"objective":               cmd.Objective,
 		"workspace_root":          cmd.WorkspaceRoot,
 		"execution_snapshot_json": cmd.ExecutionSnapshotJSON,

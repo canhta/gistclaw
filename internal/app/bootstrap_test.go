@@ -293,7 +293,7 @@ func TestBootstrap_SeedsStarterProjectWithShippedDefaultTeam(t *testing.T) {
 		t.Fatalf("expected starter workspace git repo to exist: %v", err)
 	}
 
-	runtimeCfg, err := app.runtime.TeamConfig()
+	runtimeCfg, err := app.runtime.TeamConfig(context.Background())
 	if err != nil {
 		t.Fatalf("load runtime team: %v", err)
 	}

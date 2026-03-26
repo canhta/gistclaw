@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -41,7 +42,7 @@ type teamOption struct {
 }
 
 func (s *Server) handleTeam(w http.ResponseWriter, r *http.Request) {
-	cfg, err := s.loadTeamConfig()
+	cfg, err := s.loadTeamConfig(r.Context())
 	if err != nil {
 		s.renderTemplate(w, r, "Team", "team_body", teamPageData{Error: err.Error()})
 		return
@@ -51,7 +52,7 @@ func (s *Server) handleTeam(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTeamExport(w http.ResponseWriter, r *http.Request) {
-	cfg, err := s.loadTeamConfig()
+	cfg, err := s.loadTeamConfig(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -140,11 +141,11 @@ func (s *Server) handleTeamUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) loadTeamConfig() (teams.Config, error) {
+func (s *Server) loadTeamConfig(ctx context.Context) (teams.Config, error) {
 	if s.rt == nil {
 		return teams.Config{}, fmt.Errorf("runtime: team dir not configured")
 	}
-	cfg, err := s.rt.TeamConfig()
+	cfg, err := s.rt.TeamConfig(ctx)
 	if err != nil {
 		return teams.Config{}, err
 	}
@@ -152,7 +153,7 @@ func (s *Server) loadTeamConfig() (teams.Config, error) {
 }
 
 func (s *Server) renderStoredTeamError(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
-	cfg, err := s.loadTeamConfig()
+	cfg, err := s.loadTeamConfig(r.Context())
 	if err != nil {
 		s.renderTemplateStatus(w, r, status, "Team", "team_body", teamPageData{Error: errMsg})
 		return

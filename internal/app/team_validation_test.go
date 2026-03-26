@@ -213,7 +213,7 @@ func TestBootstrap_SeedsWorkspaceOwnedTeamDirFromWorkspaceDefault(t *testing.T) 
 	if err != nil {
 		t.Fatalf("load source team: %v", err)
 	}
-	runtimeCfg, err := app.runtime.TeamConfig()
+	runtimeCfg, err := app.runtime.TeamConfig(context.Background())
 	if err != nil {
 		t.Fatalf("load runtime team: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestBootstrap_SeedsWorkspaceOwnedTeamDirFromShippedDefaultWhenWorkspaceIsEm
 		t.Fatalf("expected empty workspace git repo to exist: %v", err)
 	}
 
-	runtimeCfg, err := app.runtime.TeamConfig()
+	runtimeCfg, err := app.runtime.TeamConfig(context.Background())
 	if err != nil {
 		t.Fatalf("load runtime team: %v", err)
 	}
@@ -269,7 +269,7 @@ func TestBootstrap_UsesWorkspaceOwnedTeamDirForEdits(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = app.db.Close() })
 
-	runtimeCfg, err := app.runtime.TeamConfig()
+	runtimeCfg, err := app.runtime.TeamConfig(context.Background())
 	if err != nil {
 		t.Fatalf("load runtime team: %v", err)
 	}

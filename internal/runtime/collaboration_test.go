@@ -174,6 +174,82 @@ func TestRuntime_SpawnAllowsSameSpecialistTwiceFromSameControllerSession(t *test
 	}
 }
 
+func TestRuntime_StartFrontSessionScopesSameConversationKeyByProject(t *testing.T) {
+	rt, db := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "alpha done", InputTokens: 2, OutputTokens: 3, StopReason: "end_turn"},
+		{Content: "beta done", InputTokens: 2, OutputTokens: 3, StopReason: "end_turn"},
+	})
+	ctx := context.Background()
+
+	alphaRoot := filepath.Join(t.TempDir(), "alpha-project")
+	writeRuntimeTeamFixture(t, alphaRoot, "Alpha Team")
+	alphaProject, err := ActivateWorkspace(ctx, db, alphaRoot, "alpha-project", "operator")
+	if err != nil {
+		t.Fatalf("activate alpha project: %v", err)
+	}
+	betaRoot := filepath.Join(t.TempDir(), "beta-project")
+	writeRuntimeTeamFixture(t, betaRoot, "Beta Team")
+	betaProject, err := ActivateWorkspace(ctx, db, betaRoot, "beta-project", "operator")
+	if err != nil {
+		t.Fatalf("activate beta project: %v", err)
+	}
+
+	if err := SetActiveProject(ctx, db, alphaProject.ID); err != nil {
+		t.Fatalf("set alpha active: %v", err)
+	}
+	key := conversations.ConversationKey{
+		ConnectorID: "web",
+		AccountID:   "local",
+		ExternalID:  "assistant",
+		ThreadID:    "main",
+	}
+	alphaRun, err := rt.StartFrontSession(ctx, StartFrontSession{
+		ConversationKey: key,
+		FrontAgentID:    "assistant",
+		InitialPrompt:   "inspect alpha",
+		WorkspaceRoot:   alphaRoot,
+	})
+	if err != nil {
+		t.Fatalf("start alpha front session: %v", err)
+	}
+
+	if err := SetActiveProject(ctx, db, betaProject.ID); err != nil {
+		t.Fatalf("set beta active: %v", err)
+	}
+	betaRun, err := rt.StartFrontSession(ctx, StartFrontSession{
+		ConversationKey: key,
+		FrontAgentID:    "assistant",
+		InitialPrompt:   "inspect beta",
+		WorkspaceRoot:   betaRoot,
+	})
+	if err != nil {
+		t.Fatalf("start beta front session: %v", err)
+	}
+
+	if alphaRun.ConversationID == betaRun.ConversationID {
+		t.Fatalf("expected same inbound key to resolve to different conversations per project, got %q", alphaRun.ConversationID)
+	}
+	if alphaRun.SessionID == betaRun.SessionID {
+		t.Fatalf("expected same inbound key to resolve to different front sessions per project, got %q", alphaRun.SessionID)
+	}
+}
+
+func writeRuntimeTeamFixture(t *testing.T, workspaceRoot, name string) {
+	t.Helper()
+
+	teamDir := filepath.Join(workspaceRoot, ".gistclaw", "teams", "default")
+	if err := os.MkdirAll(teamDir, 0o755); err != nil {
+		t.Fatalf("mkdir runtime team dir: %v", err)
+	}
+	teamSpec := "name: " + name + "\nfront_agent: assistant\nagents:\n  - id: assistant\n    soul_file: assistant.soul.yaml\n    role: coordinator\n    tool_posture: read_heavy\n"
+	if err := os.WriteFile(filepath.Join(teamDir, "team.yaml"), []byte(teamSpec), 0o644); err != nil {
+		t.Fatalf("write runtime team yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(teamDir, "assistant.soul.yaml"), []byte("role: coordinator\ntool_posture: read_heavy\n"), 0o644); err != nil {
+		t.Fatalf("write runtime soul: %v", err)
+	}
+}
+
 func TestRuntime_LatestAssistantMessageReturnsEmptyWhenMissing(t *testing.T) {
 	rt, _ := newCollaborationRuntime(t, nil)
 
@@ -315,9 +391,36 @@ func TestRuntime_StartFrontSessionReusesExistingAssistantSession(t *testing.T) {
 		{Content: "First pass complete.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
 		{Content: "Second pass complete.", InputTokens: 11, OutputTokens: 13, StopReason: "end_turn"},
 	})
+	workspaceRoot := t.TempDir()
 
-	first := startFrontRun(t, rt, "Inspect the repo")
-	second := startFrontRun(t, rt, "Summarize the repo")
+	first, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Inspect the repo",
+		WorkspaceRoot: workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("first StartFrontSession failed: %v", err)
+	}
+	second, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Summarize the repo",
+		WorkspaceRoot: workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("second StartFrontSession failed: %v", err)
+	}
 
 	if first.SessionID == "" || second.SessionID == "" {
 		t.Fatal("expected front runs to carry a durable session ID")
@@ -327,7 +430,7 @@ func TestRuntime_StartFrontSessionReusesExistingAssistantSession(t *testing.T) {
 	}
 
 	var count int
-	err := db.RawDB().QueryRow(
+	err = db.RawDB().QueryRow(
 		"SELECT count(*) FROM sessions WHERE agent_id = 'assistant' AND role = 'front'",
 	).Scan(&count)
 	if err != nil {
@@ -570,6 +673,7 @@ func TestRuntime_ReceiveInboundMessageReusesBoundFrontSessionWithConnectorProven
 		{Content: "Front ready.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
 		{Content: "Telegram follow-up.", InputTokens: 11, OutputTokens: 13, StopReason: "end_turn"},
 	})
+	workspaceRoot := t.TempDir()
 
 	first, err := rt.ReceiveInboundMessage(context.Background(), InboundMessageCommand{
 		ConversationKey: conversations.ConversationKey{
@@ -581,7 +685,7 @@ func TestRuntime_ReceiveInboundMessageReusesBoundFrontSessionWithConnectorProven
 		FrontAgentID:    "assistant",
 		Body:            "Inspect the repo.",
 		SourceMessageID: "tg-1",
-		WorkspaceRoot:   t.TempDir(),
+		WorkspaceRoot:   workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("first ReceiveInboundMessage failed: %v", err)
@@ -597,7 +701,7 @@ func TestRuntime_ReceiveInboundMessageReusesBoundFrontSessionWithConnectorProven
 		FrontAgentID:    "assistant",
 		Body:            "What changed?",
 		SourceMessageID: "tg-2",
-		WorkspaceRoot:   t.TempDir(),
+		WorkspaceRoot:   workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("second ReceiveInboundMessage failed: %v", err)

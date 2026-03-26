@@ -26,7 +26,12 @@ const (
 )
 
 func (r *Runtime) InspectConversation(ctx context.Context, key conversations.ConversationKey) (ConversationStatus, error) {
-	conv, found, err := r.convStore.Find(ctx, key)
+	scopedKey, _, err := r.scopeConversationKey(ctx, key, "")
+	if err != nil {
+		return ConversationStatus{}, fmt.Errorf("inspect conversation: %w", err)
+	}
+
+	conv, found, err := r.convStore.Find(ctx, scopedKey)
 	if err != nil {
 		return ConversationStatus{}, fmt.Errorf("inspect conversation: %w", err)
 	}
@@ -74,7 +79,12 @@ func (r *Runtime) InspectConversation(ctx context.Context, key conversations.Con
 }
 
 func (r *Runtime) ResetConversation(ctx context.Context, key conversations.ConversationKey) (ConversationResetOutcome, error) {
-	conv, found, err := r.convStore.Find(ctx, key)
+	scopedKey, _, err := r.scopeConversationKey(ctx, key, "")
+	if err != nil {
+		return "", fmt.Errorf("reset conversation: %w", err)
+	}
+
+	conv, found, err := r.convStore.Find(ctx, scopedKey)
 	if err != nil {
 		return "", fmt.Errorf("reset conversation: %w", err)
 	}

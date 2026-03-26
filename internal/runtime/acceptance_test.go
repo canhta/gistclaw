@@ -348,6 +348,7 @@ func TestAcceptance_FrontMailboxSpansMultipleRuns(t *testing.T) {
 	)
 	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
+	workspaceRoot := t.TempDir()
 
 	first, err := rt.StartFrontSession(ctx, StartFrontSession{
 		ConversationKey: conversations.ConversationKey{
@@ -358,7 +359,7 @@ func TestAcceptance_FrontMailboxSpansMultipleRuns(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "First prompt",
-		WorkspaceRoot: t.TempDir(),
+		WorkspaceRoot: workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("first StartFrontSession failed: %v", err)
@@ -373,7 +374,7 @@ func TestAcceptance_FrontMailboxSpansMultipleRuns(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Second prompt",
-		WorkspaceRoot: t.TempDir(),
+		WorkspaceRoot: workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("second StartFrontSession failed: %v", err)

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/projectscope"
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
 )
@@ -153,7 +154,7 @@ func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to load active project", http.StatusInternalServerError)
 		return
 	}
-	querySQL, args, err := buildRunListQuery(filter, activeProject.WorkspaceRoot)
+	querySQL, args, err := buildRunListQuery(filter, activeProject)
 	if err != nil {
 		http.Error(w, "failed to build runs query", http.StatusInternalServerError)
 		return
@@ -264,6 +265,15 @@ func buildRunQueueStrip(items []runListItem) runQueueStripView {
 
 func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("id")
+	visible, err := s.runVisibleInActiveProject(r.Context(), runID)
+	if err != nil {
+		http.Error(w, "failed to load run", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
+		return
+	}
 
 	replayRun, err := s.replay.LoadRun(r.Context(), runID)
 	if err != nil {
@@ -330,6 +340,15 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRunGraph(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("id")
+	visible, err := s.runVisibleInActiveProject(r.Context(), runID)
+	if err != nil {
+		http.Error(w, "failed to load run graph", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
+		return
+	}
 
 	graphSnapshot, err := s.replay.LoadGraphSnapshot(r.Context(), runID)
 	if err != nil {
@@ -438,7 +457,7 @@ func runScopeFromRequest(r *http.Request) string {
 	return "active"
 }
 
-func buildRunListQuery(filter runListRequest, activeWorkspaceRoot string) (string, []any, error) {
+func buildRunListQuery(filter runListRequest, activeProject model.Project) (string, []any, error) {
 	var query strings.Builder
 	query.WriteString(`SELECT id, COALESCE(objective, ''), COALESCE(parent_run_id, ''), status, created_at,
 	        (SELECT count(*) FROM runs child WHERE child.parent_run_id = runs.id) AS worker_count
@@ -455,9 +474,10 @@ func buildRunListQuery(filter runListRequest, activeWorkspaceRoot string) (strin
 		clauses = append(clauses, "status = ?")
 		args = append(args, filter.Status)
 	}
-	if filter.Scope != "all" && activeWorkspaceRoot != "" {
-		clauses = append(clauses, "COALESCE(workspace_root, '') = ?")
-		args = append(args, activeWorkspaceRoot)
+	if filter.Scope != "all" {
+		condition, scopeArgs := projectscope.RunCondition(activeProject, "runs")
+		clauses = append(clauses, condition)
+		args = append(args, scopeArgs...)
 	}
 	if filter.HasCursor {
 		switch filter.Direction {
@@ -555,6 +575,15 @@ func (s *Server) handleRunDismiss(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleRunEvents(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("id")
+	visible, err := s.runVisibleInActiveProject(r.Context(), runID)
+	if err != nil {
+		http.Error(w, "failed to load run events", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
+		return
+	}
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {

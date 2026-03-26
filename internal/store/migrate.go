@@ -125,6 +125,16 @@ func ensureProjectSchema(db *DB) error {
 	if _, err := db.db.Exec(`CREATE INDEX IF NOT EXISTS idx_runs_project_id_status_updated_at ON runs(project_id, status, updated_at)`); err != nil {
 		return fmt.Errorf("migrate: create runs.project_id index: %w", err)
 	}
+	if _, err := db.db.Exec(`UPDATE runs
+		SET project_id = (
+			SELECT projects.id
+			FROM projects
+			WHERE projects.workspace_root = runs.workspace_root
+		)
+		WHERE COALESCE(project_id, '') = ''
+		  AND COALESCE(workspace_root, '') != ''`); err != nil {
+		return fmt.Errorf("migrate: backfill runs.project_id: %w", err)
+	}
 
 	return nil
 }

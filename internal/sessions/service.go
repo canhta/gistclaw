@@ -12,6 +12,7 @@ import (
 
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/projectscope"
 	"github.com/canhta/gistclaw/internal/store"
 )
 
@@ -49,25 +50,31 @@ type BindFollowUp struct {
 }
 
 type DeliveryQueueFilter struct {
-	ConnectorID string
-	SessionID   string
-	Status      string
-	Query       string
-	Cursor      string
-	Direction   string
-	Limit       int
+	ProjectID     string
+	WorkspaceRoot string
+	ConnectorID   string
+	SessionID     string
+	Status        string
+	Query         string
+	Cursor        string
+	Direction     string
+	Limit         int
 }
 
 type RouteListFilter struct {
-	ConnectorID string
-	Status      string
-	Query       string
-	Cursor      string
-	Direction   string
-	Limit       int
+	ProjectID     string
+	WorkspaceRoot string
+	ConnectorID   string
+	Status        string
+	Query         string
+	Cursor        string
+	Direction     string
+	Limit         int
 }
 
 type SessionListFilter struct {
+	ProjectID      string
+	WorkspaceRoot  string
 	ConversationID string
 	AgentID        string
 	Role           string
@@ -279,6 +286,20 @@ func (s *Service) ListSessionsPage(ctx context.Context, filter SessionListFilter
 		 ) activity ON activity.session_id = sess.id
 		 WHERE 1 = 1`
 	args := make([]any, 0, 24)
+	if filter.ProjectID != "" || filter.WorkspaceRoot != "" {
+		scopeCondition, scopeArgs := projectscope.RunCondition(model.Project{
+			ID:            filter.ProjectID,
+			WorkspaceRoot: filter.WorkspaceRoot,
+		}, "scope_runs")
+		query += `
+		   AND EXISTS (
+		       SELECT 1
+		       FROM runs scope_runs
+		       WHERE scope_runs.conversation_id = sess.conversation_id
+		         AND ` + scopeCondition + `
+		   )`
+		args = append(args, scopeArgs...)
+	}
 	if filter.ConversationID != "" {
 		query += `
 		   AND sess.conversation_id = ?`
@@ -617,6 +638,19 @@ func (s *Service) ListRoutesPage(ctx context.Context, filter RouteListFilter) (P
 	)
 
 	args := make([]any, 0, 12)
+	if filter.ProjectID != "" || filter.WorkspaceRoot != "" {
+		scopeCondition, scopeArgs := projectscope.RunCondition(model.Project{
+			ID:            filter.ProjectID,
+			WorkspaceRoot: filter.WorkspaceRoot,
+		}, "scope_runs")
+		query.WriteString(` AND EXISTS (
+			SELECT 1
+			FROM runs scope_runs
+			WHERE scope_runs.conversation_id = bind.conversation_id
+			  AND ` + scopeCondition + `
+		)`)
+		args = append(args, scopeArgs...)
+	}
 	if filter.ConnectorID != "" {
 		query.WriteString(" AND bind.connector_id = ?")
 		args = append(args, filter.ConnectorID)
@@ -887,6 +921,14 @@ func (s *Service) ListDeliveryQueuePage(ctx context.Context, filter DeliveryQueu
 
 	args := make([]any, 0, 3)
 	conditions := make([]string, 0, 2)
+	if filter.ProjectID != "" || filter.WorkspaceRoot != "" {
+		scopeCondition, scopeArgs := projectscope.RunCondition(model.Project{
+			ID:            filter.ProjectID,
+			WorkspaceRoot: filter.WorkspaceRoot,
+		}, "r")
+		conditions = append(conditions, scopeCondition)
+		args = append(args, scopeArgs...)
+	}
 	if filter.ConnectorID != "" {
 		conditions = append(conditions, "oi.connector_id = ?")
 		args = append(args, filter.ConnectorID)
