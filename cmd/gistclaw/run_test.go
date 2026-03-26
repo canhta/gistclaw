@@ -88,6 +88,18 @@ func TestRun_RunAndInspectCommands(t *testing.T) {
 	}
 }
 
+func TestRun_InspectUnknownSubcommandStillFails(t *testing.T) {
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+
+	if code := run([]string{"inspect", "systemd"}, &stdout, &stderr); code == 0 {
+		t.Fatal("expected non-zero exit for unknown inspect subcommand")
+	}
+	if !strings.Contains(stderr.String(), "unknown inspect subcommand: systemd") {
+		t.Fatalf("unexpected stderr:\n%s", stderr.String())
+	}
+}
+
 func TestParseConfigPath_UsesEnvOverride(t *testing.T) {
 	cfgPath, _ := writeCLIConfig(t)
 	t.Setenv("GISTCLAW_CONFIG", cfgPath)

@@ -1,0 +1,50 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build darwin arm64 archive
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+          mkdir -p dist/darwin-arm64
+          GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags "-X github.com/canhta/gistclaw/cmd/gistclaw.version=${VERSION} -X github.com/canhta/gistclaw/cmd/gistclaw.commit=${GITHUB_SHA} -X github.com/canhta/gistclaw/cmd/gistclaw.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o dist/darwin-arm64/gistclaw ./cmd/gistclaw
+          tar -czf "dist/gistclaw_${VERSION}_darwin_arm64.tar.gz" -C dist/darwin-arm64 gistclaw
+      - name: Build linux amd64 archive
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME}"
+          mkdir -p dist/linux-amd64
+          GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-X github.com/canhta/gistclaw/cmd/gistclaw.version=${VERSION} -X github.com/canhta/gistclaw/cmd/gistclaw.commit=${GITHUB_SHA} -X github.com/canhta/gistclaw/cmd/gistclaw.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" -o dist/linux-amd64/gistclaw ./cmd/gistclaw
+          tar -czf "dist/gistclaw_${VERSION}_linux_amd64.tar.gz" -C dist/linux-amd64 gistclaw
+      - name: Generate checksums
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum gistclaw_*.tar.gz > SHA256SUMS.txt)
+      - name: Binary smoke
+        run: |
+          set -euo pipefail
+          tar -xzf "dist/gistclaw_${GITHUB_REF_NAME}_linux_amd64.tar.gz" -C /tmp
+          /tmp/gistclaw version
+      - name: Publish GitHub release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/gistclaw_${{ github.ref_name }}_darwin_arm64.tar.gz
+            dist/gistclaw_${{ github.ref_name }}_linux_amd64.tar.gz
+            dist/SHA256SUMS.txt
+            scripts/gistclaw-install.sh

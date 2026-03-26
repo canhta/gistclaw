@@ -20,6 +20,7 @@ const usage = `Usage: gistclaw <subcommand> [options]
 Subcommands:
   serve      Start the GistClaw daemon
   run        Submit a task directly
+  version    Print release/build metadata
   inspect    Inspect daemon state
   security   Run deployment security audit
   doctor     Run health checks (config, database, provider, workspace, storage, scheduler)
@@ -31,6 +32,7 @@ Inspect subcommands:
   inspect status           Show active runs, interrupted runs, approvals, and storage health
   inspect runs             List all runs with status
   inspect replay <run_id>  Print replay for a run
+  inspect systemd-unit     Print the canonical systemd service unit
   inspect token            Print admin token from settings table
 
 Flags:
@@ -62,6 +64,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runServe(configPath, stdout, stderr)
 	case "run":
 		return runTask(configPath, args[1:], stdout, stderr)
+	case "version":
+		return runVersion(stdout, stderr)
 	case "inspect":
 		return runInspect(configPath, args[1:], stdout, stderr)
 	case "security":
@@ -125,19 +129,21 @@ func runTask(configPath string, args []string, stdout, stderr io.Writer) int {
 
 func runInspect(configPath string, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprint(stderr, "Usage: gistclaw inspect <subcommand>\n\nSubcommands:\n  status    Show active runs, interrupted runs, approvals, and storage health\n  runs      List all runs with status\n  replay    Print replay for a run\n  token     Print admin token\n")
+		fmt.Fprint(stderr, "Usage: gistclaw inspect <subcommand>\n\nSubcommands:\n  status        Show active runs, interrupted runs, approvals, and storage health\n  runs          List all runs with status\n  replay        Print replay for a run\n  systemd-unit  Print the canonical systemd service unit\n  token         Print admin token\n")
 		return 1
 	}
-
-	application, err := loadApp(configPath)
-	if err != nil {
-		fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
-		return 1
-	}
-	defer func() { _ = application.Stop() }()
 
 	switch args[0] {
+	case "systemd-unit":
+		fmt.Fprint(stdout, app.RenderSystemdUnit(systemdBinaryPath(), systemdConfigPath()))
+		return 0
 	case "status":
+		application, err := loadApp(configPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
+			return 1
+		}
+		defer func() { _ = application.Stop() }()
 		status, err := application.InspectStatus(context.Background())
 		if err != nil {
 			fmt.Fprintf(stderr, "inspect status failed: %v\n", err)
@@ -156,6 +162,12 @@ func runInspect(configPath string, args []string, stdout, stderr io.Writer) int 
 		}
 		return 0
 	case "runs":
+		application, err := loadApp(configPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
+			return 1
+		}
+		defer func() { _ = application.Stop() }()
 		runs, err := application.ListRuns(context.Background())
 		if err != nil {
 			fmt.Fprintf(stderr, "inspect runs failed: %v\n", err)
@@ -166,6 +178,12 @@ func runInspect(configPath string, args []string, stdout, stderr io.Writer) int 
 		}
 		return 0
 	case "replay":
+		application, err := loadApp(configPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
+			return 1
+		}
+		defer func() { _ = application.Stop() }()
 		if len(args) < 2 {
 			fmt.Fprintln(stderr, "Usage: gistclaw inspect replay <run_id>")
 			return 1
@@ -181,6 +199,12 @@ func runInspect(configPath string, args []string, stdout, stderr io.Writer) int 
 		}
 		return 0
 	case "token":
+		application, err := loadApp(configPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
+			return 1
+		}
+		defer func() { _ = application.Stop() }()
 		token, err := application.AdminToken(context.Background())
 		if err != nil {
 			fmt.Fprintf(stderr, "inspect token failed: %v\n", err)
@@ -253,4 +277,18 @@ func joinStorageWarnings(warnings []store.HealthWarning) string {
 		parts = append(parts, string(warning))
 	}
 	return strings.Join(parts, ",")
+}
+
+func systemdBinaryPath() string {
+	if path := strings.TrimSpace(os.Getenv("GISTCLAW_SYSTEMD_BINARY_PATH")); path != "" {
+		return path
+	}
+	return app.SystemdBinaryPath
+}
+
+func systemdConfigPath() string {
+	if path := strings.TrimSpace(os.Getenv("GISTCLAW_SYSTEMD_CONFIG_PATH")); path != "" {
+		return path
+	}
+	return app.SystemdConfigPath
 }

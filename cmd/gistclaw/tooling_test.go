@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -156,5 +157,144 @@ func TestRepoTooling_ConfigFiles(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRepoTooling_ReleaseContract(t *testing.T) {
+	root := findModuleRoot(t)
+
+	files := []struct {
+		path      string
+		wantSnips []string
+	}{
+		{
+			path: filepath.Join(root, ".github", "workflows", "ci.yml"),
+			wantSnips: []string{
+				"go test ./...",
+				"go test -cover ./...",
+				"go vet ./...",
+				"bash scripts/gistclaw-install-smoke.sh",
+			},
+		},
+		{
+			path: filepath.Join(root, ".github", "workflows", "release.yml"),
+			wantSnips: []string{
+				"refs/tags/v",
+				"GOOS=darwin",
+				"GOARCH=arm64",
+				"GOOS=linux",
+				"GOARCH=amd64",
+				"-X github.com/canhta/gistclaw/cmd/gistclaw.version=",
+				"SHA256SUMS.txt",
+				"scripts/gistclaw-install.sh",
+			},
+		},
+		{
+			path: filepath.Join(root, "scripts", "gistclaw-install.sh"),
+			wantSnips: []string{
+				"/etc/gistclaw/config.yaml",
+				"/usr/local/bin/gistclaw",
+				"/etc/systemd/system/gistclaw.service",
+				"gistclaw inspect systemd-unit",
+				"systemctl enable --now gistclaw",
+			},
+		},
+		{
+			path: filepath.Join(root, "scripts", "gistclaw-install-smoke.sh"),
+			wantSnips: []string{
+				"sha256sum",
+				"systemctl",
+				"curl",
+				"checksum mismatch",
+			},
+		},
+		{
+			path: filepath.Join(root, "README.md"),
+			wantSnips: []string{
+				"GitHub Releases",
+				"docs/install-ubuntu.md",
+				"docs/install-macos.md",
+				"gistclaw version",
+				"gistclaw inspect systemd-unit",
+			},
+		},
+		{
+			path: filepath.Join(root, "docs", "install-ubuntu.md"),
+			wantSnips: []string{
+				"Ubuntu 24",
+				"systemctl status gistclaw",
+				"journalctl -u gistclaw",
+				"gistclaw doctor",
+				"gistclaw security audit",
+			},
+		},
+		{
+			path: filepath.Join(root, "docs", "install-macos.md"),
+			wantSnips: []string{
+				"Apple Silicon",
+				"gistclaw serve",
+				"127.0.0.1:8080",
+			},
+		},
+		{
+			path: filepath.Join(root, "docs", "recovery.md"),
+			wantSnips: []string{
+				"gistclaw backup",
+				"restore",
+				"rollback",
+				"GitHub release URL",
+			},
+		},
+	}
+
+	for _, tc := range files {
+		t.Run(filepath.Base(tc.path), func(t *testing.T) {
+			data, err := os.ReadFile(tc.path)
+			if err != nil {
+				t.Fatalf("ReadFile failed: %v", err)
+			}
+
+			content := string(data)
+			for _, snippet := range tc.wantSnips {
+				if !strings.Contains(content, snippet) {
+					t.Fatalf("%s missing %q", tc.path, snippet)
+				}
+			}
+		})
+	}
+}
+
+func TestRepoTooling_DocsUseRepoRelativeLinks(t *testing.T) {
+	root := findModuleRoot(t)
+
+	files, err := filepath.Glob(filepath.Join(root, "*.md"))
+	if err != nil {
+		t.Fatalf("Glob root markdown failed: %v", err)
+	}
+
+	err = filepath.WalkDir(filepath.Join(root, "docs"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if filepath.Ext(path) == ".md" {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("WalkDir docs failed: %v", err)
+	}
+
+	for _, path := range files {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("ReadFile %s failed: %v", path, err)
+		}
+		if strings.Contains(string(data), root) {
+			t.Fatalf("%s contains workspace-absolute links rooted at %q", path, root)
+		}
 	}
 }

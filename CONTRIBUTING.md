@@ -1,6 +1,6 @@
 # Contributing to GistClaw
 
-Start with [AGENTS.md](/Users/canh/Projects/OSS/gistclaw/AGENTS.md) for project policies and [docs/system.md](/Users/canh/Projects/OSS/gistclaw/docs/system.md) for the current package map.
+Start with [AGENTS.md](AGENTS.md) for project policies and [docs/system.md](docs/system.md) for the current package map.
 
 ## Prerequisites
 

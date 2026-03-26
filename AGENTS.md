@@ -67,7 +67,7 @@ go vet ./...
 
 ## Current System
 
-Use [docs/system.md](/Users/canh/Projects/OSS/gistclaw/docs/system.md) as the source of truth for the shipped package map and operator surface.
+Use [docs/system.md](docs/system.md) as the source of truth for the shipped package map and operator surface.
 
 The important current boundaries are:
 

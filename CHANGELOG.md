@@ -14,20 +14,17 @@ Provider adapters now use the official Anthropic and OpenAI SDK clients.
 
 Template layout and style coverage now have dedicated regression tests.
 
-## v1.0.0 — 2026-03-24
+## v0.1.0 — 2026-03-26
 
-### Milestone 4 — Stable 1.0
+### First public OSS release
 
-Recovery hardening, doctor/backup/export operator tooling, onboarding and approval UX polish, and documentation sync brought the project to a stable 1.0 release.
+You can now install GistClaw from GitHub Releases instead of building from source first.
 
-### Milestone 3 — Public Beta
+This release includes:
 
-Telegram DM approval integration, budget guard for token and cost limits, and multi-repo workspace support shipped, making the daemon ready for real daily use.
-
-### Milestone 2 — Web UI and SSE
-
-A live run stream via Server-Sent Events, a web UI covering run list, run detail, and approval tickets, and the admin token authentication layer shipped.
-
-### Milestone 1 — Kernel Proof
-
-Single-repo task execution, a durable append-only event journal, run receipts with token and cost accounting, and interrupted-run recovery on daemon restart shipped.
+- release archives for `darwin/arm64` and `linux/amd64`
+- `SHA256SUMS.txt`
+- an Ubuntu 24 installer with a blessed `systemd` path
+- `gistclaw version`
+- `gistclaw inspect systemd-unit`
+- install, update, and recovery docs for operators

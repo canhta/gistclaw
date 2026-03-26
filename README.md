@@ -19,53 +19,55 @@ Today the repo already ships a working daemon, CLI, local web control plane, rep
 ## What Ships Today
 
 - `gistclaw serve` starts the daemon and local web host.
+- `gistclaw version` prints the installed release identity.
 - `gistclaw run`, `inspect`, `security audit`, `schedule`, `doctor`, `backup`, and `export` cover the operator CLI.
+- `gistclaw inspect systemd-unit` prints the canonical service file used by the Ubuntu installer.
 - The web UI includes onboarding plus operator-job pages for `Operate`, `Configure`, and `Recover`.
+- GitHub Releases now carry the blessed Ubuntu installer path and Apple Silicon download path.
 - Providers: Anthropic and OpenAI-compatible endpoints.
 - Tools: built-in web fetch, optional Tavily search, optional MCP stdio tools.
 - Live external surfaces: Telegram DM and WhatsApp.
-- The repo includes a default team definition in [teams/default/team.yaml](/Users/canh/Projects/OSS/gistclaw/teams/default/team.yaml).
+- The repo includes a default team definition in [teams/default/team.yaml](teams/default/team.yaml).
 - The Team page supports named per-project team profiles under `.gistclaw/teams/<profile>/`.
 
 ## Quick Start
 
-Create a config file at `~/.config/gistclaw/config.yaml`:
+### Public OSS Quick Start
 
-```yaml
-provider:
-  name: openai
-  api_key: REPLACE_WITH_REAL_KEY
-  models:
-    strong: gpt-4o
-web:
-  listen_addr: 127.0.0.1:8080
-research:
-  provider: tavily
-  api_key: REPLACE_WITH_REAL_KEY
-mcp:
-  servers: []
-```
+Start from [GitHub Releases](https://github.com/canhta/gistclaw/releases).
 
-Only `provider` is required. `workspace_root` is optional: on first boot, GistClaw creates a starter project under `~/.gistclaw/projects/<name>` and keeps onboarding separate from workspace existence. If you omit `database_path`, GistClaw stores state at `~/.local/share/gistclaw/runtime.db`.
+- Ubuntu 24 VPS: [docs/install-ubuntu.md](docs/install-ubuntu.md)
+- macOS Apple Silicon: [docs/install-macos.md](docs/install-macos.md)
+- Recovery and rollback: [docs/recovery.md](docs/recovery.md)
 
-Start the daemon:
+The Ubuntu path installs a `systemd` service, and the binary itself can show the canonical unit:
 
 ```bash
+gistclaw version
+gistclaw inspect systemd-unit
+```
+
+### Contributor Quick Start
+
+If you are developing from source, use [CONTRIBUTING.md](CONTRIBUTING.md) for the full setup. The shortest local loop is:
+
+```bash
+make dev && make hooks-install
 go run ./cmd/gistclaw serve
 ```
 
-Then open `http://127.0.0.1:8080`. You can override the config path with `GISTCLAW_CONFIG` or `gistclaw -c /path/to/config.yaml ...`.
-
-From there, you can keep the starter project, bind an existing repo, or create a new project elsewhere during onboarding. The shell project switcher changes the active project context without burying that job in Settings. You can then submit a task from the web UI or from the CLI and use the local operator surface for runs, approvals, session inspection, team configuration, memory, and delivery recovery.
+Create `~/.config/gistclaw/config.yaml` using the minimal example in [CONTRIBUTING.md](CONTRIBUTING.md), then open `http://127.0.0.1:8080`.
 
 ## CLI Surface
 
 ```bash
 gistclaw serve
+gistclaw version
 gistclaw run "fix the failing tests"
 gistclaw inspect status
 gistclaw inspect runs
 gistclaw inspect replay <run_id>
+gistclaw inspect systemd-unit
 gistclaw inspect token
 gistclaw security audit
 gistclaw schedule add --name "Daily review" --objective "Inspect repository status" --at 2030-01-01T00:00:00Z
@@ -110,14 +112,17 @@ The coverage floor remains `70%`.
 
 Read these in order:
 
-1. [docs/system.md](/Users/canh/Projects/OSS/gistclaw/docs/system.md)
-2. [docs/vision.md](/Users/canh/Projects/OSS/gistclaw/docs/vision.md)
-3. [docs/kernel.md](/Users/canh/Projects/OSS/gistclaw/docs/kernel.md)
-4. [docs/roadmap.md](/Users/canh/Projects/OSS/gistclaw/docs/roadmap.md)
-5. [docs/extensions.md](/Users/canh/Projects/OSS/gistclaw/docs/extensions.md)
-6. [AGENTS.md](/Users/canh/Projects/OSS/gistclaw/AGENTS.md) (`CLAUDE.md` is a symlink to this file)
-7. [CONTRIBUTING.md](/Users/canh/Projects/OSS/gistclaw/CONTRIBUTING.md)
-8. [CHANGELOG.md](/Users/canh/Projects/OSS/gistclaw/CHANGELOG.md)
+1. [docs/system.md](docs/system.md)
+2. [docs/install-ubuntu.md](docs/install-ubuntu.md)
+3. [docs/install-macos.md](docs/install-macos.md)
+4. [docs/recovery.md](docs/recovery.md)
+5. [docs/vision.md](docs/vision.md)
+6. [docs/kernel.md](docs/kernel.md)
+7. [docs/roadmap.md](docs/roadmap.md)
+8. [docs/extensions.md](docs/extensions.md)
+9. [AGENTS.md](AGENTS.md) (`CLAUDE.md` is a symlink to this file)
+10. [CONTRIBUTING.md](CONTRIBUTING.md)
+11. [CHANGELOG.md](CHANGELOG.md)
 
 ## Related Project
 

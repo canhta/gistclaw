@@ -18,20 +18,6 @@ The reset-era TODO set was collapsed on 2026-03-25. Completed items and referenc
 
 ---
 
-## P2: Operator-selectable and user-defined teams
-
-**What:** Move team composition from repo-managed files and settings toward an operator-visible workflow.
-
-**Why:** The repo ships [teams/default/team.yaml](/Users/canh/Projects/OSS/gistclaw/teams/default/team.yaml) and validates `team_dir`, but the live product still lacks first-class team selection and editing.
-
-**How to apply:** Build on the current `internal/teams/` seam and expose selection or editing through the local control plane without bypassing runtime boundaries.
-
-**Effort:** M → CC+gstack: S
-**Priority:** P2
-**Depends on:** current team validation seam
-
----
-
 ## P3: Telegram webhook mode
 
 **What:** Add optional webhook mode for Telegram as an alternative to long polling.
@@ -57,3 +43,18 @@ The reset-era TODO set was collapsed on 2026-03-25. Completed items and referenc
 **Effort:** M → CC+gstack: S
 **Priority:** P3
 **Depends on:** keeping the session kernel as the shared contract
+
+## Completed
+
+## P2: Operator-selectable and user-defined teams
+
+**What:** Move team composition from repo-managed files and settings toward an operator-visible workflow.
+
+**Why:** The repo ships [teams/default/team.yaml](teams/default/team.yaml) and validates `team_dir`, but the live product still lacks first-class team selection and editing.
+
+**How to apply:** Build on the current `internal/teams/` seam and expose selection or editing through the local control plane without bypassing runtime boundaries.
+
+**Effort:** M → CC+gstack: S
+**Priority:** P2
+**Depends on:** current team validation seam
+**Completed:** v0.1.0 (2026-03-26)

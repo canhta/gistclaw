@@ -15,13 +15,14 @@ If you are evaluating GistClaw as a tool, the current value is:
 ## What Ships Today
 
 - A single Go binary, `gistclaw`, with daemon and operator commands.
+- GitHub Releases with a blessed Ubuntu 24 installer path and Apple Silicon download path.
 - A local web host with starter-project onboarding plus operator-job pages grouped under Operate, Configure, and Recover.
 - A journal-backed runtime that records runs, session collaboration, approvals, receipts, route bindings, and outbound delivery state in SQLite.
 - A SQLite-backed scheduler service for local scheduled tasks, occurrence history, restart repair, and CLI-first schedule management.
 - Provider adapters for Anthropic and OpenAI-compatible endpoints.
 - A tool registry with built-in web fetch, optional Tavily search, and optional MCP stdio tools.
 - Live external surfaces for Telegram DM and WhatsApp.
-- A default team definition under [teams/default/team.yaml](/Users/canh/Projects/OSS/gistclaw/teams/default/team.yaml).
+- A default team definition under [teams/default/team.yaml](../teams/default/team.yaml).
 
 ## Runtime Model
 
@@ -37,8 +38,9 @@ If you are evaluating GistClaw as a tool, the current value is:
 ### CLI
 
 - `gistclaw serve` starts the daemon and local web host.
+- `gistclaw version` prints the running release/build metadata.
 - `gistclaw run` submits a task directly from the CLI.
-- `gistclaw inspect` reports status, runs, replay, the admin token, and storage-health fields for the current database.
+- `gistclaw inspect` reports status, runs, replay, the canonical `systemd` unit, the admin token, and storage-health fields for the current database.
 - `gistclaw security audit` reports deployment-risk findings for the current config and runtime posture.
 - `gistclaw schedule` adds, updates, reports scheduler status, lists, shows, runs, enables, disables, and deletes scheduled tasks.
 - `gistclaw doctor` checks config, database, provider, workspace, research, MCP binaries, Telegram reachability, connector health, storage health, and scheduler state.
@@ -107,5 +109,5 @@ The codebase is past the original reset, but a few surfaces are still intentiona
 - broader connector and gateway coverage
 - dedicated web schedule pages
 - explicit storage-maintenance commands beyond health reporting
-- richer packaging and deployment guidance
+- extra packaging channels beyond GitHub Releases and the blessed installer
 - more polished extension workflows beyond the current tool and provider seams
