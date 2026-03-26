@@ -23,6 +23,12 @@ func (r *Runtime) SpawnTool(ctx context.Context, req tools.SessionSpawnRequest) 
 	if err != nil {
 		return tools.SessionSpawnResult{}, err
 	}
+	if strings.TrimSpace(output) == "" && isTerminalRunStatus(run.Status) {
+		output, err = r.childTerminalMessage(ctx, run)
+		if err != nil {
+			return tools.SessionSpawnResult{}, err
+		}
+	}
 	return tools.SessionSpawnResult{
 		RunID:     run.ID,
 		SessionID: run.SessionID,

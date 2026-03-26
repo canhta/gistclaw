@@ -1160,6 +1160,13 @@ func (r *Runtime) childTerminalMessage(ctx context.Context, run model.Run) (stri
 		if output != "" {
 			return fmt.Sprintf("%s was interrupted: %s", run.AgentID, output), nil
 		}
+		reason, err := r.interruptedRunReason(ctx, run.ID)
+		if err != nil {
+			return "", err
+		}
+		if reason != "" {
+			return fmt.Sprintf("%s was interrupted: %s", run.AgentID, reason), nil
+		}
 		return fmt.Sprintf("%s was interrupted.", run.AgentID), nil
 	case model.RunStatusFailed:
 		if output != "" {
@@ -1168,6 +1175,44 @@ func (r *Runtime) childTerminalMessage(ctx context.Context, run model.Run) (stri
 		return fmt.Sprintf("%s failed.", run.AgentID), nil
 	default:
 		return "", nil
+	}
+}
+
+func (r *Runtime) interruptedRunReason(ctx context.Context, runID string) (string, error) {
+	var payloadJSON []byte
+	err := r.store.RawDB().QueryRowContext(ctx,
+		`SELECT payload_json
+		 FROM events
+		 WHERE run_id = ? AND kind = 'budget_stop'
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		runID,
+	).Scan(&payloadJSON)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("runtime: load interrupted run reason: %w", err)
+	}
+
+	var payload struct {
+		LimitType  string `json:"limit_type"`
+		TokensUsed int    `json:"tokens_used"`
+		TokenCap   int    `json:"token_cap"`
+	}
+	if err := json.Unmarshal(payloadJSON, &payload); err != nil {
+		return "", fmt.Errorf("runtime: decode interrupted run reason: %w", err)
+	}
+	if payload.LimitType != "per_run_tokens" {
+		return "", nil
+	}
+	switch {
+	case payload.TokenCap > 0 && payload.TokensUsed > 0:
+		return fmt.Sprintf("hit the per-run token budget (%d used / %d cap)", payload.TokensUsed, payload.TokenCap), nil
+	case payload.TokenCap > 0:
+		return fmt.Sprintf("hit the per-run token budget (cap %d)", payload.TokenCap), nil
+	default:
+		return "hit the per-run token budget", nil
 	}
 }
 

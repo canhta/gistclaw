@@ -140,6 +140,30 @@ func TestRuntime_SpawnToolReturnsLatestAssistantMessage(t *testing.T) {
 	}
 }
 
+func TestRuntime_SpawnToolReturnsBudgetInterruptionReason(t *testing.T) {
+	rt, _ := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "Coordinator ready.", InputTokens: 2, OutputTokens: 3, StopReason: "end_turn"},
+		{Content: "Still reviewing.", InputTokens: 300, OutputTokens: 300, StopReason: "tool_use"},
+	})
+	rt.budget.PerRunTokenCap = 500
+
+	parent := startFrontRun(t, rt, "Coordinate research")
+	result, err := rt.SpawnTool(context.Background(), tools.SessionSpawnRequest{
+		ControllerSessionID: parent.SessionID,
+		AgentID:             "researcher",
+		Prompt:              "Inspect OpenClaw",
+	})
+	if err != nil {
+		t.Fatalf("SpawnTool failed: %v", err)
+	}
+	if result.Status != model.RunStatusInterrupted {
+		t.Fatalf("expected interrupted child run, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "per-run token budget") {
+		t.Fatalf("expected budget interruption reason, got %q", result.Output)
+	}
+}
+
 func TestRuntime_SpawnAllowsSameSpecialistTwiceFromSameControllerSession(t *testing.T) {
 	rt, _ := newCollaborationRuntime(t, []GenerateResult{
 		{Content: "Coordinator ready.", InputTokens: 2, OutputTokens: 3, StopReason: "end_turn"},
