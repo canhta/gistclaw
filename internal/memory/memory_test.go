@@ -27,8 +27,10 @@ func TestMemory_WriteFactPersistsWithProvenance(t *testing.T) {
 	db, cs := setupMemoryDB(t)
 	s := NewStore(db, cs)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
 	err := s.WriteFact(ctx, model.MemoryItem{
+		ProjectID:  projectID,
 		ID:         "mem-1",
 		AgentID:    "agent-a",
 		Scope:      "local",
@@ -43,9 +45,10 @@ func TestMemory_WriteFactPersistsWithProvenance(t *testing.T) {
 	}
 
 	items, err := s.Search(ctx, model.MemoryQuery{
-		AgentID: "agent-a",
-		Scope:   "local",
-		Limit:   10,
+		ProjectID: projectID,
+		AgentID:   "agent-a",
+		Scope:     "local",
+		Limit:     10,
 	})
 	if err != nil {
 		t.Fatalf("Search failed: %v", err)
@@ -62,6 +65,7 @@ func TestMemory_WriteFactDoesNotTriggerPromotion(t *testing.T) {
 	db, cs := setupMemoryDB(t)
 	s := NewStore(db, cs)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
 	key := conversations.ConversationKey{
 		ConnectorID: "cli", AccountID: "local", ExternalID: "conv-mem", ThreadID: "main",
@@ -72,11 +76,12 @@ func TestMemory_WriteFactDoesNotTriggerPromotion(t *testing.T) {
 	}
 
 	err = s.WriteFact(ctx, model.MemoryItem{
-		ID:      "mem-2",
-		AgentID: "agent-a",
-		Scope:   "local",
-		Content: "test fact",
-		Source:  "model",
+		ProjectID: projectID,
+		ID:        "mem-2",
+		AgentID:   "agent-a",
+		Scope:     "local",
+		Content:   "test fact",
+		Source:    "model",
 	})
 	if err != nil {
 		t.Fatalf("WriteFact failed: %v", err)
@@ -97,6 +102,7 @@ func TestMemory_PromoteEmitsJournalEvent(t *testing.T) {
 	db, cs := setupMemoryDB(t)
 	s := NewStore(db, cs)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
 	key := conversations.ConversationKey{
 		ConnectorID: "cli", AccountID: "local", ExternalID: "conv-promo", ThreadID: "main",
@@ -107,6 +113,7 @@ func TestMemory_PromoteEmitsJournalEvent(t *testing.T) {
 	}
 
 	err = s.PromoteCandidate(ctx, model.MemoryCandidate{
+		ProjectID:      projectID,
 		AgentID:        "agent-a",
 		Scope:          "local",
 		Content:        "promoted fact",
@@ -135,34 +142,141 @@ func TestMemory_PromoteEmitsJournalEvent(t *testing.T) {
 	}
 }
 
+func TestMemory_PromoteCandidateUpsertsByProjectAndDedupeKey(t *testing.T) {
+	db, cs := setupMemoryDB(t)
+	s := NewStore(db, cs)
+	ctx := context.Background()
+	const projectID = "proj-alpha"
+
+	candidate := model.MemoryCandidate{
+		ProjectID:  projectID,
+		AgentID:    "assistant",
+		Scope:      "team",
+		Content:    "the repo uses pnpm workspaces.",
+		Provenance: "explicit_memory_request",
+		Confidence: 0.95,
+		DedupeKey:  "explicit_memory:pnpm",
+	}
+
+	if err := s.PromoteCandidate(ctx, candidate); err != nil {
+		t.Fatalf("first PromoteCandidate failed: %v", err)
+	}
+
+	candidate.Content = "the repo uses pnpm workspaces and turbo tasks."
+	if err := s.PromoteCandidate(ctx, candidate); err != nil {
+		t.Fatalf("second PromoteCandidate failed: %v", err)
+	}
+
+	items, err := s.Search(ctx, model.MemoryQuery{
+		ProjectID: projectID,
+		AgentID:   "assistant",
+		Scope:     "team",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 deduped memory item, got %d", len(items))
+	}
+	if got := items[0].Content; got != "the repo uses pnpm workspaces and turbo tasks." {
+		t.Fatalf("expected latest promoted content, got %q", got)
+	}
+}
+
+func TestMemory_PromoteCandidatePreservesHumanEditForSameDedupeKey(t *testing.T) {
+	db, cs := setupMemoryDB(t)
+	s := NewStore(db, cs)
+	ctx := context.Background()
+	const projectID = "proj-alpha"
+
+	candidate := model.MemoryCandidate{
+		ProjectID:  projectID,
+		AgentID:    "assistant",
+		Scope:      "team",
+		Content:    "the repo uses pnpm workspaces.",
+		Provenance: "explicit_memory_request",
+		Confidence: 0.95,
+		DedupeKey:  "explicit_memory:pnpm",
+	}
+
+	if err := s.PromoteCandidate(ctx, candidate); err != nil {
+		t.Fatalf("first PromoteCandidate failed: %v", err)
+	}
+
+	items, err := s.Search(ctx, model.MemoryQuery{
+		ProjectID: projectID,
+		AgentID:   "assistant",
+		Scope:     "team",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 memory item after first promotion, got %d", len(items))
+	}
+
+	if err := s.Edit(ctx, projectID, items[0].ID, "use pnpm workspaces and keep lockfile changes isolated."); err != nil {
+		t.Fatalf("Edit failed: %v", err)
+	}
+
+	candidate.Content = "the repo uses pnpm workspaces and turbo tasks."
+	if err := s.PromoteCandidate(ctx, candidate); err != nil {
+		t.Fatalf("second PromoteCandidate failed: %v", err)
+	}
+
+	items, err = s.Search(ctx, model.MemoryQuery{
+		ProjectID: projectID,
+		AgentID:   "assistant",
+		Scope:     "team",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 memory item after human edit, got %d", len(items))
+	}
+	if got := items[0].Source; got != "human" {
+		t.Fatalf("expected human source to remain authoritative, got %q", got)
+	}
+	if got := items[0].Content; got != "use pnpm workspaces and keep lockfile changes isolated." {
+		t.Fatalf("expected human-edited content to remain, got %q", got)
+	}
+}
+
 func TestMemory_HumanEditOutranksModelFact(t *testing.T) {
 	db, cs := setupMemoryDB(t)
 	s := NewStore(db, cs)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
 	err := s.WriteFact(ctx, model.MemoryItem{
-		ID:      "mem-rank",
-		AgentID: "agent-a",
-		Scope:   "local",
-		Content: "model says X",
-		Source:  "model",
+		ProjectID: projectID,
+		ID:        "mem-rank",
+		AgentID:   "agent-a",
+		Scope:     "local",
+		Content:   "model says X",
+		Source:    "model",
 	})
 	if err != nil {
 		t.Fatalf("WriteFact failed: %v", err)
 	}
 
 	err = s.UpdateFact(ctx, model.MemoryItem{
-		ID:      "mem-rank",
-		AgentID: "agent-a",
-		Scope:   "local",
-		Content: "human says Y",
-		Source:  "human",
+		ProjectID: projectID,
+		ID:        "mem-rank",
+		AgentID:   "agent-a",
+		Scope:     "local",
+		Content:   "human says Y",
+		Source:    "human",
 	})
 	if err != nil {
 		t.Fatalf("UpdateFact failed: %v", err)
 	}
 
-	items, err := s.Search(ctx, model.MemoryQuery{AgentID: "agent-a", Limit: 10})
+	items, err := s.Search(ctx, model.MemoryQuery{ProjectID: projectID, AgentID: "agent-a", Limit: 10})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -181,30 +295,33 @@ func TestMemory_ModelCannotOverwriteHumanFact(t *testing.T) {
 	db, cs := setupMemoryDB(t)
 	s := NewStore(db, cs)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
 	err := s.WriteFact(ctx, model.MemoryItem{
-		ID:      "mem-human",
-		AgentID: "agent-a",
-		Scope:   "local",
-		Content: "human truth",
-		Source:  "human",
+		ProjectID: projectID,
+		ID:        "mem-human",
+		AgentID:   "agent-a",
+		Scope:     "local",
+		Content:   "human truth",
+		Source:    "human",
 	})
 	if err != nil {
 		t.Fatalf("WriteFact failed: %v", err)
 	}
 
 	err = s.UpdateFact(ctx, model.MemoryItem{
-		ID:      "mem-human",
-		AgentID: "agent-a",
-		Scope:   "local",
-		Content: "model override",
-		Source:  "model",
+		ProjectID: projectID,
+		ID:        "mem-human",
+		AgentID:   "agent-a",
+		Scope:     "local",
+		Content:   "model override",
+		Source:    "model",
 	})
 	if err != nil {
 		t.Fatalf("UpdateFact returned error: %v", err)
 	}
 
-	items, err := s.Search(ctx, model.MemoryQuery{AgentID: "agent-a", Limit: 10})
+	items, err := s.Search(ctx, model.MemoryQuery{ProjectID: projectID, AgentID: "agent-a", Limit: 10})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -223,8 +340,9 @@ func TestMemory_UpsertWorkingSummaryUsesRunID(t *testing.T) {
 	db, cs := setupMemoryDB(t)
 	s := NewStore(db, cs)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
-	ref, err := s.UpsertWorkingSummary(ctx, "run-summary", "conv-summary")
+	ref, err := s.UpsertWorkingSummary(ctx, "run-summary", "conv-summary", projectID)
 	if err != nil {
 		t.Fatalf("UpsertWorkingSummary failed: %v", err)
 	}
@@ -234,7 +352,8 @@ func TestMemory_UpsertWorkingSummaryUsesRunID(t *testing.T) {
 
 	var count int
 	err = db.RawDB().QueryRow(
-		"SELECT count(*) FROM run_summaries WHERE run_id = 'run-summary'",
+		"SELECT count(*) FROM run_summaries WHERE run_id = 'run-summary' AND project_id = ?",
+		projectID,
 	).Scan(&count)
 	if err != nil {
 		t.Fatalf("count run summaries: %v", err)
@@ -248,22 +367,24 @@ func TestMemory_LoadContextUsesRunScopedSummaryAndScopedFacts(t *testing.T) {
 	db, cs := setupMemoryDB(t)
 	s := NewStore(db, cs)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
 	for _, item := range []model.MemoryItem{
-		{ID: "mem-a", AgentID: "agent-a", Scope: "local", Content: "keep me", Source: "model"},
-		{ID: "mem-b", AgentID: "agent-b", Scope: "local", Content: "ignore me", Source: "model"},
-		{ID: "mem-team", AgentID: "agent-a", Scope: "team", Content: "other scope", Source: "model"},
+		{ProjectID: projectID, ID: "mem-a", AgentID: "agent-a", Scope: "local", Content: "keep me", Source: "model"},
+		{ProjectID: projectID, ID: "mem-b", AgentID: "agent-b", Scope: "local", Content: "ignore me", Source: "model"},
+		{ProjectID: projectID, ID: "mem-team", AgentID: "agent-a", Scope: "team", Content: "other scope", Source: "model"},
+		{ProjectID: "proj-beta", ID: "mem-other-project", AgentID: "agent-a", Scope: "local", Content: "other project", Source: "model"},
 	} {
 		if err := s.WriteFact(ctx, item); err != nil {
 			t.Fatalf("WriteFact %s failed: %v", item.ID, err)
 		}
 	}
 
-	if _, err := s.UpsertWorkingSummary(ctx, "run-context", "conv-context"); err != nil {
+	if _, err := s.UpsertWorkingSummary(ctx, "run-context", "conv-context", projectID); err != nil {
 		t.Fatalf("UpsertWorkingSummary failed: %v", err)
 	}
 
-	contextView, err := s.LoadContext(ctx, "run-context", "agent-a", "local", 10)
+	contextView, err := s.LoadContext(ctx, "run-context", projectID, "agent-a", "local", 10)
 	if err != nil {
 		t.Fatalf("LoadContext failed: %v", err)
 	}
@@ -283,7 +404,7 @@ func TestMemory_SearchEmptyStoreReturnsEmpty(t *testing.T) {
 	s := NewStore(db, cs)
 	ctx := context.Background()
 
-	items, err := s.Search(ctx, model.MemoryQuery{AgentID: "nobody", Limit: 10})
+	items, err := s.Search(ctx, model.MemoryQuery{ProjectID: "proj-alpha", AgentID: "nobody", Limit: 10})
 	if err != nil {
 		t.Fatalf("Search on empty store should not error, got: %v", err)
 	}
@@ -292,5 +413,36 @@ func TestMemory_SearchEmptyStoreReturnsEmpty(t *testing.T) {
 	}
 	if len(items) != 0 {
 		t.Fatalf("expected 0 items, got %d", len(items))
+	}
+}
+
+func TestMemory_SearchScopesFactsToProject(t *testing.T) {
+	db, cs := setupMemoryDB(t)
+	s := NewStore(db, cs)
+	ctx := context.Background()
+
+	for _, item := range []model.MemoryItem{
+		{ProjectID: "proj-alpha", ID: "mem-alpha", AgentID: "agent-a", Scope: "local", Content: "alpha fact", Source: "model"},
+		{ProjectID: "proj-beta", ID: "mem-beta", AgentID: "agent-a", Scope: "local", Content: "beta fact", Source: "model"},
+	} {
+		if err := s.WriteFact(ctx, item); err != nil {
+			t.Fatalf("WriteFact %s failed: %v", item.ID, err)
+		}
+	}
+
+	items, err := s.Search(ctx, model.MemoryQuery{
+		ProjectID: "proj-alpha",
+		AgentID:   "agent-a",
+		Scope:     "local",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 project-scoped fact, got %d", len(items))
+	}
+	if items[0].ID != "mem-alpha" {
+		t.Fatalf("expected mem-alpha, got %q", items[0].ID)
 	}
 }

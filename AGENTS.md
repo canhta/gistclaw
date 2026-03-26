@@ -87,6 +87,11 @@ All navigation, page hierarchy, graph placement, font choices, colors, spacing, 
 Do not deviate without explicit user approval.
 In QA mode, flag any code that does not match `DESIGN.md`.
 
+## UI Language & Concern Separation Policy
+
+- UI text must use the user's vocabulary — never internal field names, enum values, or DB identifiers.
+- Each page/panel serves one user task. Workflows that differ must live in separate surfaces.
+
 ## Documentation
 
 Read in this order to onboard:

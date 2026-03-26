@@ -26,6 +26,7 @@ type ContextView struct {
 }
 
 type SearchPageQuery struct {
+	ProjectID string
 	AgentID   string
 	Scope     string
 	Keyword   string
@@ -47,6 +48,9 @@ func NewStore(db *store.DB, cs *conversations.ConversationStore) *Store {
 }
 
 func (s *Store) WriteFact(ctx context.Context, item model.MemoryItem) error {
+	if strings.TrimSpace(item.ProjectID) == "" {
+		return fmt.Errorf("memory: write fact: project_id required")
+	}
 	if item.ID == "" {
 		item.ID = memGenerateID()
 	}
@@ -59,9 +63,9 @@ func (s *Store) WriteFact(ctx context.Context, item model.MemoryItem) error {
 
 	_, err := s.db.RawDB().ExecContext(ctx,
 		`INSERT INTO memory_items
-		 (id, agent_id, scope, content, source, provenance, confidence, dedupe_key, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		item.ID, item.AgentID, item.Scope, item.Content, item.Source, item.Provenance,
+		 (id, project_id, agent_id, scope, content, source, provenance, confidence, dedupe_key, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		item.ID, item.ProjectID, item.AgentID, item.Scope, item.Content, item.Source, item.Provenance,
 		item.Confidence, item.DedupeKey, item.CreatedAt, item.UpdatedAt,
 	)
 	if err != nil {
@@ -71,10 +75,13 @@ func (s *Store) WriteFact(ctx context.Context, item model.MemoryItem) error {
 }
 
 func (s *Store) UpdateFact(ctx context.Context, item model.MemoryItem) error {
+	if strings.TrimSpace(item.ProjectID) == "" {
+		return fmt.Errorf("memory: update fact: project_id required")
+	}
 	var existingSource string
 	err := s.db.RawDB().QueryRowContext(ctx,
-		"SELECT source FROM memory_items WHERE id = ?",
-		item.ID,
+		"SELECT source FROM memory_items WHERE id = ? AND project_id = ?",
+		item.ID, item.ProjectID,
 	).Scan(&existingSource)
 	if err == sql.ErrNoRows {
 		return s.WriteFact(ctx, item)
@@ -90,8 +97,8 @@ func (s *Store) UpdateFact(ctx context.Context, item model.MemoryItem) error {
 	_, err = s.db.RawDB().ExecContext(ctx,
 		`UPDATE memory_items
 		 SET content = ?, source = ?, provenance = ?, confidence = ?, updated_at = datetime('now')
-		 WHERE id = ?`,
-		item.Content, item.Source, item.Provenance, item.Confidence, item.ID,
+		 WHERE id = ? AND project_id = ?`,
+		item.Content, item.Source, item.Provenance, item.Confidence, item.ID, item.ProjectID,
 	)
 	if err != nil {
 		return fmt.Errorf("memory: update fact: %w", err)
@@ -99,34 +106,46 @@ func (s *Store) UpdateFact(ctx context.Context, item model.MemoryItem) error {
 	return nil
 }
 
-func (s *Store) ForgetFact(ctx context.Context, memoryID string) error {
-	return s.Forget(ctx, memoryID)
+func (s *Store) ForgetFact(ctx context.Context, projectID, memoryID string) error {
+	return s.Forget(ctx, projectID, memoryID)
 }
 
 // Forget soft-deletes a memory item by setting forgotten_at to now.
 // Forgotten items are excluded from all Filter and Search results.
-func (s *Store) Forget(ctx context.Context, memoryID string) error {
-	_, err := s.db.RawDB().ExecContext(ctx,
-		"UPDATE memory_items SET forgotten_at = datetime('now') WHERE id = ?",
-		memoryID,
+func (s *Store) Forget(ctx context.Context, projectID, memoryID string) error {
+	if strings.TrimSpace(projectID) == "" {
+		return fmt.Errorf("memory: forget: project_id required")
+	}
+	res, err := s.db.RawDB().ExecContext(ctx,
+		"UPDATE memory_items SET forgotten_at = datetime('now') WHERE id = ? AND project_id = ?",
+		memoryID, projectID,
 	)
 	if err != nil {
 		return fmt.Errorf("memory: forget: %w", err)
+	}
+	if rows, _ := res.RowsAffected(); rows == 0 {
+		return sql.ErrNoRows
 	}
 	return nil
 }
 
 // Edit updates a fact's content and records source=human, replacing any prior source.
 // Human edits are permanent: a subsequent model UpdateFact will not overwrite them.
-func (s *Store) Edit(ctx context.Context, memoryID, newContent string) error {
-	_, err := s.db.RawDB().ExecContext(ctx,
+func (s *Store) Edit(ctx context.Context, projectID, memoryID, newContent string) error {
+	if strings.TrimSpace(projectID) == "" {
+		return fmt.Errorf("memory: edit: project_id required")
+	}
+	res, err := s.db.RawDB().ExecContext(ctx,
 		`UPDATE memory_items
 		 SET content = ?, source = 'human', updated_at = datetime('now')
-		 WHERE id = ?`,
-		newContent, memoryID,
+		 WHERE id = ? AND project_id = ?`,
+		newContent, memoryID, projectID,
 	)
 	if err != nil {
 		return fmt.Errorf("memory: edit: %w", err)
+	}
+	if rows, _ := res.RowsAffected(); rows == 0 {
+		return sql.ErrNoRows
 	}
 	return nil
 }
@@ -134,22 +153,26 @@ func (s *Store) Edit(ctx context.Context, memoryID, newContent string) error {
 // MemoryFilter controls which facts are returned by Filter.
 // Zero-value fields are treated as "no constraint".
 type MemoryFilter struct {
-	Scope   string
-	AgentID string
+	ProjectID string
+	Scope     string
+	AgentID   string
 }
 
 // GetByID returns a single non-forgotten memory item by its ID.
 // Returns sql.ErrNoRows if the item does not exist or has been forgotten.
-func (s *Store) GetByID(ctx context.Context, id string) (model.MemoryItem, error) {
+func (s *Store) GetByID(ctx context.Context, projectID, id string) (model.MemoryItem, error) {
+	if strings.TrimSpace(projectID) == "" {
+		return model.MemoryItem{}, fmt.Errorf("memory: get by id: project_id required")
+	}
 	var item model.MemoryItem
 	err := s.db.RawDB().QueryRowContext(ctx,
-		`SELECT id, agent_id, scope, content, source, COALESCE(provenance, ''),
+		`SELECT id, project_id, agent_id, scope, content, source, COALESCE(provenance, ''),
 		 COALESCE(confidence, 0), COALESCE(dedupe_key, ''), created_at, updated_at
 		 FROM memory_items
-		 WHERE id = ? AND forgotten_at IS NULL`,
-		id,
+		 WHERE id = ? AND project_id = ? AND forgotten_at IS NULL`,
+		id, projectID,
 	).Scan(
-		&item.ID, &item.AgentID, &item.Scope, &item.Content, &item.Source,
+		&item.ID, &item.ProjectID, &item.AgentID, &item.Scope, &item.Content, &item.Source,
 		&item.Provenance, &item.Confidence, &item.DedupeKey,
 		&item.CreatedAt, &item.UpdatedAt,
 	)
@@ -159,13 +182,49 @@ func (s *Store) GetByID(ctx context.Context, id string) (model.MemoryItem, error
 	return item, nil
 }
 
+func (s *Store) getByDedupeKey(ctx context.Context, projectID, dedupeKey string) (model.MemoryItem, bool, error) {
+	if strings.TrimSpace(projectID) == "" {
+		return model.MemoryItem{}, false, fmt.Errorf("memory: get by dedupe key: project_id required")
+	}
+	if strings.TrimSpace(dedupeKey) == "" {
+		return model.MemoryItem{}, false, fmt.Errorf("memory: get by dedupe key: dedupe_key required")
+	}
+
+	var item model.MemoryItem
+	err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT id, project_id, agent_id, scope, content, source, COALESCE(provenance, ''),
+		 COALESCE(confidence, 0), COALESCE(dedupe_key, ''), created_at, updated_at
+		 FROM memory_items
+		 WHERE project_id = ? AND dedupe_key = ? AND forgotten_at IS NULL
+		 ORDER BY updated_at DESC
+		 LIMIT 1`,
+		projectID, dedupeKey,
+	).Scan(
+		&item.ID, &item.ProjectID, &item.AgentID, &item.Scope, &item.Content, &item.Source,
+		&item.Provenance, &item.Confidence, &item.DedupeKey,
+		&item.CreatedAt, &item.UpdatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return model.MemoryItem{}, false, nil
+	}
+	if err != nil {
+		return model.MemoryItem{}, false, fmt.Errorf("memory: get by dedupe key: %w", err)
+	}
+	return item, true, nil
+}
+
 // Filter returns all non-forgotten facts matching the given filter.
 func (s *Store) Filter(ctx context.Context, f MemoryFilter) ([]model.MemoryItem, error) {
-	q := `SELECT id, agent_id, scope, content, source, COALESCE(provenance, ''),
+	if strings.TrimSpace(f.ProjectID) == "" {
+		return nil, fmt.Errorf("memory: filter: project_id required")
+	}
+
+	q := `SELECT id, project_id, agent_id, scope, content, source, COALESCE(provenance, ''),
 		COALESCE(confidence, 0), COALESCE(dedupe_key, ''), created_at, updated_at
 		FROM memory_items
-		WHERE forgotten_at IS NULL`
-	args := make([]any, 0)
+		WHERE forgotten_at IS NULL AND project_id = ?`
+	args := make([]any, 0, 3)
+	args = append(args, f.ProjectID)
 
 	if f.AgentID != "" {
 		q += " AND agent_id = ?"
@@ -187,7 +246,7 @@ func (s *Store) Filter(ctx context.Context, f MemoryFilter) ([]model.MemoryItem,
 	for rows.Next() {
 		var item model.MemoryItem
 		if err := rows.Scan(
-			&item.ID, &item.AgentID, &item.Scope, &item.Content, &item.Source,
+			&item.ID, &item.ProjectID, &item.AgentID, &item.Scope, &item.Content, &item.Source,
 			&item.Provenance, &item.Confidence, &item.DedupeKey,
 			&item.CreatedAt, &item.UpdatedAt,
 		); err != nil {
@@ -200,10 +259,11 @@ func (s *Store) Filter(ctx context.Context, f MemoryFilter) ([]model.MemoryItem,
 
 func (s *Store) Search(ctx context.Context, query model.MemoryQuery) ([]model.MemoryItem, error) {
 	page, err := s.SearchPage(ctx, SearchPageQuery{
-		AgentID: query.AgentID,
-		Scope:   query.Scope,
-		Keyword: query.Keyword,
-		Limit:   query.Limit,
+		ProjectID: query.ProjectID,
+		AgentID:   query.AgentID,
+		Scope:     query.Scope,
+		Keyword:   query.Keyword,
+		Limit:     query.Limit,
 	})
 	if err != nil {
 		return nil, err
@@ -212,6 +272,9 @@ func (s *Store) Search(ctx context.Context, query model.MemoryQuery) ([]model.Me
 }
 
 func (s *Store) SearchPage(ctx context.Context, query SearchPageQuery) (SearchPage, error) {
+	if strings.TrimSpace(query.ProjectID) == "" {
+		return SearchPage{}, fmt.Errorf("memory: search page: project_id required")
+	}
 	limit := query.Limit
 	if limit <= 0 {
 		limit = 100
@@ -223,10 +286,11 @@ func (s *Store) SearchPage(ctx context.Context, query SearchPageQuery) (SearchPa
 		direction = "next"
 	}
 
-	sqlQuery := `SELECT id, agent_id, scope, content, source, COALESCE(provenance, ''),
+	sqlQuery := `SELECT id, project_id, agent_id, scope, content, source, COALESCE(provenance, ''),
 		COALESCE(confidence, 0), COALESCE(dedupe_key, ''), created_at, updated_at, updated_at
-		FROM memory_items WHERE forgotten_at IS NULL`
-	args := make([]any, 0, 8)
+		FROM memory_items WHERE forgotten_at IS NULL AND project_id = ?`
+	args := make([]any, 0, 9)
+	args = append(args, query.ProjectID)
 
 	if query.AgentID != "" {
 		sqlQuery += " AND agent_id = ?"
@@ -269,6 +333,7 @@ func (s *Store) SearchPage(ctx context.Context, query SearchPageQuery) (SearchPa
 		var updatedAt string
 		if err := rows.Scan(
 			&item.ID,
+			&item.ProjectID,
 			&item.AgentID,
 			&item.Scope,
 			&item.Content,
@@ -291,19 +356,24 @@ func (s *Store) SearchPage(ctx context.Context, query SearchPageQuery) (SearchPa
 	return finalizeMemoryPage(direction, hasCursor, limit, pageRows), nil
 }
 
-func (s *Store) UpsertWorkingSummary(ctx context.Context, runID, conversationID string) (model.SummaryRef, error) {
+func (s *Store) UpsertWorkingSummary(ctx context.Context, runID, conversationID, projectID string) (model.SummaryRef, error) {
+	if strings.TrimSpace(projectID) == "" {
+		return model.SummaryRef{}, fmt.Errorf("memory: summarize: project_id required")
+	}
 	id := memGenerateID()
 	now := time.Now().UTC()
 	summary := fmt.Sprintf("Summary of conversation %s for run %s generated at %s", conversationID, runID, now.Format(time.RFC3339))
 
 	ref := model.SummaryRef{
 		ID:         id,
+		ProjectID:  projectID,
 		RunID:      runID,
 		Content:    summary,
 		TokenCount: len(summary) / 4,
 	}
 
 	payload, err := json.Marshal(map[string]any{
+		"project_id":  ref.ProjectID,
 		"summary_id":  ref.ID,
 		"run_id":      ref.RunID,
 		"content":     ref.Content,
@@ -327,18 +397,22 @@ func (s *Store) UpsertWorkingSummary(ctx context.Context, runID, conversationID 
 	return ref, nil
 }
 
-func (s *Store) LoadContext(ctx context.Context, runID, agentID, scope string, limit int) (ContextView, error) {
+func (s *Store) LoadContext(ctx context.Context, runID, projectID, agentID, scope string, limit int) (ContextView, error) {
+	if strings.TrimSpace(projectID) == "" {
+		return ContextView{}, fmt.Errorf("memory: load context: project_id required")
+	}
 	view := ContextView{
 		Items: make([]model.MemoryItem, 0),
 	}
 
 	err := s.db.RawDB().QueryRowContext(ctx,
-		`SELECT id, run_id, content, token_count
+		`SELECT id, project_id, run_id, content, token_count
 		 FROM run_summaries
-		 WHERE run_id = ?`,
-		runID,
+		 WHERE run_id = ? AND project_id = ?`,
+		runID, projectID,
 	).Scan(
 		&view.Summary.ID,
+		&view.Summary.ProjectID,
 		&view.Summary.RunID,
 		&view.Summary.Content,
 		&view.Summary.TokenCount,
@@ -348,9 +422,10 @@ func (s *Store) LoadContext(ctx context.Context, runID, agentID, scope string, l
 	}
 
 	items, err := s.Search(ctx, model.MemoryQuery{
-		AgentID: agentID,
-		Scope:   scope,
-		Limit:   limit,
+		ProjectID: projectID,
+		AgentID:   agentID,
+		Scope:     scope,
+		Limit:     limit,
 	})
 	if err != nil {
 		return ContextView{}, fmt.Errorf("memory: load scoped facts: %w", err)

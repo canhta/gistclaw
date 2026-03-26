@@ -44,6 +44,8 @@ func TestDefault(t *testing.T) {
 			"must not ask the operator for reversible workflow choices that can be decided from task context",
 			"must keep human escalation limited to critical boundaries or missing external facts",
 			"reviewer and verifier may run in parallel only after patcher work lands",
+			"if the operator explicitly requests review or verification, those child runs are required before completion",
+			"must not treat a proposed patch or pending approval as finished patcher work",
 			"workflow:",
 			"output_contract:",
 		} {
@@ -70,6 +72,8 @@ func TestDefault(t *testing.T) {
 			"treat coder_exec output as the primary success evidence",
 			"prefer targeted list_dir, grep_search, or syntax checks over rereading generated files end to end",
 			"leave deeper review and verification to reviewer and verifier",
+			"must either execute the requested write path or report the blocker",
+			"must not stop at a proposal when the delegated task is to make the change",
 		} {
 			if !strings.Contains(text, want) {
 				t.Fatalf("expected embedded patcher prompt to contain %q, got:\n%s", want, text)

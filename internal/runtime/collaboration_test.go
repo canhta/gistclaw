@@ -806,6 +806,52 @@ func TestRuntime_ReceiveInboundMessageDedupesDuplicateSourceMessageID(t *testing
 	}
 }
 
+func TestRuntime_ReceiveInboundMessagePromotesNaturalPromptPreferencesIntoProjectMemory(t *testing.T) {
+	rt, _ := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "Front ready.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+	})
+	workspaceRoot := t.TempDir()
+	ctx := context.Background()
+
+	run, err := rt.ReceiveInboundMessage(ctx, InboundMessageCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID: "assistant",
+		Body: "Create a small folder named demo in the active workspace for a developer-facing notes page about evaluating self-hosted assistants. " +
+			"Keep the tone technical and avoid marketing fluff. " +
+			"If tooling is needed, prefer bun-based workflows and keep lockfile churn isolated. " +
+			"Use Codex CLI for code changes.",
+		WorkspaceRoot: workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("ReceiveInboundMessage failed: %v", err)
+	}
+
+	items, err := rt.memory.Search(ctx, model.MemoryQuery{
+		ProjectID: run.ProjectID,
+		AgentID:   "assistant",
+		Scope:     "team",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 durable memory item from inbound natural prompt, got %d", len(items))
+	}
+	want := "Keep the tone technical and avoid marketing fluff. If tooling is needed, prefer bun-based workflows and keep lockfile churn isolated. Use Codex CLI for code changes."
+	if got := items[0].Content; got != want {
+		t.Fatalf("expected durable memory %q, got %q", want, got)
+	}
+	if got := items[0].Provenance; got != "prompt_preference_summary" {
+		t.Fatalf("expected prompt_preference_summary provenance, got %q", got)
+	}
+}
+
 func TestRuntime_RetrySessionDeliveryRequeuesTerminalIntent(t *testing.T) {
 	rt, db := newCollaborationRuntime(t, []GenerateResult{
 		{Content: "Front ready.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
@@ -949,8 +995,8 @@ func TestRuntime_ResetConversationClearsHistoryButPreservesMemory(t *testing.T) 
 		}
 	}
 	if _, err := db.RawDB().ExecContext(ctx,
-		`INSERT INTO memory_items (id, agent_id, scope, content, source, created_at, updated_at)
-		 VALUES ('memory-1', 'assistant', 'local', 'keep memory', 'manual', datetime('now'), datetime('now'))`,
+		`INSERT INTO memory_items (id, project_id, agent_id, scope, content, source, created_at, updated_at)
+		 VALUES ('memory-1', 'proj-memory', 'assistant', 'local', 'keep memory', 'manual', datetime('now'), datetime('now'))`,
 	); err != nil {
 		t.Fatalf("insert memory: %v", err)
 	}

@@ -23,19 +23,20 @@ func setupInspectorStore(t *testing.T) *Store {
 	return NewStore(db, cs)
 }
 
-func writeFact(t *testing.T, s *Store, agentID, scope, content, source string) string {
+func writeFact(t *testing.T, s *Store, projectID, agentID, scope, content, source string) string {
 	t.Helper()
 	item := model.MemoryItem{
-		AgentID: agentID,
-		Scope:   scope,
-		Content: content,
-		Source:  source,
+		ProjectID: projectID,
+		AgentID:   agentID,
+		Scope:     scope,
+		Content:   content,
+		Source:    source,
 	}
 	if err := s.WriteFact(context.Background(), item); err != nil {
 		t.Fatalf("WriteFact: %v", err)
 	}
 	// Find the id just written by content.
-	items, err := s.Filter(context.Background(), MemoryFilter{AgentID: agentID})
+	items, err := s.Filter(context.Background(), MemoryFilter{ProjectID: projectID, AgentID: agentID})
 	if err != nil {
 		t.Fatalf("Filter after write: %v", err)
 	}
@@ -51,14 +52,15 @@ func writeFact(t *testing.T, s *Store, agentID, scope, content, source string) s
 func TestInspector_ForgetExcludesFromList(t *testing.T) {
 	s := setupInspectorStore(t)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
-	id := writeFact(t, s, "coordinator", "local", "remember this", "model")
+	id := writeFact(t, s, projectID, "coordinator", "local", "remember this", "model")
 
-	if err := s.Forget(ctx, id); err != nil {
+	if err := s.Forget(ctx, projectID, id); err != nil {
 		t.Fatalf("Forget: %v", err)
 	}
 
-	items, err := s.Filter(ctx, MemoryFilter{})
+	items, err := s.Filter(ctx, MemoryFilter{ProjectID: projectID})
 	if err != nil {
 		t.Fatalf("Filter after forget: %v", err)
 	}
@@ -72,14 +74,15 @@ func TestInspector_ForgetExcludesFromList(t *testing.T) {
 func TestInspector_EditUpdatesValue(t *testing.T) {
 	s := setupInspectorStore(t)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
-	id := writeFact(t, s, "coordinator", "local", "original content", "model")
+	id := writeFact(t, s, projectID, "coordinator", "local", "original content", "model")
 
-	if err := s.Edit(ctx, id, "updated content"); err != nil {
+	if err := s.Edit(ctx, projectID, id, "updated content"); err != nil {
 		t.Fatalf("Edit: %v", err)
 	}
 
-	items, err := s.Filter(ctx, MemoryFilter{AgentID: "coordinator"})
+	items, err := s.Filter(ctx, MemoryFilter{ProjectID: projectID, AgentID: "coordinator"})
 	if err != nil {
 		t.Fatalf("Filter after edit: %v", err)
 	}
@@ -103,26 +106,28 @@ func TestInspector_EditUpdatesValue(t *testing.T) {
 func TestInspector_HumanEditOutranksModel(t *testing.T) {
 	s := setupInspectorStore(t)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
-	id := writeFact(t, s, "coordinator", "local", "initial", "model")
+	id := writeFact(t, s, projectID, "coordinator", "local", "initial", "model")
 
 	// Human edit applied after model write.
-	if err := s.Edit(ctx, id, "human value"); err != nil {
+	if err := s.Edit(ctx, projectID, id, "human value"); err != nil {
 		t.Fatalf("Edit: %v", err)
 	}
 
 	// UpdateFact with model source must not overwrite the human edit.
 	if err := s.UpdateFact(ctx, model.MemoryItem{
-		ID:      id,
-		AgentID: "coordinator",
-		Scope:   "local",
-		Content: "model tries to overwrite",
-		Source:  "model",
+		ProjectID: projectID,
+		ID:        id,
+		AgentID:   "coordinator",
+		Scope:     "local",
+		Content:   "model tries to overwrite",
+		Source:    "model",
 	}); err != nil {
 		t.Fatalf("UpdateFact: %v", err)
 	}
 
-	items, err := s.Filter(ctx, MemoryFilter{AgentID: "coordinator"})
+	items, err := s.Filter(ctx, MemoryFilter{ProjectID: projectID, AgentID: "coordinator"})
 	if err != nil {
 		t.Fatalf("Filter: %v", err)
 	}
@@ -140,11 +145,12 @@ func TestInspector_HumanEditOutranksModel(t *testing.T) {
 func TestInspector_FilterByScope_Local(t *testing.T) {
 	s := setupInspectorStore(t)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
-	writeFact(t, s, "agent1", "local", "local fact", "model")
-	writeFact(t, s, "agent1", "team", "team fact", "model")
+	writeFact(t, s, projectID, "agent1", "local", "local fact", "model")
+	writeFact(t, s, projectID, "agent1", "team", "team fact", "model")
 
-	items, err := s.Filter(ctx, MemoryFilter{Scope: "local"})
+	items, err := s.Filter(ctx, MemoryFilter{ProjectID: projectID, Scope: "local"})
 	if err != nil {
 		t.Fatalf("Filter: %v", err)
 	}
@@ -161,11 +167,12 @@ func TestInspector_FilterByScope_Local(t *testing.T) {
 func TestInspector_FilterByScope_Team(t *testing.T) {
 	s := setupInspectorStore(t)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
-	writeFact(t, s, "agent1", "local", "local fact", "model")
-	writeFact(t, s, "agent1", "team", "team fact", "model")
+	writeFact(t, s, projectID, "agent1", "local", "local fact", "model")
+	writeFact(t, s, projectID, "agent1", "team", "team fact", "model")
 
-	items, err := s.Filter(ctx, MemoryFilter{Scope: "team"})
+	items, err := s.Filter(ctx, MemoryFilter{ProjectID: projectID, Scope: "team"})
 	if err != nil {
 		t.Fatalf("Filter: %v", err)
 	}
@@ -182,11 +189,12 @@ func TestInspector_FilterByScope_Team(t *testing.T) {
 func TestInspector_FilterByAgentID(t *testing.T) {
 	s := setupInspectorStore(t)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
-	writeFact(t, s, "agent-a", "local", "fact from a", "model")
-	writeFact(t, s, "agent-b", "local", "fact from b", "model")
+	writeFact(t, s, projectID, "agent-a", "local", "fact from a", "model")
+	writeFact(t, s, projectID, "agent-b", "local", "fact from b", "model")
 
-	items, err := s.Filter(ctx, MemoryFilter{AgentID: "agent-a"})
+	items, err := s.Filter(ctx, MemoryFilter{ProjectID: projectID, AgentID: "agent-a"})
 	if err != nil {
 		t.Fatalf("Filter: %v", err)
 	}
@@ -203,18 +211,20 @@ func TestInspector_FilterByAgentID(t *testing.T) {
 func TestInspector_WrittenFactPreservesScope(t *testing.T) {
 	s := setupInspectorStore(t)
 	ctx := context.Background()
+	const projectID = "proj-alpha"
 
 	// Write with scope="team" — store must not reclassify it.
 	if err := s.WriteFact(ctx, model.MemoryItem{
-		AgentID: "coordinator",
-		Scope:   "team",
-		Content: "scoped fact",
-		Source:  "model",
+		ProjectID: projectID,
+		AgentID:   "coordinator",
+		Scope:     "team",
+		Content:   "scoped fact",
+		Source:    "model",
 	}); err != nil {
 		t.Fatalf("WriteFact: %v", err)
 	}
 
-	items, err := s.Filter(ctx, MemoryFilter{Scope: "team"})
+	items, err := s.Filter(ctx, MemoryFilter{ProjectID: projectID, Scope: "team"})
 	if err != nil {
 		t.Fatalf("Filter: %v", err)
 	}

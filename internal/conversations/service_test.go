@@ -911,14 +911,14 @@ func TestConversationStore_ResetConversationDeletesOnlyTargetData(t *testing.T) 
 		`INSERT INTO outbound_intents (id, run_id, connector_id, chat_id, message_text, status, attempts, created_at)
 		 VALUES ('intent-reset', 'run-reset', 'telegram', 'chat-1', 'reset reply', 'pending', 0, datetime('now')),
 		        ('intent-keep', 'run-keep', 'telegram', 'chat-2', 'keep reply', 'pending', 0, datetime('now'))`,
-		`INSERT INTO run_summaries (id, run_id, content, token_count, created_at, updated_at)
-		 VALUES ('summary-reset', 'run-reset', 'reset summary', 10, datetime('now'), datetime('now')),
-		        ('summary-keep', 'run-keep', 'keep summary', 10, datetime('now'), datetime('now'))`,
+		`INSERT INTO run_summaries (id, run_id, project_id, content, token_count, created_at, updated_at)
+		 VALUES ('summary-reset', 'run-reset', 'proj-reset', 'reset summary', 10, datetime('now'), datetime('now')),
+		        ('summary-keep', 'run-keep', 'proj-keep', 'keep summary', 10, datetime('now'), datetime('now'))`,
 		`INSERT INTO events (id, conversation_id, run_id, kind, payload_json, created_at)
 		 VALUES ('evt-reset', 'conv-reset', 'run-reset', 'run_started', x'7b7d', datetime('now')),
 		        ('evt-keep', 'conv-keep', 'run-keep', 'run_started', x'7b7d', datetime('now'))`,
-		`INSERT INTO memory_items (id, agent_id, scope, content, source, created_at, updated_at)
-		 VALUES ('memory-1', 'assistant', 'local', 'keep memory', 'manual', datetime('now'), datetime('now'))`,
+		`INSERT INTO memory_items (id, project_id, agent_id, scope, content, source, created_at, updated_at)
+		 VALUES ('memory-1', 'proj-memory', 'assistant', 'local', 'keep memory', 'manual', datetime('now'), datetime('now'))`,
 	} {
 		if _, err := db.RawDB().ExecContext(ctx, stmt); err != nil {
 			t.Fatalf("seed fixture: %v", err)

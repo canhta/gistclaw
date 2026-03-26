@@ -270,6 +270,7 @@ type Run struct {
 	AgentID               string
 	SessionID             string
 	TeamID                string
+	ProjectID             string
 	ParentRunID           string
 	Objective             string
 	WorkspaceRoot         string
@@ -365,6 +366,7 @@ type ApplyResult struct {
 
 type MemoryItem struct {
 	ID         string
+	ProjectID  string
 	AgentID    string
 	Scope      string
 	Content    string
@@ -377,13 +379,15 @@ type MemoryItem struct {
 }
 
 type MemoryQuery struct {
-	AgentID string
-	Scope   string
-	Keyword string
-	Limit   int
+	ProjectID string
+	AgentID   string
+	Scope     string
+	Keyword   string
+	Limit     int
 }
 
 type MemoryCandidate struct {
+	ProjectID      string
 	AgentID        string
 	Scope          string
 	Content        string
@@ -395,6 +399,7 @@ type MemoryCandidate struct {
 
 type SummaryRef struct {
 	ID         string
+	ProjectID  string
 	RunID      string
 	Content    string
 	TokenCount int

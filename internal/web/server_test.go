@@ -286,6 +286,7 @@ func TestRuns(t *testing.T) {
 			`id="run-node-modal-output"`,
 			`id="run-node-modal-chain"`,
 			`id="run-node-modal-logs"`,
+			`.run-node-modal-panel[hidden]`,
 			`role="tab"`,
 			`aria-selected="true"`,
 			`aria-controls="run-node-modal-overview"`,
@@ -4158,13 +4159,14 @@ func TestSessionPages(t *testing.T) {
 }
 
 type serverHarness struct {
-	db            *store.DB
-	server        *Server
-	broadcaster   *SSEBroadcaster
-	rt            *runtime.Runtime
-	adminToken    string
-	teamDir       string
-	workspaceRoot string
+	db              *store.DB
+	server          *Server
+	broadcaster     *SSEBroadcaster
+	rt              *runtime.Runtime
+	adminToken      string
+	activeProjectID string
+	teamDir         string
+	workspaceRoot   string
 }
 
 func newServerHarness(t *testing.T) *serverHarness {
@@ -4271,13 +4273,14 @@ func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, e
 	}
 
 	return &serverHarness{
-		db:            db,
-		server:        server,
-		broadcaster:   broadcaster,
-		rt:            rt,
-		adminToken:    adminToken,
-		teamDir:       teamDir,
-		workspaceRoot: workspaceRoot,
+		db:              db,
+		server:          server,
+		broadcaster:     broadcaster,
+		rt:              rt,
+		adminToken:      adminToken,
+		activeProjectID: activeProjectID,
+		teamDir:         teamDir,
+		workspaceRoot:   workspaceRoot,
 	}
 }
 

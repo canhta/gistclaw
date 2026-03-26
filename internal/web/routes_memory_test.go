@@ -12,23 +12,28 @@ import (
 	"github.com/canhta/gistclaw/internal/model"
 )
 
-func memoryFilterArg(agentID, scope string) memory.MemoryFilter {
-	return memory.MemoryFilter{AgentID: agentID, Scope: scope}
+func memoryFilterArg(projectID, agentID, scope string) memory.MemoryFilter {
+	return memory.MemoryFilter{ProjectID: projectID, AgentID: agentID, Scope: scope}
 }
 
 func seedMemoryFact(t *testing.T, h *serverHarness, agentID, scope, content, source string) string {
+	return seedMemoryFactInProject(t, h, h.activeProjectID, agentID, scope, content, source)
+}
+
+func seedMemoryFactInProject(t *testing.T, h *serverHarness, projectID, agentID, scope, content, source string) string {
 	t.Helper()
 	item := model.MemoryItem{
-		AgentID: agentID,
-		Scope:   scope,
-		Content: content,
-		Source:  source,
+		ProjectID: projectID,
+		AgentID:   agentID,
+		Scope:     scope,
+		Content:   content,
+		Source:    source,
 	}
 	if err := h.rt.Memory().WriteFact(context.Background(), item); err != nil {
 		t.Fatalf("seedMemoryFact: %v", err)
 	}
 	// Retrieve ID by searching.
-	facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg(agentID, ""))
+	facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg(projectID, agentID, ""))
 	if err != nil {
 		t.Fatalf("seedMemoryFact filter: %v", err)
 	}
@@ -63,6 +68,28 @@ func TestMemoryInspector(t *testing.T) {
 		}
 		if !strings.Contains(body, "local") {
 			t.Error("expected scope to be visible")
+		}
+	})
+
+	t.Run("GET /configure/memory hides facts from other projects", func(t *testing.T) {
+		h := newServerHarness(t)
+		otherProjectID := h.insertProject(t, "seo-test", t.TempDir())
+		seedMemoryFact(t, h, "coordinator", "local", "active project fact", "model")
+		seedMemoryFactInProject(t, h, otherProjectID, "coordinator", "local", "other project fact", "model")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/configure/memory", nil)
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
+		}
+		body := rr.Body.String()
+		if !strings.Contains(body, "active project fact") {
+			t.Fatal("expected active project fact in response")
+		}
+		if strings.Contains(body, "other project fact") {
+			t.Fatal("expected other project fact to be hidden")
 		}
 	})
 
@@ -170,7 +197,7 @@ func TestMemoryInspector(t *testing.T) {
 		}
 
 		// Fact must now be absent from Filter results.
-		facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg("coordinator", ""))
+		facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg(h.activeProjectID, "coordinator", ""))
 		if err != nil {
 			t.Fatalf("Filter after forget: %v", err)
 		}
@@ -206,7 +233,7 @@ func TestMemoryInspector(t *testing.T) {
 		}
 
 		// Fact must still exist.
-		facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg("coordinator", ""))
+		facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg(h.activeProjectID, "coordinator", ""))
 		if err != nil {
 			t.Fatalf("Filter: %v", err)
 		}
@@ -239,7 +266,7 @@ func TestMemoryInspector(t *testing.T) {
 			t.Fatalf("expected 303 redirect, got %d: %s", rr.Code, rr.Body.String())
 		}
 
-		facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg("coordinator", ""))
+		facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg(h.activeProjectID, "coordinator", ""))
 		if err != nil {
 			t.Fatalf("Filter after edit: %v", err)
 		}
@@ -268,6 +295,26 @@ func TestMemoryInspector(t *testing.T) {
 
 		if rr.Code != http.StatusUnauthorized {
 			t.Fatalf("expected 401, got %d: %s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("POST /configure/memory/{id}/forget rejects other project fact", func(t *testing.T) {
+		h := newServerHarness(t)
+		otherProjectID := h.insertProject(t, "seo-test", t.TempDir())
+		id := seedMemoryFactInProject(t, h, otherProjectID, "coordinator", "local", "foreign fact", "model")
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/configure/memory")
+
+		form := url.Values{"confirm": {"yes"}}
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/configure/memory/"+id+"/forget",
+			strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://localhost")
+		req.AddCookie(cookie)
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d: %s", rr.Code, rr.Body.String())
 		}
 	})
 }

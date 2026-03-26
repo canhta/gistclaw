@@ -133,6 +133,7 @@ CREATE TABLE IF NOT EXISTS receipts (
 
 CREATE TABLE IF NOT EXISTS memory_items (
     id TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
     agent_id TEXT NOT NULL,
     scope TEXT NOT NULL DEFAULT 'local',
     content TEXT NOT NULL,
@@ -177,6 +178,7 @@ INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES
 CREATE TABLE IF NOT EXISTS run_summaries (
     id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL UNIQUE,
+    project_id TEXT NOT NULL,
     content TEXT NOT NULL,
     token_count INTEGER DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT (datetime('now')),
@@ -194,8 +196,9 @@ CREATE INDEX IF NOT EXISTS idx_session_bindings_session_id_status_created_at ON 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_inbound_receipts_conversation_source_message
     ON inbound_receipts(conversation_id, connector_id, account_id, thread_id, source_message_id);
 CREATE INDEX IF NOT EXISTS idx_approvals_run_id_status ON approvals(run_id, status);
-CREATE INDEX IF NOT EXISTS idx_memory_items_agent_id_scope ON memory_items(agent_id, scope);
+CREATE INDEX IF NOT EXISTS idx_memory_items_project_id_agent_id_scope ON memory_items(project_id, agent_id, scope);
 CREATE INDEX IF NOT EXISTS idx_runs_session_id_status_updated_at ON runs(session_id, status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_run_summaries_project_id_run_id ON run_summaries(project_id, run_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_one_active_root_per_conversation
     ON runs(conversation_id)
     WHERE parent_run_id IS NULL AND status IN ('pending', 'active', 'needs_approval');

@@ -143,6 +143,7 @@ type toolCallRecordedPayload struct {
 }
 
 type summaryUpsertedPayload struct {
+	ProjectID  string `json:"project_id"`
 	SummaryID  string `json:"summary_id"`
 	RunID      string `json:"run_id"`
 	Content    string `json:"content"`
@@ -309,13 +310,14 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 			return err
 		}
 		_, err := tx.ExecContext(ctx,
-			`INSERT INTO run_summaries (id, run_id, content, token_count, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?)
+			`INSERT INTO run_summaries (id, run_id, project_id, content, token_count, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(run_id) DO UPDATE SET
+			     project_id = excluded.project_id,
 			     content = excluded.content,
 			     token_count = excluded.token_count,
 			     updated_at = excluded.updated_at`,
-			payload.SummaryID, payload.RunID, payload.Content, payload.TokenCount, evt.CreatedAt, evt.CreatedAt,
+			payload.SummaryID, payload.RunID, payload.ProjectID, payload.Content, payload.TokenCount, evt.CreatedAt, evt.CreatedAt,
 		)
 		return err
 	case "session_opened":

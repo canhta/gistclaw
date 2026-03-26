@@ -272,12 +272,30 @@ func (r *Runtime) createRunAt(ctx context.Context, runID, parentRunID string, cm
 		return fmt.Errorf("journal run_started: %w", err)
 	}
 
+	if err := r.finishRunStart(ctx, runID, parentRunID, cmd, now); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *Runtime) finishRunStart(ctx context.Context, runID, parentRunID string, cmd StartRun, now time.Time) error {
 	if r.eventSink != nil {
 		_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
 			RunID:      runID,
 			Kind:       "run_started",
 			OccurredAt: now,
 		})
+	}
+
+	if err := r.promoteRunObjectiveMemory(ctx, model.Run{
+		ID:             runID,
+		ConversationID: cmd.ConversationID,
+		ProjectID:      cmd.ProjectID,
+		AgentID:        cmd.AgentID,
+		ParentRunID:    parentRunID,
+	}, cmd.Objective); err != nil {
+		return err
 	}
 
 	return nil
@@ -453,6 +471,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 	if workspaceRoot == "" {
 		workspaceRoot = run.WorkspaceRoot
 	}
+	projectID := run.ProjectID
 	cumulativeInput := run.InputTokens
 	cumulativeOutput := run.OutputTokens
 	runModelLane := run.ModelLane
@@ -493,7 +512,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 
 		totalTokens := cumulativeInput + cumulativeOutput
 		if totalTokens > int(float64(r.contextWindowSize)*0.75) {
-			if _, err := r.memory.UpsertWorkingSummary(ctx, runID, conversationID); err != nil {
+			if _, err := r.memory.UpsertWorkingSummary(ctx, runID, conversationID, projectID); err != nil {
 				return model.Run{}, err
 			}
 			_ = r.convStore.AppendEvent(ctx, model.Event{
@@ -504,7 +523,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			})
 		}
 
-		contextView, err := r.memory.LoadContext(ctx, runID, agentID, "local", 10)
+		contextView, err := r.memory.LoadContext(ctx, runID, projectID, agentID, "local", 10)
 		if err != nil {
 			return model.Run{}, fmt.Errorf("load memory context: %w", err)
 		}
@@ -707,8 +726,21 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			Kind:           "verification_completed",
 		})
 	}
-
 	return r.loadRun(ctx, runID)
+}
+
+func (r *Runtime) promoteRunObjectiveMemory(ctx context.Context, run model.Run, objective string) error {
+	if r.memory == nil {
+		return nil
+	}
+	candidate, ok := memory.CandidateFromRunObjective(run, objective)
+	if !ok {
+		return nil
+	}
+	if err := r.memory.PromoteCandidate(ctx, candidate); err != nil {
+		return fmt.Errorf("promote run objective memory: %w", err)
+	}
+	return nil
 }
 
 type toolCallOutcome struct {
@@ -1431,7 +1463,7 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 	var run model.Run
 	var status string
 	err := r.store.RawDB().QueryRowContext(ctx,
-		`SELECT id, conversation_id, agent_id, COALESCE(session_id, ''), COALESCE(team_id, ''), COALESCE(parent_run_id, ''),
+		`SELECT id, conversation_id, agent_id, COALESCE(session_id, ''), COALESCE(team_id, ''), COALESCE(project_id, ''), COALESCE(parent_run_id, ''),
 		 COALESCE(objective, ''), COALESCE(workspace_root, ''), status, COALESCE(execution_snapshot_json, x''),
 		 input_tokens, output_tokens, COALESCE(model_lane, ''), COALESCE(model_id, ''), created_at, updated_at
 		 FROM runs WHERE id = ?`,
@@ -1442,6 +1474,7 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 		&run.AgentID,
 		&run.SessionID,
 		&run.TeamID,
+		&run.ProjectID,
 		&run.ParentRunID,
 		&run.Objective,
 		&run.WorkspaceRoot,

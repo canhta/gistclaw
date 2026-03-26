@@ -704,12 +704,8 @@ func (r *Runtime) prepareInboundRun(ctx context.Context, opts inboundRunOptions)
 	if err := r.convStore.AppendEvents(ctx, events); err != nil {
 		return preparedInboundRun{}, err
 	}
-	if r.eventSink != nil {
-		_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
-			RunID:      runID,
-			Kind:       "run_started",
-			OccurredAt: now,
-		})
+	if err := r.finishRunStart(ctx, runID, "", start, now); err != nil {
+		return preparedInboundRun{}, err
 	}
 
 	run, err := r.loadRun(ctx, runID)

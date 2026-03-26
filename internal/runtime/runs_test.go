@@ -1587,6 +1587,225 @@ func TestRunEngine_MemoryContextReadIsJournaled(t *testing.T) {
 	}
 }
 
+func TestRunEngine_DoesNotPromoteOrdinaryCompletedRootRunIntoProjectMemory(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "Built the OpenClaw launch page and verified the files.", InputTokens: 12, OutputTokens: 18, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	ctx := context.Background()
+
+	run, err := rt.Start(ctx, StartRun{
+		ConversationID: "conv-memory-promotion",
+		AgentID:        "assistant",
+		Objective:      "Ship the launch page",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if run.ProjectID == "" {
+		t.Fatal("expected completed run to carry project id")
+	}
+
+	items, err := mem.Search(ctx, model.MemoryQuery{
+		ProjectID: run.ProjectID,
+		AgentID:   "assistant",
+		Scope:     "team",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected no durable memory for ordinary completed run, got %d", len(items))
+	}
+
+	var promotedEvents int
+	if err := db.RawDB().QueryRowContext(ctx,
+		`SELECT count(*) FROM events WHERE conversation_id = ? AND kind = 'memory_promoted'`,
+		run.ConversationID,
+	).Scan(&promotedEvents); err != nil {
+		t.Fatalf("count memory_promoted events: %v", err)
+	}
+	if promotedEvents != 0 {
+		t.Fatalf("expected 0 memory_promoted events, got %d", promotedEvents)
+	}
+}
+
+func TestRunEngine_PromotesExplicitMemoryRequestIntoProjectMemory(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "The repo uses pnpm workspaces.", InputTokens: 12, OutputTokens: 10, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	ctx := context.Background()
+
+	run, err := rt.Start(ctx, StartRun{
+		ConversationID: "conv-memory-explicit",
+		AgentID:        "assistant",
+		Objective:      "Remember this for future runs: the repo uses pnpm workspaces.",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	items, err := mem.Search(ctx, model.MemoryQuery{
+		ProjectID: run.ProjectID,
+		AgentID:   "assistant",
+		Scope:     "team",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 durable memory item for explicit request, got %d", len(items))
+	}
+	if got := items[0].Content; got != "the repo uses pnpm workspaces." {
+		t.Fatalf("expected durable memory to store only the reusable fact, got %q", got)
+	}
+	if got := items[0].Provenance; got != "explicit_memory_request" {
+		t.Fatalf("expected explicit memory provenance, got %q", got)
+	}
+
+	var promotedEvents int
+	if err := db.RawDB().QueryRowContext(ctx,
+		`SELECT count(*) FROM events WHERE conversation_id = ? AND kind = 'memory_promoted'`,
+		run.ConversationID,
+	).Scan(&promotedEvents); err != nil {
+		t.Fatalf("count memory_promoted events: %v", err)
+	}
+	if promotedEvents != 1 {
+		t.Fatalf("expected 1 memory_promoted event, got %d", promotedEvents)
+	}
+}
+
+func TestRunEngine_DoesNotPromoteVagueExplicitMemoryPromptIntoProjectMemory(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "Understood. I'll keep that in mind for future runs.", InputTokens: 8, OutputTokens: 12, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	ctx := context.Background()
+
+	run, err := rt.Start(ctx, StartRun{
+		ConversationID: "conv-memory-vague",
+		AgentID:        "assistant",
+		Objective:      "Remember this for future runs.",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	items, err := mem.Search(ctx, model.MemoryQuery{
+		ProjectID: run.ProjectID,
+		AgentID:   "assistant",
+		Scope:     "team",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected no durable memory for vague remember prompt, got %d", len(items))
+	}
+
+	var promotedEvents int
+	if err := db.RawDB().QueryRowContext(ctx,
+		`SELECT count(*) FROM events WHERE conversation_id = ? AND kind = 'memory_promoted'`,
+		run.ConversationID,
+	).Scan(&promotedEvents); err != nil {
+		t.Fatalf("count memory_promoted events: %v", err)
+	}
+	if promotedEvents != 0 {
+		t.Fatalf("expected 0 memory_promoted events, got %d", promotedEvents)
+	}
+}
+
+func TestRunEngine_PromotesNaturalPromptPreferencesIntoProjectMemory(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "Done.", InputTokens: 12, OutputTokens: 8, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	ctx := context.Background()
+
+	run, err := rt.Start(ctx, StartRun{
+		ConversationID: "conv-memory-natural",
+		AgentID:        "assistant",
+		Objective:      "Please create a tiny static developer notes page. Keep the tone technical and aimed at developers evaluating self-hosted assistants. If tooling is needed, prefer bun-based workflows and keep lockfile churn isolated. Use Codex CLI for code changes, then review and verify before wrapping up.",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	items, err := mem.Search(ctx, model.MemoryQuery{
+		ProjectID: run.ProjectID,
+		AgentID:   "assistant",
+		Scope:     "team",
+		Limit:     10,
+	})
+	if err != nil {
+		t.Fatalf("Search failed: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 durable memory item for prompt preferences, got %d", len(items))
+	}
+	want := "Keep the tone technical and aimed at developers evaluating self-hosted assistants. If tooling is needed, prefer bun-based workflows and keep lockfile churn isolated. Use Codex CLI for code changes."
+	if got := items[0].Content; got != want {
+		t.Fatalf("expected prompt preference memory %q, got %q", want, got)
+	}
+	if got := items[0].Provenance; got != "prompt_preference_summary" {
+		t.Fatalf("expected prompt preference provenance, got %q", got)
+	}
+}
+
+func TestRunEngine_PromotesNaturalPromptPreferencesBeforeRunSucceeds(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	rt := New(db, cs, reg, mem, &blockingProvider{}, &model.NoopEventSink{})
+	rt.providerTimeout = 20 * time.Millisecond
+	ctx := context.Background()
+
+	run, err := rt.Start(ctx, StartRun{
+		ConversationID: "conv-memory-natural-fail",
+		AgentID:        "assistant",
+		Objective:      "Please create a tiny static developer notes page. Keep the tone technical and aimed at developers evaluating self-hosted assistants. If tooling is needed, prefer bun-based workflows and keep lockfile churn isolated. Use Codex CLI for code changes, then review and verify before wrapping up.",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("expected provider timeout error")
+	}
+
+	items, searchErr := mem.Search(ctx, model.MemoryQuery{
+		ProjectID: run.ProjectID,
+		AgentID:   "assistant",
+		Scope:     "team",
+		Limit:     10,
+	})
+	if searchErr != nil {
+		t.Fatalf("Search failed: %v", searchErr)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected prompt preference memory to persist before run success, got %d", len(items))
+	}
+}
+
 func TestRunEngine_ExecutesToolCallsAndCarriesResultsIntoNextTurn(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	tool := &recordingRuntimeTool{

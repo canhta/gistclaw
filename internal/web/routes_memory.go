@@ -1,12 +1,15 @@
 package web
 
 import (
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/runtime"
 )
 
 type memoryPageData struct {
@@ -34,8 +37,14 @@ func (s *Server) handleMemoryList(w http.ResponseWriter, r *http.Request) {
 	agentID := strings.TrimSpace(r.URL.Query().Get("agent_id"))
 	keyword := strings.TrimSpace(r.URL.Query().Get("q"))
 	limit := requestNamedLimit(r, "limit", 20)
+	project, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		http.Error(w, "failed to load active project", http.StatusInternalServerError)
+		return
+	}
 
 	page, err := s.rt.Memory().SearchPage(r.Context(), memory.SearchPageQuery{
+		ProjectID: project.ID,
 		Scope:     scope,
 		AgentID:   agentID,
 		Keyword:   keyword,
@@ -74,11 +83,20 @@ func (s *Server) handleMemoryForget(w http.ResponseWriter, r *http.Request) {
 
 	factID := r.PathValue("id")
 	confirm := r.FormValue("confirm")
+	project, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		http.Error(w, "failed to load active project", http.StatusInternalServerError)
+		return
+	}
 
 	if confirm != "yes" {
 		// Show confirmation view — use targeted GetByID instead of a full scan.
-		item, err := s.rt.Memory().GetByID(r.Context(), factID)
+		item, err := s.rt.Memory().GetByID(r.Context(), project.ID, factID)
 		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				http.NotFound(w, r)
+				return
+			}
 			http.Error(w, fmt.Sprintf("load memory item: %v", err), http.StatusInternalServerError)
 			return
 		}
@@ -87,7 +105,11 @@ func (s *Server) handleMemoryForget(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.rt.Memory().Forget(r.Context(), factID); err != nil {
+	if err := s.rt.Memory().Forget(r.Context(), project.ID, factID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, fmt.Sprintf("forget: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -108,8 +130,17 @@ func (s *Server) handleMemoryEdit(w http.ResponseWriter, r *http.Request) {
 
 	factID := r.PathValue("id")
 	value := r.FormValue("value")
+	project, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		http.Error(w, "failed to load active project", http.StatusInternalServerError)
+		return
+	}
 
-	if err := s.rt.Memory().Edit(r.Context(), factID, value); err != nil {
+	if err := s.rt.Memory().Edit(r.Context(), project.ID, factID, value); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, fmt.Sprintf("edit: %v", err), http.StatusInternalServerError)
 		return
 	}

@@ -136,6 +136,48 @@ func ensureProjectSchema(db *DB) error {
 		return fmt.Errorf("migrate: backfill runs.project_id: %w", err)
 	}
 
+	hasMemoryProjectID, err := tableHasColumn(db, "memory_items", "project_id")
+	if err != nil {
+		return err
+	}
+	if !hasMemoryProjectID {
+		if _, err := db.db.Exec(`ALTER TABLE memory_items ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("migrate: add memory_items.project_id: %w", err)
+		}
+	}
+	if _, err := db.db.Exec(`UPDATE memory_items
+		SET project_id = COALESCE((
+			SELECT value FROM settings WHERE key = 'active_project_id'
+		), '')
+		WHERE COALESCE(project_id, '') = ''`); err != nil {
+		return fmt.Errorf("migrate: backfill memory_items.project_id: %w", err)
+	}
+	if _, err := db.db.Exec(`CREATE INDEX IF NOT EXISTS idx_memory_items_project_id_agent_id_scope ON memory_items(project_id, agent_id, scope)`); err != nil {
+		return fmt.Errorf("migrate: create memory_items.project_id index: %w", err)
+	}
+
+	hasRunSummariesProjectID, err := tableHasColumn(db, "run_summaries", "project_id")
+	if err != nil {
+		return err
+	}
+	if !hasRunSummariesProjectID {
+		if _, err := db.db.Exec(`ALTER TABLE run_summaries ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`); err != nil {
+			return fmt.Errorf("migrate: add run_summaries.project_id: %w", err)
+		}
+	}
+	if _, err := db.db.Exec(`UPDATE run_summaries
+		SET project_id = COALESCE((
+			SELECT runs.project_id
+			FROM runs
+			WHERE runs.id = run_summaries.run_id
+		), '')
+		WHERE COALESCE(project_id, '') = ''`); err != nil {
+		return fmt.Errorf("migrate: backfill run_summaries.project_id: %w", err)
+	}
+	if _, err := db.db.Exec(`CREATE INDEX IF NOT EXISTS idx_run_summaries_project_id_run_id ON run_summaries(project_id, run_id)`); err != nil {
+		return fmt.Errorf("migrate: create run_summaries.project_id index: %w", err)
+	}
+
 	return nil
 }
 
