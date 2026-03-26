@@ -743,7 +743,7 @@ func (r *Runtime) loadRunContextEvents(ctx context.Context, runID string) ([]mod
 		        COALESCE(payload_json, x''), created_at
 		 FROM events
 		 WHERE run_id = ? AND kind IN ('turn_completed', 'tool_call_recorded')
-		 ORDER BY created_at ASC, id ASC`,
+		 ORDER BY created_at ASC, rowid ASC`,
 		runID,
 	)
 	if err != nil {
@@ -770,7 +770,46 @@ func (r *Runtime) loadRunContextEvents(ctx context.Context, runID string) ([]mod
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate run context events: %w", err)
 	}
-	return events, nil
+	return latestToolCallEvents(events), nil
+}
+
+func latestToolCallEvents(events []model.Event) []model.Event {
+	if len(events) == 0 {
+		return nil
+	}
+
+	keep := make([]bool, len(events))
+	for i := range keep {
+		keep[i] = true
+	}
+	latestByToolCallID := make(map[string]int, len(events))
+	for i, evt := range events {
+		if evt.Kind != "tool_call_recorded" {
+			continue
+		}
+		var payload struct {
+			ToolCallID string `json:"tool_call_id"`
+		}
+		if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
+			continue
+		}
+		payload.ToolCallID = strings.TrimSpace(payload.ToolCallID)
+		if payload.ToolCallID == "" {
+			continue
+		}
+		if prior, ok := latestByToolCallID[payload.ToolCallID]; ok {
+			keep[prior] = false
+		}
+		latestByToolCallID[payload.ToolCallID] = i
+	}
+
+	filtered := make([]model.Event, 0, len(events))
+	for i, evt := range events {
+		if keep[i] {
+			filtered = append(filtered, evt)
+		}
+	}
+	return filtered
 }
 
 func (r *Runtime) recordToolCall(
@@ -1007,6 +1046,96 @@ func (r *Runtime) childTerminalMessage(ctx context.Context, run model.Run) (stri
 	}
 }
 
+func (r *Runtime) appendUpdatedParentSpawnResult(ctx context.Context, parent model.Run, child model.Run, body string) error {
+	rows, err := r.store.RawDB().QueryContext(ctx,
+		`SELECT payload_json
+		 FROM events
+		 WHERE run_id = ? AND kind = 'tool_call_recorded'
+		 ORDER BY created_at ASC, rowid ASC`,
+		parent.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("load parent spawn tool call: %w", err)
+	}
+	defer rows.Close()
+
+	var match struct {
+		ToolCallID string          `json:"tool_call_id"`
+		ToolName   string          `json:"tool_name"`
+		InputJSON  json.RawMessage `json:"input_json"`
+		Decision   string          `json:"decision"`
+		ApprovalID string          `json:"approval_id"`
+	}
+	found := false
+	for rows.Next() {
+		var payloadJSON []byte
+		if err := rows.Scan(&payloadJSON); err != nil {
+			return fmt.Errorf("scan parent spawn tool call: %w", err)
+		}
+		var payload struct {
+			ToolCallID string          `json:"tool_call_id"`
+			ToolName   string          `json:"tool_name"`
+			InputJSON  json.RawMessage `json:"input_json"`
+			Decision   string          `json:"decision"`
+			ApprovalID string          `json:"approval_id"`
+		}
+		if err := json.Unmarshal(payloadJSON, &payload); err != nil {
+			return fmt.Errorf("decode parent spawn tool call: %w", err)
+		}
+		if payload.ToolName != "session_spawn" || payload.Decision != string(model.DecisionAllow) {
+			continue
+		}
+		match.ToolCallID = payload.ToolCallID
+		match.ToolName = payload.ToolName
+		match.InputJSON = append([]byte(nil), payload.InputJSON...)
+		match.Decision = payload.Decision
+		match.ApprovalID = payload.ApprovalID
+		found = true
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate parent spawn tool calls: %w", err)
+	}
+	if !found {
+		return nil
+	}
+
+	spawnOutputJSON, err := json.Marshal(tools.SessionSpawnResult{
+		RunID:     child.ID,
+		SessionID: child.SessionID,
+		AgentID:   child.AgentID,
+		Status:    child.Status,
+		Output:    body,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal updated spawn result: %w", err)
+	}
+	toolResultJSON, err := json.Marshal(model.ToolResult{Output: string(spawnOutputJSON)})
+	if err != nil {
+		return fmt.Errorf("marshal updated spawn tool result: %w", err)
+	}
+	payloadJSON, err := json.Marshal(map[string]any{
+		"tool_call_id": match.ToolCallID,
+		"tool_name":    match.ToolName,
+		"input_json":   json.RawMessage(match.InputJSON),
+		"output_json":  json.RawMessage(toolResultJSON),
+		"decision":     match.Decision,
+		"approval_id":  match.ApprovalID,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal updated parent spawn tool call: %w", err)
+	}
+	if err := r.convStore.AppendEvent(ctx, model.Event{
+		ID:             generateID(),
+		ConversationID: parent.ConversationID,
+		RunID:          parent.ID,
+		Kind:           "tool_call_recorded",
+		PayloadJSON:    payloadJSON,
+	}); err != nil {
+		return fmt.Errorf("journal updated parent spawn tool call: %w", err)
+	}
+	return nil
+}
+
 func (r *Runtime) resumeParentAfterChildTerminal(ctx context.Context, child model.Run) error {
 	if child.ParentRunID == "" || !isTerminalRunStatus(child.Status) {
 		return nil
@@ -1052,6 +1181,9 @@ func (r *Runtime) resumeParentAfterChildTerminal(ctx context.Context, child mode
 		); err != nil {
 			return err
 		}
+	}
+	if err := r.appendUpdatedParentSpawnResult(ctx, parent, child, body); err != nil {
+		return err
 	}
 
 	if child.Status != model.RunStatusCompleted {

@@ -289,6 +289,7 @@ func TestRunEngine_SessionSpawnToolCreatesChildRun(t *testing.T) {
 	prov := NewMockProvider(
 		[]GenerateResult{
 			{
+				Content: "I will delegate this to patcher.",
 				ToolCalls: []model.ToolCallRequest{
 					{
 						ID:       "call-spawn",
@@ -460,6 +461,18 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 		t.Fatalf("expected 2 provider requests before approval, got %d", len(prov.Requests))
 	}
 
+	var assistantMessagesBeforeApproval int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM session_messages WHERE session_id = ? AND kind = ?",
+		parent.SessionID,
+		model.MessageAssistant,
+	).Scan(&assistantMessagesBeforeApproval); err != nil {
+		t.Fatalf("query assistant session messages: %v", err)
+	}
+	if assistantMessagesBeforeApproval != 0 {
+		t.Fatalf("expected no assistant reply before spawned work finishes, got %d messages", assistantMessagesBeforeApproval)
+	}
+
 	var completedEvents int
 	if err := db.RawDB().QueryRow(
 		"SELECT count(*) FROM events WHERE run_id = ? AND kind = 'run_completed'",
@@ -515,24 +528,75 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 		t.Fatalf("expected 4 provider requests after child completion resumes parent, got %d", len(prov.Requests))
 	}
 
+	var parentToolCallEvents int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM events WHERE run_id = ? AND kind = 'tool_call_recorded'",
+		parent.ID,
+	).Scan(&parentToolCallEvents); err != nil {
+		t.Fatalf("query parent tool_call_recorded events: %v", err)
+	}
+	if parentToolCallEvents < 2 {
+		t.Fatalf("expected parent run to record an updated session_spawn result, got %d tool_call_recorded events", parentToolCallEvents)
+	}
+
 	var sawWorkerResult bool
+	var spawnToolCallCount int
 	for _, evt := range prov.Requests[3].ConversationCtx {
-		if evt.Kind != "session_message_added" {
-			continue
-		}
-		var payload struct {
-			Body string `json:"body"`
-		}
-		if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
-			t.Fatalf("unmarshal resumed parent mailbox event: %v", err)
-		}
-		if strings.Contains(payload.Body, "Created file.") {
-			sawWorkerResult = true
-			break
+		switch evt.Kind {
+		case "session_message_added":
+			var payload struct {
+				Body string `json:"body"`
+			}
+			if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
+				t.Fatalf("unmarshal resumed parent mailbox event: %v", err)
+			}
+			if strings.Contains(payload.Body, "Created file.") {
+				sawWorkerResult = true
+			}
+		case "tool_call_recorded":
+			var payload struct {
+				ToolName   string          `json:"tool_name"`
+				OutputJSON json.RawMessage `json:"output_json"`
+			}
+			if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
+				t.Fatalf("unmarshal resumed parent tool payload: %v", err)
+			}
+			if payload.ToolName != "session_spawn" {
+				continue
+			}
+			spawnToolCallCount++
+			var toolResult struct {
+				Output string `json:"output"`
+				Error  string `json:"error"`
+			}
+			if err := json.Unmarshal(payload.OutputJSON, &toolResult); err != nil {
+				t.Fatalf("unmarshal resumed session_spawn tool result: %v", err)
+			}
+			var output struct {
+				Status model.RunStatus `json:"status"`
+				Output string          `json:"output"`
+			}
+			if err := json.Unmarshal([]byte(toolResult.Output), &output); err != nil {
+				t.Fatalf("unmarshal resumed session_spawn output: %v", err)
+			}
+			if output.Status != model.RunStatusCompleted {
+				t.Fatalf(
+					"expected resumed session_spawn status %q, got %q (tool result=%s)",
+					model.RunStatusCompleted,
+					output.Status,
+					toolResult.Output,
+				)
+			}
+			if !strings.Contains(output.Output, "Created file.") {
+				t.Fatalf("expected resumed session_spawn output to include child result, got %q", output.Output)
+			}
 		}
 	}
 	if !sawWorkerResult {
 		t.Fatalf("expected resumed parent context to include child result, got %+v", prov.Requests[3].ConversationCtx)
+	}
+	if spawnToolCallCount != 1 {
+		t.Fatalf("expected exactly 1 session_spawn tool result in resumed context, got %d", spawnToolCallCount)
 	}
 }
 
