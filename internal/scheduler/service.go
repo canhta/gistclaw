@@ -75,6 +75,10 @@ func (s *Service) DeleteSchedule(ctx context.Context, scheduleID string) error {
 	return s.store.DeleteSchedule(ctx, scheduleID)
 }
 
+func (s *Service) Status(ctx context.Context) (StatusSummary, error) {
+	return s.store.Status(ctx, s.clock().UTC())
+}
+
 func (s *Service) RunNow(ctx context.Context, scheduleID string) (*ClaimedOccurrence, error) {
 	now := s.clock().UTC()
 	claimed, err := s.store.ClaimManualOccurrence(ctx, scheduleID, now)

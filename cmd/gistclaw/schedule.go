@@ -16,6 +16,7 @@ const scheduleUsage = `Usage: gistclaw schedule <subcommand> [options]
 Subcommands:
   add       Create a schedule
   update    Update a schedule
+  status    Show scheduler status
   list      List schedules
   show      Show one schedule
   run       Trigger a schedule immediately
@@ -77,6 +78,14 @@ func runSchedule(configPath string, args []string, stdout, stderr io.Writer) int
 			return 1
 		}
 		printSchedule(stdout, schedule)
+		return 0
+	case "status":
+		status, err := application.ScheduleStatus(context.Background())
+		if err != nil {
+			fmt.Fprintf(stderr, "schedule status failed: %v\n", err)
+			return 1
+		}
+		printScheduleStatus(stdout, status)
 		return 0
 	case "list":
 		schedules, err := application.ListSchedules(context.Background())
@@ -417,4 +426,20 @@ func loadScheduleApp(configPath string) (*app.App, error) {
 
 func stringPtr(value string) *string {
 	return &value
+}
+
+func printScheduleStatus(w io.Writer, status scheduler.StatusSummary) {
+	fmt.Fprintf(w, "scheduler_enabled: %t\n", status.Enabled)
+	fmt.Fprintf(w, "total_schedules: %d\n", status.TotalSchedules)
+	fmt.Fprintf(w, "enabled_schedules: %d\n", status.EnabledSchedules)
+	fmt.Fprintf(w, "due_schedules: %d\n", status.DueSchedules)
+	fmt.Fprintf(w, "active_occurrences: %d\n", status.ActiveOccurrences)
+	fmt.Fprintf(w, "next_wake_at: %s\n", formatTime(status.NextWakeAt))
+	if status.LastFailure != nil {
+		fmt.Fprintf(w, "last_failure: %s %s %s\n",
+			status.LastFailure.ScheduleID,
+			status.LastFailure.FailedAt.Format(time.RFC3339),
+			status.LastFailure.Error,
+		)
+	}
 }

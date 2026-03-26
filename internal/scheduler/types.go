@@ -46,6 +46,29 @@ type UpdateScheduleInput struct {
 	Spec          *ScheduleSpec
 }
 
+type StatusSummary struct {
+	Enabled           bool
+	TotalSchedules    int
+	EnabledSchedules  int
+	DueSchedules      int
+	ActiveOccurrences int
+	NextWakeAt        time.Time
+	LastFailure       *FailureSummary
+}
+
+type FailureSummary struct {
+	ScheduleID string
+	Name       string
+	Error      string
+	FailedAt   time.Time
+}
+
+type HealthSummary struct {
+	InvalidSchedules int
+	StuckDispatching int
+	MissingNextRun   int
+}
+
 type Schedule struct {
 	ID                  string
 	Name                string

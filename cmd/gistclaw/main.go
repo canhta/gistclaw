@@ -19,7 +19,7 @@ Subcommands:
   serve      Start the GistClaw daemon
   run        Submit a task directly
   inspect    Inspect daemon state
-  doctor     Run health checks (config, database, provider, workspace, disk)
+  doctor     Run health checks (config, database, provider, workspace, disk, scheduler)
   backup     Back up the SQLite database to a timestamped .db.bak file
   export     Export runs, receipts, and approvals to a JSON file
   schedule   Manage scheduled tasks

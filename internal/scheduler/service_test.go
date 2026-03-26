@@ -259,6 +259,22 @@ func TestService_ScheduleLifecycleOperations(t *testing.T) {
 		t.Fatalf("ListSchedules returned %#v, want schedule %q", listed, created.ID)
 	}
 
+	loaded, err := service.LoadSchedule(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("LoadSchedule returned error: %v", err)
+	}
+	if loaded.ID != created.ID {
+		t.Fatalf("LoadSchedule returned ID %q, want %q", loaded.ID, created.ID)
+	}
+
+	status, err := service.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status returned error: %v", err)
+	}
+	if status.TotalSchedules != 1 || status.EnabledSchedules != 1 {
+		t.Fatalf("Status returned totals (%d, %d), want (1, 1)", status.TotalSchedules, status.EnabledSchedules)
+	}
+
 	name := "Updated hourly check"
 	objective := "Inspect repository health with the updated objective"
 	spec := schedulerSpecEvery(t, "2026-03-26T10:00:00+07:00", 2*time.Hour)

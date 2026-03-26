@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/canhta/gistclaw/internal/scheduler"
+	"github.com/canhta/gistclaw/internal/store"
 )
 
 func TestRun_ScheduleWithoutSubcommandShowsUsage(t *testing.T) {
@@ -152,5 +154,77 @@ func TestRun_ScheduleLifecycleCommands(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "deleted: true") {
 		t.Fatalf("schedule delete output missing delete marker:\n%s", stdout.String())
+	}
+}
+
+func TestRun_ScheduleStatus(t *testing.T) {
+	cfgPath, dbPath := writeCLIConfig(t)
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := run([]string{
+		"schedule",
+		"--config", cfgPath,
+		"add",
+		"--name", "Status review",
+		"--objective", "Inspect repository status for status output",
+		"--at", "2030-01-01T00:00:00Z",
+	}, &stdout, &stderr); code != 0 {
+		t.Fatalf("schedule add failed with code %d:\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	scheduleID := fieldValue(t, stdout.String(), "schedule_id")
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open db: %v", err)
+	}
+	defer db.Close()
+
+	now := time.Now().UTC().Truncate(time.Second)
+	dueAt := now.Add(-1 * time.Minute)
+	if _, err := db.RawDB().Exec(
+		`UPDATE schedules
+		    SET enabled = 1, next_run_at = ?, updated_at = ?
+		  WHERE id = ?`,
+		dueAt,
+		now,
+		scheduleID,
+	); err != nil {
+		t.Fatalf("update schedule timing: %v", err)
+	}
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO schedule_occurrences
+		 (id, schedule_id, slot_at, thread_id, status, skip_reason, run_id, conversation_id, error, started_at, finished_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, '', ?, ?, '', ?, NULL, ?, ?)`,
+		"occ-status",
+		scheduleID,
+		dueAt,
+		dueAt.Format(time.RFC3339Nano),
+		scheduler.OccurrenceActive,
+		"run-status",
+		"conv-status",
+		now,
+		now,
+		now,
+	); err != nil {
+		t.Fatalf("insert active occurrence: %v", err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{"schedule", "--config", cfgPath, "status"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("schedule status failed with code %d:\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		"scheduler_enabled: true",
+		"total_schedules: 1",
+		"enabled_schedules: 1",
+		"due_schedules: 1",
+		"active_occurrences: 1",
+		"next_wake_at: " + dueAt.Format(time.RFC3339),
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("schedule status missing %q:\n%s", want, stdout.String())
+		}
 	}
 }

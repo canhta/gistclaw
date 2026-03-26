@@ -92,6 +92,18 @@ func (a *App) DeleteSchedule(ctx context.Context, scheduleID string) error {
 	return a.scheduler.DeleteSchedule(ctx, scheduleID)
 }
 
+func (a *App) ScheduleStatus(ctx context.Context) (scheduler.StatusSummary, error) {
+	if a.scheduler == nil {
+		return scheduler.StatusSummary{}, fmt.Errorf("scheduler is not configured")
+	}
+	status, err := a.scheduler.Status(ctx)
+	if err != nil {
+		return scheduler.StatusSummary{}, err
+	}
+	status.Enabled = true
+	return status, nil
+}
+
 func (a *App) RunScheduleNow(ctx context.Context, scheduleID string) (*scheduler.ClaimedOccurrence, error) {
 	if a.scheduler == nil {
 		return nil, fmt.Errorf("scheduler is not configured")

@@ -315,6 +315,149 @@ func TestStore_ClaimDueOccurrenceAdvancesRecurringScheduleToNextFutureSlot(t *te
 	}
 }
 
+func TestStore_StatusReturnsCountsNextWakeAndLastFailure(t *testing.T) {
+	t.Parallel()
+
+	now := mustParseRFC3339(t, "2026-03-26T03:30:00Z")
+	s := newTestStore(t, now)
+	ctx := context.Background()
+
+	dueSchedule := mustCreateSchedule(t, ctx, s, "sched-status-due")
+	failedSchedule := mustCreateSchedule(t, ctx, s, "sched-status-failed")
+	disabledSchedule := mustCreateSchedule(t, ctx, s, "sched-status-disabled")
+
+	dueAt := mustParseRFC3339(t, "2026-03-26T03:00:00Z")
+	failedAt := mustParseRFC3339(t, "2026-03-26T01:00:00Z")
+	futureAt := mustParseRFC3339(t, "2026-03-26T05:00:00Z")
+	mustSetScheduleTiming(t, s.db, dueSchedule.ID, true, dueAt)
+	mustSetScheduleTiming(t, s.db, failedSchedule.ID, true, futureAt)
+	mustSetScheduleTiming(t, s.db, disabledSchedule.ID, false, time.Time{})
+	if _, err := s.db.RawDB().ExecContext(ctx,
+		`UPDATE schedules
+		    SET last_run_at = ?, last_status = ?, last_error = ?, consecutive_failures = ?, updated_at = ?
+		  WHERE id = ?`,
+		failedAt,
+		OccurrenceFailed,
+		"dispatch boom",
+		2,
+		now,
+		failedSchedule.ID,
+	); err != nil {
+		t.Fatalf("update failed schedule summary: %v", err)
+	}
+	mustInsertOccurrence(t, ctx, s, Occurrence{
+		ID:             "occ-status-active",
+		ScheduleID:     dueSchedule.ID,
+		SlotAt:         dueAt,
+		ThreadID:       dueAt.Format(time.RFC3339Nano),
+		Status:         OccurrenceActive,
+		RunID:          "run-status-active",
+		ConversationID: "conv-status-active",
+		StartedAt:      dueAt,
+		CreatedAt:      dueAt,
+		UpdatedAt:      dueAt,
+	})
+
+	status, err := s.Status(ctx, now)
+	if err != nil {
+		t.Fatalf("Status returned error: %v", err)
+	}
+	if status.TotalSchedules != 3 {
+		t.Fatalf("Status returned total_schedules %d, want 3", status.TotalSchedules)
+	}
+	if status.EnabledSchedules != 2 {
+		t.Fatalf("Status returned enabled_schedules %d, want 2", status.EnabledSchedules)
+	}
+	if status.DueSchedules != 1 {
+		t.Fatalf("Status returned due_schedules %d, want 1", status.DueSchedules)
+	}
+	if status.ActiveOccurrences != 1 {
+		t.Fatalf("Status returned active_occurrences %d, want 1", status.ActiveOccurrences)
+	}
+	if !status.NextWakeAt.Equal(dueAt) {
+		t.Fatalf("Status returned next_wake_at %s, want %s", status.NextWakeAt.Format(time.RFC3339), dueAt.Format(time.RFC3339))
+	}
+	if status.LastFailure == nil {
+		t.Fatal("Status returned nil last failure")
+	}
+	if status.LastFailure.ScheduleID != failedSchedule.ID {
+		t.Fatalf("Status returned last failure schedule %q, want %q", status.LastFailure.ScheduleID, failedSchedule.ID)
+	}
+	if status.LastFailure.Error != "dispatch boom" {
+		t.Fatalf("Status returned last failure error %q, want %q", status.LastFailure.Error, "dispatch boom")
+	}
+}
+
+func TestStore_HealthFlagsInvalidSchedulesStuckDispatchingAndMissingNextRun(t *testing.T) {
+	t.Parallel()
+
+	now := mustParseRFC3339(t, "2026-03-26T03:30:00Z")
+	s := newTestStore(t, now)
+	ctx := context.Background()
+
+	invalidSchedule, err := s.CreateSchedule(ctx, CreateScheduleInput{
+		ID:            "sched-health-invalid",
+		Name:          "Invalid cron",
+		Objective:     "Inspect invalid scheduler state",
+		WorkspaceRoot: "/tmp/repo",
+		Spec: ScheduleSpec{
+			Kind:     ScheduleKindCron,
+			CronExpr: "0 * * * *",
+			Timezone: "UTC",
+		},
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateSchedule invalid returned error: %v", err)
+	}
+	stuckSchedule := mustCreateSchedule(t, ctx, s, "sched-health-stuck")
+	missingNext := mustCreateSchedule(t, ctx, s, "sched-health-missing")
+
+	if _, err := s.db.RawDB().ExecContext(ctx,
+		`UPDATE schedules
+		    SET schedule_cron_expr = ?, updated_at = ?
+		  WHERE id = ?`,
+		"not a cron expression",
+		now,
+		invalidSchedule.ID,
+	); err != nil {
+		t.Fatalf("break cron expression: %v", err)
+	}
+	staleAt := mustParseRFC3339(t, "2026-03-26T03:28:00Z")
+	mustInsertOccurrence(t, ctx, s, Occurrence{
+		ID:         "occ-health-stuck",
+		ScheduleID: stuckSchedule.ID,
+		SlotAt:     staleAt,
+		ThreadID:   staleAt.Format(time.RFC3339Nano),
+		Status:     OccurrenceDispatching,
+		CreatedAt:  staleAt,
+		UpdatedAt:  staleAt,
+	})
+	if _, err := s.db.RawDB().ExecContext(ctx,
+		`UPDATE schedules
+		    SET next_run_at = NULL, updated_at = ?
+		  WHERE id = ?`,
+		now,
+		missingNext.ID,
+	); err != nil {
+		t.Fatalf("clear next_run_at: %v", err)
+	}
+
+	health, err := s.Health(ctx, now, 30*time.Second)
+	if err != nil {
+		t.Fatalf("Health returned error: %v", err)
+	}
+	if health.InvalidSchedules != 1 {
+		t.Fatalf("Health returned invalid_schedules %d, want 1", health.InvalidSchedules)
+	}
+	if health.StuckDispatching != 1 {
+		t.Fatalf("Health returned stuck_dispatching %d, want 1", health.StuckDispatching)
+	}
+	if health.MissingNextRun != 1 {
+		t.Fatalf("Health returned missing_next_run %d, want 1", health.MissingNextRun)
+	}
+}
+
 func openTestDB(t *testing.T) *store.DB {
 	t.Helper()
 

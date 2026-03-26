@@ -2,11 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/canhta/gistclaw/internal/scheduler"
+	"github.com/canhta/gistclaw/internal/store"
 )
 
 func TestDoctor_AllChecksPass(t *testing.T) {
@@ -209,5 +214,120 @@ func TestDoctor_ResearchAndMCPChecksAreSkippedWhenUnconfigured(t *testing.T) {
 	output := stdout.String()
 	if strings.Contains(output, "research") || strings.Contains(output, "mcp:") {
 		t.Fatalf("expected research and mcp checks to be skipped, got:\n%s", output)
+	}
+}
+
+func TestDoctor_WarnsOnBrokenSchedulerState(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	exec.Command("git", "init", workspaceRoot).Run()
+	dbPath := filepath.Join(t.TempDir(), "gistclaw.db")
+	cfgPath := makeValidConfig(t, dbPath, workspaceRoot)
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("Open db: %v", err)
+	}
+	defer db.Close()
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate db: %v", err)
+	}
+
+	s := scheduler.NewStore(db)
+	ctx := context.Background()
+	invalidSchedule, err := s.CreateSchedule(ctx, scheduler.CreateScheduleInput{
+		ID:            "sched-invalid",
+		Name:          "Invalid cron",
+		Objective:     "Inspect invalid cron state",
+		WorkspaceRoot: workspaceRoot,
+		Spec: scheduler.ScheduleSpec{
+			Kind:     scheduler.ScheduleKindCron,
+			CronExpr: "0 * * * *",
+			Timezone: "UTC",
+		},
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateSchedule invalid seed: %v", err)
+	}
+	stuckSchedule, err := s.CreateSchedule(ctx, scheduler.CreateScheduleInput{
+		ID:            "sched-stuck",
+		Name:          "Stuck dispatch",
+		Objective:     "Inspect stuck dispatch state",
+		WorkspaceRoot: workspaceRoot,
+		Spec: scheduler.ScheduleSpec{
+			Kind: scheduler.ScheduleKindAt,
+			At:   "2030-01-02T00:00:00Z",
+		},
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateSchedule stuck seed: %v", err)
+	}
+	missingSchedule, err := s.CreateSchedule(ctx, scheduler.CreateScheduleInput{
+		ID:            "sched-missing-next",
+		Name:          "Missing next run",
+		Objective:     "Inspect missing next run state",
+		WorkspaceRoot: workspaceRoot,
+		Spec: scheduler.ScheduleSpec{
+			Kind: scheduler.ScheduleKindAt,
+			At:   "2030-01-03T00:00:00Z",
+		},
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateSchedule missing-next seed: %v", err)
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	if _, err := db.RawDB().ExecContext(ctx,
+		`UPDATE schedules
+		    SET schedule_cron_expr = ?, next_run_at = ?, updated_at = ?
+		  WHERE id = ?`,
+		"not a cron expression",
+		now.Add(time.Hour),
+		now,
+		invalidSchedule.ID,
+	); err != nil {
+		t.Fatalf("break cron expression: %v", err)
+	}
+	if _, err := db.RawDB().ExecContext(ctx,
+		`INSERT INTO schedule_occurrences
+		 (id, schedule_id, slot_at, thread_id, status, skip_reason, run_id, conversation_id, error, started_at, finished_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, '', '', '', '', NULL, NULL, ?, ?)`,
+		"occ-stuck",
+		stuckSchedule.ID,
+		now.Add(-2*time.Minute),
+		now.Add(-2*time.Minute).Format(time.RFC3339Nano),
+		scheduler.OccurrenceDispatching,
+		now.Add(-2*time.Minute),
+		now.Add(-2*time.Minute),
+	); err != nil {
+		t.Fatalf("insert stuck dispatching occurrence: %v", err)
+	}
+	if _, err := db.RawDB().ExecContext(ctx,
+		`UPDATE schedules
+		    SET next_run_at = NULL, updated_at = ?
+		  WHERE id = ?`,
+		now,
+		missingSchedule.ID,
+	); err != nil {
+		t.Fatalf("clear next_run_at: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runDoctor(cfgPath, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected warn-only exit code, got %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	for _, want := range []string{
+		"scheduler",
+		"WARN",
+		"invalid=1",
+		"stuck_dispatching=1",
+		"missing_next_run=1",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("doctor output missing %q:\n%s", want, stdout.String())
+		}
 	}
 }

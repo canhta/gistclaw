@@ -39,8 +39,8 @@ If you are evaluating GistClaw as a tool, the current value is:
 - `gistclaw serve` starts the daemon and local web host.
 - `gistclaw run` submits a task directly from the CLI.
 - `gistclaw inspect` reports status, runs, replay, and the admin token.
-- `gistclaw schedule` adds, updates, lists, shows, runs, enables, disables, and deletes scheduled tasks.
-- `gistclaw doctor` checks config, database, provider, workspace, research, MCP binaries, Telegram reachability, and disk headroom.
+- `gistclaw schedule` adds, updates, reports scheduler status, lists, shows, runs, enables, disables, and deletes scheduled tasks.
+- `gistclaw doctor` checks config, database, provider, workspace, scheduler state, research, MCP binaries, Telegram reachability, and disk headroom.
 - `gistclaw backup` creates a timestamped SQLite backup.
 - `gistclaw export` writes runs, receipts, and approvals to JSON.
 

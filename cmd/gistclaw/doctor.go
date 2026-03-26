@@ -13,11 +13,12 @@ import (
 	"time"
 
 	"github.com/canhta/gistclaw/internal/app"
+	"github.com/canhta/gistclaw/internal/scheduler"
 	"github.com/canhta/gistclaw/internal/store"
 	toolspkg "github.com/canhta/gistclaw/internal/tools"
 )
 
-// runDoctor runs six health checks and prints a structured report.
+// runDoctor runs operator health checks and prints a structured report.
 // Exits 0 if all checks are PASS or WARN; exits 1 if any check is FAIL.
 func runDoctor(configPath string, stdout, stderr io.Writer) int {
 	type check struct {
@@ -39,18 +40,19 @@ func runDoctor(configPath string, stdout, stderr io.Writer) int {
 	}
 
 	// 2. Database opens and pings.
+	var db *store.DB
 	db, dbErr := store.Open(cfg.DatabasePath)
 	if dbErr != nil {
 		checks = append(checks, check{name: "database", status: "FAIL", detail: dbErr.Error()})
 		anyFail = true
 	} else {
+		defer db.Close()
 		if err := db.RawDB().PingContext(context.Background()); err != nil {
 			checks = append(checks, check{name: "database", status: "FAIL", detail: err.Error()})
 			anyFail = true
 		} else {
 			checks = append(checks, check{name: "database", status: "PASS", detail: cfg.DatabasePath})
 		}
-		_ = db.Close()
 	}
 
 	// 3. Provider configured.
@@ -169,6 +171,27 @@ func runDoctor(configPath string, stdout, stderr io.Writer) int {
 		}
 	} else {
 		checks = append(checks, check{name: "disk", status: "WARN", detail: "could not determine disk space"})
+	}
+
+	if db != nil {
+		health, err := scheduler.NewStore(db).Health(context.Background(), time.Now().UTC(), 30*time.Second)
+		switch {
+		case err == nil:
+			if health.InvalidSchedules == 0 && health.StuckDispatching == 0 && health.MissingNextRun == 0 {
+				checks = append(checks, check{name: "scheduler", status: "PASS", detail: "healthy"})
+			} else {
+				checks = append(checks, check{
+					name:   "scheduler",
+					status: "WARN",
+					detail: fmt.Sprintf("invalid=%d stuck_dispatching=%d missing_next_run=%d", health.InvalidSchedules, health.StuckDispatching, health.MissingNextRun),
+				})
+			}
+		case strings.Contains(err.Error(), "no such table: schedules"), strings.Contains(err.Error(), "no such table: schedule_occurrences"):
+			checks = append(checks, check{name: "scheduler", status: "SKIP", detail: "scheduler tables not initialized"})
+		default:
+			checks = append(checks, check{name: "scheduler", status: "FAIL", detail: err.Error()})
+			anyFail = true
+		}
 	}
 
 	// Print report.

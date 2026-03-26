@@ -363,6 +363,116 @@ func (s *Store) DeleteSchedule(ctx context.Context, scheduleID string) error {
 	return nil
 }
 
+func (s *Store) Status(ctx context.Context, now time.Time) (StatusSummary, error) {
+	now = now.UTC()
+
+	var status StatusSummary
+	if err := s.db.RawDB().QueryRowContext(ctx, "SELECT COUNT(1) FROM schedules").Scan(&status.TotalSchedules); err != nil {
+		return StatusSummary{}, fmt.Errorf("scheduler: status total schedules: %w", err)
+	}
+	if err := s.db.RawDB().QueryRowContext(ctx, "SELECT COUNT(1) FROM schedules WHERE enabled = 1").Scan(&status.EnabledSchedules); err != nil {
+		return StatusSummary{}, fmt.Errorf("scheduler: status enabled schedules: %w", err)
+	}
+	if err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT COUNT(1)
+		   FROM schedules
+		  WHERE enabled = 1
+		    AND next_run_at IS NOT NULL
+		    AND next_run_at <= ?`,
+		now,
+	).Scan(&status.DueSchedules); err != nil {
+		return StatusSummary{}, fmt.Errorf("scheduler: status due schedules: %w", err)
+	}
+	if err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT COUNT(1)
+		   FROM schedule_occurrences
+		  WHERE status IN (?, ?, ?)`,
+		OccurrenceDispatching,
+		OccurrenceActive,
+		OccurrenceNeedsApproval,
+	).Scan(&status.ActiveOccurrences); err != nil {
+		return StatusSummary{}, fmt.Errorf("scheduler: status active occurrences: %w", err)
+	}
+
+	var nextWakeAt sql.NullTime
+	err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT next_run_at
+		   FROM schedules
+		  WHERE enabled = 1
+		    AND next_run_at IS NOT NULL
+		  ORDER BY next_run_at ASC, id ASC
+		  LIMIT 1`,
+	).Scan(&nextWakeAt)
+	switch {
+	case err == nil:
+		if nextWakeAt.Valid {
+			status.NextWakeAt = nextWakeAt.Time.UTC()
+		}
+	case err == sql.ErrNoRows:
+	default:
+		return StatusSummary{}, fmt.Errorf("scheduler: status next wake: %w", err)
+	}
+
+	var failure FailureSummary
+	var failedAt sql.NullTime
+	err = s.db.RawDB().QueryRowContext(ctx,
+		`SELECT id, name, last_error, last_run_at
+		   FROM schedules
+		  WHERE last_status = ?
+		    AND last_run_at IS NOT NULL
+		  ORDER BY last_run_at DESC, id DESC
+		  LIMIT 1`,
+		OccurrenceFailed,
+	).Scan(&failure.ScheduleID, &failure.Name, &failure.Error, &failedAt)
+	switch {
+	case err == nil:
+		if failedAt.Valid {
+			failure.FailedAt = failedAt.Time.UTC()
+		}
+		status.LastFailure = &failure
+	case err == sql.ErrNoRows:
+	default:
+		return StatusSummary{}, fmt.Errorf("scheduler: status last failure: %w", err)
+	}
+
+	return status, nil
+}
+
+func (s *Store) Health(ctx context.Context, now time.Time, dispatchGracePeriod time.Duration) (HealthSummary, error) {
+	now = now.UTC()
+
+	var health HealthSummary
+	schedules, err := s.ListSchedules(ctx)
+	if err != nil {
+		return HealthSummary{}, err
+	}
+	for _, schedule := range schedules {
+		if err := ValidateSpec(schedule.Spec); err != nil {
+			health.InvalidSchedules++
+		}
+	}
+	if err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT COUNT(1)
+		   FROM schedule_occurrences
+		  WHERE status = ?
+		    AND created_at < ?`,
+		OccurrenceDispatching,
+		now.Add(-dispatchGracePeriod),
+	).Scan(&health.StuckDispatching); err != nil {
+		return HealthSummary{}, fmt.Errorf("scheduler: health stuck dispatching: %w", err)
+	}
+	if err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT COUNT(1)
+		   FROM schedules
+		  WHERE enabled = 1
+		    AND next_run_at IS NULL`,
+	).Scan(&health.MissingNextRun); err != nil {
+		return HealthSummary{}, fmt.Errorf("scheduler: health missing next run: %w", err)
+	}
+
+	return health, nil
+}
+
 func (s *Store) ClaimManualOccurrence(ctx context.Context, scheduleID string, slotAt time.Time) (*ClaimedOccurrence, error) {
 	slotAt = slotAt.UTC()
 
