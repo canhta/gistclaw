@@ -39,6 +39,13 @@ type CreateScheduleInput struct {
 	Enabled       bool
 }
 
+type UpdateScheduleInput struct {
+	Name          *string
+	Objective     *string
+	WorkspaceRoot *string
+	Spec          *ScheduleSpec
+}
+
 type Schedule struct {
 	ID                  string
 	Name                string

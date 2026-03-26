@@ -106,6 +106,72 @@ func (s *Store) LoadSchedule(ctx context.Context, id string) (Schedule, error) {
 	return schedule, nil
 }
 
+func (s *Store) UpdateSchedule(ctx context.Context, id string, patch UpdateScheduleInput) (Schedule, error) {
+	schedule, err := s.LoadSchedule(ctx, id)
+	if err != nil {
+		return Schedule{}, err
+	}
+
+	if patch.Name != nil {
+		schedule.Name = strings.TrimSpace(*patch.Name)
+		if schedule.Name == "" {
+			return Schedule{}, fmt.Errorf("scheduler: update schedule: name required")
+		}
+	}
+	if patch.Objective != nil {
+		schedule.Objective = strings.TrimSpace(*patch.Objective)
+		if schedule.Objective == "" {
+			return Schedule{}, fmt.Errorf("scheduler: update schedule: objective required")
+		}
+	}
+	if patch.WorkspaceRoot != nil {
+		schedule.WorkspaceRoot = strings.TrimSpace(*patch.WorkspaceRoot)
+		if schedule.WorkspaceRoot == "" {
+			return Schedule{}, fmt.Errorf("scheduler: update schedule: workspace_root required")
+		}
+	}
+
+	now := s.now().UTC()
+	nextRunAt := schedule.NextRunAt
+	if patch.Spec != nil {
+		if err := ValidateSpec(*patch.Spec); err != nil {
+			return Schedule{}, fmt.Errorf("scheduler: update schedule: %w", err)
+		}
+		schedule.Spec = *patch.Spec
+		if schedule.Enabled {
+			nextRunAt, err = ComputeNextRun(schedule.Spec, now)
+			if err != nil {
+				return Schedule{}, fmt.Errorf("scheduler: update schedule: compute next run: %w", err)
+			}
+		} else {
+			nextRunAt = time.Time{}
+		}
+	}
+
+	_, err = s.db.RawDB().ExecContext(ctx,
+		`UPDATE schedules
+		    SET name = ?, objective = ?, workspace_root = ?, schedule_kind = ?, schedule_at = ?,
+		        schedule_every_seconds = ?, schedule_cron_expr = ?, timezone = ?, next_run_at = ?, updated_at = ?
+		  WHERE id = ?`,
+		schedule.Name,
+		schedule.Objective,
+		schedule.WorkspaceRoot,
+		schedule.Spec.Kind,
+		schedule.Spec.At,
+		schedule.Spec.EverySeconds,
+		schedule.Spec.CronExpr,
+		schedule.Spec.Timezone,
+		nullableTime(nextRunAt),
+		now,
+		schedule.ID,
+	)
+	if err != nil {
+		return Schedule{}, fmt.Errorf("scheduler: update schedule: %w", err)
+	}
+
+	return s.LoadSchedule(ctx, id)
+}
+
 func (s *Store) ListSchedules(ctx context.Context) ([]Schedule, error) {
 	rows, err := s.db.RawDB().QueryContext(ctx,
 		`SELECT id, name, objective, workspace_root, schedule_kind, schedule_at, schedule_every_seconds,

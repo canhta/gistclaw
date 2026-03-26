@@ -43,6 +43,20 @@ func (a *App) CreateSchedule(ctx context.Context, in scheduler.CreateScheduleInp
 	return a.scheduler.CreateSchedule(ctx, in)
 }
 
+func (a *App) UpdateSchedule(ctx context.Context, scheduleID string, patch scheduler.UpdateScheduleInput) (scheduler.Schedule, error) {
+	if a.scheduler == nil {
+		return scheduler.Schedule{}, fmt.Errorf("scheduler is not configured")
+	}
+	if patch.WorkspaceRoot != nil {
+		workspaceRoot, err := a.resolveScheduleWorkspace(ctx, *patch.WorkspaceRoot)
+		if err != nil {
+			return scheduler.Schedule{}, err
+		}
+		patch.WorkspaceRoot = &workspaceRoot
+	}
+	return a.scheduler.UpdateSchedule(ctx, scheduleID, patch)
+}
+
 func (a *App) ListSchedules(ctx context.Context) ([]scheduler.Schedule, error) {
 	if a.scheduler == nil {
 		return nil, fmt.Errorf("scheduler is not configured")

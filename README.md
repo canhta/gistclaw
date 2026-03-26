@@ -66,6 +66,7 @@ gistclaw inspect runs
 gistclaw inspect replay <run_id>
 gistclaw inspect token
 gistclaw schedule add --name "Daily review" --objective "Inspect repository status" --at 2030-01-01T00:00:00Z
+gistclaw schedule update <schedule_id> --objective "Inspect repository status after the update"
 gistclaw schedule list
 gistclaw schedule show <schedule_id>
 gistclaw schedule run <schedule_id>

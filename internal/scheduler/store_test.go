@@ -108,6 +108,44 @@ func TestStore_ListDueSchedulesOrdersByNextRunAt(t *testing.T) {
 	}
 }
 
+func TestStore_UpdateScheduleRecomputesNextRunAtWhenSpecChanges(t *testing.T) {
+	t.Parallel()
+
+	now := mustParseRFC3339(t, "2026-03-26T03:30:00Z")
+	s := newTestStore(t, now)
+	ctx := context.Background()
+
+	schedule := mustCreateSchedule(t, ctx, s, "sched-update")
+	name := "Afternoon review"
+	objective := "Inspect afternoon repository state"
+	spec := ScheduleSpec{
+		Kind:         ScheduleKindEvery,
+		At:           "2026-03-26T14:00:00+07:00",
+		EverySeconds: 7200,
+	}
+
+	updated, err := s.UpdateSchedule(ctx, schedule.ID, UpdateScheduleInput{
+		Name:      &name,
+		Objective: &objective,
+		Spec:      &spec,
+	})
+	if err != nil {
+		t.Fatalf("UpdateSchedule returned error: %v", err)
+	}
+
+	if updated.Name != name || updated.Objective != objective {
+		t.Fatalf("UpdateSchedule returned (%q, %q), want (%q, %q)", updated.Name, updated.Objective, name, objective)
+	}
+	if updated.Spec.Kind != spec.Kind || updated.Spec.At != spec.At || updated.Spec.EverySeconds != spec.EverySeconds {
+		t.Fatalf("UpdateSchedule returned spec %#v, want %#v", updated.Spec, spec)
+	}
+
+	wantNext := mustParseRFC3339(t, "2026-03-26T07:00:00Z")
+	if !updated.NextRunAt.Equal(wantNext) {
+		t.Fatalf("UpdateSchedule returned next_run_at %s, want %s", updated.NextRunAt.Format(time.RFC3339), wantNext.Format(time.RFC3339))
+	}
+}
+
 func TestStore_ClaimDueOccurrenceCreatesSingleDispatchingRow(t *testing.T) {
 	t.Parallel()
 

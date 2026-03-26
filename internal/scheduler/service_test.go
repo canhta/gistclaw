@@ -259,6 +259,24 @@ func TestService_ScheduleLifecycleOperations(t *testing.T) {
 		t.Fatalf("ListSchedules returned %#v, want schedule %q", listed, created.ID)
 	}
 
+	name := "Updated hourly check"
+	objective := "Inspect repository health with the updated objective"
+	spec := schedulerSpecEvery(t, "2026-03-26T10:00:00+07:00", 2*time.Hour)
+	updated, err := service.UpdateSchedule(context.Background(), created.ID, UpdateScheduleInput{
+		Name:      &name,
+		Objective: &objective,
+		Spec:      &spec,
+	})
+	if err != nil {
+		t.Fatalf("UpdateSchedule returned error: %v", err)
+	}
+	if updated.Name != name || updated.Objective != objective {
+		t.Fatalf("UpdateSchedule returned (%q, %q), want (%q, %q)", updated.Name, updated.Objective, name, objective)
+	}
+	if updated.Spec.EverySeconds != int64((2*time.Hour)/time.Second) {
+		t.Fatalf("UpdateSchedule returned every_seconds %d, want %d", updated.Spec.EverySeconds, int64((2*time.Hour)/time.Second))
+	}
+
 	disabled, err := service.DisableSchedule(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("DisableSchedule returned error: %v", err)
@@ -326,6 +344,15 @@ func TestService_RunNowDispatchesImmediateOccurrence(t *testing.T) {
 	}
 	if occurrence.RunID != "run-now" || occurrence.ConversationID != "conv-now" {
 		t.Fatalf("occurrence run link = (%q, %q), want (%q, %q)", occurrence.RunID, occurrence.ConversationID, "run-now", "conv-now")
+	}
+}
+
+func schedulerSpecEvery(t *testing.T, at string, every time.Duration) ScheduleSpec {
+	t.Helper()
+	return ScheduleSpec{
+		Kind:         ScheduleKindEvery,
+		At:           at,
+		EverySeconds: int64(every / time.Second),
 	}
 }
 

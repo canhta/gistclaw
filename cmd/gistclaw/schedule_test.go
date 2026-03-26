@@ -58,6 +58,16 @@ func TestParseScheduleAddArgs_EveryScheduleRequiresStartAt(t *testing.T) {
 	}
 }
 
+func TestParseScheduleUpdateArgs_EveryScheduleRequiresStartAt(t *testing.T) {
+	_, err := parseScheduleUpdateArgs([]string{
+		"--name", "Updated review",
+		"--every", "2h",
+	})
+	if err == nil {
+		t.Fatal("expected parseScheduleUpdateArgs to reject missing --start-at for --every")
+	}
+}
+
 func TestRun_ScheduleLifecycleCommands(t *testing.T) {
 	cfgPath, _ := writeCLIConfig(t)
 
@@ -98,6 +108,23 @@ func TestRun_ScheduleLifecycleCommands(t *testing.T) {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("schedule show missing %q:\n%s", want, stdout.String())
 		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if code := run([]string{
+		"schedule",
+		"--config", cfgPath,
+		"update", scheduleID,
+		"--name", "Updated review",
+		"--objective", "Inspect repository status after the update",
+		"--every", "2h",
+		"--start-at", "2030-01-01T08:00:00Z",
+	}, &stdout, &stderr); code != 0 {
+		t.Fatalf("schedule update failed with code %d:\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "name: Updated review") || !strings.Contains(stdout.String(), "kind: every") {
+		t.Fatalf("schedule update output missing updated fields:\n%s", stdout.String())
 	}
 
 	stdout.Reset()

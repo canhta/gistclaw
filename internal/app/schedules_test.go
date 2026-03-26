@@ -57,6 +57,28 @@ func TestApp_ScheduleLifecycleMethods(t *testing.T) {
 		t.Fatalf("LoadSchedule returned ID %q, want %q", loaded.ID, created.ID)
 	}
 
+	name := "Updated daily review"
+	objective := "Inspect repository status with updated wording"
+	spec := scheduler.ScheduleSpec{
+		Kind:         scheduler.ScheduleKindEvery,
+		At:           "2030-01-01T08:00:00Z",
+		EverySeconds: 7200,
+	}
+	updated, err := app.UpdateSchedule(context.Background(), created.ID, scheduler.UpdateScheduleInput{
+		Name:      &name,
+		Objective: &objective,
+		Spec:      &spec,
+	})
+	if err != nil {
+		t.Fatalf("UpdateSchedule returned error: %v", err)
+	}
+	if updated.Name != name || updated.Objective != objective {
+		t.Fatalf("UpdateSchedule returned (%q, %q), want (%q, %q)", updated.Name, updated.Objective, name, objective)
+	}
+	if updated.Spec.Kind != scheduler.ScheduleKindEvery {
+		t.Fatalf("UpdateSchedule returned kind %q, want %q", updated.Spec.Kind, scheduler.ScheduleKindEvery)
+	}
+
 	disabled, err := app.DisableSchedule(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("DisableSchedule returned error: %v", err)

@@ -51,6 +51,10 @@ func (s *Service) CreateSchedule(ctx context.Context, in CreateScheduleInput) (S
 	return s.store.CreateSchedule(ctx, in)
 }
 
+func (s *Service) UpdateSchedule(ctx context.Context, scheduleID string, patch UpdateScheduleInput) (Schedule, error) {
+	return s.store.UpdateSchedule(ctx, scheduleID, patch)
+}
+
 func (s *Service) LoadSchedule(ctx context.Context, scheduleID string) (Schedule, error) {
 	return s.store.LoadSchedule(ctx, scheduleID)
 }
