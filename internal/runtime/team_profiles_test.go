@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/teams"
 )
 
 func TestRuntime_TeamConfigUsesActiveProfileForProject(t *testing.T) {
@@ -92,6 +93,95 @@ func TestRuntime_ChangingActiveProfileOnlyAffectsFutureRuns(t *testing.T) {
 	}
 	if secondSnapshot.TeamID != "Review Team" {
 		t.Fatalf("expected second snapshot team id %q, got %q", "Review Team", secondSnapshot.TeamID)
+	}
+}
+
+func TestRuntime_TeamProfileManagementMethods(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	ctx := context.Background()
+
+	fallbackRoot := t.TempDir()
+	writeRuntimeTeamProfile(t, fallbackRoot, "default", "Fallback Team")
+	rt.SetTeamDir(filepath.Join(fallbackRoot, ".gistclaw", "teams", "default"))
+
+	workspaceRoot := t.TempDir()
+	project, err := ActivateWorkspace(ctx, db, workspaceRoot, "alpha", "operator")
+	if err != nil {
+		t.Fatalf("activate project: %v", err)
+	}
+	if err := SetActiveProject(ctx, db, project.ID); err != nil {
+		t.Fatalf("set active project: %v", err)
+	}
+
+	activeProfile, err := rt.ActiveTeamProfile(ctx)
+	if err != nil {
+		t.Fatalf("ActiveTeamProfile default: %v", err)
+	}
+	if activeProfile != teams.DefaultProfileName {
+		t.Fatalf("expected default active profile, got %q", activeProfile)
+	}
+
+	if err := rt.CreateTeamProfile(ctx, "review"); err != nil {
+		t.Fatalf("CreateTeamProfile: %v", err)
+	}
+	if err := rt.CloneTeamProfile(ctx, teams.DefaultProfileName, "ops"); err != nil {
+		t.Fatalf("CloneTeamProfile: %v", err)
+	}
+
+	profiles, err := rt.ListTeamProfiles(ctx)
+	if err != nil {
+		t.Fatalf("ListTeamProfiles: %v", err)
+	}
+	if len(profiles) != 2 {
+		t.Fatalf("expected 2 workspace-managed profiles, got %d", len(profiles))
+	}
+
+	cloned, err := teams.LoadConfig(teams.ProfileDir(workspaceRoot, "ops"))
+	if err != nil {
+		t.Fatalf("LoadConfig cloned profile: %v", err)
+	}
+	if cloned.Name != "Fallback Team" {
+		t.Fatalf("expected cloned profile team name %q, got %q", "Fallback Team", cloned.Name)
+	}
+
+	if err := rt.SelectTeamProfile(ctx, "review"); err != nil {
+		t.Fatalf("SelectTeamProfile: %v", err)
+	}
+	activeProfile, err = rt.ActiveTeamProfile(ctx)
+	if err != nil {
+		t.Fatalf("ActiveTeamProfile review: %v", err)
+	}
+	if activeProfile != "review" {
+		t.Fatalf("expected selected profile %q, got %q", "review", activeProfile)
+	}
+
+	if err := rt.DeleteTeamProfile(ctx, "ops"); err != nil {
+		t.Fatalf("DeleteTeamProfile: %v", err)
+	}
+	if _, err := os.Stat(teams.ProfileDir(workspaceRoot, "ops")); !os.IsNotExist(err) {
+		t.Fatalf("expected deleted profile dir to be removed, err=%v", err)
+	}
+}
+
+func TestRuntime_DeleteTeamProfileRejectsActiveProfile(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	ctx := context.Background()
+
+	workspaceRoot := t.TempDir()
+	writeRuntimeTeamProfile(t, workspaceRoot, "default", "Default Team")
+
+	project, err := ActivateWorkspace(ctx, db, workspaceRoot, "alpha", "operator")
+	if err != nil {
+		t.Fatalf("activate project: %v", err)
+	}
+	if err := SetActiveProject(ctx, db, project.ID); err != nil {
+		t.Fatalf("set active project: %v", err)
+	}
+
+	if err := rt.DeleteTeamProfile(ctx, teams.DefaultProfileName); err == nil {
+		t.Fatal("expected DeleteTeamProfile to reject deleting the active profile")
 	}
 }
 

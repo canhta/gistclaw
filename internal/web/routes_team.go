@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -15,11 +16,16 @@ import (
 const teamUploadLimit = 1 << 20
 
 type teamPageData struct {
-	Name       string
-	FrontAgent string
-	Agents     []teamAgentCardData
-	Error      string
-	Notice     string
+	ActiveProfile        string
+	ProfileOptions       []teamOption
+	CloneSourceOptions   []teamOption
+	DeleteProfileOptions []teamOption
+	ProfileSavePath      string
+	Name                 string
+	FrontAgent           string
+	Agents               []teamAgentCardData
+	Error                string
+	Notice               string
 }
 
 type teamAgentCardData struct {
@@ -41,14 +47,20 @@ type teamOption struct {
 	Selected bool
 }
 
+type teamPageState struct {
+	Config        teams.Config
+	ActiveProfile string
+	Profiles      []teams.Profile
+}
+
 func (s *Server) handleTeam(w http.ResponseWriter, r *http.Request) {
-	cfg, err := s.loadTeamConfig(r.Context())
+	state, err := s.loadTeamPageState(r.Context())
 	if err != nil {
 		s.renderTemplate(w, r, "Team", "team_body", teamPageData{Error: err.Error()})
 		return
 	}
 
-	s.renderTemplate(w, r, "Team", "team_body", newTeamPageData(cfg, "", ""))
+	s.renderTemplate(w, r, "Team", "team_body", newTeamPageData(state, "", strings.TrimSpace(r.URL.Query().Get("notice"))))
 }
 
 func (s *Server) handleTeamExport(w http.ResponseWriter, r *http.Request) {
@@ -92,13 +104,76 @@ func (s *Server) handleTeamUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch intent {
+	case "select_profile":
+		if s.rt == nil {
+			http.Error(w, "runtime not configured", http.StatusInternalServerError)
+			return
+		}
+		profile := strings.TrimSpace(r.FormValue("active_profile"))
+		if err := s.rt.SelectTeamProfile(r.Context(), profile); err != nil {
+			s.renderStoredTeamError(w, r, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		http.Redirect(w, r, teamNoticePath(fmt.Sprintf("Active profile switched to %s.", profile)), http.StatusSeeOther)
+		return
+	case "create_profile":
+		if s.rt == nil {
+			http.Error(w, "runtime not configured", http.StatusInternalServerError)
+			return
+		}
+		profile := strings.TrimSpace(r.FormValue("create_profile_name"))
+		if err := s.rt.CreateTeamProfile(r.Context(), profile); err != nil {
+			s.renderStoredTeamError(w, r, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		if err := s.rt.SelectTeamProfile(r.Context(), profile); err != nil {
+			s.renderStoredTeamError(w, r, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		http.Redirect(w, r, teamNoticePath(fmt.Sprintf("Profile %s created and selected.", profile)), http.StatusSeeOther)
+		return
+	case "clone_profile":
+		if s.rt == nil {
+			http.Error(w, "runtime not configured", http.StatusInternalServerError)
+			return
+		}
+		sourceProfile := strings.TrimSpace(r.FormValue("clone_source_profile"))
+		profile := strings.TrimSpace(r.FormValue("clone_profile_name"))
+		if err := s.rt.CloneTeamProfile(r.Context(), sourceProfile, profile); err != nil {
+			s.renderStoredTeamError(w, r, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		if err := s.rt.SelectTeamProfile(r.Context(), profile); err != nil {
+			s.renderStoredTeamError(w, r, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		http.Redirect(w, r, teamNoticePath(fmt.Sprintf("Profile %s cloned from %s.", profile, sourceProfile)), http.StatusSeeOther)
+		return
+	case "delete_profile":
+		if s.rt == nil {
+			http.Error(w, "runtime not configured", http.StatusInternalServerError)
+			return
+		}
+		profile := strings.TrimSpace(r.FormValue("delete_profile_name"))
+		if err := s.rt.DeleteTeamProfile(r.Context(), profile); err != nil {
+			s.renderStoredTeamError(w, r, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		http.Redirect(w, r, teamNoticePath(fmt.Sprintf("Profile %s deleted.", profile)), http.StatusSeeOther)
+		return
 	case "import":
 		cfg, err := parseImportedTeamConfig(r)
 		if err != nil {
 			s.renderStoredTeamError(w, r, http.StatusUnprocessableEntity, err.Error())
 			return
 		}
-		s.renderTemplate(w, r, "Team", "team_body", newTeamPageData(cfg, "", "Imported file loaded. Save Team to apply the change."))
+		state, loadErr := s.loadTeamPageState(r.Context())
+		if loadErr != nil {
+			s.renderTemplate(w, r, "Team", "team_body", teamPageData{Error: loadErr.Error()})
+			return
+		}
+		state.Config = cfg
+		s.renderTemplate(w, r, "Team", "team_body", newTeamPageData(state, "", "Imported file loaded. Save Team to apply the change."))
 		return
 	case "add_member", "remove_member", "save":
 	default:
@@ -114,19 +189,43 @@ func (s *Server) handleTeamUpdate(w http.ResponseWriter, r *http.Request) {
 	switch intent {
 	case "add_member":
 		cfg = addTeamMember(cfg)
-		s.renderTemplate(w, r, "Team", "team_body", newTeamPageData(cfg, "", "New member added. Save Team to apply the change."))
+		state, loadErr := s.loadTeamPageState(r.Context())
+		if loadErr != nil {
+			s.renderTemplate(w, r, "Team", "team_body", teamPageData{Error: loadErr.Error()})
+			return
+		}
+		state.Config = cfg
+		s.renderTemplate(w, r, "Team", "team_body", newTeamPageData(state, "", "New member added. Save Team to apply the change."))
 		return
 	case "remove_member":
 		index, err := strconv.Atoi(removeIndex)
 		if err != nil {
-			s.renderTemplateStatus(w, r, http.StatusUnprocessableEntity, "Team", "team_body", newTeamPageData(cfg, "invalid member removal request", ""))
+			state, loadErr := s.loadTeamPageState(r.Context())
+			if loadErr != nil {
+				s.renderTemplateStatus(w, r, http.StatusUnprocessableEntity, "Team", "team_body", teamPageData{Error: "invalid member removal request"})
+				return
+			}
+			state.Config = cfg
+			s.renderTemplateStatus(w, r, http.StatusUnprocessableEntity, "Team", "team_body", newTeamPageData(state, "invalid member removal request", ""))
 			return
 		}
 		if err := removeTeamMember(&cfg, index); err != nil {
-			s.renderTemplateStatus(w, r, http.StatusUnprocessableEntity, "Team", "team_body", newTeamPageData(cfg, err.Error(), ""))
+			state, loadErr := s.loadTeamPageState(r.Context())
+			if loadErr != nil {
+				s.renderTemplateStatus(w, r, http.StatusUnprocessableEntity, "Team", "team_body", teamPageData{Error: err.Error()})
+				return
+			}
+			state.Config = cfg
+			s.renderTemplateStatus(w, r, http.StatusUnprocessableEntity, "Team", "team_body", newTeamPageData(state, err.Error(), ""))
 			return
 		}
-		s.renderTemplate(w, r, "Team", "team_body", newTeamPageData(cfg, "", "Member removed. Save Team to apply the change."))
+		state, loadErr := s.loadTeamPageState(r.Context())
+		if loadErr != nil {
+			s.renderTemplate(w, r, "Team", "team_body", teamPageData{Error: loadErr.Error()})
+			return
+		}
+		state.Config = cfg
+		s.renderTemplate(w, r, "Team", "team_body", newTeamPageData(state, "", "Member removed. Save Team to apply the change."))
 		return
 	default:
 		if s.rt == nil {
@@ -134,40 +233,77 @@ func (s *Server) handleTeamUpdate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.rt.UpdateTeam(r.Context(), cfg); err != nil {
-			s.renderTemplateStatus(w, r, http.StatusUnprocessableEntity, "Team", "team_body", newTeamPageData(cfg, err.Error(), ""))
+			state, loadErr := s.loadTeamPageState(r.Context())
+			if loadErr != nil {
+				s.renderTemplateStatus(w, r, http.StatusUnprocessableEntity, "Team", "team_body", teamPageData{Error: err.Error()})
+				return
+			}
+			state.Config = cfg
+			s.renderTemplateStatus(w, r, http.StatusUnprocessableEntity, "Team", "team_body", newTeamPageData(state, err.Error(), ""))
 			return
 		}
 		http.Redirect(w, r, pageConfigureTeam, http.StatusSeeOther)
 	}
 }
 
-func (s *Server) loadTeamConfig(ctx context.Context) (teams.Config, error) {
+func (s *Server) loadTeamPageState(ctx context.Context) (teamPageState, error) {
 	if s.rt == nil {
-		return teams.Config{}, fmt.Errorf("runtime: team dir not configured")
+		return teamPageState{}, fmt.Errorf("runtime: team dir not configured")
 	}
 	cfg, err := s.rt.TeamConfig(ctx)
 	if err != nil {
+		return teamPageState{}, err
+	}
+	activeProfile, err := s.rt.ActiveTeamProfile(ctx)
+	if err != nil {
+		return teamPageState{}, err
+	}
+	profiles, err := s.rt.ListTeamProfiles(ctx)
+	if err != nil {
+		return teamPageState{}, err
+	}
+	return teamPageState{
+		Config:        cfg,
+		ActiveProfile: activeProfile,
+		Profiles:      profiles,
+	}, nil
+}
+
+func (s *Server) loadTeamConfig(ctx context.Context) (teams.Config, error) {
+	state, err := s.loadTeamPageState(ctx)
+	if err != nil {
 		return teams.Config{}, err
 	}
-	return cfg, nil
+	return state.Config, nil
 }
 
 func (s *Server) renderStoredTeamError(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
-	cfg, err := s.loadTeamConfig(r.Context())
+	state, err := s.loadTeamPageState(r.Context())
 	if err != nil {
 		s.renderTemplateStatus(w, r, status, "Team", "team_body", teamPageData{Error: errMsg})
 		return
 	}
-	s.renderTemplateStatus(w, r, status, "Team", "team_body", newTeamPageData(cfg, errMsg, ""))
+	s.renderTemplateStatus(w, r, status, "Team", "team_body", newTeamPageData(state, errMsg, ""))
 }
 
-func newTeamPageData(cfg teams.Config, errMsg, notice string) teamPageData {
+func newTeamPageData(state teamPageState, errMsg, notice string) teamPageData {
+	cfg := state.Config
+	activeProfile := state.ActiveProfile
+	if activeProfile == "" {
+		activeProfile = teams.DefaultProfileName
+	}
+
 	data := teamPageData{
-		Name:       cfg.Name,
-		FrontAgent: cfg.FrontAgent,
-		Agents:     make([]teamAgentCardData, 0, len(cfg.Agents)),
-		Error:      errMsg,
-		Notice:     notice,
+		ActiveProfile:        activeProfile,
+		ProfileOptions:       buildProfileOptions(state.Profiles, activeProfile, true),
+		CloneSourceOptions:   buildProfileOptions(state.Profiles, activeProfile, true),
+		DeleteProfileOptions: buildProfileOptions(state.Profiles, activeProfile, false),
+		ProfileSavePath:      fmt.Sprintf(".gistclaw/teams/%s", activeProfile),
+		Name:                 cfg.Name,
+		FrontAgent:           cfg.FrontAgent,
+		Agents:               make([]teamAgentCardData, 0, len(cfg.Agents)),
+		Error:                errMsg,
+		Notice:               notice,
 	}
 	for idx, agent := range cfg.Agents {
 		soulExtraJSON := "{}"
@@ -190,6 +326,41 @@ func newTeamPageData(cfg teams.Config, errMsg, notice string) teamPageData {
 		})
 	}
 	return data
+}
+
+func buildProfileOptions(profiles []teams.Profile, activeProfile string, includeActive bool) []teamOption {
+	options := make([]teamOption, 0, len(profiles)+1)
+	seen := make(map[string]bool, len(profiles)+1)
+	if includeActive && activeProfile != "" {
+		options = append(options, teamOption{
+			Value:    activeProfile,
+			Label:    activeProfile,
+			Selected: true,
+		})
+		seen[activeProfile] = true
+	}
+	for _, profile := range profiles {
+		if profile.Name == activeProfile && !includeActive {
+			continue
+		}
+		if seen[profile.Name] {
+			continue
+		}
+		options = append(options, teamOption{
+			Value:    profile.Name,
+			Label:    profile.Name,
+			Selected: profile.Name == activeProfile,
+		})
+		seen[profile.Name] = true
+	}
+	return options
+}
+
+func teamNoticePath(notice string) string {
+	if notice == "" {
+		return pageConfigureTeam
+	}
+	return pageConfigureTeam + "?notice=" + url.QueryEscape(notice)
 }
 
 func teamConfigFromRequest(r *http.Request) (teams.Config, error) {

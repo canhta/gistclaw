@@ -1329,6 +1329,10 @@ func TestTeam(t *testing.T) {
 		for _, want := range []string{
 			"Team",
 			"Repo Task Team",
+			"Active Profile",
+			"Create Profile",
+			"Clone Profile",
+			"Delete Profile",
 			"assistant",
 			"patcher",
 			"reviewer",
@@ -1340,6 +1344,11 @@ func TestTeam(t *testing.T) {
 			`name="agent_0_id"`,
 			`name="agent_0_soul_file"`,
 			`type="checkbox"`,
+			`name="active_profile"`,
+			`name="create_profile_name"`,
+			`name="clone_source_profile"`,
+			`name="clone_profile_name"`,
+			`name="delete_profile_name"`,
 			`<option value="read_heavy"`,
 			`value="reviewer" checked`,
 			`Add Member`,
@@ -1350,10 +1359,14 @@ func TestTeam(t *testing.T) {
 			`class="team-file-tools"`,
 			`class="team-primary-actions"`,
 			`class="team-utility-bar"`,
+			`data-confirm="Switch the active team profile?"`,
+			`data-confirm="Create this team profile from the shipped default?"`,
+			`data-confirm="Clone the selected profile into a new team profile?"`,
+			`data-confirm="Delete this inactive team profile?"`,
 			`data-confirm="Add a new team member to the editor?"`,
 			`data-confirm="Import this team file into the editor? Unsaved changes in the current editor will be replaced."`,
 			`data-confirm="Remove assistant from this team? This stays in the editor until you save."`,
-			`data-confirm="Save this team to the workspace-owned runtime copy?"`,
+			`data-confirm="Save this team to the active workspace profile?"`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
@@ -1366,6 +1379,157 @@ func TestTeam(t *testing.T) {
 			if strings.Contains(body, unwanted) {
 				t.Fatalf("expected team page to avoid free-text relationship fields %q:\n%s", unwanted, body)
 			}
+		}
+	})
+
+	t.Run("profile selection switches the editor to the selected profile", func(t *testing.T) {
+		h := newServerHarness(t)
+		cookie := hostAdminSessionCookie(t, h, "/configure/team")
+
+		if err := teams.CreateProfile(h.workspaceRoot, "review"); err != nil {
+			t.Fatalf("CreateProfile: %v", err)
+		}
+		reviewDir := teams.ProfileDir(h.workspaceRoot, "review")
+		cfg, err := teams.LoadConfig(reviewDir)
+		if err != nil {
+			t.Fatalf("LoadConfig review: %v", err)
+		}
+		cfg.Name = "Review Team"
+		if err := teams.WriteConfig(reviewDir, cfg); err != nil {
+			t.Fatalf("WriteConfig review: %v", err)
+		}
+
+		form := url.Values{
+			"intent":         {"select_profile"},
+			"active_profile": {"review"},
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://example.com")
+		req.Host = "example.com"
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		profile, err := h.rt.ActiveTeamProfile(context.Background())
+		if err != nil {
+			t.Fatalf("ActiveTeamProfile: %v", err)
+		}
+		if profile != "review" {
+			t.Fatalf("expected active profile %q, got %q", "review", profile)
+		}
+
+		rr = httptest.NewRecorder()
+		req = httptest.NewRequest(http.MethodGet, "/configure/team", nil)
+		h.server.ServeHTTP(rr, req)
+		if !strings.Contains(rr.Body.String(), "Review Team") {
+			t.Fatalf("expected team page to load selected review profile:\n%s", rr.Body.String())
+		}
+	})
+
+	t.Run("profile create seeds a new profile and selects it", func(t *testing.T) {
+		h := newServerHarness(t)
+		cookie := hostAdminSessionCookie(t, h, "/configure/team")
+
+		form := url.Values{
+			"intent":              {"create_profile"},
+			"create_profile_name": {"review"},
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://example.com")
+		req.Host = "example.com"
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if _, err := os.Stat(filepath.Join(teams.ProfileDir(h.workspaceRoot, "review"), "team.yaml")); err != nil {
+			t.Fatalf("expected new profile team.yaml: %v", err)
+		}
+		profile, err := h.rt.ActiveTeamProfile(context.Background())
+		if err != nil {
+			t.Fatalf("ActiveTeamProfile: %v", err)
+		}
+		if profile != "review" {
+			t.Fatalf("expected active profile %q, got %q", "review", profile)
+		}
+	})
+
+	t.Run("profile clone copies the source profile and selects the clone", func(t *testing.T) {
+		h := newServerHarness(t)
+		cookie := hostAdminSessionCookie(t, h, "/configure/team")
+
+		form := url.Values{
+			"intent":               {"clone_profile"},
+			"clone_source_profile": {"default"},
+			"clone_profile_name":   {"review"},
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://example.com")
+		req.Host = "example.com"
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		cloned, err := teams.LoadConfig(teams.ProfileDir(h.workspaceRoot, "review"))
+		if err != nil {
+			t.Fatalf("LoadConfig cloned profile: %v", err)
+		}
+		if cloned.Name != "Repo Task Team" {
+			t.Fatalf("expected cloned team name %q, got %q", "Repo Task Team", cloned.Name)
+		}
+		profile, err := h.rt.ActiveTeamProfile(context.Background())
+		if err != nil {
+			t.Fatalf("ActiveTeamProfile: %v", err)
+		}
+		if profile != "review" {
+			t.Fatalf("expected active profile %q, got %q", "review", profile)
+		}
+	})
+
+	t.Run("profile delete removes an inactive profile", func(t *testing.T) {
+		h := newServerHarness(t)
+		cookie := hostAdminSessionCookie(t, h, "/configure/team")
+
+		if err := teams.CreateProfile(h.workspaceRoot, "review"); err != nil {
+			t.Fatalf("CreateProfile: %v", err)
+		}
+
+		form := url.Values{
+			"intent":              {"delete_profile"},
+			"delete_profile_name": {"review"},
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Origin", "http://example.com")
+		req.Host = "example.com"
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		if _, err := os.Stat(teams.ProfileDir(h.workspaceRoot, "review")); !os.IsNotExist(err) {
+			t.Fatalf("expected deleted profile dir to be removed, err=%v", err)
 		}
 	})
 

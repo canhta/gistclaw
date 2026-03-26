@@ -93,14 +93,17 @@ func CloneProfile(workspaceRoot, srcProfile, dstProfile string) error {
 	if err != nil {
 		return err
 	}
+	return CloneProfileFromDir(workspaceRoot, ProfileDir(workspaceRoot, srcName), dstProfile)
+}
+
+func CloneProfileFromDir(workspaceRoot, srcDir, dstProfile string) error {
 	dstName, err := NormalizeProfileName(dstProfile)
 	if err != nil {
 		return err
 	}
 
-	srcDir := ProfileDir(workspaceRoot, srcName)
 	if _, err := os.Stat(filepath.Join(srcDir, "team.yaml")); err != nil {
-		return fmt.Errorf("team: source profile %q not found", srcName)
+		return fmt.Errorf("team: source profile not found")
 	}
 
 	dstDir := ProfileDir(workspaceRoot, dstName)
@@ -111,7 +114,7 @@ func CloneProfile(workspaceRoot, srcProfile, dstProfile string) error {
 	}
 
 	if err := copyFS(os.DirFS(srcDir), dstDir); err != nil {
-		return fmt.Errorf("team: clone profile %q to %q: %w", srcName, dstName, err)
+		return fmt.Errorf("team: clone profile into %q: %w", dstName, err)
 	}
 	return nil
 }

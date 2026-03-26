@@ -2,7 +2,7 @@
 <section class="page-header">
   <span class="page-eyebrow">Configure</span>
   <h1>Team</h1>
-  <p class="page-lede">Configure the default agent team for future runs. Each card shows the live default role, tool posture, and collaboration edges for that agent.</p>
+  <p class="page-lede">Configure the active agent team profile for future runs. Select the profile first, then edit the agents, roles, and collaboration edges bound to that profile.</p>
 </section>
 {{if .Error}}
   <section class="error">{{.Error}}</section>
@@ -10,6 +10,72 @@
 {{if .Notice}}
   <section class="panel notice-panel">{{.Notice}}</section>
 {{end}}
+<section class="panel team-summary">
+  <div class="team-summary-head">
+    <div class="team-summary-intro">
+      <span class="panel-kicker">Profile control</span>
+      <span class="field-label">Active Profile</span>
+      <p class="muted">Choose which team profile shapes future runs before editing the agent cards below. Creating or cloning a profile selects it immediately.</p>
+    </div>
+  </div>
+  <div class="team-summary-grid">
+    <form class="page-stack" method="POST" action="/configure/team">
+      <input type="hidden" name="intent" value="select_profile">
+      <div class="field">
+        <label for="active_profile">Active Profile</label>
+        <select id="active_profile" name="active_profile">
+          {{range .ProfileOptions}}
+            <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+          {{end}}
+        </select>
+      </div>
+      <button class="btn btn-secondary" type="submit" data-confirm="Switch the active team profile?">Use Profile</button>
+    </form>
+
+    <form class="page-stack" method="POST" action="/configure/team">
+      <input type="hidden" name="intent" value="create_profile">
+      <div class="field">
+        <label for="create_profile_name">Create Profile</label>
+        <input id="create_profile_name" name="create_profile_name" type="text" placeholder="review">
+      </div>
+      <button class="btn btn-secondary" type="submit" data-confirm="Create this team profile from the shipped default?">Create Profile</button>
+    </form>
+
+    <form class="page-stack" method="POST" action="/configure/team">
+      <input type="hidden" name="intent" value="clone_profile">
+      <div class="field">
+        <label for="clone_source_profile">Clone Profile</label>
+        <select id="clone_source_profile" name="clone_source_profile">
+          {{range .CloneSourceOptions}}
+            <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+          {{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label for="clone_profile_name">Clone Name</label>
+        <input id="clone_profile_name" name="clone_profile_name" type="text" placeholder="review-copy">
+      </div>
+      <button class="btn btn-secondary" type="submit" data-confirm="Clone the selected profile into a new team profile?">Clone Profile</button>
+    </form>
+
+    <form class="page-stack" method="POST" action="/configure/team">
+      <input type="hidden" name="intent" value="delete_profile">
+      <div class="field">
+        <label for="delete_profile_name">Delete Profile</label>
+        <select id="delete_profile_name" name="delete_profile_name">
+          {{if .DeleteProfileOptions}}
+            {{range .DeleteProfileOptions}}
+              <option value="{{.Value}}">{{.Label}}</option>
+            {{end}}
+          {{else}}
+            <option value="">No inactive profiles</option>
+          {{end}}
+        </select>
+      </div>
+      <button class="btn btn-danger" type="submit"{{if not .DeleteProfileOptions}} disabled{{end}} data-confirm="Delete this inactive team profile?">Delete Profile</button>
+    </form>
+  </div>
+</section>
 <form class="page-stack team-workbench" method="POST" action="/configure/team" enctype="multipart/form-data">
   <input type="hidden" name="agent_count" value="{{len .Agents}}">
   <section class="panel team-summary">
@@ -47,11 +113,11 @@
     <div class="team-utility-bar">
       <div class="team-utility-copy">
         <span class="field-label">Workspace Runtime Copy</span>
-        <p class="muted">Saving writes the editable team for this workspace into <code>.gistclaw/teams/default</code>. Historical runs keep their own bound execution snapshot.</p>
+        <p class="muted">Saving writes the editable team for this workspace into <code>{{.ProfileSavePath}}</code>. Historical runs keep their own bound execution snapshot.</p>
       </div>
       <div class="team-primary-actions">
         <button class="btn btn-secondary" type="submit" name="intent" value="add_member" data-confirm="Add a new team member to the editor?">Add Member</button>
-        <button class="btn btn-primary" type="submit" name="intent" value="save" data-confirm="Save this team to the workspace-owned runtime copy?">Save Team</button>
+        <button class="btn btn-primary" type="submit" name="intent" value="save" data-confirm="Save this team to the active workspace profile?">Save Team</button>
       </div>
     </div>
   </section>

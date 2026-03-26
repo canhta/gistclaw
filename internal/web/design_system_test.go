@@ -189,10 +189,14 @@ func TestCriticalTemplatesDefineConfirmationMessages(t *testing.T) {
 			`data-confirm="Update the Telegram bot token?"`,
 		},
 		"team.html": {
+			`data-confirm="Switch the active team profile?"`,
+			`data-confirm="Create this team profile from the shipped default?"`,
+			`data-confirm="Clone the selected profile into a new team profile?"`,
+			`data-confirm="Delete this inactive team profile?"`,
 			`data-confirm="Add a new team member to the editor?"`,
 			`data-confirm="Import this team file into the editor? Unsaved changes in the current editor will be replaced."`,
 			`data-confirm="Remove {{.ID}} from this team? This stays in the editor until you save."`,
-			`data-confirm="Save this team to the workspace-owned runtime copy?"`,
+			`data-confirm="Save this team to the active workspace profile?"`,
 		},
 	}
 
