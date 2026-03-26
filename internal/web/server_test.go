@@ -357,7 +357,51 @@ func TestRuns(t *testing.T) {
 		}
 	})
 
-	t.Run("graph endpoint renders lineage snapshot with statuses", func(t *testing.T) {
+	t.Run("detail renders top-down topology map script", func(t *testing.T) {
+		h := newServerHarness(t)
+		h.insertRunAt(t, "run-topology-root", "conv-topology", "Coordinate the launch", "active", "2026-03-25 08:00:00")
+		if _, err := h.db.RawDB().Exec(
+			`INSERT INTO runs
+			 (id, conversation_id, agent_id, session_id, team_id, parent_run_id, objective, workspace_root, status, created_at, updated_at)
+			 VALUES
+			 ('run-topology-review', 'conv-topology', 'reviewer', 'sess-topology-review', 'repo-task-team', 'run-topology-root', 'Review the landing page', ?, 'completed', '2026-03-25 08:05:00', '2026-03-25 08:06:00')`,
+			h.workspaceRoot,
+		); err != nil {
+			t.Fatalf("insert reviewer run: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-topology-root", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		body := rr.Body.String()
+		for _, want := range []string{
+			`rankDir: "TB"`,
+			`selector: "edge[kind = 'delegates']"`,
+			`selector: "edge[kind = 'reports']"`,
+			`selector: "edge[kind = 'blocked']"`,
+			`"curve-style": "taxi"`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected body to contain %q:\n%s", want, body)
+			}
+		}
+		for _, unwanted := range []string{
+			`rankDir: "LR"`,
+			`"curve-style": "bezier"`,
+		} {
+			if strings.Contains(body, unwanted) {
+				t.Fatalf("expected body to drop %q:\n%s", unwanted, body)
+			}
+		}
+	})
+
+	t.Run("graph endpoint renders topology snapshot with semantic edges", func(t *testing.T) {
 		h := newServerHarness(t)
 		h.insertRunAt(t, "082b1c314823744cc779ece2f90e80e7", "conv-graph", "review the repo", "active", "2026-03-25 08:00:00")
 		if _, err := h.db.RawDB().Exec(
@@ -400,14 +444,24 @@ func TestRuns(t *testing.T) {
 				NeedsApproval int `json:"needs_approval"`
 			} `json:"summary"`
 			Edges []struct {
-				From string `json:"from"`
-				To   string `json:"to"`
+				From  string `json:"from"`
+				To    string `json:"to"`
+				Kind  string `json:"kind"`
+				Label string `json:"label"`
 			} `json:"edges"`
+			Lanes []struct {
+				ID       string `json:"id"`
+				Branches []struct {
+					RootNodeID string `json:"root_node_id"`
+				} `json:"branches"`
+			} `json:"lanes"`
 			Columns []struct {
 				Depth int `json:"depth"`
 				Nodes []struct {
 					ID             string `json:"id"`
 					ShortID        string `json:"short_id"`
+					Kind           string `json:"kind"`
+					LaneID         string `json:"lane_id"`
 					Status         string `json:"status"`
 					StatusClass    string `json:"status_class"`
 					StatusLabel    string `json:"status_label"`
@@ -427,14 +481,23 @@ func TestRuns(t *testing.T) {
 		if len(resp.Columns) != 2 {
 			t.Fatalf("expected 2 graph columns, got %d", len(resp.Columns))
 		}
+		if len(resp.Lanes) != 2 || resp.Lanes[0].ID != "coordination" || resp.Lanes[1].ID != "research" {
+			t.Fatalf("expected coordination and research lanes, got %+v", resp.Lanes)
+		}
 		if resp.Columns[0].Nodes[0].ID != "082b1c314823744cc779ece2f90e80e7" || resp.Columns[1].Nodes[0].ID != "4ed077c29497f4c95a19125b86096953" {
 			t.Fatalf("unexpected graph nodes: %+v", resp.Columns)
 		}
 		if len(resp.Edges) != 1 || resp.Edges[0].From != "082b1c314823744cc779ece2f90e80e7" || resp.Edges[0].To != "4ed077c29497f4c95a19125b86096953" {
 			t.Fatalf("unexpected graph edges: %+v", resp.Edges)
 		}
+		if resp.Edges[0].Kind != "blocked" || resp.Edges[0].Label != "waiting approval" {
+			t.Fatalf("expected semantic blocked edge, got %+v", resp.Edges[0])
+		}
 		if resp.Columns[1].Nodes[0].StatusClass != "is-approval" {
 			t.Fatalf("expected approval status class for worker node, got %+v", resp.Columns[1].Nodes[0])
+		}
+		if resp.Columns[1].Nodes[0].Kind != "worker" || resp.Columns[1].Nodes[0].LaneID != "research" {
+			t.Fatalf("expected worker node metadata, got %+v", resp.Columns[1].Nodes[0])
 		}
 		if resp.Columns[0].Nodes[0].ShortID != "082b1c31…80e7" {
 			t.Fatalf("expected short root id, got %+v", resp.Columns[0].Nodes[0])

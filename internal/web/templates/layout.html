@@ -1298,6 +1298,31 @@
       display: grid;
       gap: 12px;
     }
+    .graph-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: center;
+    }
+    .graph-legend-item {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+      color: var(--text-2);
+      font-size: 12px;
+    }
+    .graph-legend-rail {
+      display: inline-flex;
+      width: 22px;
+      border-top: 2px solid var(--border-hard);
+    }
+    .graph-legend-item.is-muted .graph-legend-rail {
+      border-top-style: dashed;
+      border-top-color: var(--muted-state);
+    }
+    .graph-legend-item.is-approval .graph-legend-rail {
+      border-top-color: var(--approval);
+    }
     .graph-diagram {
       height: clamp(280px, 36vh, 420px);
       border: 1.5px solid var(--border-hard);

@@ -178,6 +178,14 @@
       <section class="graph-stage-panel">
         <div class="panel-kicker">Topology map</div>
         <p class="panel-note">Use the diagram for delegation shape after the branch directory tells you which path needs attention next.</p>
+        <div class="graph-legend">
+          {{range .Graph.Legend}}
+            <div class="graph-legend-item {{.StatusClass}}" data-edge-kind="{{.Kind}}">
+              <span class="graph-legend-rail"></span>
+              <span>{{.Label}}</span>
+            </div>
+          {{end}}
+        </div>
         <div id="run-graph-diagram" class="graph-diagram" aria-label="Run collaboration diagram"></div>
       </section>
     </div>
@@ -939,22 +947,27 @@
   }
 
   function graphLabel(node) {
-    const headline = node.agent_id || node.short_id || node.id || "Untitled run";
-    const details = [];
-    if (node.short_id) {
-      details.push(`run ${node.short_id}`);
+    const headline = node.agent_id || node.short_label || node.id || "Untitled run";
+    const facts = [];
+    if (node.short_label) {
+      facts.push(node.short_label);
     }
     if (node.status_label) {
-      details.push(node.status_label);
+      facts.push(node.status_label);
     } else if (node.status) {
-      details.push(node.status);
+      facts.push(node.status);
     }
-    const objective = node.objective_preview || node.objective || "";
-    const summary = objective.length > 52 ? `${objective.slice(0, 49)}...` : objective;
-    if (summary) {
-      return `${headline}\n${details.join(" · ")}\n${summary}`;
+    const meta = [];
+    if (node.model_display) {
+      meta.push(node.model_display);
     }
-    return `${headline}\n${details.join(" · ")}`;
+    if (node.time_label) {
+      meta.push(node.time_label);
+    }
+    if (meta.length > 0) {
+      facts.push(meta.join(" · "));
+    }
+    return `${headline}\n${facts.join("\n")}`;
   }
 
   function graphPalette() {
@@ -980,8 +993,8 @@
         selector: "node",
         style: {
           "shape": "rectangle",
-          "width": 190,
-          "height": 96,
+          "width": 176,
+          "height": 84,
           "background-color": palette.surface,
           "border-color": palette.borderHard,
           "border-width": 2,
@@ -991,7 +1004,7 @@
           "font-weight": 500,
           "label": "data(label)",
           "text-wrap": "wrap",
-          "text-max-width": 150,
+          "text-max-width": 136,
           "text-valign": "center",
           "text-halign": "center"
         }
@@ -1005,43 +1018,37 @@
       {
         selector: "node.is-pending",
         style: {
-          "border-color": palette.pending,
-          "color": palette.pending
+          "border-color": palette.pending
         }
       },
       {
         selector: "node.is-active",
         style: {
-          "border-color": palette.active,
-          "color": palette.active
+          "border-color": palette.active
         }
       },
       {
         selector: "node.is-approval",
         style: {
-          "border-color": palette.approval,
-          "color": palette.approval
+          "border-color": palette.approval
         }
       },
       {
         selector: "node.is-success",
         style: {
-          "border-color": palette.success,
-          "color": palette.success
+          "border-color": palette.success
         }
       },
       {
         selector: "node.is-error",
         style: {
-          "border-color": palette.error,
-          "color": palette.error
+          "border-color": palette.error
         }
       },
       {
         selector: "node.is-muted",
         style: {
-          "border-color": palette.muted,
-          "color": palette.muted
+          "border-color": palette.muted
         }
       },
       {
@@ -1051,7 +1058,36 @@
           "line-color": palette.borderSoft,
           "target-arrow-color": palette.borderHard,
           "target-arrow-shape": "triangle",
-          "curve-style": "bezier"
+          "curve-style": "taxi",
+          "taxi-direction": "downward",
+          "taxi-turn": 24
+        }
+      },
+      {
+        selector: "edge[kind = 'delegates']",
+        style: {
+          "line-color": palette.borderHard,
+          "target-arrow-color": palette.borderHard,
+          "line-style": "solid",
+          "curve-style": "taxi"
+        }
+      },
+      {
+        selector: "edge[kind = 'reports']",
+        style: {
+          "line-color": palette.muted,
+          "target-arrow-color": palette.muted,
+          "line-style": "dashed",
+          "curve-style": "taxi"
+        }
+      },
+      {
+        selector: "edge[kind = 'blocked']",
+        style: {
+          "line-color": palette.approval,
+          "target-arrow-color": palette.approval,
+          "line-style": "solid",
+          "curve-style": "taxi"
         }
       }
     ];
@@ -1087,6 +1123,8 @@
         data: {
           id: node.id,
           label: graphLabel(node),
+          kind: node.kind || "",
+          lane_id: node.lane_id || "",
         },
         classes: [node.status_class, node.is_root ? "is-root" : ""].filter(Boolean).join(" "),
       });
@@ -1094,10 +1132,13 @@
     for (const edge of snapshot.edges || []) {
       elements.push({
         data: {
-          id: `${edge.from}->${edge.to}`,
+          id: edge.id || `${edge.from}->${edge.to}`,
           source: edge.from,
           target: edge.to,
+          kind: edge.kind || "",
+          label: edge.label || "",
         },
+        classes: [edge.status_class || ""].filter(Boolean).join(" "),
       });
     }
 
@@ -1107,10 +1148,10 @@
       style: graphStyles(),
       layout: {
         name: "dagre",
-        rankDir: "LR",
-        nodeSep: 40,
+        rankDir: "TB",
+        nodeSep: 36,
         edgeSep: 18,
-        rankSep: 84,
+        rankSep: 92,
         fit: true,
         padding: 20,
         animate: false,
