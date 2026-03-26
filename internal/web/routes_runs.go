@@ -544,6 +544,10 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	objectiveText, modelDisplay, tokenSummary := runDetailRootSummary(graphView)
 	triggerLabel := runDetailTriggerLabel(graphView)
+	lastEventCursor := ""
+	if len(replayRun.Events) > 0 {
+		lastEventCursor = encodeRunEventCursor(replayRun.Events[len(replayRun.Events)-1])
+	}
 
 	s.renderTemplate(w, r, "Run Detail", "run_detail_body", runDetailPageData{
 		RunID:                 replayRun.RunID,
@@ -560,7 +564,7 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		TokenSummary:          tokenSummary,
 		EventCount:            len(events),
 		TurnCount:             len(turns),
-		StreamURL:             runEventsPath(replayRun.RunID),
+		StreamURL:             runEventsPathAfter(replayRun.RunID, lastEventCursor),
 		GraphURL:              runGraphPath(replayRun.RunID),
 		NodeDetailURLTemplate: runNodeDetailTemplatePath(replayRun.RunID),
 		Turns:                 turns,
@@ -732,7 +736,7 @@ func loadRunEventsForNode(ctx context.Context, db *sql.DB, runID string) ([]mode
 		        created_at
 		   FROM events
 		  WHERE run_id = ?
-		  ORDER BY created_at ASC, rowid ASC`,
+		  ORDER BY created_at ASC, id ASC`,
 		runID,
 	)
 	if err != nil {
@@ -1853,15 +1857,34 @@ func (s *Server) handleRunEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
+	sub := s.broadcaster.Subscribe(runID)
+	defer s.broadcaster.Unsubscribe(runID, sub)
+
 	history, err := loadRunEventsForNode(r.Context(), s.db.RawDB(), runID)
 	if err != nil {
 		http.Error(w, "failed to load run events", http.StatusInternalServerError)
 		return
 	}
-	logState := newLiveToolLogState(history)
+	baseHistory := history
+	backfill := []model.Event(nil)
+	if after, ok := parseRunEventCursor(r.URL.Query().Get("after")); ok {
+		baseHistory, backfill = splitRunEventHistory(history, after)
+	}
+	logState := newLiveToolLogState(baseHistory)
+	seen := make(map[string]struct{}, len(backfill))
 
-	sub := s.broadcaster.Subscribe(runID)
-	defer s.broadcaster.Unsubscribe(runID, sub)
+	for _, evt := range backfill {
+		delta := replayDeltaFromEvent(evt)
+		if delta.Kind == "tool_log_recorded" {
+			delta = enrichToolLogReplayDelta(logState, delta)
+		}
+		if err := writeReplayDelta(w, flusher, delta); err != nil {
+			return
+		}
+		if delta.EventID != "" {
+			seen[delta.EventID] = struct{}{}
+		}
+	}
 
 	flusher.Flush()
 
@@ -1870,23 +1893,18 @@ func (s *Server) handleRunEvents(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case evt := <-sub:
+			if evt.EventID != "" {
+				if _, ok := seen[evt.EventID]; ok {
+					continue
+				}
+				seen[evt.EventID] = struct{}{}
+			}
 			if evt.Kind == "tool_log_recorded" {
 				evt = enrichToolLogReplayDelta(logState, evt)
 			}
-			payload, err := marshalReplayDelta(evt)
-			if err != nil {
-				continue
-			}
-			if _, err := w.Write([]byte("data: ")); err != nil {
+			if err := writeReplayDelta(w, flusher, evt); err != nil {
 				return
 			}
-			if _, err := w.Write(payload); err != nil {
-				return
-			}
-			if _, err := w.Write([]byte("\n\n")); err != nil {
-				return
-			}
-			flusher.Flush()
 		}
 	}
 }
@@ -1907,6 +1925,7 @@ func enrichToolLogReplayDelta(state *liveToolLogState, evt model.ReplayDelta) mo
 
 func marshalReplayDelta(evt model.ReplayDelta) ([]byte, error) {
 	type replayDeltaEnvelope struct {
+		EventID    string          `json:"event_id,omitempty"`
 		RunID      string          `json:"run_id"`
 		Kind       string          `json:"kind"`
 		Payload    json.RawMessage `json:"payload,omitempty"`
@@ -1914,6 +1933,7 @@ func marshalReplayDelta(evt model.ReplayDelta) ([]byte, error) {
 	}
 
 	envelope := replayDeltaEnvelope{
+		EventID:    evt.EventID,
 		RunID:      evt.RunID,
 		Kind:       evt.Kind,
 		OccurredAt: evt.OccurredAt,
@@ -1922,6 +1942,94 @@ func marshalReplayDelta(evt model.ReplayDelta) ([]byte, error) {
 		envelope.Payload = json.RawMessage(evt.PayloadJSON)
 	}
 	return json.Marshal(envelope)
+}
+
+type runEventCursor struct {
+	CreatedAt time.Time
+	EventID   string
+}
+
+func encodeRunEventCursor(evt model.Event) string {
+	if evt.ID == "" || evt.CreatedAt.IsZero() {
+		return ""
+	}
+	return evt.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + evt.ID
+}
+
+func parseRunEventCursor(raw string) (runEventCursor, bool) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return runEventCursor{}, false
+	}
+	parts := strings.SplitN(value, "|", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return runEventCursor{}, false
+	}
+	createdAt, err := time.Parse(time.RFC3339Nano, parts[0])
+	if err != nil {
+		return runEventCursor{}, false
+	}
+	return runEventCursor{
+		CreatedAt: createdAt.UTC(),
+		EventID:   parts[1],
+	}, true
+}
+
+func splitRunEventHistory(events []model.Event, after runEventCursor) ([]model.Event, []model.Event) {
+	if len(events) == 0 {
+		return nil, nil
+	}
+	base := make([]model.Event, 0, len(events))
+	backfill := make([]model.Event, 0, len(events))
+	for _, evt := range events {
+		if compareRunEventCursor(evt, after) <= 0 {
+			base = append(base, evt)
+			continue
+		}
+		backfill = append(backfill, evt)
+	}
+	return base, backfill
+}
+
+func compareRunEventCursor(evt model.Event, cursor runEventCursor) int {
+	evtTime := evt.CreatedAt.UTC()
+	cursorTime := cursor.CreatedAt.UTC()
+	switch {
+	case evtTime.Before(cursorTime):
+		return -1
+	case evtTime.After(cursorTime):
+		return 1
+	default:
+		return strings.Compare(evt.ID, cursor.EventID)
+	}
+}
+
+func replayDeltaFromEvent(evt model.Event) model.ReplayDelta {
+	return model.ReplayDelta{
+		EventID:     evt.ID,
+		RunID:       evt.RunID,
+		Kind:        evt.Kind,
+		PayloadJSON: evt.PayloadJSON,
+		OccurredAt:  evt.CreatedAt,
+	}
+}
+
+func writeReplayDelta(w http.ResponseWriter, flusher http.Flusher, evt model.ReplayDelta) error {
+	payload, err := marshalReplayDelta(evt)
+	if err != nil {
+		return nil
+	}
+	if _, err := w.Write([]byte("data: ")); err != nil {
+		return err
+	}
+	if _, err := w.Write(payload); err != nil {
+		return err
+	}
+	if _, err := w.Write([]byte("\n\n")); err != nil {
+		return err
+	}
+	flusher.Flush()
+	return nil
 }
 
 func runGraphHeadline(summary runGraphSummaryView) string {

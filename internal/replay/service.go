@@ -75,7 +75,7 @@ func (s *Service) LoadRun(ctx context.Context, runID string) (RunReplay, error) 
 		 COALESCE(payload_json, x''), created_at
 		 FROM events
 		 WHERE run_id = ?
-		 ORDER BY created_at ASC`,
+		 ORDER BY created_at ASC, id ASC`,
 		runID,
 	)
 	if err != nil {

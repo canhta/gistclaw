@@ -63,6 +63,7 @@ func (s toolInvocationLogSink) Record(ctx context.Context, record tools.ToolLogR
 	}
 	if s.eventSink != nil {
 		_ = s.eventSink.Emit(ctx, s.runID, model.ReplayDelta{
+			EventID:     evt.ID,
 			RunID:       s.runID,
 			Kind:        "tool_log_recorded",
 			PayloadJSON: payload,
@@ -303,16 +304,17 @@ func (r *Runtime) createRunAt(ctx context.Context, runID, parentRunID string, cm
 		return fmt.Errorf("journal run_started: %w", err)
 	}
 
-	if err := r.finishRunStart(ctx, runID, parentRunID, cmd, now); err != nil {
+	if err := r.finishRunStart(ctx, runID, parentRunID, cmd, now, event.ID); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (r *Runtime) finishRunStart(ctx context.Context, runID, parentRunID string, cmd StartRun, now time.Time) error {
+func (r *Runtime) finishRunStart(ctx context.Context, runID, parentRunID string, cmd StartRun, now time.Time, eventID string) error {
 	if r.eventSink != nil {
 		_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
+			EventID:    eventID,
 			RunID:      runID,
 			Kind:       "run_started",
 			OccurredAt: now,
@@ -633,21 +635,19 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			return model.Run{}, fmt.Errorf("marshal turn payload: %w", err)
 		}
 
-		if err := r.convStore.AppendEvent(ctx, model.Event{
+		completedAt := time.Now().UTC()
+		turnEvent := model.Event{
 			ID:             generateID(),
 			ConversationID: conversationID,
 			RunID:          runID,
 			Kind:           "turn_completed",
 			PayloadJSON:    payload,
-		}); err != nil {
+			CreatedAt:      completedAt,
+		}
+		if err := r.convStore.AppendEvent(ctx, turnEvent); err != nil {
 			return model.Run{}, fmt.Errorf("journal turn_completed: %w", err)
 		}
-		runCtxEvents = append(runCtxEvents, model.Event{
-			ConversationID: conversationID,
-			RunID:          runID,
-			Kind:           "turn_completed",
-			PayloadJSON:    payload,
-		})
+		runCtxEvents = append(runCtxEvents, turnEvent)
 		if sessionID != "" && result.Content != "" && (result.StopReason == "end_turn" || result.StopReason == "") {
 			messageID, err := r.appendSessionMessage(
 				ctx,
@@ -672,10 +672,11 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 
 		if r.eventSink != nil {
 			_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
+				EventID:     turnEvent.ID,
 				RunID:       runID,
 				Kind:        "turn_completed",
 				PayloadJSON: payload,
-				OccurredAt:  time.Now().UTC(),
+				OccurredAt:  completedAt,
 			})
 		}
 
@@ -722,21 +723,25 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 	if err != nil {
 		return model.Run{}, fmt.Errorf("marshal run_completed payload: %w", err)
 	}
-	if err := r.convStore.AppendEvent(ctx, model.Event{
+	completedAt := time.Now().UTC()
+	completedEvent := model.Event{
 		ID:             generateID(),
 		ConversationID: conversationID,
 		RunID:          runID,
 		Kind:           "run_completed",
 		PayloadJSON:    completedPayload,
-	}); err != nil {
+		CreatedAt:      completedAt,
+	}
+	if err := r.convStore.AppendEvent(ctx, completedEvent); err != nil {
 		return model.Run{}, fmt.Errorf("journal run_completed: %w", err)
 	}
 
 	if r.eventSink != nil {
 		_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
+			EventID:    completedEvent.ID,
 			RunID:      runID,
 			Kind:       "run_completed",
-			OccurredAt: time.Now().UTC(),
+			OccurredAt: completedAt,
 		})
 	}
 
@@ -1030,6 +1035,7 @@ func (r *Runtime) appendApprovalRequested(
 	}
 	if r.eventSink != nil {
 		_ = r.eventSink.Emit(ctx, runID, model.ReplayDelta{
+			EventID:     evt.ID,
 			RunID:       runID,
 			Kind:        "approval_requested",
 			PayloadJSON: payload,

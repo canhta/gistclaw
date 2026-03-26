@@ -45,6 +45,7 @@ type Envelope struct {
 }
 
 type ReplayDelta struct {
+	EventID     string
 	RunID       string
 	Kind        string
 	PayloadJSON []byte

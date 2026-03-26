@@ -40,6 +40,16 @@ func runEventsPath(runID string) string {
 	return runDetailPath(runID) + "/events"
 }
 
+func runEventsPathAfter(runID, after string) string {
+	path := runEventsPath(runID)
+	if strings.TrimSpace(after) == "" {
+		return path
+	}
+	values := url.Values{}
+	values.Set("after", after)
+	return path + "?" + values.Encode()
+}
+
 func runNodeDetailPath(runID, nodeRunID string) string {
 	return runDetailPath(runID) + "/nodes/" + url.PathEscape(nodeRunID)
 }

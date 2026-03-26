@@ -297,10 +297,12 @@ func TestRuns(t *testing.T) {
 			`id="run-live-output"`,
 			`id="run-started-at"`,
 			`id="run-last-activity"`,
+			`id="run-model-display"`,
+			`id="run-token-summary"`,
 			`id="run-graph-diagram"`,
 			`id="run-graph-board"`,
 			`data-graph-url="/operate/runs/082b1c314823744cc779ece2f90e80e7/graph"`,
-			`/operate/runs/082b1c314823744cc779ece2f90e80e7/events`,
+			`/operate/runs/082b1c314823744cc779ece2f90e80e7/events?after=2026-03-25T08%3A06%3A00Z%7Cevt-2`,
 			`/operate/runs/082b1c314823744cc779ece2f90e80e7/nodes/`,
 			`window.cytoscape`,
 			`fetch(graphURL`,
@@ -2684,6 +2686,59 @@ func TestSSE(t *testing.T) {
 		t.Fatalf("close first client: %v", err)
 	}
 	waitForSubscribers(t, h.broadcaster, "run-sse", 0)
+
+	t.Run("replays event history after cursor", func(t *testing.T) {
+		h := newServerHarness(t)
+		h.insertRun(t, "run-sse-backfill", "conv-sse-backfill", "watch events", "completed")
+		h.insertEventAt(t, "evt-start", "conv-sse-backfill", "run-sse-backfill", "run_started", "2026-03-25 08:00:00")
+		h.insertEventAtWithPayload(
+			t,
+			"evt-turn",
+			"conv-sse-backfill",
+			"run-sse-backfill",
+			"turn_completed",
+			[]byte(`{"content":"Backfilled answer","input_tokens":10,"output_tokens":5}`),
+			"2026-03-25 08:00:01",
+		)
+		h.insertEventAtWithPayload(
+			t,
+			"evt-complete",
+			"conv-sse-backfill",
+			"run-sse-backfill",
+			"run_completed",
+			[]byte(`{"input_tokens":10,"output_tokens":5}`),
+			"2026-03-25 08:00:02",
+		)
+
+		ts := httptest.NewServer(h.server)
+		defer ts.Close()
+
+		resp, reader := subscribeSSE(t, ts.URL+"/operate/runs/run-sse-backfill/events?after=2026-03-25T08%3A00%3A00Z%7Cevt-start")
+		defer resp.Body.Close()
+
+		first := readSSEEventWithin(t, resp, reader, time.Second)
+		if got := first["kind"]; got != "turn_completed" {
+			t.Fatalf("expected first backfilled event kind turn_completed, got %#v", got)
+		}
+		if got := first["event_id"]; got != "evt-turn" {
+			t.Fatalf("expected first backfilled event id %q, got %#v", "evt-turn", got)
+		}
+		payload, ok := first["payload"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected structured backfilled payload, got %#v", first["payload"])
+		}
+		if got := payload["content"]; got != "Backfilled answer" {
+			t.Fatalf("expected backfilled content %q, got %#v", "Backfilled answer", got)
+		}
+
+		second := readSSEEventWithin(t, resp, reader, time.Second)
+		if got := second["kind"]; got != "run_completed" {
+			t.Fatalf("expected second backfilled event kind run_completed, got %#v", got)
+		}
+		if got := second["event_id"]; got != "evt-complete" {
+			t.Fatalf("expected second backfilled event id %q, got %#v", "evt-complete", got)
+		}
+	})
 }
 
 func TestSSEPayloadsAreStructuredJSON(t *testing.T) {
@@ -5102,6 +5157,51 @@ func readSSEEvent(t *testing.T, reader *bufio.Reader) map[string]any {
 	}
 
 	t.Fatal("did not receive SSE event")
+	return nil
+}
+
+func readSSEEventWithin(t *testing.T, resp *http.Response, reader *bufio.Reader, timeout time.Duration) map[string]any {
+	t.Helper()
+
+	type result struct {
+		event map[string]any
+		err   error
+	}
+
+	ch := make(chan result, 1)
+	go func() {
+		for {
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				ch <- result{err: err}
+				return
+			}
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+
+			payloadLine := strings.TrimPrefix(strings.TrimSpace(line), "data: ")
+			var event map[string]any
+			if err := json.Unmarshal([]byte(payloadLine), &event); err != nil {
+				ch <- result{err: err}
+				return
+			}
+			ch <- result{event: event}
+			return
+		}
+	}()
+
+	select {
+	case res := <-ch:
+		if res.err != nil {
+			t.Fatalf("read sse event: %v", res.err)
+		}
+		return res.event
+	case <-time.After(timeout):
+		_ = resp.Body.Close()
+		t.Fatalf("did not receive SSE event within %s", timeout)
+	}
+
 	return nil
 }
 

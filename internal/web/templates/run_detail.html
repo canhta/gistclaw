@@ -52,11 +52,11 @@
     </article>
     <article class="run-command-cell">
       <span class="run-command-label">Model</span>
-      <span class="run-command-value">{{.ModelDisplay}}</span>
+      <span id="run-model-display" class="run-command-value">{{.ModelDisplay}}</span>
     </article>
     <article class="run-command-cell">
       <span class="run-command-label">Tokens</span>
-      <span class="run-command-value mono">{{.TokenSummary}}</span>
+      <span id="run-token-summary" class="run-command-value mono">{{.TokenSummary}}</span>
     </article>
   </div>
   <p id="run-live-status" class="run-live-note muted">Live updates enabled.</p>
@@ -298,6 +298,8 @@
   const statusLabels = document.querySelectorAll("[data-run-status-label]");
   const startedAt = document.getElementById("run-started-at");
   const lastActivity = document.getElementById("run-last-activity");
+  const modelDisplay = document.getElementById("run-model-display");
+  const tokenSummary = document.getElementById("run-token-summary");
   const eventCountLabel = document.getElementById("run-event-count");
   const turnCountLabel = document.getElementById("run-turn-count");
   const turns = document.getElementById("run-turns");
@@ -1139,6 +1141,35 @@
     return Array.isArray(snapshot && snapshot.nodes) ? snapshot.nodes : [];
   }
 
+  function graphRootNode(snapshot) {
+    const nodes = graphNodes(snapshot);
+    for (const node of nodes) {
+      if (node && node.is_root) {
+        return node;
+      }
+    }
+    return nodes[0] || null;
+  }
+
+  function syncCommandStripSummary(snapshot) {
+    const rootNode = graphRootNode(snapshot);
+    if (!rootNode) {
+      return;
+    }
+    if (modelDisplay && rootNode.model_display) {
+      modelDisplay.textContent = rootNode.model_display;
+    }
+    if (tokenSummary && rootNode.token_summary) {
+      tokenSummary.textContent = rootNode.token_summary;
+    }
+    if (startedAt && startedAt.textContent === "Not recorded yet" && rootNode.started_at_label) {
+      startedAt.textContent = rootNode.started_at_label;
+    }
+    if (lastActivity && rootNode.updated_at_label) {
+      lastActivity.textContent = rootNode.updated_at_label;
+    }
+  }
+
   function graphLabel(node) {
     const headline = node.agent_id || node.short_label || node.id || "Untitled run";
     const facts = [];
@@ -1721,6 +1752,7 @@
       syncStatusLabels(snapshot.summary.root_status);
     }
 
+    syncCommandStripSummary(snapshot);
     graphHeadline.textContent = snapshot.headline || "Graph status is available.";
     renderDiagram(snapshot);
     renderBoard(snapshot);

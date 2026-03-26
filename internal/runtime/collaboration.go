@@ -695,7 +695,7 @@ func (r *Runtime) prepareInboundRun(ctx context.Context, opts inboundRunOptions)
 	if err := r.convStore.AppendEvents(ctx, events); err != nil {
 		return preparedInboundRun{}, err
 	}
-	if err := r.finishRunStart(ctx, runID, "", start, now); err != nil {
+	if err := r.finishRunStart(ctx, runID, "", start, now, runEvent.ID); err != nil {
 		return preparedInboundRun{}, err
 	}
 
