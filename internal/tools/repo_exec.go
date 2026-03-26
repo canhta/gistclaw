@@ -102,9 +102,9 @@ func (r commandRunner) runPiped(ctx context.Context, req commandRequest) (model.
 	stdoutErr := <-stdoutDone
 	stderrErr := <-stderrDone
 	if err == nil {
-		if stdoutErr != nil {
+		if stdoutErr != nil && !isClosedCommandPipe(stdoutErr) {
 			err = stdoutErr
-		} else if stderrErr != nil {
+		} else if stderrErr != nil && !isClosedCommandPipe(stderrErr) {
 			err = stderrErr
 		}
 	}
@@ -281,6 +281,15 @@ func streamTerminalOutput(ctx context.Context, reader io.Reader, buffer *bytes.B
 		}
 		return err
 	}
+}
+
+func isClosedCommandPipe(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, os.ErrClosed) ||
+		errors.Is(err, io.ErrClosedPipe) ||
+		strings.Contains(err.Error(), "file already closed")
 }
 
 type ApplyPatchTool struct {
