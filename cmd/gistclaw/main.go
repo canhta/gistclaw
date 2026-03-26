@@ -19,6 +19,7 @@ Subcommands:
   serve      Start the GistClaw daemon
   run        Submit a task directly
   inspect    Inspect daemon state
+  security   Run deployment security audit
   doctor     Run health checks (config, database, provider, workspace, disk, scheduler)
   backup     Back up the SQLite database to a timestamped .db.bak file
   export     Export runs, receipts, and approvals to a JSON file
@@ -61,6 +62,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runTask(configPath, args[1:], stdout, stderr)
 	case "inspect":
 		return runInspect(configPath, args[1:], stdout, stderr)
+	case "security":
+		return runSecurity(configPath, args[1:], stdout, stderr)
 	case "doctor":
 		return runDoctor(configPath, stdout, stderr)
 	case "backup":

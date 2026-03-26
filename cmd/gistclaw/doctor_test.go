@@ -133,6 +133,25 @@ func TestDoctor_BadConfigFails(t *testing.T) {
 	}
 }
 
+func TestDoctor_BadConfigStopsAfterConfigFailure(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := runDoctor("/nonexistent/config.yaml", &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero exit for missing config file")
+	}
+
+	output := stdout.String()
+	if strings.Contains(output, "provider") {
+		t.Fatalf("expected provider check to be skipped when config load fails, got:\n%s", output)
+	}
+	if strings.Contains(output, "workspace") {
+		t.Fatalf("expected workspace check to be skipped when config load fails, got:\n%s", output)
+	}
+	if strings.Contains(output, "database") {
+		t.Fatalf("expected database check to be skipped when config load fails, got:\n%s", output)
+	}
+}
+
 func TestDoctor_ResearchProviderWithoutAPIKeyFails(t *testing.T) {
 	workspaceRoot := t.TempDir()
 	exec.Command("git", "init", workspaceRoot).Run()

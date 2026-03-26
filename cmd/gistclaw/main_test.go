@@ -41,6 +41,17 @@ func TestRun_UnknownCommand(t *testing.T) {
 	}
 }
 
+func TestRun_SecurityWithoutSubcommandShowsUsage(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"security"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected non-zero exit without security subcommand")
+	}
+	if !strings.Contains(stderr.String(), "Usage: gistclaw security audit") {
+		t.Fatalf("expected security usage in stderr, got:\n%s", stderr.String())
+	}
+}
+
 func TestRun_BackupNoDBFlag(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"backup"}, &stdout, &stderr)
