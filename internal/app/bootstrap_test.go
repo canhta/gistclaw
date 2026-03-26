@@ -367,6 +367,78 @@ func TestEnsureProjectState_UsesConfiguredWorkspaceWhenNoActiveProjectExists(t *
 	}
 }
 
+func TestBootstrap_ConfiguredWorkspaceMarksOnboardingComplete(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	app, err := Bootstrap(Config{
+		DatabasePath:  ":memory:",
+		StateDir:      t.TempDir(),
+		WorkspaceRoot: workspaceRoot,
+		Provider: ProviderConfig{
+			Name:   "anthropic",
+			APIKey: "sk-test",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	t.Cleanup(func() {
+		app.runtime.WaitAsync()
+		if app.toolCloser != nil {
+			_ = app.toolCloser.Close()
+		}
+		_ = app.db.Close()
+	})
+
+	if got := lookupDBSetting(app.db, "workspace_root"); got != workspaceRoot {
+		t.Fatalf("expected configured workspace_root %q, got %q", workspaceRoot, got)
+	}
+	if completed := lookupDBSetting(app.db, "onboarding_completed_at"); completed == "" {
+		t.Fatal("expected configured workspace bootstrap to mark onboarding complete")
+	}
+}
+
+func TestBootstrap_StoredNonStarterProjectMarksOnboardingComplete(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "gistclaw.db")
+	db, err := storeWiring(Config{DatabasePath: dbPath})
+	if err != nil {
+		t.Fatalf("storeWiring: %v", err)
+	}
+
+	workspaceRoot := t.TempDir()
+	if _, err := runtime.ActivateWorkspace(context.Background(), db, workspaceRoot, "seo-test", "operator"); err != nil {
+		t.Fatalf("ActivateWorkspace: %v", err)
+	}
+	if _, err := db.RawDB().Exec("DELETE FROM settings WHERE key = 'onboarding_completed_at'"); err != nil {
+		t.Fatalf("delete onboarding_completed_at: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close seeded db: %v", err)
+	}
+
+	app, err := Bootstrap(Config{
+		DatabasePath: dbPath,
+		StateDir:     t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "anthropic",
+			APIKey: "sk-test",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	t.Cleanup(func() {
+		app.runtime.WaitAsync()
+		if app.toolCloser != nil {
+			_ = app.toolCloser.Close()
+		}
+		_ = app.db.Close()
+	})
+
+	if completed := lookupDBSetting(app.db, "onboarding_completed_at"); completed == "" {
+		t.Fatal("expected non-starter active project bootstrap to mark onboarding complete")
+	}
+}
+
 func TestEnsureProjectState_PrefersStoredActiveProjectOverConfigWorkspace(t *testing.T) {
 	db, err := storeWiring(Config{DatabasePath: ":memory:"})
 	if err != nil {

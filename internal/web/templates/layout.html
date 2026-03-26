@@ -1194,6 +1194,15 @@
       display: grid;
       gap: 8px;
     }
+    .choice-option {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
+    }
+    .choice-card-input {
+      margin: 14px 0 0 0;
+    }
     .choice-card {
       display: grid;
       gap: 4px;
@@ -1203,6 +1212,9 @@
       cursor: pointer;
       background: var(--surface);
       border-radius: 0;
+    }
+    .choice-card-title {
+      color: var(--text-1);
     }
     .choice-card-meta {
       display: block;

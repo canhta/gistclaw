@@ -598,16 +598,7 @@ func (r *Runtime) startInboundRunAsync(ctx context.Context, opts inboundRunOptio
 		return model.Run{}, err
 	}
 
-	execCtx := r.asyncCtx
-	if execCtx == nil {
-		execCtx = context.Background()
-	}
-	r.asyncWG.Add(1)
-	go func(loopOpts runLoopOpts) {
-		defer r.asyncWG.Done()
-		_, _ = r.executeRunLoop(execCtx, loopOpts)
-	}(prepared.loopOpts)
-
+	r.executeRunLoopAsync(prepared.loopOpts)
 	return prepared.run, nil
 }
 

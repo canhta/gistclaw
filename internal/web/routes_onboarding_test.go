@@ -8,6 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/runtime"
 )
 
 // newServerHarnessOnboardingPending returns a harness with an active workspace
@@ -240,6 +244,117 @@ func TestOnboardingStep3_TaskPickDispatchesPreviewRun(t *testing.T) {
 	if !strings.HasPrefix(loc, "/onboarding/step/4/") {
 		t.Fatalf("expected redirect to /onboarding/step/4/{runID}, got %q", loc)
 	}
+}
+
+func TestOnboardingStep3_RendersAccessibleTaskChooser(t *testing.T) {
+	h := newServerHarnessOnboardingPending(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/onboarding/step/3", nil)
+	w := httptest.NewRecorder()
+	h.server.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	body := w.Body.String()
+	for _, want := range []string{
+		"<fieldset",
+		"<legend>Pick one preview task</legend>",
+		`type="radio"`,
+		`for="task-0"`,
+		`id="task-0"`,
+		`checked`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected onboarding task chooser to contain %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestOnboardingStep3_TaskPickRedirectsBeforeProviderCompletes(t *testing.T) {
+	prov := &blockingProvider{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	h := newServerHarnessWithProvider(t, prov)
+
+	form := url.Values{"task": {"Explain the main package structure"}}
+	req := httptest.NewRequest(http.MethodPost, "/onboarding/step/3", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+
+	done := make(chan struct{})
+	go func() {
+		h.server.ServeHTTP(w, req)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		close(prov.release)
+		<-done
+		t.Fatal("expected onboarding preview to redirect before the provider completes")
+	}
+
+	if w.Code != http.StatusSeeOther {
+		close(prov.release)
+		t.Fatalf("expected 303 redirect, got %d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/onboarding/step/4/") {
+		close(prov.release)
+		t.Fatalf("expected redirect to /onboarding/step/4/{runID}, got %q", loc)
+	}
+
+	select {
+	case <-prov.started:
+	case <-time.After(time.Second):
+		close(prov.release)
+		t.Fatal("expected provider work to continue in the background")
+	}
+
+	runID := strings.TrimPrefix(loc, "/onboarding/step/4/")
+	var status string
+	if err := h.db.RawDB().QueryRow("SELECT status FROM runs WHERE id = ?", runID).Scan(&status); err != nil {
+		close(prov.release)
+		t.Fatalf("query run status: %v", err)
+	}
+	if status != "active" {
+		close(prov.release)
+		t.Fatalf("expected background preview run to stay active while provider is blocked, got %q", status)
+	}
+
+	close(prov.release)
+	waitForRunStatus(t, h.db, runID, "completed")
+}
+
+func TestOnboardingStep3_TaskPickRedirectsWhenProviderAuthFails(t *testing.T) {
+	prov := runtime.NewMockProvider(nil, []error{
+		&model.ProviderError{
+			Code:    model.ProviderErrorCode("authentication_error"),
+			Message: "invalid x-api-key",
+		},
+	})
+	h := newServerHarnessWithProvider(t, prov)
+
+	form := url.Values{"task": {"Explain the main package structure"}}
+	req := httptest.NewRequest(http.MethodPost, "/onboarding/step/3", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	w := httptest.NewRecorder()
+	h.server.ServeHTTP(w, req)
+
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 redirect, got %d body=%s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if !strings.HasPrefix(loc, "/onboarding/step/4/") {
+		t.Fatalf("expected redirect to /onboarding/step/4/{runID}, got %q", loc)
+	}
+
+	runID := strings.TrimPrefix(loc, "/onboarding/step/4/")
+	waitForRunStatus(t, h.db, runID, "failed")
 }
 
 // TestOnboardingStep3_NoModelCallsDuringScan verifies that repo scanning does

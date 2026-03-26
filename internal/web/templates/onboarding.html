@@ -72,17 +72,27 @@
   <span class="page-eyebrow">Onboarding</span>
   <h1>Select Task</h1>
 </section>
+{{if .Error}}
+<p class="error">{{.Error}}</p>
+{{end}}
 <section class="panel">
   <form class="stack-md" method="POST" action="/onboarding/step/3">
-    <div class="choice-list">
-    {{range .Candidates}}
-    <label class="choice-card">
-      <input type="radio" name="task" value="{{.Description}}">
-      <strong>{{.Kind}}</strong>: {{.Description}}
-      <span class="muted choice-card-meta">Signal: {{.Signal}}</span>
-    </label>
-    {{end}}
-    </div>
+    <fieldset class="stack-md">
+      <legend>Pick one preview task</legend>
+      <p class="field-help" id="task-choice-help">Start with a preview run so you can inspect the plan before any files change.</p>
+      <div class="choice-list" aria-describedby="task-choice-help">
+      {{range $index, $candidate := .Candidates}}
+      {{$taskID := printf "task-%d" $index}}
+      <div class="choice-option">
+        <input class="choice-card-input" type="radio" id="{{$taskID}}" name="task" value="{{$candidate.Description}}" {{if or (eq $.SelectedTask $candidate.Description) (and (eq $.SelectedTask "") (eq $index 0))}}checked{{end}}>
+        <label class="choice-card" for="{{$taskID}}">
+          <span class="choice-card-title"><strong>{{$candidate.Kind}}</strong>: {{$candidate.Description}}</span>
+          <span class="muted choice-card-meta">Signal: {{$candidate.Signal}}</span>
+        </label>
+      </div>
+      {{end}}
+      </div>
+    </fieldset>
     <div class="button-row">
       <button class="btn btn-primary" type="submit" data-confirm="Start this preview run now?">Run Preview</button>
     </div>

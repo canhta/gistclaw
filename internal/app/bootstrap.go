@@ -66,6 +66,10 @@ func Bootstrap(cfg Config) (*App, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	if err := syncOnboardingState(context.Background(), db, project); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	cfg.WorkspaceRoot = project.WorkspaceRoot
 
 	teamDir, err := prepareTeamDir(cfg)
@@ -350,6 +354,20 @@ func ensureProjectState(ctx context.Context, db *store.DB, cfg Config) (model.Pr
 		return model.Project{}, err
 	}
 	return project, nil
+}
+
+func syncOnboardingState(ctx context.Context, db *store.DB, project model.Project) error {
+	if project.Source == "starter" {
+		return nil
+	}
+	if _, err := db.RawDB().ExecContext(ctx,
+		`INSERT INTO settings (key, value, updated_at)
+		 VALUES ('onboarding_completed_at', datetime('now'), datetime('now'))
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+	); err != nil {
+		return fmt.Errorf("bootstrap: mark onboarding complete: %w", err)
+	}
+	return nil
 }
 
 func createStarterProject(ctx context.Context, db *store.DB) (model.Project, error) {

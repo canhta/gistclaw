@@ -235,7 +235,26 @@ func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
 		return model.Run{}, err
 	}
 
-	return r.executeRunLoop(ctx, runLoopOpts{
+	return r.executeRunLoop(ctx, startRunLoopOpts(runID, cmd))
+}
+
+func (r *Runtime) StartAsync(ctx context.Context, cmd StartRun) (model.Run, error) {
+	runID := generateID()
+	if err := r.createRun(ctx, runID, "", cmd); err != nil {
+		return model.Run{}, err
+	}
+
+	run, err := r.loadRun(ctx, runID)
+	if err != nil {
+		return model.Run{}, err
+	}
+
+	r.executeRunLoopAsync(startRunLoopOpts(runID, cmd))
+	return run, nil
+}
+
+func startRunLoopOpts(runID string, cmd StartRun) runLoopOpts {
+	return runLoopOpts{
 		runID:             runID,
 		conversationID:    cmd.ConversationID,
 		agentID:           cmd.AgentID,
@@ -244,7 +263,19 @@ func (r *Runtime) Start(ctx context.Context, cmd StartRun) (model.Run, error) {
 		workspaceRoot:     cmd.WorkspaceRoot,
 		previewOnly:       cmd.PreviewOnly,
 		verificationAgent: cmd.VerificationAgent,
-	})
+	}
+}
+
+func (r *Runtime) executeRunLoopAsync(loopOpts runLoopOpts) {
+	execCtx := r.asyncCtx
+	if execCtx == nil {
+		execCtx = context.Background()
+	}
+	r.asyncWG.Add(1)
+	go func() {
+		defer r.asyncWG.Done()
+		_, _ = r.executeRunLoop(execCtx, loopOpts)
+	}()
 }
 
 func (r *Runtime) createRun(ctx context.Context, runID, parentRunID string, cmd StartRun) error {

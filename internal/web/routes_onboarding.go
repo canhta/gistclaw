@@ -25,6 +25,12 @@ type onboardingStep1Data struct {
 	ActiveWorkspaceRoot string
 }
 
+type onboardingStep3Data struct {
+	Candidates   []TaskCandidate
+	Error        string
+	SelectedTask string
+}
+
 // scanRepoSignals reads the local filesystem of workspaceRoot and produces
 // a heuristic list of task candidates. It makes no model calls.
 func scanRepoSignals(workspaceRoot string) []TaskCandidate {
@@ -278,11 +284,7 @@ func (s *Server) handleOnboardingStep2(w http.ResponseWriter, r *http.Request) {
 
 // handleOnboardingStep3 renders the balanced trio for task selection.
 func (s *Server) handleOnboardingStep3(w http.ResponseWriter, r *http.Request) {
-	workspaceRoot := lookupSetting(s.db, "workspace_root")
-	candidates := scanRepoSignals(workspaceRoot)
-	s.renderTemplate(w, r, "Select Task", "onboarding_step3_body", map[string]any{
-		"Candidates": candidates,
-	})
+	s.renderOnboardingStep3(w, r, http.StatusOK, "", "")
 }
 
 // handleOnboardingStep3Submit dispatches a preview-only run for the selected task.
@@ -293,12 +295,16 @@ func (s *Server) handleOnboardingStep3Submit(w http.ResponseWriter, r *http.Requ
 	}
 	task := strings.TrimSpace(r.FormValue("task"))
 	if task == "" {
-		http.Error(w, "task is required", http.StatusBadRequest)
+		s.renderOnboardingStep3(w, r, http.StatusUnprocessableEntity, "Choose a preview task before starting the run.", "")
+		return
+	}
+	if s.rt == nil {
+		s.renderOnboardingStep3(w, r, http.StatusServiceUnavailable, "Preview runs are unavailable right now. Check the runtime configuration and try again.", task)
 		return
 	}
 
 	workspaceRoot := lookupSetting(s.db, "workspace_root")
-	run, err := s.rt.Start(r.Context(), runtime.StartRun{
+	run, err := s.rt.StartAsync(r.Context(), runtime.StartRun{
 		ConversationID: "onboarding",
 		AgentID:        "coordinator",
 		Objective:      task,
@@ -307,7 +313,7 @@ func (s *Server) handleOnboardingStep3Submit(w http.ResponseWriter, r *http.Requ
 		PreviewOnly:    true,
 	})
 	if err != nil {
-		http.Error(w, fmt.Sprintf("start run: %v", err), http.StatusInternalServerError)
+		s.renderOnboardingStep3(w, r, http.StatusServiceUnavailable, onboardingPreviewStartError(err), task)
 		return
 	}
 	http.Redirect(w, r, "/onboarding/step/4/"+run.ID, http.StatusSeeOther)
@@ -350,6 +356,29 @@ func (s *Server) renderOnboardingStep1(w http.ResponseWriter, r *http.Request, s
 		ActiveProjectName:   project.Name,
 		ActiveWorkspaceRoot: project.WorkspaceRoot,
 	})
+}
+
+func (s *Server) renderOnboardingStep3(w http.ResponseWriter, r *http.Request, status int, errMsg, selectedTask string) {
+	workspaceRoot := lookupSetting(s.db, "workspace_root")
+	candidates := scanRepoSignals(workspaceRoot)
+	s.renderTemplateStatus(w, r, status, "Select Task", "onboarding_step3_body", onboardingStep3Data{
+		Candidates:   candidates,
+		Error:        errMsg,
+		SelectedTask: selectedTask,
+	})
+}
+
+func onboardingPreviewStartError(err error) string {
+	switch {
+	case err == nil:
+		return ""
+	case err == runtime.ErrDailyCap:
+		return "Preview runs are blocked by the daily cost cap. Raise the cap and try again."
+	case err == runtime.ErrBudgetExhausted:
+		return "Preview runs are blocked by the per-run token budget. Raise the budget and try again."
+	default:
+		return "Unable to start the preview run right now. Check the runtime configuration and try again."
+	}
 }
 
 func onboardingCompleted(db *store.DB) bool {
