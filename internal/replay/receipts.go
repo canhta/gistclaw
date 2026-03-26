@@ -16,7 +16,7 @@ func (s *Service) Build(ctx context.Context, rootRunID string) (model.RunReceipt
 	var receipt model.RunReceipt
 	err := s.db.RawDB().QueryRowContext(ctx,
 		`SELECT id, run_id, input_tokens, output_tokens, cost_usd,
-		 COALESCE(model_lane, ''), COALESCE(verification_status, ''),
+		 COALESCE(model_lane, ''), COALESCE(model_id, ''), COALESCE(verification_status, ''),
 		 COALESCE(approval_count, 0), COALESCE(budget_status, ''), created_at
 		 FROM receipts
 		 WHERE run_id = ?`,
@@ -28,6 +28,7 @@ func (s *Service) Build(ctx context.Context, rootRunID string) (model.RunReceipt
 		&receipt.OutputTokens,
 		&receipt.CostUSD,
 		&receipt.ModelLane,
+		&receipt.ModelID,
 		&receipt.VerificationStatus,
 		&receipt.ApprovalCount,
 		&receipt.BudgetStatus,

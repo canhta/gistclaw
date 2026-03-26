@@ -109,6 +109,7 @@ type Runtime struct {
 	tools               *tools.Registry
 	memory              *memory.Store
 	provider            Provider
+	providerTimeout     time.Duration
 	eventSink           model.RunEventSink
 	budget              BudgetGuard
 	contextWindowSize   int
@@ -129,12 +130,13 @@ func New(
 	sink model.RunEventSink,
 ) *Runtime {
 	return &Runtime{
-		store:     db,
-		convStore: cs,
-		tools:     reg,
-		memory:    mem,
-		provider:  prov,
-		eventSink: sink,
+		store:           db,
+		convStore:       cs,
+		tools:           reg,
+		memory:          mem,
+		provider:        prov,
+		providerTimeout: 45 * time.Second,
+		eventSink:       sink,
 		budget: BudgetGuard{
 			db:              db,
 			PerRunTokenCap:  1000000,
@@ -404,6 +406,8 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 	}
 	cumulativeInput := run.InputTokens
 	cumulativeOutput := run.OutputTokens
+	runModelLane := run.ModelLane
+	runModelID := run.ModelID
 	runCtxEvents, err := r.loadRunContextEvents(ctx, runID)
 	if err != nil {
 		return model.Run{}, err
@@ -489,11 +493,17 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			return model.Run{}, err
 		}
 		conversationCtx := combineConversationContext(providerReq.ConversationCtx, runCtxEvents)
-		result, err := r.provider.Generate(ctx, GenerateRequest{
+		generateCtx := ctx
+		cancel := func() {}
+		if _, hasDeadline := ctx.Deadline(); !hasDeadline && r.providerTimeout > 0 {
+			generateCtx, cancel = context.WithTimeout(ctx, r.providerTimeout)
+		}
+		result, err := r.provider.Generate(generateCtx, GenerateRequest{
 			Instructions:    providerReq.Instructions,
 			ConversationCtx: conversationCtx,
 			ToolSpecs:       r.visibleToolSpecs(agentProfile),
 		}, newReplayStreamSink(r.eventSink, runID))
+		cancel()
 		if err != nil {
 			_ = r.convStore.AppendEvent(ctx, model.Event{
 				ID:             generateID(),
@@ -511,10 +521,14 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 
 		cumulativeInput += result.InputTokens
 		cumulativeOutput += result.OutputTokens
+		if result.ModelID != "" {
+			runModelID = result.ModelID
+		}
 		payload, err := json.Marshal(map[string]any{
 			"content":       result.Content,
 			"input_tokens":  result.InputTokens,
 			"output_tokens": result.OutputTokens,
+			"model_id":      result.ModelID,
 		})
 		if err != nil {
 			return model.Run{}, fmt.Errorf("marshal turn payload: %w", err)
@@ -593,7 +607,8 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 		"input_tokens":  cumulativeInput,
 		"output_tokens": cumulativeOutput,
 		"cost_usd":      0.0,
-		"model_lane":    "",
+		"model_lane":    runModelLane,
+		"model_id":      runModelID,
 	})
 	if err != nil {
 		return model.Run{}, fmt.Errorf("marshal run_completed payload: %w", err)
@@ -1155,7 +1170,7 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 	err := r.store.RawDB().QueryRowContext(ctx,
 		`SELECT id, conversation_id, agent_id, COALESCE(session_id, ''), COALESCE(team_id, ''), COALESCE(parent_run_id, ''),
 		 COALESCE(objective, ''), COALESCE(workspace_root, ''), status, COALESCE(execution_snapshot_json, x''),
-		 input_tokens, output_tokens, created_at, updated_at
+		 input_tokens, output_tokens, COALESCE(model_lane, ''), COALESCE(model_id, ''), created_at, updated_at
 		 FROM runs WHERE id = ?`,
 		runID,
 	).Scan(
@@ -1171,6 +1186,8 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 		&run.ExecutionSnapshotJSON,
 		&run.InputTokens,
 		&run.OutputTokens,
+		&run.ModelLane,
+		&run.ModelID,
 		&run.CreatedAt,
 		&run.UpdatedAt,
 	)

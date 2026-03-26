@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS runs (
     input_tokens INTEGER DEFAULT 0,
     output_tokens INTEGER DEFAULT 0,
     model_lane TEXT,
+    model_id TEXT,
     created_at DATETIME NOT NULL DEFAULT (datetime('now')),
     updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
@@ -123,6 +124,7 @@ CREATE TABLE IF NOT EXISTS receipts (
     output_tokens INTEGER DEFAULT 0,
     cost_usd REAL DEFAULT 0,
     model_lane TEXT,
+    model_id TEXT,
     verification_status TEXT,
     approval_count INTEGER DEFAULT 0,
     budget_status TEXT,

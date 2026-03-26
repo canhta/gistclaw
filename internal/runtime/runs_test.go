@@ -68,6 +68,15 @@ func (p *streamingProvider) Generate(ctx context.Context, _ GenerateRequest, str
 	}, nil
 }
 
+type blockingProvider struct{}
+
+func (p *blockingProvider) ID() string { return "blocking" }
+
+func (p *blockingProvider) Generate(ctx context.Context, _ GenerateRequest, _ StreamSink) (GenerateResult, error) {
+	<-ctx.Done()
+	return GenerateResult{}, ctx.Err()
+}
+
 type workspaceAwareTool struct {
 	root string
 }
@@ -136,6 +145,40 @@ func TestRunEngine_StartAndComplete(t *testing.T) {
 	}
 	if receiptCount != 1 {
 		t.Fatalf("expected 1 receipt, got %d", receiptCount)
+	}
+}
+
+func TestRunEngine_FailsHungProviderTurnsAfterTimeout(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	rt := New(db, cs, reg, mem, &blockingProvider{}, &model.NoopEventSink{})
+	rt.providerTimeout = 20 * time.Millisecond
+
+	started := time.Now()
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-hung-provider",
+		AgentID:        "assistant",
+		Objective:      "coordinate a task",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("expected provider timeout error")
+	}
+	if time.Since(started) > 250*time.Millisecond {
+		t.Fatalf("expected hung provider to time out quickly, took %s", time.Since(started))
+	}
+	if run.Status != model.RunStatusFailed {
+		t.Fatalf("expected failed run after provider timeout, got %s", run.Status)
+	}
+
+	var failedEvents int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM events WHERE run_id = ? AND kind = 'run_failed'",
+		run.ID,
+	).Scan(&failedEvents); err != nil {
+		t.Fatalf("query run_failed events: %v", err)
+	}
+	if failedEvents != 1 {
+		t.Fatalf("expected 1 run_failed event, got %d", failedEvents)
 	}
 }
 
@@ -806,6 +849,49 @@ func TestRunEngine_LifecycleEventsJournaled(t *testing.T) {
 	}
 	if !hasCompleted {
 		t.Fatal("missing 'run_completed' event")
+	}
+}
+
+func TestRunEngine_PersistsProviderModelID(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "done", InputTokens: 10, OutputTokens: 20, StopReason: "end_turn", ModelID: "gpt-5.4"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-model-id",
+		AgentID:        "agent-a",
+		Objective:      "persist model identity",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	var runModelID string
+	if err := db.RawDB().QueryRow(
+		"SELECT COALESCE(model_id, '') FROM runs WHERE id = ?",
+		run.ID,
+	).Scan(&runModelID); err != nil {
+		t.Fatalf("query run model_id: %v", err)
+	}
+	if runModelID != "gpt-5.4" {
+		t.Fatalf("expected run model_id gpt-5.4, got %q", runModelID)
+	}
+
+	var receiptModelID string
+	if err := db.RawDB().QueryRow(
+		"SELECT COALESCE(model_id, '') FROM receipts WHERE run_id = ?",
+		run.ID,
+	).Scan(&receiptModelID); err != nil {
+		t.Fatalf("query receipt model_id: %v", err)
+	}
+	if receiptModelID != "gpt-5.4" {
+		t.Fatalf("expected receipt model_id gpt-5.4, got %q", receiptModelID)
 	}
 }
 

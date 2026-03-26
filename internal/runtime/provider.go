@@ -26,6 +26,7 @@ type GenerateResult struct {
 	InputTokens  int
 	OutputTokens int
 	StopReason   string
+	ModelID      string
 }
 
 type Provider interface {

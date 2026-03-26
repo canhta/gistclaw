@@ -29,9 +29,27 @@ import (
 )
 
 func TestRuns(t *testing.T) {
-	t.Run("list renders runs", func(t *testing.T) {
+	t.Run("list renders root run clusters with child metadata", func(t *testing.T) {
 		h := newServerHarness(t)
-		h.insertRun(t, "run-known", "conv-1", "review the repo", "active")
+		h.insertRunAt(t, "run-known", "conv-1", "review the repo", "active", "2026-03-25 10:00:00")
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE runs
+			 SET agent_id = 'assistant', model_lane = 'coord', model_id = 'gpt-5.4', input_tokens = 10, output_tokens = 20, updated_at = '2026-03-25 10:15:00'
+			 WHERE id = 'run-known'`,
+		); err != nil {
+			t.Fatalf("update root run metadata: %v", err)
+		}
+		if _, err := h.db.RawDB().Exec(
+			`INSERT INTO runs
+			 (id, conversation_id, agent_id, parent_run_id, team_id, objective, workspace_root, status, model_lane, model_id, input_tokens, output_tokens, created_at, updated_at)
+			 VALUES
+			 ('run-worker-review', 'conv-1', 'reviewer', 'run-known', 'repo-task-team', 'review the change', ?, 'completed', 'review', 'gpt-5.4-mini', 4, 6, '2026-03-25 10:05:00', '2026-03-25 10:08:00'),
+			 ('run-worker-approval', 'conv-1', 'patcher', 'run-known', 'repo-task-team', 'apply the fix', ?, 'needs_approval', 'build', 'gpt-5.4', 8, 12, '2026-03-25 10:10:00', '2026-03-25 10:14:00')`,
+			h.workspaceRoot,
+			h.workspaceRoot,
+		); err != nil {
+			t.Fatalf("insert worker runs: %v", err)
+		}
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
@@ -43,39 +61,41 @@ func TestRuns(t *testing.T) {
 		}
 
 		body := rr.Body.String()
-		for _, want := range []string{"Runs", "Live orchestration strip", "run-known", "review the repo"} {
+		for _, want := range []string{
+			"Runs",
+			"Live orchestration strip",
+			`data-run-level="root" data-run-id="run-known"`,
+			`data-run-level="child" data-run-id="run-worker-review"`,
+			`data-run-level="child" data-run-id="run-worker-approval"`,
+			`<details class="run-cluster">`,
+			"review the repo",
+			"run-known",
+			"run-worker-review",
+			"run-worker-approval",
+			"2 workers",
+			"gpt-5.4",
+			"10 in / 20 out",
+			"4 in / 6 out",
+			"2026-03-25 10:00:00 UTC",
+			"2026-03-25 10:15:00 UTC",
+			"Needs approval",
+			"ago",
+		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
 			}
 		}
-		if !strings.Contains(body, `href="/operate/runs/run-known"`) {
-			t.Fatalf("expected runs list to link to run detail:\n%s", body)
+		for _, want := range []string{
+			`href="/operate/runs/run-known"`,
+			`href="/operate/runs/run-worker-review"`,
+			`href="/operate/runs/run-worker-approval"`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected runs list to link to run detail %q:\n%s", want, body)
+			}
 		}
-	})
-
-	t.Run("list renders front session summary", func(t *testing.T) {
-		h := newServerHarness(t)
-		h.insertRun(t, "run-front", "conv-1", "review the repo", "active")
-		_, err := h.db.RawDB().Exec(
-			`INSERT INTO runs
-			 (id, conversation_id, agent_id, parent_run_id, team_id, objective, workspace_root, status, created_at, updated_at)
-			 VALUES ('run-worker', 'conv-1', 'researcher', 'run-front', 'repo-task-team', 'inspect docs', ?, 'completed', datetime('now'), datetime('now'))`,
-			h.workspaceRoot,
-		)
-		if err != nil {
-			t.Fatalf("insert worker run: %v", err)
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-		if !strings.Contains(rr.Body.String(), "front session with 1 worker run") {
-			t.Fatalf("expected front-session summary, got:\n%s", rr.Body.String())
+		if strings.Contains(body, "front session with 1 worker run") {
+			t.Fatalf("expected flat front-session summary to be removed, got:\n%s", body)
 		}
 	})
 
@@ -105,6 +125,14 @@ func TestRuns(t *testing.T) {
 		h.insertRunAt(t, "run-newest", "conv-runs-1", "fix graph cards", "active", "2026-03-25 10:00:00")
 		h.insertRunAt(t, "run-middle", "conv-runs-2", "review docs", "completed", "2026-03-25 09:00:00")
 		h.insertRunAt(t, "run-oldest", "conv-runs-3", "fix pagination", "active", "2026-03-25 08:00:00")
+		if _, err := h.db.RawDB().Exec(
+			`INSERT INTO runs
+			 (id, conversation_id, agent_id, parent_run_id, team_id, objective, workspace_root, status, created_at, updated_at)
+			 VALUES ('run-newest-child', 'conv-runs-1', 'researcher', 'run-newest', 'repo-task-team', 'inspect the graph', ?, 'completed', '2026-03-25 10:30:00', '2026-03-25 10:31:00')`,
+			h.workspaceRoot,
+		); err != nil {
+			t.Fatalf("insert paginated child run: %v", err)
+		}
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/operate/runs?q=fix&status=active&limit=1", nil)
@@ -117,6 +145,9 @@ func TestRuns(t *testing.T) {
 		body := rr.Body.String()
 		if !strings.Contains(body, "run-newest") {
 			t.Fatalf("expected first filtered page to contain newest run, got:\n%s", body)
+		}
+		if strings.Contains(body, `data-run-level="root" data-run-id="run-newest-child"`) {
+			t.Fatalf("expected child run to stay nested instead of paginating as a root row, got:\n%s", body)
 		}
 		if strings.Contains(body, "run-middle") || strings.Contains(body, "run-oldest") {
 			t.Fatalf("expected first filtered page to contain only newest filtered run, got:\n%s", body)
@@ -134,10 +165,10 @@ func TestRuns(t *testing.T) {
 			t.Fatalf("expected second page 200, got %d", rr.Code)
 		}
 		body = rr.Body.String()
-		if !strings.Contains(body, `href="/operate/runs/run-oldest"`) {
+		if !strings.Contains(body, `data-run-level="root" data-run-id="run-oldest"`) {
 			t.Fatalf("expected second filtered page to contain oldest run, got:\n%s", body)
 		}
-		if strings.Contains(body, `href="/operate/runs/run-newest"`) || strings.Contains(body, `href="/operate/runs/run-middle"`) {
+		if strings.Contains(body, `data-run-level="root" data-run-id="run-newest"`) || strings.Contains(body, `data-run-level="root" data-run-id="run-middle"`) {
 			t.Fatalf("expected second filtered page to contain only oldest filtered run, got:\n%s", body)
 		}
 	})

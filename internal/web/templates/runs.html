@@ -95,17 +95,83 @@
     </form>
   </div>
 </section>
-{{if .Runs}}
+{{if .Clusters}}
 <section class="page-stack">
-  {{range .Runs}}
-    <a class="run-link" href="/operate/runs/{{.ID}}">
-      <article class="run-row {{.StatusClass}}">
-        <div class="mono">{{.ID}}</div>
-        <div class="row-title">{{.Objective}}</div>
-        <div class="muted">{{.Summary}}</div>
-        <div class="run-status {{.StatusClass}}">{{.StatusLabel}}</div>
-      </article>
-    </a>
+  {{range .Clusters}}
+    <details class="run-cluster">
+      <summary class="run-cluster-summary" data-run-level="root" data-run-id="{{.Root.ID}}">
+        <div class="run-cluster-toggle">{{if .HasChildren}}{{.ChildCountLabel}}{{else}}No workers{{end}}</div>
+        <div class="run-cluster-primary">
+          <div class="run-cluster-heading">
+            <a class="run-cluster-title" href="{{.Root.DetailURL}}">{{.Root.Objective}}</a>
+            <span class="run-status {{.Root.StatusClass}}">{{.Root.StatusLabel}}</span>
+          </div>
+          <div class="run-cluster-identifiers">
+            <span class="mono">{{.Root.ID}}</span>
+            {{if .Root.AgentID}}<span class="badge badge-muted">{{.Root.AgentID}}</span>{{end}}
+          </div>
+        </div>
+        <div class="run-cluster-meta">
+          <span class="run-cluster-label">Blocker</span>
+          <span class="run-cluster-value">{{.BlockerLabel}}</span>
+        </div>
+        <div class="run-cluster-meta">
+          <span class="run-cluster-label">Model</span>
+          <span class="run-cluster-value">{{.Root.ModelDisplay}}</span>
+        </div>
+        <div class="run-cluster-meta">
+          <span class="run-cluster-label">Tokens</span>
+          <span class="run-cluster-value">{{.Root.TokenSummary}}</span>
+        </div>
+        <div class="run-cluster-meta">
+          <span class="run-cluster-label">Started</span>
+          <time datetime="{{.Root.StartedAtISO}}" title="{{.Root.StartedAtExact}}">{{.Root.StartedAtShort}}</time>
+          <span class="subtle">{{.Root.StartedAtExact}}</span>
+        </div>
+        <div class="run-cluster-meta">
+          <span class="run-cluster-label">Last activity</span>
+          <time datetime="{{.Root.LastActivityISO}}" title="{{.Root.LastActivityExact}}">{{.Root.LastActivityShort}}</time>
+          <span class="subtle">{{.Root.LastActivityExact}}</span>
+        </div>
+      </summary>
+      {{if .Children}}
+      <div class="run-cluster-children">
+        {{range .Children}}
+          <article class="run-child-row {{.StatusClass}}" data-run-level="child" data-run-id="{{.ID}}">
+            <div class="run-child-primary">
+              <div class="run-child-heading">
+                <a class="run-child-title" href="{{.DetailURL}}">{{.Objective}}</a>
+                <span class="run-status {{.StatusClass}}">{{.StatusLabel}}</span>
+              </div>
+              <div class="run-cluster-identifiers">
+                <span class="mono">{{.ID}}</span>
+                {{if .AgentID}}<span class="badge badge-muted">{{.AgentID}}</span>{{end}}
+                <span class="badge badge-muted">D{{.Depth}}</span>
+              </div>
+            </div>
+            <div class="run-cluster-meta">
+              <span class="run-cluster-label">Model</span>
+              <span class="run-cluster-value">{{.ModelDisplay}}</span>
+            </div>
+            <div class="run-cluster-meta">
+              <span class="run-cluster-label">Tokens</span>
+              <span class="run-cluster-value">{{.TokenSummary}}</span>
+            </div>
+            <div class="run-cluster-meta">
+              <span class="run-cluster-label">Started</span>
+              <time datetime="{{.StartedAtISO}}" title="{{.StartedAtExact}}">{{.StartedAtShort}}</time>
+              <span class="subtle">{{.StartedAtExact}}</span>
+            </div>
+            <div class="run-cluster-meta">
+              <span class="run-cluster-label">Last activity</span>
+              <time datetime="{{.LastActivityISO}}" title="{{.LastActivityExact}}">{{.LastActivityShort}}</time>
+              <span class="subtle">{{.LastActivityExact}}</span>
+            </div>
+          </article>
+        {{end}}
+      </div>
+      {{end}}
+    </details>
   {{end}}
 </section>
 {{if or .Paging.HasPrev .Paging.HasNext}}

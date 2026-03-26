@@ -237,6 +237,7 @@ func TestConversationStore_AppendEventProjectsRunLifecycle(t *testing.T) {
 		"input_tokens":  10,
 		"output_tokens": 20,
 		"model_lane":    "cheap",
+		"model_id":      "gpt-5.4",
 	})
 	if err != nil {
 		t.Fatalf("marshal turn payload: %v", err)
@@ -258,6 +259,7 @@ func TestConversationStore_AppendEventProjectsRunLifecycle(t *testing.T) {
 		"output_tokens": 20,
 		"cost_usd":      0.01,
 		"model_lane":    "cheap",
+		"model_id":      "gpt-5.4",
 	})
 	if err != nil {
 		t.Fatalf("marshal completed payload: %v", err)
@@ -277,25 +279,31 @@ func TestConversationStore_AppendEventProjectsRunLifecycle(t *testing.T) {
 	var status string
 	var inputTokens int
 	var outputTokens int
+	var modelLane string
+	var modelID string
 	err = db.RawDB().QueryRowContext(ctx,
-		"SELECT status, input_tokens, output_tokens FROM runs WHERE id = 'run-life'",
-	).Scan(&status, &inputTokens, &outputTokens)
+		"SELECT status, input_tokens, output_tokens, COALESCE(model_lane, ''), COALESCE(model_id, '') FROM runs WHERE id = 'run-life'",
+	).Scan(&status, &inputTokens, &outputTokens, &modelLane, &modelID)
 	if err != nil {
 		t.Fatalf("query run projection: %v", err)
 	}
-	if status != "completed" || inputTokens != 10 || outputTokens != 20 {
-		t.Fatalf("unexpected run projection: status=%s input=%d output=%d", status, inputTokens, outputTokens)
+	if status != "completed" || inputTokens != 10 || outputTokens != 20 || modelLane != "cheap" || modelID != "gpt-5.4" {
+		t.Fatalf("unexpected run projection: status=%s input=%d output=%d lane=%s model=%s", status, inputTokens, outputTokens, modelLane, modelID)
 	}
 
 	var receiptCount int
+	var receiptModelID string
 	err = db.RawDB().QueryRowContext(ctx,
-		"SELECT count(*) FROM receipts WHERE run_id = 'run-life'",
-	).Scan(&receiptCount)
+		"SELECT count(*), COALESCE(MAX(model_id), '') FROM receipts WHERE run_id = 'run-life'",
+	).Scan(&receiptCount, &receiptModelID)
 	if err != nil {
 		t.Fatalf("query receipt projection: %v", err)
 	}
 	if receiptCount != 1 {
 		t.Fatalf("expected 1 receipt, got %d", receiptCount)
+	}
+	if receiptModelID != "gpt-5.4" {
+		t.Fatalf("expected receipt model_id gpt-5.4, got %q", receiptModelID)
 	}
 }
 

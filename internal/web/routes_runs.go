@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -18,17 +19,30 @@ import (
 )
 
 type runListItem struct {
-	ID          string
-	Objective   string
-	Summary     string
-	Status      string
-	StatusLabel string
-	StatusClass string
-	IsRoot      bool
+	ID                string
+	DetailURL         string
+	Objective         string
+	AgentID           string
+	Status            string
+	StatusLabel       string
+	StatusClass       string
+	ModelLane         string
+	ModelID           string
+	ModelDisplay      string
+	InputTokens       int
+	OutputTokens      int
+	TokenSummary      string
+	StartedAtShort    string
+	StartedAtExact    string
+	StartedAtISO      string
+	LastActivityShort string
+	LastActivityExact string
+	LastActivityISO   string
+	Depth             int
 }
 
 type runsPageData struct {
-	Runs                []runListItem
+	Clusters            []runListClusterView
 	Filters             runListFilters
 	Paging              pageLinks
 	QueueStrip          runQueueStripView
@@ -42,6 +56,15 @@ type runQueueStripView struct {
 	WorkerRuns   int
 	RecoveryRuns int
 	Summary      runGraphSummaryView
+}
+
+type runListClusterView struct {
+	Root            runListItem
+	Children        []runListItem
+	ChildCount      int
+	ChildCountLabel string
+	BlockerLabel    string
+	HasChildren     bool
 }
 
 type runDetailPageData struct {
@@ -143,8 +166,34 @@ type runListFilters struct {
 }
 
 type runListRow struct {
-	Item      runListItem
-	CreatedAt string
+	ID           string
+	Objective    string
+	AgentID      string
+	Status       string
+	QueueStatus  string
+	ModelLane    string
+	ModelID      string
+	InputTokens  int
+	OutputTokens int
+	CreatedAt    string
+	UpdatedAt    string
+	WorkerCount  int
+}
+
+type runChildRow struct {
+	RootID       string
+	ID           string
+	ParentRunID  string
+	Objective    string
+	AgentID      string
+	Status       string
+	ModelLane    string
+	ModelID      string
+	InputTokens  int
+	OutputTokens int
+	CreatedAt    string
+	UpdatedAt    string
+	Depth        int
 }
 
 func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
@@ -168,48 +217,53 @@ func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 
 	runRows := make([]runListRow, 0, filter.Limit+1)
 	for rows.Next() {
-		var item runListItem
-		var parentRunID string
-		var createdAt string
-		var workerCount int
-		if err := rows.Scan(&item.ID, &item.Objective, &parentRunID, &item.Status, &createdAt, &workerCount); err != nil {
+		var row runListRow
+		if err := rows.Scan(
+			&row.ID,
+			&row.Objective,
+			&row.AgentID,
+			&row.Status,
+			&row.QueueStatus,
+			&row.ModelLane,
+			&row.ModelID,
+			&row.InputTokens,
+			&row.OutputTokens,
+			&row.CreatedAt,
+			&row.UpdatedAt,
+			&row.WorkerCount,
+		); err != nil {
 			http.Error(w, "failed to load runs", http.StatusInternalServerError)
 			return
 		}
-		item.IsRoot = parentRunID == ""
-		item.StatusLabel = humanizeRunStatus(item.Status)
-		item.Summary = formatRunSummary(parentRunID, item.ID, workerCount)
-		item.StatusClass = runStatusClass(item.Status)
-		runRows = append(runRows, runListRow{Item: item, CreatedAt: createdAt})
+		runRows = append(runRows, row)
 	}
 	if err := rows.Err(); err != nil {
 		http.Error(w, "failed to load runs", http.StatusInternalServerError)
 		return
 	}
 
-	items, paging := finalizeRunListPage(r.URL.Query(), filter, runRows)
+	rootRows, paging := finalizeRunListPage(r.URL.Query(), filter, runRows)
+	descendants, err := loadRunDescendants(r.Context(), s.db.RawDB(), rootRows)
+	if err != nil {
+		http.Error(w, "failed to load worker runs", http.StatusInternalServerError)
+		return
+	}
+	clusters := buildRunListClusters(rootRows, descendants)
 	s.renderTemplate(w, r, "Runs", "runs_body", runsPageData{
-		Runs:                items,
+		Clusters:            clusters,
 		Filters:             runListFilters{Query: filter.Query, Status: filter.Status, Limit: filter.Limit, Scope: filter.Scope},
 		Paging:              paging,
-		QueueStrip:          buildRunQueueStrip(items),
+		QueueStrip:          buildRunQueueStrip(clusters),
 		ActiveProjectName:   activeProject.Name,
 		ActiveWorkspaceRoot: activeProject.WorkspaceRoot,
 	})
 }
 
-func formatRunSummary(parentRunID, runID string, workerCount int) string {
-	if parentRunID == "" {
-		return "front session with " + formatWorkerCount(workerCount)
-	}
-	return "worker session under " + parentRunID
-}
-
 func formatWorkerCount(count int) string {
 	if count == 1 {
-		return "1 worker run"
+		return "1 worker"
 	}
-	return fmt.Sprintf("%d worker runs", count)
+	return fmt.Sprintf("%d workers", count)
 }
 
 func humanizeRunStatus(status string) string {
@@ -221,32 +275,17 @@ func humanizeRunStatus(status string) string {
 	}
 }
 
-func buildRunQueueStrip(items []runListItem) runQueueStripView {
+func buildRunQueueStrip(clusters []runListClusterView) runQueueStripView {
 	view := runQueueStripView{}
-	for _, item := range items {
-		if item.IsRoot {
-			view.RootRuns++
-		} else {
-			view.WorkerRuns++
-		}
-		switch item.Status {
-		case "pending":
-			view.Summary.Pending++
-		case "active":
-			view.Summary.Active++
-		case "needs_approval":
-			view.Summary.NeedsApproval++
-			view.RecoveryRuns++
-		case "completed":
-			view.Summary.Completed++
-		case "failed":
-			view.Summary.Failed++
-			view.RecoveryRuns++
-		case "interrupted":
-			view.Summary.Interrupted++
-			view.RecoveryRuns++
-		}
+	for _, cluster := range clusters {
+		view.RootRuns++
 		view.Summary.Total++
+		incrementRunQueueSummary(&view, cluster.Root.Status)
+		for _, child := range cluster.Children {
+			view.WorkerRuns++
+			view.Summary.Total++
+			incrementRunQueueSummary(&view, child.Status)
+		}
 	}
 
 	switch {
@@ -261,6 +300,26 @@ func buildRunQueueStrip(items []runListItem) runQueueStripView {
 	}
 
 	return view
+}
+
+func incrementRunQueueSummary(view *runQueueStripView, status string) {
+	switch status {
+	case "pending":
+		view.Summary.Pending++
+	case "active":
+		view.Summary.Active++
+	case "needs_approval":
+		view.Summary.NeedsApproval++
+		view.RecoveryRuns++
+	case "completed":
+		view.Summary.Completed++
+	case "failed":
+		view.Summary.Failed++
+		view.RecoveryRuns++
+	case "interrupted":
+		view.Summary.Interrupted++
+		view.RecoveryRuns++
+	}
 }
 
 func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
@@ -459,25 +518,60 @@ func runScopeFromRequest(r *http.Request) string {
 
 func buildRunListQuery(filter runListRequest, activeProject model.Project) (string, []any, error) {
 	var query strings.Builder
-	query.WriteString(`SELECT id, COALESCE(objective, ''), COALESCE(parent_run_id, ''), status, created_at,
-	        (SELECT count(*) FROM runs child WHERE child.parent_run_id = runs.id) AS worker_count
-	 FROM runs`)
+	query.WriteString(`WITH RECURSIVE run_tree(root_id, id, status) AS (
+		SELECT root.id, root.id, root.status
+		FROM runs root
+		WHERE COALESCE(root.parent_run_id, '') = ''
+		UNION ALL
+		SELECT run_tree.root_id, child.id, child.status
+		FROM run_tree
+		JOIN runs child ON child.parent_run_id = run_tree.id
+	),
+	queue_summary AS (
+		SELECT root_id,
+			SUM(CASE WHEN id != root_id THEN 1 ELSE 0 END) AS worker_count,
+			MAX(CASE WHEN id != root_id AND status = 'needs_approval' THEN 1 ELSE 0 END) AS has_needs_approval,
+			MAX(CASE WHEN id != root_id AND status = 'failed' THEN 1 ELSE 0 END) AS has_failed,
+			MAX(CASE WHEN id != root_id AND status = 'interrupted' THEN 1 ELSE 0 END) AS has_interrupted,
+			MAX(CASE WHEN id != root_id AND status = 'active' THEN 1 ELSE 0 END) AS has_active_workers,
+			MAX(CASE WHEN id != root_id AND status = 'pending' THEN 1 ELSE 0 END) AS has_pending_workers
+		FROM run_tree
+		GROUP BY root_id
+	),
+	root_queue AS (
+		SELECT root.id,
+			COALESCE(root.objective, '') AS objective,
+			COALESCE(root.agent_id, '') AS agent_id,
+			root.status,
+			` + runQueueStatusExpression("root", "queue_summary") + ` AS queue_status,
+			COALESCE(root.model_lane, '') AS model_lane,
+			COALESCE(root.model_id, '') AS model_id,
+			COALESCE(root.input_tokens, 0) AS input_tokens,
+			COALESCE(root.output_tokens, 0) AS output_tokens,
+			root.created_at,
+			root.updated_at,
+			COALESCE(queue_summary.worker_count, 0) AS worker_count
+		FROM runs root
+		LEFT JOIN queue_summary ON queue_summary.root_id = root.id
+		WHERE COALESCE(root.parent_run_id, '') = ''`)
 
 	clauses := []string{"1=1"}
-	args := make([]any, 0, 8)
+	args := make([]any, 0, 10)
+	rootScopeArgs := make([]any, 0, 2)
 	if filter.Query != "" {
 		like := "%" + filter.Query + "%"
-		clauses = append(clauses, "(id LIKE ? OR COALESCE(objective, '') LIKE ?)")
-		args = append(args, like, like)
+		clauses = append(clauses, "(id LIKE ? OR objective LIKE ? OR agent_id LIKE ?)")
+		args = append(args, like, like, like)
 	}
 	if filter.Status != "" {
-		clauses = append(clauses, "status = ?")
+		clauses = append(clauses, "queue_status = ?")
 		args = append(args, filter.Status)
 	}
 	if filter.Scope != "all" {
-		condition, scopeArgs := projectscope.RunCondition(activeProject, "runs")
-		clauses = append(clauses, condition)
-		args = append(args, scopeArgs...)
+		condition, scopeValues := projectscope.RunCondition(activeProject, "root")
+		query.WriteString(" AND ")
+		query.WriteString(condition)
+		rootScopeArgs = append(rootScopeArgs, scopeValues...)
 	}
 	if filter.HasCursor {
 		switch filter.Direction {
@@ -489,7 +583,11 @@ func buildRunListQuery(filter runListRequest, activeProject model.Project) (stri
 		args = append(args, filter.Cursor.CreatedAt, filter.Cursor.CreatedAt, filter.Cursor.ID)
 	}
 
-	query.WriteString(" WHERE ")
+	query.WriteString(`
+	)
+	SELECT id, objective, agent_id, status, queue_status, model_lane, model_id, input_tokens, output_tokens, created_at, updated_at, worker_count
+	FROM root_queue
+	WHERE `)
 	query.WriteString(strings.Join(clauses, " AND "))
 	if filter.Direction == "prev" {
 		query.WriteString(" ORDER BY created_at ASC, id ASC")
@@ -498,10 +596,11 @@ func buildRunListQuery(filter runListRequest, activeProject model.Project) (stri
 	}
 	query.WriteString(" LIMIT ?")
 	args = append(args, filter.Limit+1)
+	args = append(rootScopeArgs, args...)
 	return query.String(), args, nil
 }
 
-func finalizeRunListPage(query url.Values, filter runListRequest, rows []runListRow) ([]runListItem, pageLinks) {
+func finalizeRunListPage(query url.Values, filter runListRequest, rows []runListRow) ([]runListRow, pageLinks) {
 	hasExtra := len(rows) > filter.Limit
 	if hasExtra {
 		rows = rows[:filter.Limit]
@@ -512,11 +611,6 @@ func finalizeRunListPage(query url.Values, filter runListRequest, rows []runList
 		}
 	}
 
-	items := make([]runListItem, 0, len(rows))
-	for _, row := range rows {
-		items = append(items, row.Item)
-	}
-
 	var nextCursor string
 	var prevCursor string
 	hasNext := false
@@ -524,8 +618,8 @@ func finalizeRunListPage(query url.Values, filter runListRequest, rows []runList
 	if len(rows) > 0 {
 		first := rows[0]
 		last := rows[len(rows)-1]
-		prevCursor = encodeRunListCursor(first.CreatedAt, first.Item.ID)
-		nextCursor = encodeRunListCursor(last.CreatedAt, last.Item.ID)
+		prevCursor = encodeRunListCursor(first.CreatedAt, first.ID)
+		nextCursor = encodeRunListCursor(last.CreatedAt, last.ID)
 	}
 
 	switch filter.Direction {
@@ -537,7 +631,287 @@ func finalizeRunListPage(query url.Values, filter runListRequest, rows []runList
 		hasNext = hasExtra
 	}
 
-	return items, buildPageLinks(pageOperateRuns, cloneQuery(query), "cursor", "direction", nextCursor, prevCursor, hasNext, hasPrev)
+	return rows, buildPageLinks(pageOperateRuns, cloneQuery(query), "cursor", "direction", nextCursor, prevCursor, hasNext, hasPrev)
+}
+
+func runQueueStatusExpression(rootAlias, queueAlias string) string {
+	rootPrefix := ""
+	if rootAlias != "" {
+		rootPrefix = rootAlias + "."
+	}
+	queuePrefix := ""
+	if queueAlias != "" {
+		queuePrefix = queueAlias + "."
+	}
+	return `CASE
+		WHEN COALESCE(` + queuePrefix + `has_needs_approval, 0) = 1 THEN 'needs_approval'
+		WHEN COALESCE(` + queuePrefix + `has_failed, 0) = 1 THEN 'failed'
+		WHEN COALESCE(` + queuePrefix + `has_interrupted, 0) = 1 THEN 'interrupted'
+		WHEN COALESCE(` + queuePrefix + `has_active_workers, 0) = 1 THEN 'active'
+		WHEN COALESCE(` + queuePrefix + `has_pending_workers, 0) = 1 THEN 'pending'
+		ELSE ` + rootPrefix + `status
+	END`
+}
+
+func loadRunDescendants(ctx context.Context, db *sql.DB, roots []runListRow) (map[string][]runChildRow, error) {
+	descendants := make(map[string][]runChildRow, len(roots))
+	if len(roots) == 0 {
+		return descendants, nil
+	}
+
+	args := make([]any, 0, len(roots))
+	placeholders := make([]string, 0, len(roots))
+	for _, root := range roots {
+		placeholders = append(placeholders, "?")
+		args = append(args, root.ID)
+	}
+
+	query := `WITH RECURSIVE descendants(root_id, id, parent_run_id, objective, agent_id, status, model_lane, model_id, input_tokens, output_tokens, created_at, updated_at, depth) AS (
+		SELECT root.id, child.id, child.parent_run_id, COALESCE(child.objective, ''), COALESCE(child.agent_id, ''), child.status, COALESCE(child.model_lane, ''), COALESCE(child.model_id, ''), COALESCE(child.input_tokens, 0), COALESCE(child.output_tokens, 0), child.created_at, child.updated_at, 1
+		FROM runs root
+		JOIN runs child ON child.parent_run_id = root.id
+		WHERE root.id IN (` + strings.Join(placeholders, ", ") + `)
+		UNION ALL
+		SELECT descendants.root_id, child.id, child.parent_run_id, COALESCE(child.objective, ''), COALESCE(child.agent_id, ''), child.status, COALESCE(child.model_lane, ''), COALESCE(child.model_id, ''), COALESCE(child.input_tokens, 0), COALESCE(child.output_tokens, 0), child.created_at, child.updated_at, descendants.depth + 1
+		FROM descendants
+		JOIN runs child ON child.parent_run_id = descendants.id
+	)
+	SELECT root_id, id, parent_run_id, objective, agent_id, status, model_lane, model_id, input_tokens, output_tokens, created_at, updated_at, depth
+	FROM descendants
+	ORDER BY root_id ASC, created_at ASC, id ASC`
+
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var row runChildRow
+		if err := rows.Scan(
+			&row.RootID,
+			&row.ID,
+			&row.ParentRunID,
+			&row.Objective,
+			&row.AgentID,
+			&row.Status,
+			&row.ModelLane,
+			&row.ModelID,
+			&row.InputTokens,
+			&row.OutputTokens,
+			&row.CreatedAt,
+			&row.UpdatedAt,
+			&row.Depth,
+		); err != nil {
+			return nil, err
+		}
+		descendants[row.RootID] = append(descendants[row.RootID], row)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return descendants, nil
+}
+
+func buildRunListClusters(roots []runListRow, descendants map[string][]runChildRow) []runListClusterView {
+	clusters := make([]runListClusterView, 0, len(roots))
+	for _, root := range roots {
+		childRows := descendants[root.ID]
+		cluster := runListClusterView{
+			Root:            buildRunListItem(root.ID, root.Objective, root.AgentID, root.QueueStatus, root.ModelLane, root.ModelID, root.InputTokens, root.OutputTokens, root.CreatedAt, root.UpdatedAt, 0),
+			Children:        make([]runListItem, 0, len(childRows)),
+			ChildCount:      len(childRows),
+			ChildCountLabel: formatWorkerCount(len(childRows)),
+			BlockerLabel:    summarizeRunBlocker(root.QueueStatus, childRows, root.Status, len(childRows)),
+			HasChildren:     len(childRows) > 0,
+		}
+		for _, child := range childRows {
+			cluster.Children = append(cluster.Children, buildRunListItem(child.ID, child.Objective, child.AgentID, child.Status, child.ModelLane, child.ModelID, child.InputTokens, child.OutputTokens, child.CreatedAt, child.UpdatedAt, child.Depth))
+		}
+		clusters = append(clusters, cluster)
+	}
+	return clusters
+}
+
+func buildRunListItem(id, objective, agentID, status, modelLane, modelID string, inputTokens, outputTokens int, createdAt, updatedAt string, depth int) runListItem {
+	startedAt := buildRunTimestampView(parseRunListTimestamp(createdAt))
+	lastActivity := buildRunTimestampView(parseRunListTimestamp(updatedAt))
+	modelDisplay := formatRunModelDisplay(modelID, modelLane)
+	return runListItem{
+		ID:                id,
+		DetailURL:         pageOperateRuns + "/" + id,
+		Objective:         objective,
+		AgentID:           agentID,
+		Status:            status,
+		StatusLabel:       humanizeRunStatus(status),
+		StatusClass:       runStatusClass(status),
+		ModelLane:         modelLane,
+		ModelID:           modelID,
+		ModelDisplay:      modelDisplay,
+		InputTokens:       inputTokens,
+		OutputTokens:      outputTokens,
+		TokenSummary:      formatRunTokenSummary(inputTokens, outputTokens),
+		StartedAtShort:    startedAt.Relative,
+		StartedAtExact:    startedAt.Exact,
+		StartedAtISO:      startedAt.ISO,
+		LastActivityShort: lastActivity.Relative,
+		LastActivityExact: lastActivity.Exact,
+		LastActivityISO:   lastActivity.ISO,
+		Depth:             depth,
+	}
+}
+
+func formatRunModelDisplay(modelID, modelLane string) string {
+	if value := strings.TrimSpace(modelID); value != "" {
+		return value
+	}
+	if value := strings.TrimSpace(modelLane); value != "" {
+		return value
+	}
+	return "not recorded"
+}
+
+func formatRunTokenSummary(inputTokens, outputTokens int) string {
+	return fmt.Sprintf("%d in / %d out", inputTokens, outputTokens)
+}
+
+func summarizeRunBlocker(queueStatus string, descendants []runChildRow, rootStatus string, childCount int) string {
+	switch queueStatus {
+	case "needs_approval":
+		for _, child := range descendants {
+			if child.Status == "needs_approval" {
+				if child.AgentID != "" {
+					return child.AgentID + " waiting on approval"
+				}
+				return "Worker waiting on approval"
+			}
+		}
+		return "Worker waiting on approval"
+	case "failed":
+		for _, child := range descendants {
+			if child.Status == "failed" {
+				if child.AgentID != "" {
+					return child.AgentID + " failed"
+				}
+				return "Worker failed"
+			}
+		}
+		return "Run failed"
+	case "interrupted":
+		for _, child := range descendants {
+			if child.Status == "interrupted" {
+				if child.AgentID != "" {
+					return child.AgentID + " interrupted"
+				}
+				return "Worker interrupted"
+			}
+		}
+		return "Run interrupted"
+	case "active":
+		if count := countRunStatus(descendants, "active"); count > 0 {
+			return formatWorkerCount(count) + " active"
+		}
+		if rootStatus == "active" {
+			return "Coordinator active"
+		}
+	case "pending":
+		if count := countRunStatus(descendants, "pending"); count > 0 {
+			return formatWorkerCount(count) + " queued"
+		}
+		return "Queued to start"
+	case "completed":
+		if childCount > 0 {
+			return formatWorkerCount(childCount) + " settled"
+		}
+		return "No delegated workers"
+	}
+	if childCount > 0 {
+		return formatWorkerCount(childCount) + " visible"
+	}
+	return "No delegated workers"
+}
+
+func countRunStatus(rows []runChildRow, want string) int {
+	count := 0
+	for _, row := range rows {
+		if row.Status == want {
+			count++
+		}
+	}
+	return count
+}
+
+type runTimestampView struct {
+	Relative string
+	Exact    string
+	ISO      string
+}
+
+var runListNow = func() time.Time {
+	return time.Now().UTC()
+}
+
+func parseRunListTimestamp(raw string) time.Time {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return time.Time{}
+	}
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02 15:04:05",
+	} {
+		var (
+			ts  time.Time
+			err error
+		)
+		if layout == "2006-01-02 15:04:05" {
+			ts, err = time.ParseInLocation(layout, value, time.UTC)
+		} else {
+			ts, err = time.Parse(layout, value)
+		}
+		if err == nil {
+			return ts.UTC()
+		}
+	}
+	return time.Time{}
+}
+
+func buildRunTimestampView(ts time.Time) runTimestampView {
+	if ts.IsZero() {
+		return runTimestampView{
+			Relative: "Not recorded",
+			Exact:    "Not recorded yet",
+		}
+	}
+	return runTimestampView{
+		Relative: humanizeRunRelativeTime(runListNow(), ts),
+		Exact:    formatRunTimestamp(ts),
+		ISO:      ts.UTC().Format(time.RFC3339),
+	}
+}
+
+func humanizeRunRelativeTime(now, ts time.Time) string {
+	if ts.IsZero() {
+		return "Not recorded"
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	if ts.After(now) {
+		ts = now
+	}
+	delta := now.Sub(ts)
+	switch {
+	case delta < 30*time.Second:
+		return "just now"
+	case delta < time.Hour:
+		return fmt.Sprintf("%dm ago", int(delta/time.Minute))
+	case delta < 24*time.Hour:
+		return fmt.Sprintf("%dh ago", int(delta/time.Hour))
+	default:
+		return fmt.Sprintf("%dd ago", int(delta/(24*time.Hour)))
+	}
 }
 
 func parseRunListCursor(raw string) (runListCursor, bool) {

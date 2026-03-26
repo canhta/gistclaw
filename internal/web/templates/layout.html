@@ -427,6 +427,147 @@
       font-size: 15px;
       font-weight: 700;
     }
+    .run-cluster {
+      border: 1.5px solid var(--border-hard);
+      background: var(--surface);
+    }
+    .run-cluster[open] {
+      border-left: 4px solid var(--border-hard);
+    }
+    .run-cluster-summary {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1.4fr) repeat(5, minmax(0, 1fr));
+      gap: 12px;
+      align-items: start;
+      padding: 14px 16px;
+      cursor: pointer;
+      list-style: none;
+    }
+    .run-cluster-summary::-webkit-details-marker {
+      display: none;
+    }
+    .run-cluster-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 32px;
+      border: 1.5px solid var(--border-hard);
+      padding: 6px 8px;
+      color: var(--text-2);
+      font: 700 11px/1.2 var(--font-mono);
+      text-transform: uppercase;
+    }
+    .run-cluster[open] .run-cluster-toggle {
+      background: var(--border-hard);
+      color: var(--surface);
+    }
+    .run-cluster-primary,
+    .run-child-primary {
+      display: grid;
+      gap: 6px;
+      min-width: 0;
+    }
+    .run-cluster-heading,
+    .run-child-heading {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 10px;
+      align-items: baseline;
+      justify-content: space-between;
+    }
+    .run-cluster-title,
+    .run-child-title {
+      color: var(--text-1);
+      font-size: 15px;
+      font-weight: 700;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      word-break: break-word;
+      text-decoration: none;
+    }
+    .run-cluster-title {
+      -webkit-line-clamp: 2;
+    }
+    .run-child-title {
+      font-size: 14px;
+      -webkit-line-clamp: 2;
+    }
+    .run-cluster-title:hover,
+    .run-cluster-title:focus-visible,
+    .run-child-title:hover,
+    .run-child-title:focus-visible {
+      color: var(--text-1);
+      text-decoration: underline;
+      text-decoration-thickness: 1.5px;
+      text-underline-offset: 4px;
+    }
+    .run-cluster-identifiers {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+    }
+    .run-cluster-meta {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+    .run-cluster-label {
+      color: var(--text-3);
+      font: 700 10px/1.2 var(--font-mono);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .run-cluster-value {
+      color: var(--text-1);
+      font-size: 13px;
+      font-weight: 700;
+      word-break: break-word;
+    }
+    .run-cluster-meta time,
+    .run-cluster-meta .subtle {
+      display: block;
+    }
+    .run-cluster-children {
+      display: grid;
+      gap: 8px;
+      padding: 0 16px 16px 112px;
+      border-top: 1px solid var(--border-soft);
+      background: color-mix(in srgb, var(--surface) 92%, var(--bg) 8%);
+    }
+    .run-child-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      align-items: start;
+      padding: 12px 0;
+      border-top: 1px solid var(--border-soft);
+      border-left: 3px solid var(--border-hard);
+      padding-left: 12px;
+    }
+    .run-cluster-children > .run-child-row:first-child {
+      border-top: none;
+    }
+    .run-child-row.is-active {
+      border-left-color: var(--active);
+    }
+    .run-child-row.is-pending {
+      border-left-color: var(--pending);
+    }
+    .run-child-row.is-approval {
+      border-left-color: var(--approval);
+    }
+    .run-child-row.is-success {
+      border-left-color: var(--success);
+    }
+    .run-child-row.is-error {
+      border-left-color: var(--error);
+    }
+    .run-child-row.is-muted {
+      border-left-color: var(--muted-state);
+    }
     .run-timeline-card {
       display: grid;
       gap: 10px;
@@ -1435,11 +1576,13 @@
         padding: 24px 16px 40px;
       }
       .grid-two,
-      .filter-grid,
-      .session-filter-grid,
-      .queue-strip-head,
-      .team-summary-head,
-      .team-summary-grid,
+                  .filter-grid,
+                  .session-filter-grid,
+                  .run-cluster-summary,
+                  .run-child-row,
+                  .queue-strip-head,
+                  .team-summary-head,
+                  .team-summary-grid,
       .team-grid,
       .approval-filter-grid,
       .team-utility-bar,
@@ -1464,14 +1607,17 @@
         width: 100%;
         justify-content: space-between;
       }
-      .shell-project-switcher {
-        width: 100%;
-      }
-      .shell-project-select {
-        flex: 1 1 220px;
-      }
-    }
-  </style>
+                  .shell-project-switcher {
+                    width: 100%;
+                  }
+                  .shell-project-select {
+                    flex: 1 1 220px;
+                  }
+                  .run-cluster-children {
+                    padding: 0 16px 16px;
+                  }
+                }
+              </style>
 </head>
 <body>
   <header class="shell-header">

@@ -278,6 +278,7 @@ type Run struct {
 	InputTokens           int
 	OutputTokens          int
 	ModelLane             string
+	ModelID               string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 }
@@ -287,6 +288,7 @@ type UsageRecord struct {
 	OutputTokens int
 	CostUSD      float64
 	ModelLane    string
+	ModelID      string
 }
 
 type RunProfile struct {
@@ -411,6 +413,7 @@ type RunReceipt struct {
 	OutputTokens       int
 	CostUSD            float64
 	ModelLane          string
+	ModelID            string
 	VerificationStatus string
 	ApprovalCount      int
 	BudgetStatus       string

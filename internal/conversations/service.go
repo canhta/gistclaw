@@ -122,6 +122,7 @@ type turnCompletedPayload struct {
 	InputTokens  int    `json:"input_tokens"`
 	OutputTokens int    `json:"output_tokens"`
 	ModelLane    string `json:"model_lane"`
+	ModelID      string `json:"model_id"`
 }
 
 type runCompletedPayload struct {
@@ -129,6 +130,7 @@ type runCompletedPayload struct {
 	OutputTokens int     `json:"output_tokens"`
 	CostUSD      float64 `json:"cost_usd"`
 	ModelLane    string  `json:"model_lane"`
+	ModelID      string  `json:"model_id"`
 }
 
 type toolCallRecordedPayload struct {
@@ -218,9 +220,10 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 			 SET input_tokens = input_tokens + ?,
 			     output_tokens = output_tokens + ?,
 			     model_lane = CASE WHEN ? = '' THEN model_lane ELSE ? END,
+			     model_id = CASE WHEN ? = '' THEN model_id ELSE ? END,
 			     updated_at = ?
 			 WHERE id = ?`,
-			payload.InputTokens, payload.OutputTokens, payload.ModelLane, payload.ModelLane, evt.CreatedAt, evt.RunID,
+			payload.InputTokens, payload.OutputTokens, payload.ModelLane, payload.ModelLane, payload.ModelID, payload.ModelID, evt.CreatedAt, evt.RunID,
 		)
 		return err
 	case "run_completed":
@@ -229,20 +232,26 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 			return err
 		}
 		if _, err := tx.ExecContext(ctx,
-			"UPDATE runs SET status = 'completed', updated_at = ? WHERE id = ?",
-			evt.CreatedAt, evt.RunID,
+			`UPDATE runs
+			 SET status = 'completed',
+			     model_lane = CASE WHEN ? = '' THEN model_lane ELSE ? END,
+			     model_id = CASE WHEN ? = '' THEN model_id ELSE ? END,
+			     updated_at = ?
+			 WHERE id = ?`,
+			payload.ModelLane, payload.ModelLane, payload.ModelID, payload.ModelID, evt.CreatedAt, evt.RunID,
 		); err != nil {
 			return err
 		}
 		_, err := tx.ExecContext(ctx,
-			`INSERT INTO receipts (id, run_id, input_tokens, output_tokens, cost_usd, model_lane, created_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)
+			`INSERT INTO receipts (id, run_id, input_tokens, output_tokens, cost_usd, model_lane, model_id, created_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 			 ON CONFLICT(run_id) DO UPDATE SET
 			     input_tokens = excluded.input_tokens,
 			     output_tokens = excluded.output_tokens,
 			     cost_usd = excluded.cost_usd,
-			     model_lane = excluded.model_lane`,
-			generateID(), evt.RunID, payload.InputTokens, payload.OutputTokens, payload.CostUSD, payload.ModelLane, evt.CreatedAt,
+			     model_lane = excluded.model_lane,
+			     model_id = excluded.model_id`,
+			generateID(), evt.RunID, payload.InputTokens, payload.OutputTokens, payload.CostUSD, payload.ModelLane, payload.ModelID, evt.CreatedAt,
 		)
 		return err
 	case "tool_call_recorded":

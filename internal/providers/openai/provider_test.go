@@ -31,6 +31,7 @@ func successResponse(text string, promptTokens, completionTokens int) []byte {
 	b, _ := json.Marshal(map[string]any{
 		"id":     "chatcmpl-test",
 		"object": "chat.completion",
+		"model":  "gpt-5.4",
 		"choices": []map[string]any{
 			{
 				"index": 0,
@@ -79,6 +80,9 @@ func TestProvider_GeneratesTextCompletion(t *testing.T) {
 	}
 	if result.StopReason != "end_turn" {
 		t.Errorf("StopReason: got %q, want %q", result.StopReason, "end_turn")
+	}
+	if result.ModelID != "gpt-5.4" {
+		t.Errorf("ModelID: got %q, want %q", result.ModelID, "gpt-5.4")
 	}
 }
 

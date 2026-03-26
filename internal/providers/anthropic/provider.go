@@ -272,6 +272,7 @@ func parseResponse(resp *anthropicsdk.Message) runtime.GenerateResult {
 	result.StopReason = string(resp.StopReason)
 	result.InputTokens = int(resp.Usage.InputTokens)
 	result.OutputTokens = int(resp.Usage.OutputTokens)
+	result.ModelID = string(resp.Model)
 
 	for _, block := range resp.Content {
 		switch block.Type {

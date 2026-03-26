@@ -423,6 +423,7 @@ func parseChatCompletionsResponse(resp *openaisdk.ChatCompletion) runtime.Genera
 
 	result.InputTokens = int(resp.Usage.PromptTokens)
 	result.OutputTokens = int(resp.Usage.CompletionTokens)
+	result.ModelID = resp.Model
 	if len(resp.Choices) == 0 {
 		return result
 	}
@@ -452,6 +453,7 @@ func parseResponsesResponse(resp *openairesponses.Response) runtime.GenerateResu
 
 	result.InputTokens = int(resp.Usage.InputTokens)
 	result.OutputTokens = int(resp.Usage.OutputTokens)
+	result.ModelID = resp.Model
 
 	var textParts []string
 	for _, item := range resp.Output {

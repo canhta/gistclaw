@@ -52,9 +52,10 @@ func (s *stubMessageStream) Close() error { return nil }
 // successResponse builds a minimal valid Anthropic Messages API response body.
 func successResponse(text string, inputTokens, outputTokens int) []byte {
 	b, _ := json.Marshal(map[string]any{
-		"id":   "msg_test",
-		"type": "message",
-		"role": "assistant",
+		"id":    "msg_test",
+		"type":  "message",
+		"role":  "assistant",
+		"model": "claude-3-7-sonnet-20250219",
 		"content": []map[string]any{
 			{"type": "text", "text": text},
 		},
@@ -100,6 +101,9 @@ func TestProvider_GeneratesTextCompletion(t *testing.T) {
 	}
 	if result.StopReason != "end_turn" {
 		t.Errorf("StopReason: got %q, want %q", result.StopReason, "end_turn")
+	}
+	if result.ModelID != "claude-3-7-sonnet-20250219" {
+		t.Errorf("ModelID: got %q, want %q", result.ModelID, "claude-3-7-sonnet-20250219")
 	}
 }
 
