@@ -329,7 +329,6 @@
   let graphRefreshQueued = false;
   let lastGraphSnapshot = null;
   let nodeDetailPoll = null;
-  let nodeRefreshTimer = null;
   let nodeStream = null;
   let activeNodeRunID = "";
   let eventCount = events ? Number(events.dataset.eventCount || "0") : 0;
@@ -374,14 +373,6 @@
     }
     nodeStream.close();
     nodeStream = null;
-  }
-
-  function clearNodeRefreshTimer() {
-    if (!nodeRefreshTimer) {
-      return;
-    }
-    window.clearTimeout(nodeRefreshTimer);
-    nodeRefreshTimer = null;
   }
 
   function structuredTextFragment(view) {
@@ -619,6 +610,9 @@
     for (const entry of logs) {
       const card = document.createElement("article");
       card.className = "run-row run-timeline-card";
+      if (entry.entry_key) {
+        card.dataset.logKey = entry.entry_key;
+      }
       card.appendChild(timelineHead(entry.title || entry.tool_name || "Log", entry.created_at_label || ""));
       const meta = document.createElement("div");
       meta.className = "mono subtle";
@@ -640,7 +634,28 @@
     nodeModalLogs.replaceChildren(list);
   }
 
-  function appendNodeLogEvent(payload, occurredAt) {
+  function replaceNodeLogBody(card, payload) {
+    if (!card) {
+      return;
+    }
+    const existingBody = card.querySelector(".run-output-text");
+    if (existingBody) {
+      existingBody.remove();
+    }
+    const body = document.createElement("div");
+    body.className = "run-output-text";
+    if (payload.body_html) {
+      body.innerHTML = payload.body_html;
+    } else {
+      const pre = document.createElement("pre");
+      pre.className = "run-output-text";
+      pre.textContent = payload.body || payload.text || "";
+      body.appendChild(pre);
+    }
+    card.appendChild(body);
+  }
+
+  function upsertNodeLogEvent(payload, occurredAt) {
     if (!nodeModalLogs || !payload || !payload.text) {
       return;
     }
@@ -654,27 +669,26 @@
       list.className = "stack-md";
       nodeModalLogs.replaceChildren(list);
     }
-    const card = document.createElement("article");
-    card.className = "run-row run-timeline-card";
-    const title = `${payload.tool_name || "tool"} ${payload.stream || "log"}`.trim();
-    card.appendChild(timelineHead(title, formatTimestamp(occurredAt)));
-    const meta = document.createElement("div");
-    meta.className = "mono subtle";
-    meta.textContent = payload.stream || "log";
-    card.appendChild(meta);
-    const body = document.createElement("pre");
-    body.className = "run-output-text";
-    body.textContent = payload.text;
-    card.appendChild(body);
-    list.appendChild(card);
-  }
-
-  function scheduleNodeDetailRefresh(runID) {
-    clearNodeRefreshTimer();
-    nodeRefreshTimer = window.setTimeout(() => {
-      nodeRefreshTimer = null;
-      void openNodeDetail(runID, false);
-    }, 120);
+    const entryKey = payload.entry_key || `${payload.tool_call_id || payload.tool_name || "tool"}::${payload.stream || "log"}`;
+    let card = list.querySelector(`[data-log-key="${CSS.escape(entryKey)}"]`);
+    if (!(card instanceof HTMLElement)) {
+      card = document.createElement("article");
+      card.className = "run-row run-timeline-card";
+      card.dataset.logKey = entryKey;
+      const title = payload.title || `${payload.tool_name || "tool"} ${payload.stream || "log"}`.trim();
+      card.appendChild(timelineHead(title, formatTimestamp(occurredAt)));
+      const meta = document.createElement("div");
+      meta.className = "mono subtle";
+      meta.textContent = payload.stream || "log";
+      card.appendChild(meta);
+      list.appendChild(card);
+    } else {
+      const headTime = card.querySelector(".run-timeline-head .mono.subtle");
+      if (headTime) {
+        headTime.textContent = formatTimestamp(occurredAt);
+      }
+    }
+    replaceNodeLogBody(card, payload);
   }
 
   function connectNodeStream(runID) {
@@ -702,8 +716,7 @@
         return;
       }
       if (event.kind === "tool_log_recorded" && event.payload) {
-        appendNodeLogEvent(event.payload, event.occurred_at);
-        scheduleNodeDetailRefresh(runID);
+        upsertNodeLogEvent(event.payload, event.occurred_at);
         return;
       }
       if (event.kind === "turn_delta") {
@@ -1424,7 +1437,6 @@
     nodeModal.addEventListener("close", () => {
       clearNodeStream();
       clearNodeDetailPoll();
-      clearNodeRefreshTimer();
       activeNodeRunID = "";
     });
   }

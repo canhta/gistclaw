@@ -2111,6 +2111,54 @@ func TestSSEPayloadsAreStructuredJSON(t *testing.T) {
 	}
 }
 
+func TestSSEToolLogPayloadsCarryAggregatedHTML(t *testing.T) {
+	h := newServerHarness(t)
+	h.insertRun(t, "run-sse-log", "conv-sse-log", "watch tool logs", "active")
+	h.insertEventAtWithPayload(
+		t,
+		"evt-sse-log-history",
+		"conv-sse-log",
+		"run-sse-log",
+		"tool_log_recorded",
+		[]byte(`{"tool_call_id":"call-coder","tool_name":"coder_exec","stream":"terminal","text":"\u001b[31mFA"}`),
+		"2026-03-26 05:00:00",
+	)
+
+	ts := httptest.NewServer(h.server)
+	defer ts.Close()
+
+	resp, reader := subscribeSSE(t, ts.URL+"/operate/runs/run-sse-log/events")
+	defer resp.Body.Close()
+
+	if err := h.broadcaster.Emit(context.Background(), "run-sse-log", model.ReplayDelta{
+		RunID:       "run-sse-log",
+		Kind:        "tool_log_recorded",
+		PayloadJSON: []byte(`{"tool_call_id":"call-coder","tool_name":"coder_exec","stream":"terminal","text":"IL\u001b[0m"}`),
+		OccurredAt:  time.Unix(1711267200, 0).UTC(),
+	}); err != nil {
+		t.Fatalf("emit tool_log_recorded: %v", err)
+	}
+
+	event := readSSEEvent(t, reader)
+	if got := event["kind"]; got != "tool_log_recorded" {
+		t.Fatalf("expected kind tool_log_recorded, got %#v", got)
+	}
+	rawPayload, ok := event["payload"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected structured payload object, got %#v", event["payload"])
+	}
+	if got := rawPayload["entry_key"]; got != "call-coder::terminal" {
+		t.Fatalf("expected stable entry key, got %#v", got)
+	}
+	if got := rawPayload["body"]; got != "\u001b[31mFAIL\u001b[0m" {
+		t.Fatalf("expected aggregated terminal body, got %#v", got)
+	}
+	bodyHTML, ok := rawPayload["body_html"].(string)
+	if !ok || !strings.Contains(bodyHTML, "FAIL") {
+		t.Fatalf("expected rendered terminal HTML, got %#v", rawPayload["body_html"])
+	}
+}
+
 func TestSessionAPI(t *testing.T) {
 	t.Run("delivery health returns connector queue summary as JSON", func(t *testing.T) {
 		h := newServerHarness(t)

@@ -230,14 +230,84 @@ type runNodeLogEntryView struct {
 	BodyHTML       template.HTML `json:"body_html,omitempty"`
 	Stream         string        `json:"stream"`
 	ToolName       string        `json:"tool_name"`
+	ToolCallID     string        `json:"tool_call_id,omitempty"`
+	EntryKey       string        `json:"entry_key,omitempty"`
 	CreatedAtLabel string        `json:"created_at_label"`
 }
 
 type runToolLogPayload struct {
-	ToolCallID string `json:"tool_call_id"`
-	ToolName   string `json:"tool_name"`
-	Stream     string `json:"stream"`
-	Text       string `json:"text"`
+	ToolCallID string        `json:"tool_call_id,omitempty"`
+	ToolName   string        `json:"tool_name,omitempty"`
+	Stream     string        `json:"stream,omitempty"`
+	Text       string        `json:"text,omitempty"`
+	Body       string        `json:"body,omitempty"`
+	BodyHTML   template.HTML `json:"body_html,omitempty"`
+	Title      string        `json:"title,omitempty"`
+	EntryKey   string        `json:"entry_key,omitempty"`
+}
+
+type liveToolLogState struct {
+	bodies map[string]string
+}
+
+func newLiveToolLogState(events []model.Event) *liveToolLogState {
+	state := &liveToolLogState{bodies: make(map[string]string)}
+	for _, evt := range events {
+		if evt.Kind != "tool_log_recorded" {
+			continue
+		}
+		var payload runToolLogPayload
+		if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
+			continue
+		}
+		state.Apply(payload)
+	}
+	return state
+}
+
+func (s *liveToolLogState) Apply(payload runToolLogPayload) runToolLogPayload {
+	if s == nil {
+		s = &liveToolLogState{bodies: make(map[string]string)}
+	}
+	if s.bodies == nil {
+		s.bodies = make(map[string]string)
+	}
+	payload.EntryKey = liveToolLogEntryKey(payload.ToolCallID, payload.ToolName, payload.Stream)
+	payload.Title = liveToolLogTitle(payload.ToolName, payload.Stream)
+	if strings.TrimSpace(payload.Text) == "" {
+		payload.Body = s.bodies[payload.EntryKey]
+		payload.BodyHTML = renderLogEntryHTML(payload.Stream, payload.Body)
+		return payload
+	}
+	s.bodies[payload.EntryKey] += payload.Text
+	payload.Body = s.bodies[payload.EntryKey]
+	payload.BodyHTML = renderLogEntryHTML(payload.Stream, payload.Body)
+	return payload
+}
+
+func liveToolLogEntryKey(toolCallID, toolName, stream string) string {
+	switch {
+	case strings.TrimSpace(toolCallID) != "" && strings.TrimSpace(stream) != "":
+		return toolCallID + "::" + stream
+	case strings.TrimSpace(toolCallID) != "":
+		return toolCallID
+	case strings.TrimSpace(toolName) != "" && strings.TrimSpace(stream) != "":
+		return toolName + "::" + stream
+	case strings.TrimSpace(toolName) != "":
+		return toolName
+	case strings.TrimSpace(stream) != "":
+		return stream
+	default:
+		return "tool-log"
+	}
+}
+
+func liveToolLogTitle(toolName, stream string) string {
+	title := strings.TrimSpace(toolName + " " + stream)
+	if title == "" {
+		return "tool log"
+	}
+	return title
 }
 
 type runListFilters struct {
@@ -819,22 +889,22 @@ func buildRunNodeLogEntries(events []model.Event, toolCalls []runToolCallRecord)
 		if strings.TrimSpace(payload.Text) == "" {
 			continue
 		}
+		entryKey := liveToolLogEntryKey(payload.ToolCallID, payload.ToolName, payload.Stream)
 		groupKey := payload.ToolCallID + "::" + payload.ToolName + "::" + payload.Stream
 		if idx, ok := grouped[groupKey]; ok {
 			entries[idx].Body += payload.Text
 			entries[idx].BodyHTML = renderLogEntryHTML(entries[idx].Stream, entries[idx].Body)
 			continue
 		}
-		title := strings.TrimSpace(payload.ToolName + " " + payload.Stream)
-		if title == "" {
-			title = "tool log"
-		}
+		title := liveToolLogTitle(payload.ToolName, payload.Stream)
 		entries = append(entries, runNodeLogEntryView{
 			Title:          title,
 			Body:           payload.Text,
 			BodyHTML:       renderLogEntryHTML(payload.Stream, payload.Text),
 			Stream:         payload.Stream,
 			ToolName:       payload.ToolName,
+			ToolCallID:     payload.ToolCallID,
+			EntryKey:       entryKey,
 			CreatedAtLabel: formatRunTimestamp(evt.CreatedAt),
 		})
 		grouped[groupKey] = len(entries) - 1
@@ -849,6 +919,7 @@ func buildRunNodeLogEntries(events []model.Event, toolCalls []runToolCallRecord)
 				BodyHTML:       renderLogEntryHTML("stdout", stdout),
 				Stream:         "stdout",
 				ToolName:       call.ToolName,
+				EntryKey:       liveToolLogEntryKey(call.ID, call.ToolName, "stdout"),
 				CreatedAtLabel: formatRunTimestamp(call.CreatedAt),
 			})
 		}
@@ -859,6 +930,7 @@ func buildRunNodeLogEntries(events []model.Event, toolCalls []runToolCallRecord)
 				BodyHTML:       renderLogEntryHTML("stderr", stderr),
 				Stream:         "stderr",
 				ToolName:       call.ToolName,
+				EntryKey:       liveToolLogEntryKey(call.ID, call.ToolName, "stderr"),
 				CreatedAtLabel: formatRunTimestamp(call.CreatedAt),
 			})
 		}
@@ -1417,6 +1489,13 @@ func (s *Server) handleRunEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
 
+	history, err := loadRunEventsForNode(r.Context(), s.db.RawDB(), runID)
+	if err != nil {
+		http.Error(w, "failed to load run events", http.StatusInternalServerError)
+		return
+	}
+	logState := newLiveToolLogState(history)
+
 	sub := s.broadcaster.Subscribe(runID)
 	defer s.broadcaster.Unsubscribe(runID, sub)
 
@@ -1427,6 +1506,9 @@ func (s *Server) handleRunEvents(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case evt := <-sub:
+			if evt.Kind == "tool_log_recorded" {
+				evt = enrichToolLogReplayDelta(logState, evt)
+			}
 			payload, err := marshalReplayDelta(evt)
 			if err != nil {
 				continue
@@ -1443,6 +1525,20 @@ func (s *Server) handleRunEvents(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+func enrichToolLogReplayDelta(state *liveToolLogState, evt model.ReplayDelta) model.ReplayDelta {
+	var payload runToolLogPayload
+	if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
+		return evt
+	}
+	payload = state.Apply(payload)
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return evt
+	}
+	evt.PayloadJSON = raw
+	return evt
 }
 
 func marshalReplayDelta(evt model.ReplayDelta) ([]byte, error) {

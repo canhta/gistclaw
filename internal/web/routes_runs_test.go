@@ -1,9 +1,12 @@
 package web
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/canhta/gistclaw/internal/model"
 )
 
 func TestFormatRunTokenSummary(t *testing.T) {
@@ -190,6 +193,42 @@ func TestRenderTerminalLogHTMLSanitizesANSIOutput(t *testing.T) {
 	}
 	if strings.Contains(got, "<script>") {
 		t.Fatalf("expected rendered terminal HTML to be sanitized, got %q", got)
+	}
+}
+
+func TestLiveToolLogStateAggregatesTerminalHTML(t *testing.T) {
+	t.Parallel()
+
+	historyPayload, err := json.Marshal(runToolLogPayload{
+		ToolCallID: "call-coder",
+		ToolName:   "coder_exec",
+		Stream:     "terminal",
+		Text:       "\x1b[31mFA",
+	})
+	if err != nil {
+		t.Fatalf("marshal history payload: %v", err)
+	}
+	state := newLiveToolLogState([]model.Event{{
+		Kind:        "tool_log_recorded",
+		PayloadJSON: historyPayload,
+		CreatedAt:   time.Date(2026, time.March, 26, 5, 0, 0, 0, time.UTC),
+	}})
+
+	got := state.Apply(runToolLogPayload{
+		ToolCallID: "call-coder",
+		ToolName:   "coder_exec",
+		Stream:     "terminal",
+		Text:       "IL\x1b[0m",
+	})
+
+	if got.EntryKey != "call-coder::terminal" {
+		t.Fatalf("expected stable entry key, got %+v", got)
+	}
+	if got.Body != "\x1b[31mFAIL\x1b[0m" {
+		t.Fatalf("expected aggregated terminal body, got %q", got.Body)
+	}
+	if !strings.Contains(string(got.BodyHTML), "FAIL") {
+		t.Fatalf("expected rendered terminal html, got %q", got.BodyHTML)
 	}
 }
 
