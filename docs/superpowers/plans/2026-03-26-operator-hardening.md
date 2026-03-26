@@ -4,6 +4,26 @@
 
 **Goal:** Harden the shipped `gistclaw` runtime with security auditing, connector supervision, team profiles, and storage-health reporting without changing the journal-first architecture.
 
+## Execution Status
+
+Completed on `main` on 2026-03-26.
+
+Implementation commits:
+
+- `0f6b594` `feat: add security audit command`
+- `c028275` `feat: add connector supervision and health reporting`
+- `3afa42f` `feat: surface connector health in operator surfaces`
+- `aa9ee46` `feat: add per-project team profiles`
+- `e62f1ef` `feat: add team profile management`
+- `65b9845` `feat: add storage health reporting`
+
+Fresh verification after the final slice:
+
+- `go test ./...`
+- `go vet ./...`
+- `go test -coverprofile=/tmp/gistclaw-coverage.out ./... && go tool cover -func=/tmp/gistclaw-coverage.out | tail -n 1`
+- total coverage: `70.5%`
+
 **Architecture:** Add three small operator-facing seams around the current kernel: `internal/security` for deployment risk checks, `internal/app` supervision helpers for connector health, and `internal/store` health reporting for storage visibility. Extend the existing Team page and runtime team resolution to support named per-project team profiles, but keep onboarding out of scope for the first pass because staged onboarding changes are already in flight. All write paths remain runtime-owned or store-owned; no alternate state stores are introduced.
 
 **Tech Stack:** Go 1.25+, SQLite via `internal/store`, stdlib `context`/`database/sql`/`net/http`/`os`, Go `testing` package, existing server-rendered `html/template` UI

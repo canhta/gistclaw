@@ -18,9 +18,9 @@ The repository already ships:
 ## Near-Term Priorities
 
 1. extend external surfaces beyond the current Telegram and WhatsApp coverage without breaking the session kernel
-2. move team definition from repo-managed files toward operator-selectable or user-defined runtime composition
-3. deepen the operator control plane around routing, recovery, and session collaboration
-4. keep hardening tests, docs, and packaging around the shipped runtime surface
+2. deepen the operator control plane around routing, recovery, session collaboration, and schedule visibility
+3. improve packaging, deployment guidance, and extension workflows around the shipped runtime surface
+4. keep the new hardening surfaces stable: security audit, connector supervision, team profiles, and storage health
 
 ## Explicit Non-Goals Right Now
 
@@ -38,7 +38,7 @@ The session kernel is in place, but the product still does not fully behave like
 Remaining gaps:
 
 - the broader channel and gateway matrix is still intentionally narrow
-- teams are still mostly repo-managed rather than operator-created at runtime
+- teams are now operator-selectable per project, but higher-level sharing and installation workflows still do not exist
 - extension seams exist, but higher-level installation and sharing workflows do not
 - the control plane is strong locally, but still not the full platform surface the vision describes
 
@@ -48,4 +48,4 @@ The next slice should make the current system more operator-complete without reo
 
 1. deepen route and delivery recovery without bypassing the journaled runtime
 2. keep the session model central as more external surfaces are added
-3. improve team management and operator ergonomics instead of adding breadth-first platform features
+3. add explicit operator maintenance and packaging workflows instead of breadth-first platform features

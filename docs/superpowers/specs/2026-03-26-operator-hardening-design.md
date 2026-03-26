@@ -2,6 +2,24 @@
 
 Date: 2026-03-26
 
+## Implementation Status
+
+Shipped on `main` on 2026-03-26 as serial changes:
+
+- `0f6b594` `feat: add security audit command`
+- `c028275` `feat: add connector supervision and health reporting`
+- `3afa42f` `feat: surface connector health in operator surfaces`
+- `aa9ee46` `feat: add per-project team profiles`
+- `e62f1ef` `feat: add team profile management`
+- `65b9845` `feat: add storage health reporting`
+
+The shipped implementation stayed within the design bounds:
+
+- no onboarding coupling for the first team-profile pass
+- no new connectors beyond Telegram and WhatsApp
+- no alternate state store or non-journal write path
+- no destructive pruning in the storage slice
+
 ## Summary
 
 This design hardens `gistclaw`'s current local-first runtime without reopening OpenClaw-style platform sprawl.

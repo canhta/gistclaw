@@ -38,9 +38,10 @@ If you are evaluating GistClaw as a tool, the current value is:
 
 - `gistclaw serve` starts the daemon and local web host.
 - `gistclaw run` submits a task directly from the CLI.
-- `gistclaw inspect` reports status, runs, replay, and the admin token.
+- `gistclaw inspect` reports status, runs, replay, the admin token, and storage-health fields for the current database.
+- `gistclaw security audit` reports deployment-risk findings for the current config and runtime posture.
 - `gistclaw schedule` adds, updates, reports scheduler status, lists, shows, runs, enables, disables, and deletes scheduled tasks.
-- `gistclaw doctor` checks config, database, provider, workspace, scheduler state, research, MCP binaries, Telegram reachability, and disk headroom.
+- `gistclaw doctor` checks config, database, provider, workspace, research, MCP binaries, Telegram reachability, connector health, storage health, and scheduler state.
 - `gistclaw backup` creates a timestamped SQLite backup.
 - `gistclaw export` writes runs, receipts, and approvals to JSON.
 
@@ -51,7 +52,7 @@ If you are evaluating GistClaw as a tool, the current value is:
 - `/operate/runs` and `/operate/runs/{id}` show run state and live replay, with the orchestration graph kept on runs and run detail. The runs queue defaults to the active project with an explicit all-projects filter.
 - `/operate/sessions` and `/operate/sessions/{id}` expose session mailbox history, route state, and delivery failures.
 - `/operate/start-task` starts a new operator task from the web surface.
-- `/configure/team` edits and exports the runtime team definition.
+- `/configure/team` selects, creates, clones, deletes, edits, imports, and exports named team profiles for the active project.
 - `/configure/memory` lists, edits, and forgets stored facts.
 - `/configure/settings` updates machine-level operator settings such as budgets and tokens, and keeps raw workspace editing only as an advanced override.
 - `/recover/approvals` resolves risky tool actions.
@@ -105,6 +106,6 @@ The codebase is past the original reset, but a few surfaces are still intentiona
 
 - broader connector and gateway coverage
 - dedicated web schedule pages
-- operator-friendly team selection and editing
+- explicit storage-maintenance commands beyond health reporting
 - richer packaging and deployment guidance
 - more polished extension workflows beyond the current tool and provider seams

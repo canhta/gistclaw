@@ -14,16 +14,18 @@ Today the repo already ships a working daemon, CLI, local web control plane, rep
 - Runs remain inspectable after the fact through replay, session history, route bindings, deliveries, and memory.
 - Operators can start from the CLI, then move into a richer local control plane when recovery, approvals, or debugging matter.
 - Repetitive local tasks can be scheduled durably in SQLite and recovered cleanly after restarts.
+- Security, connector, and storage health can be audited from the operator CLI before drift turns into a recovery problem.
 
 ## What Ships Today
 
 - `gistclaw serve` starts the daemon and local web host.
-- `gistclaw run`, `inspect`, `schedule`, `doctor`, `backup`, and `export` cover the operator CLI.
+- `gistclaw run`, `inspect`, `security audit`, `schedule`, `doctor`, `backup`, and `export` cover the operator CLI.
 - The web UI includes onboarding plus operator-job pages for `Operate`, `Configure`, and `Recover`.
 - Providers: Anthropic and OpenAI-compatible endpoints.
 - Tools: built-in web fetch, optional Tavily search, optional MCP stdio tools.
 - Live external surfaces: Telegram DM and WhatsApp.
 - The repo includes a default team definition in [teams/default/team.yaml](/Users/canh/Projects/OSS/gistclaw/teams/default/team.yaml).
+- The Team page supports named per-project team profiles under `.gistclaw/teams/<profile>/`.
 
 ## Quick Start
 
@@ -65,6 +67,7 @@ gistclaw inspect status
 gistclaw inspect runs
 gistclaw inspect replay <run_id>
 gistclaw inspect token
+gistclaw security audit
 gistclaw schedule add --name "Daily review" --objective "Inspect repository status" --at 2030-01-01T00:00:00Z
 gistclaw schedule update <schedule_id> --objective "Inspect repository status after the update"
 gistclaw schedule status
@@ -78,6 +81,8 @@ gistclaw doctor
 gistclaw backup --db ~/.local/share/gistclaw/runtime.db
 gistclaw export --db ~/.local/share/gistclaw/runtime.db --out export.json
 ```
+
+`gistclaw inspect status` now includes storage-health fields such as database bytes, WAL bytes, free disk bytes, backup status, and any active storage warnings. `gistclaw doctor` now summarizes connector and storage health, and `gistclaw security audit` reports deployment-risk findings with exit codes that distinguish warn-only from failing posture.
 
 ## Build And Test
 
