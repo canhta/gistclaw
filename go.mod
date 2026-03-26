@@ -9,6 +9,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/modelcontextprotocol/go-sdk v1.4.1
 	github.com/openai/openai-go v1.12.0
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/yuin/goldmark v1.8.2
 	go.yaml.in/yaml/v4 v4.0.0-rc.4
 	modernc.org/sqlite v1.47.0

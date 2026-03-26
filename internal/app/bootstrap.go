@@ -22,6 +22,7 @@ import (
 	openaiprov "github.com/canhta/gistclaw/internal/providers/openai"
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
+	"github.com/canhta/gistclaw/internal/scheduler"
 	"github.com/canhta/gistclaw/internal/store"
 	"github.com/canhta/gistclaw/internal/teams"
 	"github.com/canhta/gistclaw/internal/tools"
@@ -34,6 +35,7 @@ type App struct {
 	db         *store.DB
 	convStore  *conversations.ConversationStore
 	runtime    *runtime.Runtime
+	scheduler  *scheduler.Service
 	replay     *replay.Service
 	webServer  *web.Server
 	connectors []model.Connector
@@ -116,6 +118,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		}
 	}
 	rp := replayWiring(db)
+	sched := scheduler.NewService(scheduler.NewStore(db), schedulerRuntimeDispatcher{runtime: rt})
 
 	webSrv, err := web.NewServer(web.Options{
 		DB:              db,
@@ -140,6 +143,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		db:         db,
 		convStore:  convStore,
 		runtime:    rt,
+		scheduler:  sched,
 		replay:     rp,
 		webServer:  webSrv,
 		connectors: connectors,

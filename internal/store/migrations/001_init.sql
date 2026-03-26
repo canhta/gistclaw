@@ -185,6 +185,45 @@ CREATE TABLE IF NOT EXISTS run_summaries (
     updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS schedules (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    objective TEXT NOT NULL,
+    workspace_root TEXT NOT NULL,
+    schedule_kind TEXT NOT NULL,
+    schedule_at TEXT NOT NULL DEFAULT '',
+    schedule_every_seconds INTEGER NOT NULL DEFAULT 0,
+    schedule_cron_expr TEXT NOT NULL DEFAULT '',
+    timezone TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1,
+    next_run_at DATETIME,
+    last_run_at DATETIME,
+    last_status TEXT NOT NULL DEFAULT '',
+    last_error TEXT NOT NULL DEFAULT '',
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
+    schedule_error_count INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS schedule_occurrences (
+    id TEXT PRIMARY KEY,
+    schedule_id TEXT NOT NULL,
+    slot_at DATETIME NOT NULL,
+    thread_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    skip_reason TEXT NOT NULL DEFAULT '',
+    run_id TEXT NOT NULL DEFAULT '',
+    conversation_id TEXT NOT NULL DEFAULT '',
+    error TEXT NOT NULL DEFAULT '',
+    started_at DATETIME,
+    finished_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE CASCADE,
+    UNIQUE (schedule_id, slot_at)
+);
+
 CREATE INDEX IF NOT EXISTS idx_events_run_id_created_at ON events(run_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_projects_last_used_at ON projects(last_used_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_runs_conversation_id_status ON runs(conversation_id, status);
@@ -199,6 +238,12 @@ CREATE INDEX IF NOT EXISTS idx_approvals_run_id_status ON approvals(run_id, stat
 CREATE INDEX IF NOT EXISTS idx_memory_items_project_id_agent_id_scope ON memory_items(project_id, agent_id, scope);
 CREATE INDEX IF NOT EXISTS idx_runs_session_id_status_updated_at ON runs(session_id, status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_run_summaries_project_id_run_id ON run_summaries(project_id, run_id);
+CREATE INDEX IF NOT EXISTS idx_schedules_enabled_next_run_at ON schedules(enabled, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_schedule_occurrences_active_schedule_created_at
+    ON schedule_occurrences(schedule_id, created_at DESC)
+    WHERE status IN ('dispatching', 'active', 'needs_approval');
+CREATE INDEX IF NOT EXISTS idx_schedule_occurrences_status_updated_at ON schedule_occurrences(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_schedule_occurrences_run_id ON schedule_occurrences(run_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_one_active_root_per_conversation
     ON runs(conversation_id)
     WHERE parent_run_id IS NULL AND status IN ('pending', 'active', 'needs_approval');

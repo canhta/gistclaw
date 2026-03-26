@@ -22,6 +22,7 @@ Subcommands:
   doctor     Run health checks (config, database, provider, workspace, disk)
   backup     Back up the SQLite database to a timestamped .db.bak file
   export     Export runs, receipts, and approvals to a JSON file
+  schedule   Manage scheduled tasks
 
 Inspect subcommands:
   inspect status           Show active runs, interrupted runs, pending approvals
@@ -66,6 +67,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runBackup(args[1:], stdout, stderr)
 	case "export":
 		return runExport(args[1:], stdout, stderr)
+	case "schedule":
+		return runSchedule(configPath, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n%s", args[0], usage)
 		return 1

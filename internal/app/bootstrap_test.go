@@ -321,8 +321,8 @@ func TestBootstrap_AppliesSavedBudgetSettingsToRuntime(t *testing.T) {
 	}
 
 	app, err := Bootstrap(Config{
-		DatabasePath: dbPath,
-		StateDir:     t.TempDir(),
+		DatabasePath:  dbPath,
+		StateDir:      t.TempDir(),
 		WorkspaceRoot: t.TempDir(),
 	})
 	if err != nil {
@@ -411,7 +411,7 @@ func TestGenerateStarterProjectName_IncludesEntropySuffix(t *testing.T) {
 	}
 }
 
-func TestBootstrap_DoesNotWireDeferredConnectorsOrScheduler(t *testing.T) {
+func TestBootstrap_WiresSchedulerAndLeavesDeferredConnectorsUnwired(t *testing.T) {
 	cfg := Config{
 		DatabasePath:  ":memory:",
 		StateDir:      t.TempDir(),
@@ -429,6 +429,9 @@ func TestBootstrap_DoesNotWireDeferredConnectorsOrScheduler(t *testing.T) {
 
 	if len(app.connectors) != 0 {
 		t.Fatalf("expected deferred connectors to be unwired, got %d", len(app.connectors))
+	}
+	if app.scheduler == nil {
+		t.Fatal("expected scheduler to be wired")
 	}
 }
 

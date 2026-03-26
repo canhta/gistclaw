@@ -44,6 +44,11 @@ func (a *App) Prepare(ctx context.Context) error {
 			expiredApprovals = n
 		}
 	}
+	if a.scheduler != nil {
+		if err := a.scheduler.Repair(ctx); err != nil {
+			return fmt.Errorf("repair scheduler: %w", err)
+		}
+	}
 
 	// Advisory disk-space check.
 	checkDiskSpace(a.cfg.DatabasePath)
@@ -128,6 +133,21 @@ func (a *App) Start(ctx context.Context) error {
 		}()
 	} else {
 		a.setWebAddress("")
+	}
+
+	if a.scheduler != nil {
+		serviceCount++
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := a.scheduler.Start(runCtx); err != nil && err != context.Canceled && err != context.DeadlineExceeded {
+				select {
+				case errCh <- fmt.Errorf("scheduler: %w", err):
+				default:
+				}
+				cancel()
+			}
+		}()
 	}
 
 	if serviceCount == 0 {

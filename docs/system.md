@@ -17,6 +17,7 @@ If you are evaluating GistClaw as a tool, the current value is:
 - A single Go binary, `gistclaw`, with daemon and operator commands.
 - A local web host with starter-project onboarding plus operator-job pages grouped under Operate, Configure, and Recover.
 - A journal-backed runtime that records runs, session collaboration, approvals, receipts, route bindings, and outbound delivery state in SQLite.
+- A SQLite-backed scheduler service for local scheduled tasks, occurrence history, restart repair, and CLI-first schedule management.
 - Provider adapters for Anthropic and OpenAI-compatible endpoints.
 - A tool registry with built-in web fetch, optional Tavily search, and optional MCP stdio tools.
 - Live external surfaces for Telegram DM and WhatsApp.
@@ -38,6 +39,7 @@ If you are evaluating GistClaw as a tool, the current value is:
 - `gistclaw serve` starts the daemon and local web host.
 - `gistclaw run` submits a task directly from the CLI.
 - `gistclaw inspect` reports status, runs, replay, and the admin token.
+- `gistclaw schedule` adds, lists, shows, runs, enables, disables, and deletes scheduled tasks.
 - `gistclaw doctor` checks config, database, provider, workspace, research, MCP binaries, Telegram reachability, and disk headroom.
 - `gistclaw backup` creates a timestamped SQLite backup.
 - `gistclaw export` writes runs, receipts, and approvals to JSON.
@@ -88,6 +90,7 @@ internal/providers/openai/        OpenAI-compatible provider adapter
 internal/providers/providerutil/  shared provider helpers and error translation
 internal/replay/                  replay loading and receipt/preview projections
 internal/runtime/                 run loop, collaboration, approvals, routing, delivery recovery
+internal/scheduler/               schedule definitions, claiming, repair, reconciliation, CLI-facing service
 internal/sessions/                session directory, routes, pagination, delivery listings
 internal/store/                   SQLite open/migrate helpers and schema
 internal/teams/                   team.yaml validation
@@ -101,6 +104,7 @@ teams/default/                    shipped team and soul files
 The codebase is past the original reset, but a few surfaces are still intentionally incomplete:
 
 - broader connector and gateway coverage
+- dedicated web schedule pages
 - operator-friendly team selection and editing
 - richer packaging and deployment guidance
 - more polished extension workflows beyond the current tool and provider seams

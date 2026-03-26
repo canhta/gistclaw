@@ -4,7 +4,7 @@ GistClaw is a local-first multi-agent runtime for software repo tasks.
 
 It lets you hand one task to one assistant, let that assistant coordinate specialist workers behind the scenes, approve risky actions before they touch your repo, and inspect exactly what happened afterward.
 
-Today the repo already ships a working daemon, CLI, local web control plane, replay model, memory store, provider adapters, tool registry, and live connector paths for Telegram DM and WhatsApp.
+Today the repo already ships a working daemon, CLI, local web control plane, replay model, memory store, provider adapters, tool registry, scheduled local tasks, and live connector paths for Telegram DM and WhatsApp.
 
 ## Why People Use It
 
@@ -13,11 +13,12 @@ Today the repo already ships a working daemon, CLI, local web control plane, rep
 - Everything stays local-first: daemon, web UI, and database all run on your machine.
 - Runs remain inspectable after the fact through replay, session history, route bindings, deliveries, and memory.
 - Operators can start from the CLI, then move into a richer local control plane when recovery, approvals, or debugging matter.
+- Repetitive local tasks can be scheduled durably in SQLite and recovered cleanly after restarts.
 
 ## What Ships Today
 
 - `gistclaw serve` starts the daemon and local web host.
-- `gistclaw run`, `inspect`, `doctor`, `backup`, and `export` cover the operator CLI.
+- `gistclaw run`, `inspect`, `schedule`, `doctor`, `backup`, and `export` cover the operator CLI.
 - The web UI includes onboarding plus operator-job pages for `Operate`, `Configure`, and `Recover`.
 - Providers: Anthropic and OpenAI-compatible endpoints.
 - Tools: built-in web fetch, optional Tavily search, optional MCP stdio tools.
@@ -64,6 +65,13 @@ gistclaw inspect status
 gistclaw inspect runs
 gistclaw inspect replay <run_id>
 gistclaw inspect token
+gistclaw schedule add --name "Daily review" --objective "Inspect repository status" --at 2030-01-01T00:00:00Z
+gistclaw schedule list
+gistclaw schedule show <schedule_id>
+gistclaw schedule run <schedule_id>
+gistclaw schedule enable <schedule_id>
+gistclaw schedule disable <schedule_id>
+gistclaw schedule delete <schedule_id>
 gistclaw doctor
 gistclaw backup --db ~/.local/share/gistclaw/runtime.db
 gistclaw export --db ~/.local/share/gistclaw/runtime.db --out export.json
