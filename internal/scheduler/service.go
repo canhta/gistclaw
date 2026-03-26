@@ -32,6 +32,7 @@ type Service struct {
 	dispatcher          Dispatcher
 	clock               func() time.Time
 	wakeInterval        time.Duration
+	minWakeInterval     time.Duration
 	dispatchGracePeriod time.Duration
 	dueLimit            int
 }
@@ -42,6 +43,7 @@ func NewService(store *Store, dispatcher Dispatcher) *Service {
 		dispatcher:          dispatcher,
 		clock:               func() time.Time { return time.Now().UTC() },
 		wakeInterval:        30 * time.Second,
+		minWakeInterval:     time.Second,
 		dispatchGracePeriod: 30 * time.Second,
 		dueLimit:            100,
 	}
@@ -95,22 +97,28 @@ func (s *Service) RunNow(ctx context.Context, scheduleID string) (*ClaimedOccurr
 }
 
 func (s *Service) Start(ctx context.Context) error {
-	if s.wakeInterval <= 0 {
-		s.wakeInterval = 30 * time.Second
-	}
-
-	ticker := time.NewTicker(s.wakeInterval)
-	defer ticker.Stop()
-
 	for {
 		if err := s.RunOnce(ctx); err != nil {
 			return err
 		}
 
+		delay, err := s.nextWakeDelay(ctx, s.clock().UTC())
+		if err != nil {
+			return err
+		}
+
+		timer := time.NewTimer(delay)
+
 		select {
 		case <-ctx.Done():
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
 			return ctx.Err()
-		case <-ticker.C:
+		case <-timer.C:
 		}
 	}
 }
@@ -156,6 +164,36 @@ func (s *Service) RunOnce(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (s *Service) nextWakeDelay(ctx context.Context, now time.Time) (time.Duration, error) {
+	if s.wakeInterval <= 0 {
+		s.wakeInterval = 30 * time.Second
+	}
+	if s.minWakeInterval <= 0 {
+		s.minWakeInterval = time.Second
+	}
+	if s.minWakeInterval > s.wakeInterval {
+		s.minWakeInterval = s.wakeInterval
+	}
+
+	status, err := s.store.Status(ctx, now.UTC())
+	if err != nil {
+		return 0, err
+	}
+	if status.NextWakeAt.IsZero() {
+		return s.wakeInterval, nil
+	}
+
+	delay := status.NextWakeAt.Sub(now.UTC())
+	switch {
+	case delay <= s.minWakeInterval:
+		return s.minWakeInterval, nil
+	case delay > s.wakeInterval:
+		return s.wakeInterval, nil
+	default:
+		return delay, nil
+	}
 }
 
 func (s *Service) reconcileOpenOccurrences(ctx context.Context, now time.Time) error {

@@ -363,6 +363,135 @@ func TestService_RunNowDispatchesImmediateOccurrence(t *testing.T) {
 	}
 }
 
+func TestService_RunOnceHonorsDueLimitForOverdueSchedules(t *testing.T) {
+	t.Parallel()
+
+	storeNow := mustParseRFC3339(t, "2026-03-26T01:00:00Z")
+	runNow := mustParseRFC3339(t, "2026-03-26T05:05:00Z")
+	s := newTestStore(t, storeNow)
+	ctx := context.Background()
+	first := mustCreateSchedule(t, ctx, s, "sched-due-limit-first")
+	second := mustCreateSchedule(t, ctx, s, "sched-due-limit-second")
+
+	firstDue := mustParseRFC3339(t, "2026-03-26T02:00:00Z")
+	secondDue := mustParseRFC3339(t, "2026-03-26T03:00:00Z")
+	mustSetScheduleTiming(t, s.db, first.ID, true, firstDue)
+	mustSetScheduleTiming(t, s.db, second.ID, true, secondDue)
+
+	fake := &fakeDispatcher{
+		dispatch: func(_ context.Context, cmd DispatchCommand) (model.Run, error) {
+			return model.Run{ID: "run-" + cmd.ConversationKey.ExternalID, ConversationID: "conv", Status: model.RunStatusActive}, nil
+		},
+	}
+	service := NewService(s, fake)
+	service.clock = func() time.Time { return runNow }
+	service.dueLimit = 1
+
+	if err := service.RunOnce(ctx); err != nil {
+		t.Fatalf("RunOnce returned error: %v", err)
+	}
+	if fake.calls != 1 {
+		t.Fatalf("dispatcher call count = %d, want 1", fake.calls)
+	}
+
+	if count := countOccurrencesForSchedule(t, s, first.ID); count != 1 {
+		t.Fatalf("first schedule occurrence count = %d, want 1", count)
+	}
+	if count := countOccurrencesForSchedule(t, s, second.ID); count != 0 {
+		t.Fatalf("second schedule occurrence count = %d, want 0", count)
+	}
+}
+
+func TestService_RunNowSkipsDuplicateWhilePreviousOccurrenceIsOpen(t *testing.T) {
+	t.Parallel()
+
+	storeNow := mustParseRFC3339(t, "2026-03-26T01:00:00Z")
+	firstRunNow := mustParseRFC3339(t, "2026-03-26T05:45:00Z")
+	secondRunNow := mustParseRFC3339(t, "2026-03-26T05:45:01Z")
+	s := newTestStore(t, storeNow)
+	ctx := context.Background()
+	schedule := mustCreateSchedule(t, ctx, s, "sched-run-now-skip")
+
+	fake := &fakeDispatcher{
+		dispatch: func(_ context.Context, cmd DispatchCommand) (model.Run, error) {
+			return model.Run{ID: "run-" + cmd.SourceMessageID, ConversationID: "conv-now", Status: model.RunStatusActive}, nil
+		},
+	}
+	service := NewService(s, fake)
+	service.clock = func() time.Time { return firstRunNow }
+
+	first, err := service.RunNow(ctx, schedule.ID)
+	if err != nil {
+		t.Fatalf("first RunNow returned error: %v", err)
+	}
+	if first == nil {
+		t.Fatal("first RunNow returned nil claim")
+	}
+
+	service.clock = func() time.Time { return secondRunNow }
+	second, err := service.RunNow(ctx, schedule.ID)
+	if err != nil {
+		t.Fatalf("second RunNow returned error: %v", err)
+	}
+	if second != nil {
+		t.Fatalf("second RunNow returned claim %#v, want nil skipped duplicate", second)
+	}
+	if fake.calls != 1 {
+		t.Fatalf("dispatcher call count = %d, want 1", fake.calls)
+	}
+}
+
+func TestService_NextWakeDelayUsesNearestScheduledRunWithClamp(t *testing.T) {
+	t.Parallel()
+
+	storeNow := mustParseRFC3339(t, "2026-03-26T01:00:00Z")
+	now := mustParseRFC3339(t, "2026-03-26T03:30:00Z")
+	s := newTestStore(t, storeNow)
+	ctx := context.Background()
+
+	service := NewService(s, &fakeDispatcher{})
+	service.clock = func() time.Time { return now }
+	service.wakeInterval = 30 * time.Second
+	service.minWakeInterval = time.Second
+
+	t.Run("no schedules uses fallback", func(t *testing.T) {
+		delay, err := service.nextWakeDelay(ctx, now)
+		if err != nil {
+			t.Fatalf("nextWakeDelay returned error: %v", err)
+		}
+		if delay != 30*time.Second {
+			t.Fatalf("delay = %s, want %s", delay, 30*time.Second)
+		}
+	})
+
+	t.Run("future wake uses nearest schedule", func(t *testing.T) {
+		schedule := mustCreateSchedule(t, ctx, s, "sched-next-wake")
+		nextWake := now.Add(5 * time.Second)
+		mustSetScheduleTiming(t, s.db, schedule.ID, true, nextWake)
+
+		delay, err := service.nextWakeDelay(ctx, now)
+		if err != nil {
+			t.Fatalf("nextWakeDelay returned error: %v", err)
+		}
+		if delay != 5*time.Second {
+			t.Fatalf("delay = %s, want %s", delay, 5*time.Second)
+		}
+	})
+
+	t.Run("overdue wake clamps to minimum", func(t *testing.T) {
+		schedule := mustCreateSchedule(t, ctx, s, "sched-next-wake-overdue")
+		mustSetScheduleTiming(t, s.db, schedule.ID, true, now.Add(-10*time.Second))
+
+		delay, err := service.nextWakeDelay(ctx, now)
+		if err != nil {
+			t.Fatalf("nextWakeDelay returned error: %v", err)
+		}
+		if delay != time.Second {
+			t.Fatalf("delay = %s, want %s", delay, time.Second)
+		}
+	})
+}
+
 func schedulerSpecEvery(t *testing.T, at string, every time.Duration) ScheduleSpec {
 	t.Helper()
 	return ScheduleSpec{
@@ -481,4 +610,19 @@ func loadScheduleSummary(t *testing.T, s *Store, scheduleID string) Schedule {
 		t.Fatalf("LoadSchedule(%q): %v", scheduleID, err)
 	}
 	return schedule
+}
+
+func countOccurrencesForSchedule(t *testing.T, s *Store, scheduleID string) int {
+	t.Helper()
+
+	var count int
+	if err := s.db.RawDB().QueryRow(
+		`SELECT COUNT(1)
+		   FROM schedule_occurrences
+		  WHERE schedule_id = ?`,
+		scheduleID,
+	).Scan(&count); err != nil {
+		t.Fatalf("count occurrences for %q: %v", scheduleID, err)
+	}
+	return count
 }
