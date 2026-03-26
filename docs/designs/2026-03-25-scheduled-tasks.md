@@ -1,6 +1,6 @@
 # Scheduled Tasks Design
 
-**Status:** Proposed
+**Status:** Implemented
 **Date:** 2026-03-26
 
 ## Summary
@@ -467,6 +467,11 @@ The scheduler wake loop should:
 
 The `UNIQUE(schedule_id, slot_at)` constraint is the anti-duplication guard.
 
+The wake loop should sleep until the nearest enabled `next_run_at`, clamped by:
+
+- a short minimum delay to avoid hot-looping on stale overdue state
+- a bounded maximum fallback poll interval when no schedule is due soon
+
 ## Dispatch Algorithm
 
 For each claimed occurrence:
@@ -573,6 +578,8 @@ so the scheduler should follow that pattern:
 
 ```text
 gistclaw schedule add
+gistclaw schedule update <id>
+gistclaw schedule status
 gistclaw schedule list
 gistclaw schedule show <id>
 gistclaw schedule run <id>
