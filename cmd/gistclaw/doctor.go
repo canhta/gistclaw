@@ -33,17 +33,15 @@ func runDoctor(configPath string, stdout, stderr io.Writer) int {
 
 	// 1. Config file parses without error.
 	cfg, cfgErr := app.LoadConfigRaw(configPath)
-	auditReport := securitypkg.Report{}
 	if cfgErr != nil {
 		checks = append(checks, check{name: "config", status: "FAIL", detail: cfgErr.Error()})
-		anyFail = true
 		for _, c := range checks {
 			fmt.Fprintf(stdout, "%-12s %s  %s\n", c.name, c.status, c.detail)
 		}
 		return 1
 	}
 	checks = append(checks, check{name: "config", status: "PASS", detail: configPath})
-	auditReport = securitypkg.RunAudit(securitypkg.Input{
+	auditReport := securitypkg.RunAudit(securitypkg.Input{
 		Config:            cfg,
 		AdminTokenPresent: true,
 	})
