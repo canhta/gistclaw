@@ -1288,6 +1288,13 @@
       gap: 8px;
       margin-bottom: 16px;
     }
+    .graph-control-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      margin-bottom: 16px;
+    }
     .graph-stage {
       display: grid;
       grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.85fr);
@@ -1491,6 +1498,13 @@
     }
     .graph-node.is-muted {
       border-left-color: var(--muted-state);
+    }
+    .graph-node.is-path {
+      border-width: 2px;
+    }
+    .graph-node.is-selected {
+      outline: 2px solid var(--brand);
+      outline-offset: 2px;
     }
     .graph-node-head {
       display: flex;

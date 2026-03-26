@@ -97,6 +97,11 @@
         <span class="subtle">Interrupted</span>
       </article>
     </div>
+    <div class="graph-control-row">
+      <button class="btn btn-subtle btn-inline" type="button" data-graph-action="focus-active">Focus active path</button>
+      <button class="btn btn-subtle btn-inline" type="button" data-graph-action="expand-active">Expand active branches</button>
+      <button class="btn btn-subtle btn-inline" type="button" data-graph-action="collapse-settled">Collapse settled branches</button>
+    </div>
     <div class="graph-stage">
       <section class="graph-stage-panel graph-stage-panel-board">
         <div class="panel-kicker">Branch directory</div>
@@ -330,6 +335,7 @@
   const graphBoard = document.getElementById("run-graph-board");
   const graphSummary = document.getElementById("run-graph-summary");
   const graphHeadline = document.getElementById("run-graph-headline");
+  const graphActionButtons = document.querySelectorAll("[data-graph-action]");
   const graphURL = graphBoard ? graphBoard.dataset.graphUrl : "";
   const nodeDetailURLTemplate = graphBoard ? graphBoard.dataset.nodeDetailUrlTemplate || "" : "";
   const nodeModal = document.getElementById("run-node-modal");
@@ -352,6 +358,8 @@
   let nodeDetailPoll = null;
   let nodeStream = null;
   let activeNodeRunID = "";
+  const branchState = new Map();
+  let graphFocusMode = "";
   let eventCount = events ? Number(events.dataset.eventCount || "0") : 0;
   let turnCount = root ? Number(root.dataset.turnCount || "0") : 0;
 
@@ -763,6 +771,7 @@
       return;
     }
     activeNodeRunID = detail.id || "";
+    applyGraphSelection(lastGraphSnapshot);
     if (nodeModalTitle) {
       nodeModalTitle.textContent = detail.agent_id || "Run node";
     }
@@ -1016,6 +1025,19 @@
         }
       },
       {
+        selector: "node.is-path",
+        style: {
+          "background-color": palette.surface,
+          "border-width": 3
+        }
+      },
+      {
+        selector: "node.is-selected",
+        style: {
+          "border-width": 4
+        }
+      },
+      {
         selector: "node.is-pending",
         style: {
           "border-color": palette.pending
@@ -1088,6 +1110,12 @@
           "target-arrow-color": palette.approval,
           "line-style": "solid",
           "curve-style": "taxi"
+        }
+      },
+      {
+        selector: "edge.is-path",
+        style: {
+          "width": 3
         }
       }
     ];
@@ -1229,6 +1257,65 @@
     return button;
   }
 
+  function rememberBranchState() {
+    if (!graphBoard) {
+      return;
+    }
+    for (const branch of graphBoard.querySelectorAll("[data-branch-root-id]")) {
+      if (!(branch instanceof HTMLDetailsElement)) {
+        continue;
+      }
+      const key = branch.dataset.branchRootId || "";
+      if (!key) {
+        continue;
+      }
+      branchState.set(key, branch.open);
+    }
+  }
+
+  function branchContainsPath(branch, activePath) {
+    const active = new Set(Array.isArray(activePath) ? activePath : []);
+    for (const node of branch.nodes || []) {
+      if (active.has(node.id || "")) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function branchHasBusyNode(branch) {
+    for (const node of branch.nodes || []) {
+      switch (node.status) {
+        case "needs_approval":
+        case "active":
+        case "pending":
+          return true;
+      }
+    }
+    return false;
+  }
+
+  function restoreBranchState(branchRoot, branch, snapshot) {
+    const key = branch && branch.root_node_id ? branch.root_node_id : "";
+    if (key && branchState.has(key)) {
+      branchRoot.open = Boolean(branchState.get(key));
+      return;
+    }
+    if (graphFocusMode === "expand-active" && branchContainsPath(branch, snapshot && snapshot.active_path)) {
+      branchRoot.open = true;
+      return;
+    }
+    if (graphFocusMode === "collapse-settled" && !branchHasBusyNode(branch)) {
+      branchRoot.open = false;
+      return;
+    }
+    branchRoot.open = !(branch && branch.default_collapsed);
+  }
+
+  function activePathIDs(snapshot) {
+    return Array.isArray(snapshot && snapshot.active_path) ? snapshot.active_path : [];
+  }
+
   function renderBoard(snapshot) {
     if (!snapshot || !graphBoard) {
       return;
@@ -1262,7 +1349,13 @@
         const branchRoot = document.createElement("details");
         branchRoot.className = `graph-branch ${branch.status_class || ""}`.trim();
         branchRoot.dataset.branchRootId = branch.root_node_id || "";
-        branchRoot.open = !branch.default_collapsed;
+        restoreBranchState(branchRoot, branch, snapshot);
+        branchRoot.addEventListener("toggle", () => {
+          const key = branch.root_node_id || "";
+          if (key) {
+            branchState.set(key, branchRoot.open);
+          }
+        });
 
         const summary = document.createElement("summary");
         summary.className = "graph-branch-summary";
@@ -1352,11 +1445,67 @@
     graphBoard.replaceChildren(...lanes);
   }
 
+  function applyGraphSelection(snapshot) {
+    if (!snapshot) {
+      return;
+    }
+
+    const activePath = activePathIDs(snapshot);
+    const activeSet = new Set(activePath);
+
+    if (graphBoard) {
+      for (const card of graphBoard.querySelectorAll("[data-run-id]")) {
+        if (!(card instanceof HTMLElement)) {
+          continue;
+        }
+        const runID = card.dataset.runId || "";
+        card.classList.toggle("is-path", activeSet.has(runID));
+        card.classList.toggle("is-selected", !!activeNodeRunID && activeNodeRunID === runID);
+      }
+      if (activeNodeRunID) {
+        const selected = graphBoard.querySelector(`[data-run-id="${CSS.escape(activeNodeRunID)}"]`);
+        const branch = selected ? selected.closest("[data-branch-root-id]") : null;
+        if (branch instanceof HTMLDetailsElement) {
+          branch.open = true;
+          const key = branch.dataset.branchRootId || "";
+          if (key) {
+            branchState.set(key, true);
+          }
+        }
+      }
+    }
+
+    if (!cy) {
+      return;
+    }
+    cy.elements().removeClass("is-path is-selected");
+    for (const nodeID of activePath) {
+      cy.$id(nodeID).addClass("is-path");
+    }
+    for (let idx = 0; idx < activePath.length - 1; idx++) {
+      const from = activePath[idx];
+      const to = activePath[idx + 1];
+      cy.$(`edge[source = "${from}"][target = "${to}"]`).addClass("is-path");
+      cy.$(`edge[source = "${to}"][target = "${from}"]`).addClass("is-path");
+    }
+    if (activeNodeRunID) {
+      cy.$id(activeNodeRunID).addClass("is-selected");
+    }
+    if (graphFocusMode === "focus-active" && activePath.length > 0) {
+      const selector = activePath.map((id) => `#${id}`).join(", ");
+      const focusNodes = cy.$(selector);
+      if (focusNodes.length > 0) {
+        cy.fit(focusNodes, 40);
+      }
+    }
+  }
+
   function renderGraph(snapshot) {
     if (!snapshot || !graphSummary || !graphHeadline) {
       return;
     }
 
+    rememberBranchState();
     lastGraphSnapshot = snapshot;
     if (snapshot.summary && typeof snapshot.summary.root_status === "string") {
       syncStatusLabels(snapshot.summary.root_status);
@@ -1374,6 +1523,7 @@
     );
     renderDiagram(snapshot);
     renderBoard(snapshot);
+    applyGraphSelection(snapshot);
 
     const busy = (snapshot.summary.active || 0) + (snapshot.summary.pending || 0) + (snapshot.summary.needs_approval || 0);
     if (busy === 0) {
@@ -1478,6 +1628,7 @@
     const observer = new MutationObserver(() => {
       if (lastGraphSnapshot) {
         renderDiagram(lastGraphSnapshot);
+        applyGraphSelection(lastGraphSnapshot);
       }
     });
     observer.observe(document.documentElement, {attributes: true, attributeFilter: ["data-theme"]});
@@ -1489,6 +1640,7 @@
       darkMode.addEventListener("change", () => {
         if (!document.documentElement.dataset.theme && lastGraphSnapshot) {
           renderDiagram(lastGraphSnapshot);
+          applyGraphSelection(lastGraphSnapshot);
         }
       });
     }
@@ -1517,6 +1669,18 @@
     });
   }
 
+  for (const button of graphActionButtons) {
+    button.addEventListener("click", () => {
+      graphFocusMode = button.dataset.graphAction || "";
+      if (graphFocusMode === "expand-active" || graphFocusMode === "collapse-settled") {
+        branchState.clear();
+      }
+      if (lastGraphSnapshot) {
+        renderGraph(lastGraphSnapshot);
+      }
+    });
+  }
+
   for (const button of nodeTabButtons) {
     button.addEventListener("click", () => {
       setNodeTab(button.dataset.nodeTab || "overview");
@@ -1528,6 +1692,7 @@
       clearNodeStream();
       clearNodeDetailPoll();
       activeNodeRunID = "";
+      applyGraphSelection(lastGraphSnapshot);
     });
   }
 

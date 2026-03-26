@@ -401,6 +401,35 @@ func TestRuns(t *testing.T) {
 		}
 	})
 
+	t.Run("detail preserves branch state and active path controls", func(t *testing.T) {
+		h := newServerHarness(t)
+		h.insertRunAt(t, "run-state-root", "conv-state", "Coordinate the launch", "active", "2026-03-25 08:00:00")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-state-root", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		body := rr.Body.String()
+		for _, want := range []string{
+			`const branchState = new Map();`,
+			`rememberBranchState()`,
+			`restoreBranchState(`,
+			`applyGraphSelection(`,
+			"Focus active path",
+			"Expand active branches",
+			"Collapse settled branches",
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected body to contain %q:\n%s", want, body)
+			}
+		}
+	})
+
 	t.Run("graph endpoint renders topology snapshot with semantic edges", func(t *testing.T) {
 		h := newServerHarness(t)
 		h.insertRunAt(t, "082b1c314823744cc779ece2f90e80e7", "conv-graph", "review the repo", "active", "2026-03-25 08:00:00")
