@@ -337,10 +337,10 @@ func buildGraphBranches(nodes []runGraphNodeView, rootRunID string) []runGraphBr
 	result := make([]runGraphBranchView, 0, len(order))
 	for _, branchRootID := range order {
 		branch := branches[branchRootID]
-		if branch.RootNodeID != rootRunID && !branch.DefaultCollapsed {
-			// already open
-		} else if branch.RootNodeID != rootRunID {
-			branch.DefaultCollapsed = true
+		if branch.RootNodeID == rootRunID {
+			branch.DefaultCollapsed = false
+		} else {
+			branch.DefaultCollapsed = !branchHasBusyStatus(branch.Nodes)
 		}
 		result = append(result, *branch)
 	}
@@ -456,6 +456,16 @@ func graphStatusPriority(status string) int {
 	default:
 		return 0
 	}
+}
+
+func branchHasBusyStatus(nodes []runGraphNodeView) bool {
+	for _, node := range nodes {
+		switch node.Status {
+		case string(model.RunStatusNeedsApproval), string(model.RunStatusActive), string(model.RunStatusPending):
+			return true
+		}
+	}
+	return false
 }
 
 func isSettledGraphStatus(status string) bool {

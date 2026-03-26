@@ -1357,26 +1357,88 @@
       gap: 12px;
       align-items: start;
     }
-    .graph-column {
+    .graph-lane {
       display: grid;
       gap: 10px;
     }
-    .graph-column-head {
+    .graph-lane-head {
       display: flex;
       align-items: center;
       justify-content: space-between;
       padding-bottom: 6px;
       border-bottom: 1px solid var(--border-soft);
     }
-    .graph-column-title {
+    .graph-lane-title {
       font-size: 13px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.08em;
     }
-    .graph-node-stack {
+    .graph-branch-stack {
       display: grid;
       gap: 10px;
+    }
+    .graph-branch {
+      border: 1.5px solid var(--border-hard);
+      border-left: 4px solid var(--border-hard);
+      background: var(--surface);
+    }
+    .graph-branch.is-pending {
+      border-left-color: var(--pending);
+    }
+    .graph-branch.is-active {
+      border-left-color: var(--active);
+    }
+    .graph-branch.is-approval {
+      border-left-color: var(--approval);
+    }
+    .graph-branch.is-success {
+      border-left-color: var(--success);
+    }
+    .graph-branch.is-error {
+      border-left-color: var(--error);
+    }
+    .graph-branch.is-muted {
+      border-left-color: var(--muted-state);
+    }
+    .graph-branch-summary {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      padding: 12px;
+      cursor: pointer;
+      list-style: none;
+    }
+    .graph-branch-summary::-webkit-details-marker {
+      display: none;
+    }
+    .graph-branch-summary-copy {
+      display: grid;
+      gap: 2px;
+      min-width: 0;
+    }
+    .graph-branch-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-1);
+    }
+    .graph-branch-toggle {
+      color: var(--text-2);
+      font-size: 11px;
+      text-transform: uppercase;
+    }
+    .graph-branch[open] .graph-branch-toggle::before {
+      content: "Collapse";
+    }
+    .graph-branch[open] .graph-branch-toggle {
+      font-size: 0;
+    }
+    .graph-branch-nodes {
+      display: grid;
+      gap: 10px;
+      padding: 0 12px 12px;
+      border-top: 1px solid var(--border-soft);
     }
     .graph-node {
       display: grid;

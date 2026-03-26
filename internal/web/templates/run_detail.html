@@ -65,7 +65,7 @@
 
 <section class="page-section">
   <div class="panel">
-    <h2 class="section-title">Collaboration Graph</h2>
+    <h2 class="section-title">Orchestration Map</h2>
     <p id="run-graph-headline" class="graph-headline">{{.Graph.Headline}}</p>
     <div id="run-graph-summary" class="graph-summary">
       <article class="graph-metric">
@@ -99,63 +99,76 @@
     </div>
     <div class="graph-stage">
       <section class="graph-stage-panel graph-stage-panel-board">
-        <div class="panel-kicker">Readable board</div>
-        <p class="panel-note">Cards stay summary-first. Click any node to inspect the full task, output, chain, and execution evidence in a modal.</p>
+        <div class="panel-kicker">Branch directory</div>
+        <p class="panel-note">The board groups delegated work by lane and branch so settled work can collapse while active paths stay obvious. Click any node to inspect the full task, output, chain, and execution evidence.</p>
         <div id="run-graph-board" class="graph-board" data-graph-url="{{.GraphURL}}" data-node-detail-url-template="{{.NodeDetailURLTemplate}}">
-          {{range .Graph.Columns}}
-            <section class="graph-column" data-depth="{{.Depth}}">
-              <div class="graph-column-head">
-                <span class="graph-column-title">{{.Label}}</span>
-                <span class="mono subtle">{{len .Nodes}} run(s)</span>
+          {{range .Graph.Lanes}}
+            <section class="graph-lane" data-lane-id="{{.ID}}">
+              <div class="graph-lane-head">
+                <span class="graph-lane-title">{{.Label}}</span>
+                <span class="mono subtle">{{len .Branches}} branch(es)</span>
               </div>
-              <div class="graph-node-stack">
-                {{range .Nodes}}
-                  <article class="graph-node {{.StatusClass}}" data-run-id="{{.ID}}" data-open-node-detail>
-                    <div class="graph-node-head">
-                      <div class="stack-sm">
-                        <div class="button-row">
-                          <span class="run-status {{.StatusClass}}">{{.StatusLabel}}</span>
-                          {{if .IsRoot}}<span class="badge badge-muted">root</span>{{end}}
-                        </div>
-                        <div class="graph-node-title-row">
-                          <div class="graph-node-title">{{.AgentID}}</div>
-                          <div class="mono subtle">Run {{.ShortID}}</div>
-                        </div>
+              <div class="graph-branch-stack">
+                {{range .Branches}}
+                  <details class="graph-branch {{.StatusClass}}" data-branch-root-id="{{.RootNodeID}}"{{if not .DefaultCollapsed}} open{{end}}>
+                    <summary class="graph-branch-summary">
+                      <div class="graph-branch-summary-copy">
+                        <span class="graph-branch-title">{{.Label}}</span>
+                        <span class="mono subtle">{{.VisibleCount}} node(s)</span>
                       </div>
-                      <button class="btn btn-subtle btn-inline" type="button" data-open-node-detail>Read more</button>
-                    </div>
-                    <div class="graph-node-objective structured-preview">{{if .ObjectivePreview}}{{.ObjectivePreview}}{{else}}No objective captured for this run.{{end}}</div>
-                    <div class="graph-node-facts">
-                      <div class="graph-node-fact">
-                        <span class="graph-node-fact-label">Model</span>
-                        <span>{{.ModelDisplay}}</span>
-                      </div>
-                      <div class="graph-node-fact">
-                        <span class="graph-node-fact-label">Tokens</span>
-                        <span>{{.TokenSummary}}</span>
-                      </div>
-                      <div class="graph-node-fact">
-                        <span class="graph-node-fact-label">Started</span>
-                        <span class="mono">{{.StartedAtLabel}}</span>
-                      </div>
-                      <div class="graph-node-fact">
-                        <span class="graph-node-fact-label">Updated</span>
-                        <span class="mono">{{.UpdatedAtLabel}}</span>
-                      </div>
-                      {{if .SessionShortID}}
-                      <div class="graph-node-fact">
-                        <span class="graph-node-fact-label">Session</span>
-                        <span class="mono">{{.SessionShortID}}</span>
-                      </div>
+                      <span class="graph-branch-toggle mono">{{if .DefaultCollapsed}}Expand{{else}}Open{{end}}</span>
+                    </summary>
+                    <div class="graph-branch-nodes">
+                      {{range .Nodes}}
+                        <article class="graph-node {{.StatusClass}}" data-run-id="{{.ID}}" data-open-node-detail>
+                          <div class="graph-node-head">
+                            <div class="stack-sm">
+                              <div class="button-row">
+                                <span class="run-status {{.StatusClass}}">{{.StatusLabel}}</span>
+                                {{if .IsRoot}}<span class="badge badge-muted">root</span>{{end}}
+                              </div>
+                              <div class="graph-node-title-row">
+                                <div class="graph-node-title">{{.AgentID}}</div>
+                                <div class="mono subtle">Run {{.ShortID}}</div>
+                              </div>
+                            </div>
+                            <button class="btn btn-subtle btn-inline" type="button" data-open-node-detail>Read more</button>
+                          </div>
+                          <div class="graph-node-objective structured-preview">{{if .ObjectivePreview}}{{.ObjectivePreview}}{{else}}No objective captured for this run.{{end}}</div>
+                          <div class="graph-node-facts">
+                            <div class="graph-node-fact">
+                              <span class="graph-node-fact-label">Model</span>
+                              <span>{{.ModelDisplay}}</span>
+                            </div>
+                            <div class="graph-node-fact">
+                              <span class="graph-node-fact-label">Tokens</span>
+                              <span>{{.TokenSummary}}</span>
+                            </div>
+                            <div class="graph-node-fact">
+                              <span class="graph-node-fact-label">Started</span>
+                              <span class="mono">{{.StartedAtLabel}}</span>
+                            </div>
+                            <div class="graph-node-fact">
+                              <span class="graph-node-fact-label">Updated</span>
+                              <span class="mono">{{.UpdatedAtLabel}}</span>
+                            </div>
+                            {{if .SessionShortID}}
+                            <div class="graph-node-fact">
+                              <span class="graph-node-fact-label">Session</span>
+                              <span class="mono">{{.SessionShortID}}</span>
+                            </div>
+                            {{end}}
+                            {{if .ParentLabel}}
+                            <div class="graph-node-fact">
+                              <span class="graph-node-fact-label">Parent</span>
+                              <span class="mono">{{.ParentLabel}}</span>
+                            </div>
+                            {{end}}
+                          </div>
+                        </article>
                       {{end}}
-                      {{if .ParentLabel}}
-                      <div class="graph-node-fact">
-                        <span class="graph-node-fact-label">Parent</span>
-                        <span class="mono">{{.ParentLabel}}</span>
-                      </div>
-                      {{end}}
                     </div>
-                  </article>
+                  </details>
                 {{end}}
               </div>
             </section>
@@ -163,8 +176,8 @@
         </div>
       </section>
       <section class="graph-stage-panel">
-        <div class="panel-kicker">Lineage map</div>
-        <p class="panel-note">Use the diagram for delegation shape after the board tells you which worker needs inspection next.</p>
+        <div class="panel-kicker">Topology map</div>
+        <p class="panel-note">Use the diagram for delegation shape after the branch directory tells you which path needs attention next.</p>
         <div id="run-graph-diagram" class="graph-diagram" aria-label="Run collaboration diagram"></div>
       </section>
     </div>
@@ -1180,86 +1193,122 @@
       return;
     }
 
-    const columns = [];
-    for (const column of snapshot.columns || []) {
-      const columnRoot = document.createElement("section");
-      columnRoot.className = "graph-column";
-      columnRoot.dataset.depth = String(column.depth || 0);
+    const lanes = [];
+    for (const lane of snapshot.lanes || []) {
+      const laneRoot = document.createElement("section");
+      laneRoot.className = "graph-lane";
+      laneRoot.dataset.laneId = lane.id || "";
 
       const head = document.createElement("div");
-      head.className = "graph-column-head";
+      head.className = "graph-lane-head";
 
       const title = document.createElement("span");
-      title.className = "graph-column-title";
-      title.textContent = column.label || `Depth ${column.depth || 0}`;
+      title.className = "graph-lane-title";
+      title.textContent = lane.label || "Workers";
       head.appendChild(title);
 
       const count = document.createElement("span");
       count.className = "mono subtle";
-      count.textContent = `${(column.nodes || []).length} run(s)`;
+      count.textContent = `${(lane.branches || []).length} branch(es)`;
       head.appendChild(count);
 
-      columnRoot.appendChild(head);
+      laneRoot.appendChild(head);
 
-      const stack = document.createElement("div");
-      stack.className = "graph-node-stack";
-      for (const node of column.nodes || []) {
-        const card = document.createElement("article");
-        card.className = `graph-node ${node.status_class || ""}`.trim();
-        card.dataset.runId = node.id || "";
-        card.dataset.openNodeDetail = "true";
+      const branchStack = document.createElement("div");
+      branchStack.className = "graph-branch-stack";
 
-        const nodeHead = document.createElement("div");
-        nodeHead.className = "graph-node-head";
+      for (const branch of lane.branches || []) {
+        const branchRoot = document.createElement("details");
+        branchRoot.className = `graph-branch ${branch.status_class || ""}`.trim();
+        branchRoot.dataset.branchRootId = branch.root_node_id || "";
+        branchRoot.open = !branch.default_collapsed;
 
-        const titleStack = document.createElement("div");
-        titleStack.className = "stack-sm";
+        const summary = document.createElement("summary");
+        summary.className = "graph-branch-summary";
 
-        const labels = document.createElement("div");
-        labels.className = "button-row";
+        const summaryCopy = document.createElement("div");
+        summaryCopy.className = "graph-branch-summary-copy";
 
-        const statusLabel = document.createElement("span");
-        statusLabel.className = `run-status ${node.status_class || ""}`.trim();
-        statusLabel.textContent = node.status_label || node.status || "unknown";
-        labels.appendChild(statusLabel);
+        const branchTitle = document.createElement("span");
+        branchTitle.className = "graph-branch-title";
+        branchTitle.textContent = branch.label || "Worker branch";
+        summaryCopy.appendChild(branchTitle);
 
-        if (node.is_root) {
-          const rootBadge = document.createElement("span");
-          rootBadge.className = "badge badge-muted";
-          rootBadge.textContent = "root";
-          labels.appendChild(rootBadge);
+        const branchMeta = document.createElement("span");
+        branchMeta.className = "mono subtle";
+        branchMeta.textContent = `${branch.visible_count || 0} node(s)`;
+        summaryCopy.appendChild(branchMeta);
+        summary.appendChild(summaryCopy);
+
+        const toggle = document.createElement("span");
+        toggle.className = "graph-branch-toggle mono";
+        toggle.textContent = branch.default_collapsed ? "Expand" : "Open";
+        summary.appendChild(toggle);
+        branchRoot.appendChild(summary);
+
+        const nodes = document.createElement("div");
+        nodes.className = "graph-branch-nodes";
+        for (const node of branch.nodes || []) {
+          const card = document.createElement("article");
+          card.className = `graph-node ${node.status_class || ""}`.trim();
+          card.dataset.runId = node.id || "";
+          card.dataset.openNodeDetail = "true";
+
+          const nodeHead = document.createElement("div");
+          nodeHead.className = "graph-node-head";
+
+          const titleStack = document.createElement("div");
+          titleStack.className = "stack-sm";
+
+          const labels = document.createElement("div");
+          labels.className = "button-row";
+
+          const statusLabel = document.createElement("span");
+          statusLabel.className = `run-status ${node.status_class || ""}`.trim();
+          statusLabel.textContent = node.status_label || node.status || "unknown";
+          labels.appendChild(statusLabel);
+
+          if (node.is_root) {
+            const rootBadge = document.createElement("span");
+            rootBadge.className = "badge badge-muted";
+            rootBadge.textContent = "root";
+            labels.appendChild(rootBadge);
+          }
+
+          titleStack.appendChild(labels);
+          titleStack.appendChild(graphNodeTitleRow(node.agent_id, node.short_id));
+          nodeHead.appendChild(titleStack);
+          nodeHead.appendChild(openNodeButton());
+          card.appendChild(nodeHead);
+
+          const objective = document.createElement("div");
+          objective.className = "graph-node-objective structured-preview";
+          objective.textContent = node.objective_preview || node.objective || "No objective captured for this run.";
+          card.appendChild(objective);
+
+          const facts = document.createElement("div");
+          facts.className = "graph-node-facts";
+          appendGraphFact(facts, "Model", node.model_display || "not recorded", false);
+          appendGraphFact(facts, "Tokens", node.token_summary || "0 in / 0 out", false);
+          appendGraphFact(facts, "Started", node.started_at_label || "Not recorded", true);
+          appendGraphFact(facts, "Updated", node.updated_at_label || "Not recorded", true);
+          appendGraphFact(facts, "Session", node.session_short_id || "", true);
+          appendGraphFact(facts, "Parent", node.parent_label || "", true);
+          if (facts.childNodes.length > 0) {
+            card.appendChild(facts);
+          }
+
+          nodes.appendChild(card);
         }
-
-        titleStack.appendChild(labels);
-        titleStack.appendChild(graphNodeTitleRow(node.agent_id, node.short_id));
-        nodeHead.appendChild(titleStack);
-        nodeHead.appendChild(openNodeButton());
-        card.appendChild(nodeHead);
-
-        const objective = document.createElement("div");
-        objective.className = "graph-node-objective structured-preview";
-        objective.textContent = node.objective_preview || node.objective || "No objective captured for this run.";
-        card.appendChild(objective);
-
-        const facts = document.createElement("div");
-        facts.className = "graph-node-facts";
-        appendGraphFact(facts, "Model", node.model_display || "not recorded", false);
-        appendGraphFact(facts, "Tokens", node.token_summary || "0 in / 0 out", false);
-        appendGraphFact(facts, "Started", node.started_at_label || "Not recorded", true);
-        appendGraphFact(facts, "Updated", node.updated_at_label || "Not recorded", true);
-        appendGraphFact(facts, "Session", node.session_short_id || "", true);
-        appendGraphFact(facts, "Parent", node.parent_label || "", true);
-        if (facts.childNodes.length > 0) {
-          card.appendChild(facts);
-        }
-
-        stack.appendChild(card);
+        branchRoot.appendChild(nodes);
+        branchStack.appendChild(branchRoot);
       }
-      columnRoot.appendChild(stack);
-      columns.push(columnRoot);
+
+      laneRoot.appendChild(branchStack);
+      lanes.push(laneRoot);
     }
 
-    graphBoard.replaceChildren(...columns);
+    graphBoard.replaceChildren(...lanes);
   }
 
   function renderGraph(snapshot) {

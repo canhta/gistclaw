@@ -313,6 +313,50 @@ func TestRuns(t *testing.T) {
 		}
 	})
 
+	t.Run("detail renders orchestration map structure", func(t *testing.T) {
+		h := newServerHarness(t)
+		h.insertRunAt(t, "run-map-root", "conv-map", "Coordinate the launch", "active", "2026-03-25 08:00:00")
+		if _, err := h.db.RawDB().Exec(
+			`INSERT INTO runs
+			 (id, conversation_id, agent_id, session_id, team_id, parent_run_id, objective, workspace_root, status, created_at, updated_at)
+			 VALUES
+			 ('run-map-child', 'conv-map', 'patcher', 'sess-map-child', 'repo-task-team', 'run-map-root', 'Create the landing page', ?, 'active', '2026-03-25 08:03:00', '2026-03-25 08:04:00')`,
+			h.workspaceRoot,
+		); err != nil {
+			t.Fatalf("insert child run: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-map-root", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		body := rr.Body.String()
+		for _, want := range []string{
+			"Orchestration Map",
+			"Branch directory",
+			`data-branch-root-id=`,
+			`data-lane-id=`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected body to contain %q:\n%s", want, body)
+			}
+		}
+		for _, unwanted := range []string{
+			"Lineage map",
+			"Front Session",
+			"Delegated Workers",
+		} {
+			if strings.Contains(body, unwanted) {
+				t.Fatalf("expected body to drop %q:\n%s", unwanted, body)
+			}
+		}
+	})
+
 	t.Run("graph endpoint renders lineage snapshot with statuses", func(t *testing.T) {
 		h := newServerHarness(t)
 		h.insertRunAt(t, "082b1c314823744cc779ece2f90e80e7", "conv-graph", "review the repo", "active", "2026-03-25 08:00:00")
