@@ -28,6 +28,42 @@ func TestDoctor_AllChecksPass(t *testing.T) {
 	}
 }
 
+func TestDoctor_PrintsConnectorHealthSummary(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	exec.Command("git", "init", workspaceRoot).Run()
+	dbPath := filepath.Join(t.TempDir(), "gistclaw.db")
+
+	cfgDir := t.TempDir()
+	cfgPath := filepath.Join(cfgDir, "config.yaml")
+	content := strings.Join([]string{
+		"database_path: " + dbPath,
+		"workspace_root: " + workspaceRoot,
+		"provider:",
+		"  name: openai",
+		"  api_key: sk-test",
+		"whatsapp:",
+		"  phone_number_id: phone-123",
+		"  access_token: wa-token",
+		"  verify_token: verify-token",
+		"",
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runDoctor(cfgPath, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected zero exit code, got %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	output := stdout.String()
+	for _, want := range []string{"connector:whatsapp", "awaiting webhook traffic"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in doctor output:\n%s", want, output)
+		}
+	}
+}
+
 func TestDoctor_MissingWorkspaceFails(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "gistclaw.db")
 	cfgPath := makeValidConfig(t, dbPath, "/nonexistent/workspace/path-xyz-99")

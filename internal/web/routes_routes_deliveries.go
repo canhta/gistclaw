@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -12,7 +13,9 @@ import (
 )
 
 type routesDeliveriesPageData struct {
+	ConnectorCount int
 	Health         []model.ConnectorDeliveryHealth
+	RuntimeHealth  []routesDeliveriesRuntimeHealthView
 	ActiveRoutes   []routesDeliveriesRouteView
 	ActivePaging   pageLinks
 	RouteHistory   []routesDeliveriesRouteView
@@ -58,6 +61,15 @@ type routesDeliveriesDeliveryView struct {
 	Status        string
 	StatusLabel   string
 	AttemptsLabel string
+}
+
+type routesDeliveriesRuntimeHealthView struct {
+	ConnectorID      string
+	State            string
+	StateLabel       string
+	Summary          string
+	CheckedAtLabel   string
+	RestartSuggested bool
 }
 
 func (s *Server) handleRoutesDeliveriesPage(w http.ResponseWriter, r *http.Request) {
@@ -222,6 +234,11 @@ func (s *Server) loadRoutesDeliveriesPageData(r *http.Request) (routesDeliveries
 	}
 	health = filterConnectorHealth(health, filters)
 
+	runtimeHealth, err := s.loadRuntimeConnectorHealth(r.Context(), filters)
+	if err != nil {
+		return routesDeliveriesPageData{}, err
+	}
+
 	var (
 		activeRoutes  []model.RouteDirectoryItem
 		activePaging  pageLinks
@@ -278,7 +295,9 @@ func (s *Server) loadRoutesDeliveriesPageData(r *http.Request) (routesDeliveries
 	}
 
 	return routesDeliveriesPageData{
+		ConnectorCount: connectorHealthCount(health, runtimeHealth),
 		Health:         health,
+		RuntimeHealth:  buildRoutesDeliveriesRuntimeHealthViews(runtimeHealth),
 		ActiveRoutes:   buildRoutesDeliveriesRouteViews(activeRoutes),
 		ActivePaging:   activePaging,
 		RouteHistory:   buildRoutesDeliveriesRouteViews(routeHistory),
@@ -327,6 +346,48 @@ func filterConnectorHealth(list []model.ConnectorDeliveryHealth, filters routesD
 	return filtered
 }
 
+func (s *Server) loadRuntimeConnectorHealth(ctx context.Context, filters routesDeliveriesPageFilters) ([]model.ConnectorHealthSnapshot, error) {
+	if s.connectorHealth == nil {
+		return nil, nil
+	}
+
+	list, err := s.connectorHealth.ConnectorHealth(ctx)
+	if err != nil {
+		return nil, errors.New("failed to load runtime connector health")
+	}
+	return filterRuntimeConnectorHealth(list, filters), nil
+}
+
+func filterRuntimeConnectorHealth(list []model.ConnectorHealthSnapshot, filters routesDeliveriesPageFilters) []model.ConnectorHealthSnapshot {
+	if filters.ConnectorID == "" && filters.Query == "" {
+		return list
+	}
+
+	filtered := make([]model.ConnectorHealthSnapshot, 0, len(list))
+	query := strings.ToLower(filters.Query)
+	for _, item := range list {
+		if filters.ConnectorID != "" && item.ConnectorID != filters.ConnectorID {
+			continue
+		}
+		if query != "" && !strings.Contains(strings.ToLower(item.ConnectorID), query) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+func connectorHealthCount(queue []model.ConnectorDeliveryHealth, runtime []model.ConnectorHealthSnapshot) int {
+	seen := make(map[string]struct{}, len(queue)+len(runtime))
+	for _, item := range queue {
+		seen[item.ConnectorID] = struct{}{}
+	}
+	for _, item := range runtime {
+		seen[item.ConnectorID] = struct{}{}
+	}
+	return len(seen)
+}
+
 func buildRoutesDeliveriesRouteViews(items []model.RouteDirectoryItem) []routesDeliveriesRouteView {
 	views := make([]routesDeliveriesRouteView, 0, len(items))
 	for _, item := range items {
@@ -361,6 +422,26 @@ func buildRoutesDeliveriesDeliveryViews(items []model.DeliveryQueueItem) []route
 			Status:        item.Status,
 			StatusLabel:   humanizeWebLabel(item.Status),
 			AttemptsLabel: attemptLabel(item.Attempts),
+		})
+	}
+	return views
+}
+
+func buildRoutesDeliveriesRuntimeHealthViews(items []model.ConnectorHealthSnapshot) []routesDeliveriesRuntimeHealthView {
+	views := make([]routesDeliveriesRuntimeHealthView, 0, len(items))
+	for _, item := range items {
+		checkedAtLabel := ""
+		if !item.CheckedAt.IsZero() {
+			checkedAt := item.CheckedAt
+			checkedAtLabel = formatOptionalWebTimestamp(&checkedAt)
+		}
+		views = append(views, routesDeliveriesRuntimeHealthView{
+			ConnectorID:      item.ConnectorID,
+			State:            string(item.State),
+			StateLabel:       humanizeWebLabel(string(item.State)),
+			Summary:          item.Summary,
+			CheckedAtLabel:   checkedAtLabel,
+			RestartSuggested: item.RestartSuggested,
 		})
 	}
 	return views

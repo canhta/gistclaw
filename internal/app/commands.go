@@ -4,12 +4,16 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/canhta/gistclaw/internal/conversations"
+	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
+	"github.com/canhta/gistclaw/internal/store"
+	"github.com/canhta/gistclaw/internal/tools"
 )
 
 type Status struct {
@@ -118,4 +122,37 @@ func (a *App) AdminToken(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("load admin token: %w", err)
 	}
 	return token, nil
+}
+
+func (a *App) ConnectorHealth(context.Context) ([]model.ConnectorHealthSnapshot, error) {
+	return collectConnectorHealthSnapshots(a.connectors), nil
+}
+
+func ConfiguredConnectorHealth(ctx context.Context, cfg Config, db *store.DB) ([]model.ConnectorHealthSnapshot, error) {
+	if db == nil {
+		return nil, fmt.Errorf("connector health: db is required")
+	}
+
+	cs := conversations.NewConversationStore(db)
+	mem := memory.NewStore(db, cs)
+	rt := runtime.New(db, cs, tools.NewRegistry(), mem, nil, nil)
+	app := &App{
+		connectors: buildConnectors(cfg, db, cs, rt, nil),
+	}
+	return app.ConnectorHealth(ctx)
+}
+
+func collectConnectorHealthSnapshots(connectors []model.Connector) []model.ConnectorHealthSnapshot {
+	snapshots := make([]model.ConnectorHealthSnapshot, 0, len(connectors))
+	for _, connector := range connectors {
+		reporter, ok := connector.(connectorHealthReporter)
+		if !ok {
+			continue
+		}
+		snapshots = append(snapshots, reporter.ConnectorHealthSnapshot())
+	}
+	sort.Slice(snapshots, func(i, j int) bool {
+		return snapshots[i].ConnectorID < snapshots[j].ConnectorID
+	})
+	return snapshots
 }

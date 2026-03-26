@@ -22,7 +22,8 @@ type sessionListResponse struct {
 }
 
 type connectorDeliveryHealthResponse struct {
-	Connectors []model.ConnectorDeliveryHealth `json:"connectors"`
+	Connectors        []model.ConnectorDeliveryHealth `json:"connectors"`
+	RuntimeConnectors []model.ConnectorHealthSnapshot `json:"runtime_connectors,omitempty"`
 }
 
 type routeDirectoryResponse struct {
@@ -119,7 +120,16 @@ func (s *Server) handleDeliveryHealth(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, connectorDeliveryHealthResponse{Connectors: list})
+	resp := connectorDeliveryHealthResponse{Connectors: list}
+	if s.connectorHealth != nil {
+		resp.RuntimeConnectors, err = s.connectorHealth.ConnectorHealth(r.Context())
+		if err != nil {
+			http.Error(w, "failed to load runtime connector health", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleRoutesIndex(w http.ResponseWriter, r *http.Request) {

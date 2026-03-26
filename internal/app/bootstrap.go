@@ -131,12 +131,27 @@ func Bootstrap(cfg Config) (*App, error) {
 		whatsappHealth = whatsappconnector.NewHealthState(nil)
 	}
 
+	connectors := buildConnectors(cfg, db, convStore, rt, whatsappHealth)
+	connectorNotifier.SetConnectors(connectors)
+
+	application := &App{
+		cfg:        cfg,
+		db:         db,
+		convStore:  convStore,
+		runtime:    rt,
+		scheduler:  sched,
+		replay:     rp,
+		connectors: connectors,
+		toolCloser: toolCloser,
+	}
+
 	webSrv, err := web.NewServer(web.Options{
 		DB:              db,
 		Replay:          rp,
 		Broadcaster:     broadcaster,
 		Runtime:         rt,
 		WhatsAppWebhook: buildWhatsAppWebhook(cfg, db, convStore, rt, whatsappHealth),
+		ConnectorHealth: application,
 	})
 	if err != nil {
 		if toolCloser != nil {
@@ -145,21 +160,8 @@ func Bootstrap(cfg Config) (*App, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("bootstrap: web server: %w", err)
 	}
-
-	connectors := buildConnectors(cfg, db, convStore, rt, whatsappHealth)
-	connectorNotifier.SetConnectors(connectors)
-
-	return &App{
-		cfg:        cfg,
-		db:         db,
-		convStore:  convStore,
-		runtime:    rt,
-		scheduler:  sched,
-		replay:     rp,
-		webServer:  webSrv,
-		connectors: connectors,
-		toolCloser: toolCloser,
-	}, nil
+	application.webServer = webSrv
+	return application, nil
 }
 
 func resolveTeamDir(cfg Config) string {

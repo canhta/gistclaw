@@ -2689,6 +2689,43 @@ func TestSessionAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("delivery health includes runtime connector snapshots", func(t *testing.T) {
+		h := newServerHarnessWithConnectorHealth(t, []model.ConnectorHealthSnapshot{
+			{
+				ConnectorID: "telegram",
+				State:       model.ConnectorHealthDegraded,
+				Summary:     "poll loop stale",
+			},
+			{
+				ConnectorID: "whatsapp",
+				State:       model.ConnectorHealthHealthy,
+				Summary:     "webhook activity recent",
+			},
+		})
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/deliveries/health", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			RuntimeConnectors []model.ConnectorHealthSnapshot `json:"runtime_connectors"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if len(resp.RuntimeConnectors) != 2 {
+			t.Fatalf("expected 2 runtime connector summaries, got %d", len(resp.RuntimeConnectors))
+		}
+		if resp.RuntimeConnectors[0].ConnectorID != "telegram" || resp.RuntimeConnectors[0].Summary != "poll loop stale" {
+			t.Fatalf("unexpected telegram runtime summary: %+v", resp.RuntimeConnectors[0])
+		}
+	})
+
 	t.Run("delivery index filters queue and top-level retry requeues by delivery id", func(t *testing.T) {
 		h := newServerHarness(t)
 		run, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
@@ -3511,6 +3548,33 @@ func TestRoutesDeliveriesPage(t *testing.T) {
 		}
 	})
 
+	t.Run("GET /recover/routes-deliveries renders runtime connector state", func(t *testing.T) {
+		h := newServerHarnessWithConnectorHealth(t, []model.ConnectorHealthSnapshot{
+			{
+				ConnectorID: "telegram",
+				State:       model.ConnectorHealthDegraded,
+				Summary:     "poll loop stale",
+			},
+		})
+		run, route, intentID := h.seedRoutesDeliveriesData(t)
+		h.markOutboundIntentTerminal(t, intentID)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/recover/routes-deliveries", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		for _, want := range []string{route.ID, run.SessionID, "telegram", "poll loop stale", "Degraded"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected routes and deliveries page to contain %q:\n%s", want, body)
+			}
+		}
+	})
+
 	t.Run("GET /recover/routes-deliveries formats route and delivery labels", func(t *testing.T) {
 		h := newServerHarness(t)
 		run, route, intentID := h.seedRoutesDeliveriesData(t)
@@ -4169,9 +4233,26 @@ type serverHarness struct {
 	workspaceRoot   string
 }
 
+type stubConnectorHealthSource struct {
+	snapshots []model.ConnectorHealthSnapshot
+	err       error
+}
+
+func (s stubConnectorHealthSource) ConnectorHealth(context.Context) ([]model.ConnectorHealthSnapshot, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.snapshots, nil
+}
+
 func newServerHarness(t *testing.T) *serverHarness {
 	t.Helper()
 	return newServerHarnessWithProviderAndTools(t, runtime.NewMockProvider(nil, nil))
+}
+
+func newServerHarnessWithConnectorHealth(t *testing.T, snapshots []model.ConnectorHealthSnapshot) *serverHarness {
+	t.Helper()
+	return newServerHarnessWithProviderAndConnectorHealth(t, runtime.NewMockProvider(nil, nil), stubConnectorHealthSource{snapshots: snapshots})
 }
 
 type blockingProvider struct {
@@ -4206,6 +4287,83 @@ func (p *blockingProvider) Generate(ctx context.Context, _ runtime.GenerateReque
 func newServerHarnessWithProvider(t *testing.T, prov runtime.Provider) *serverHarness {
 	t.Helper()
 	return newServerHarnessWithProviderAndTools(t, prov)
+}
+
+func newServerHarnessWithProviderAndConnectorHealth(t *testing.T, prov runtime.Provider, source stubConnectorHealthSource, extraTools ...tools.Tool) *serverHarness {
+	t.Helper()
+
+	db, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+
+	adminToken := "test-admin-token"
+	workspaceRoot := t.TempDir()
+	teamDir := writeTeamFixture(t)
+	const activeProjectID = "proj-primary"
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO projects (id, name, workspace_root, source, created_at, last_used_at)
+		 VALUES (?, ?, ?, 'starter', datetime('now'), datetime('now'))`,
+		activeProjectID, "starter-project", workspaceRoot,
+	); err != nil {
+		t.Fatalf("seed primary project: %v", err)
+	}
+	seedSettings(t, db, map[string]string{
+		"admin_token":             adminToken,
+		"active_project_id":       activeProjectID,
+		"workspace_root":          workspaceRoot,
+		"team_name":               "Repo Task Team",
+		"onboarding_completed_at": "2026-03-25 00:00:00",
+	})
+
+	cs := conversations.NewConversationStore(db)
+	mem := memory.NewStore(db, cs)
+	reg := tools.NewRegistry()
+	for _, tool := range extraTools {
+		if tool == nil {
+			continue
+		}
+		reg.Register(tool)
+	}
+	broadcaster := NewSSEBroadcaster()
+	rt := runtime.New(db, cs, reg, mem, prov, broadcaster)
+	t.Cleanup(func() {
+		rt.WaitAsync()
+		_ = db.Close()
+	})
+	rt.SetTeamDir(teamDir)
+	snapshot, err := teams.LoadExecutionSnapshot(teamDir)
+	if err != nil {
+		t.Fatalf("load execution snapshot: %v", err)
+	}
+	if err := rt.SetDefaultExecutionSnapshot(snapshot); err != nil {
+		t.Fatalf("set default execution snapshot: %v", err)
+	}
+
+	server, err := NewServer(Options{
+		DB:              db,
+		Replay:          replay.NewService(db),
+		Broadcaster:     broadcaster,
+		Runtime:         rt,
+		ConnectorHealth: source,
+	})
+	if err != nil {
+		t.Fatalf("new server: %v", err)
+	}
+
+	return &serverHarness{
+		db:              db,
+		server:          server,
+		broadcaster:     broadcaster,
+		rt:              rt,
+		adminToken:      adminToken,
+		activeProjectID: activeProjectID,
+		teamDir:         teamDir,
+		workspaceRoot:   workspaceRoot,
+	}
 }
 
 func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, extraTools ...tools.Tool) *serverHarness {

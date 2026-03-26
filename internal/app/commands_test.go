@@ -7,7 +7,28 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+
+	"github.com/canhta/gistclaw/internal/model"
 )
+
+type stubCommandConnector struct {
+	id       string
+	snapshot model.ConnectorHealthSnapshot
+}
+
+func (c *stubCommandConnector) ID() string { return c.id }
+
+func (c *stubCommandConnector) Start(context.Context) error { return nil }
+
+func (c *stubCommandConnector) Notify(context.Context, string, model.ReplayDelta, string) error {
+	return nil
+}
+
+func (c *stubCommandConnector) Drain(context.Context) error { return nil }
+
+func (c *stubCommandConnector) ConnectorHealthSnapshot() model.ConnectorHealthSnapshot {
+	return c.snapshot
+}
 
 func TestApp_RunTaskAndInspect(t *testing.T) {
 	application := setupCommandApp(t)
@@ -116,6 +137,43 @@ func TestApp_PrepareReconcilesInterruptedRuns(t *testing.T) {
 	}
 	if status != "interrupted" {
 		t.Fatalf("expected interrupted status, got %q", status)
+	}
+}
+
+func TestApp_ConnectorHealthReturnsReporterSnapshots(t *testing.T) {
+	application := &App{
+		connectors: []model.Connector{
+			&stubCommandConnector{
+				id: "telegram",
+				snapshot: model.ConnectorHealthSnapshot{
+					ConnectorID: "telegram",
+					State:       model.ConnectorHealthDegraded,
+					Summary:     "poll loop stale",
+				},
+			},
+			&stubCommandConnector{
+				id: "whatsapp",
+				snapshot: model.ConnectorHealthSnapshot{
+					ConnectorID: "whatsapp",
+					State:       model.ConnectorHealthHealthy,
+					Summary:     "webhook activity recent",
+				},
+			},
+		},
+	}
+
+	snapshots, err := application.ConnectorHealth(context.Background())
+	if err != nil {
+		t.Fatalf("ConnectorHealth failed: %v", err)
+	}
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 connector snapshots, got %d", len(snapshots))
+	}
+	if snapshots[0].ConnectorID != "telegram" || snapshots[0].Summary != "poll loop stale" {
+		t.Fatalf("unexpected first snapshot: %+v", snapshots[0])
+	}
+	if snapshots[1].ConnectorID != "whatsapp" || snapshots[1].State != model.ConnectorHealthHealthy {
+		t.Fatalf("unexpected second snapshot: %+v", snapshots[1])
 	}
 }
 

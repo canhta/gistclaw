@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/canhta/gistclaw/internal/app"
+	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/scheduler"
 	securitypkg "github.com/canhta/gistclaw/internal/security"
 	"github.com/canhta/gistclaw/internal/store"
@@ -59,6 +60,9 @@ func runDoctor(configPath string, stdout, stderr io.Writer) int {
 			anyFail = true
 		} else {
 			checks = append(checks, check{name: "database", status: "PASS", detail: cfg.DatabasePath})
+			if cfg.Telegram.BotToken == "" {
+				cfg.Telegram.BotToken = lookupSettingFromDB(cfg.DatabasePath, "telegram_bot_token")
+			}
 		}
 	}
 
@@ -117,9 +121,6 @@ func runDoctor(configPath string, stdout, stderr io.Writer) int {
 	// 6. Telegram (optional) — prefer YAML config and fall back to DB-backed settings.
 	tgToken := cfg.Telegram.BotToken
 	if tgToken == "" {
-		tgToken = lookupSettingFromDB(cfg.DatabasePath, "telegram_bot_token")
-	}
-	if tgToken == "" {
 		// No token — skip check entirely.
 	} else {
 		apiURL := "https://api.telegram.org/bot" + tgToken + "/getMe"
@@ -133,6 +134,29 @@ func runDoctor(configPath string, stdout, stderr io.Writer) int {
 				checks = append(checks, check{name: "telegram", status: "PASS", detail: "getMe ok"})
 			} else {
 				checks = append(checks, check{name: "telegram", status: "WARN", detail: fmt.Sprintf("getMe status %d", resp.StatusCode)})
+			}
+		}
+	}
+
+	if db != nil {
+		snapshots, err := app.ConfiguredConnectorHealth(context.Background(), cfg, db)
+		if err != nil {
+			checks = append(checks, check{name: "connector", status: "WARN", detail: err.Error()})
+		} else {
+			for _, snapshot := range snapshots {
+				status := "WARN"
+				if snapshot.State == model.ConnectorHealthHealthy {
+					status = "PASS"
+				}
+				detail := snapshot.Summary
+				if detail == "" {
+					detail = string(snapshot.State)
+				}
+				checks = append(checks, check{
+					name:   "connector:" + snapshot.ConnectorID,
+					status: status,
+					detail: detail,
+				})
 			}
 		}
 	}

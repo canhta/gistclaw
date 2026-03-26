@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	goruntime "runtime"
 	"strings"
 
+	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
 	"github.com/canhta/gistclaw/internal/store"
@@ -26,6 +28,7 @@ type Options struct {
 	Broadcaster     *SSEBroadcaster
 	Runtime         *runtime.Runtime
 	WhatsAppWebhook http.Handler
+	ConnectorHealth connectorHealthSource
 }
 
 type Server struct {
@@ -34,8 +37,13 @@ type Server struct {
 	broadcaster     *SSEBroadcaster
 	rt              *runtime.Runtime
 	whatsAppWebhook http.Handler
+	connectorHealth connectorHealthSource
 	templates       *template.Template
 	mux             *http.ServeMux
+}
+
+type connectorHealthSource interface {
+	ConnectorHealth(context.Context) ([]model.ConnectorHealthSnapshot, error)
 }
 
 type layoutData struct {
@@ -80,6 +88,7 @@ func NewServer(opts Options) (*Server, error) {
 		broadcaster:     opts.Broadcaster,
 		rt:              opts.Runtime,
 		whatsAppWebhook: opts.WhatsAppWebhook,
+		connectorHealth: opts.ConnectorHealth,
 		templates:       tpls,
 		mux:             http.NewServeMux(),
 	}

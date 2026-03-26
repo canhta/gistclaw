@@ -16,7 +16,7 @@
       <div class="metric-strip">
         <article class="metric-card">
           <span class="metric-label">Connectors</span>
-          <span class="metric-value">{{len .Health}}</span>
+          <span class="metric-value">{{.ConnectorCount}}</span>
         </article>
         <article class="metric-card is-active">
           <span class="metric-label">Active routes</span>
@@ -83,6 +83,18 @@
 
 <section class="panel">
   <h2 class="section-title">Connector Health</h2>
+  {{if .RuntimeHealth}}
+  <div class="grid-two">
+    {{range .RuntimeHealth}}
+    <article class="run-row is-active">
+      <div class="row-title">{{.ConnectorID}}</div>
+      <div class="muted">runtime: <span class="mono">{{.StateLabel}}</span></div>
+      <div class="muted">{{.Summary}}</div>
+      {{if .CheckedAtLabel}}<div class="muted">checked: <span class="mono">{{.CheckedAtLabel}}</span></div>{{end}}
+    </article>
+    {{end}}
+  </div>
+  {{end}}
   {{if .Health}}
   <div class="grid-two">
     {{range .Health}}
@@ -94,10 +106,11 @@
     </article>
     {{end}}
   </div>
-  {{else}}
+  {{end}}
+  {{if not (or .Health .RuntimeHealth)}}
   <div class="empty-state is-compact">
     <span class="panel-kicker">Health</span>
-    <p class="empty-state-copy">No connector delivery pressure is visible yet. Once external messages begin flowing, backlog and failure counts will appear here.</p>
+    <p class="empty-state-copy">No connector runtime state or delivery pressure is visible yet. Once external messages begin flowing, backlog and health state will appear here.</p>
   </div>
   {{end}}
 </section>
