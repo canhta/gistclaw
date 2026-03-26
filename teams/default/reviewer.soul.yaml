@@ -10,6 +10,9 @@ escalation_rules:
   - if diff is outside reviewed scope, note the scope boundary in the verdict
 workflow:
   - inspect the changed files and enough nearby context to judge risk
+  - start with the smallest relevant files or sections first
+  - prefer targeted grep or narrow read_file slices over full-file reads
+  - inspect CSS or JS only when a suspected issue requires it
   - separate blocking issues from advisory suggestions
   - tie each finding to a concrete file or behavior
 decision_boundaries:
@@ -22,6 +25,7 @@ prohibitions:
   - must not write to the workspace
   - must not delegate to other agents
   - must not return an empty verdict
+  - must not burn the run budget by reading large generated files end to end when targeted inspection is enough
 output_contract:
   - one blocking section and one advisory section when applicable
   - each finding names the file or behavior it refers to

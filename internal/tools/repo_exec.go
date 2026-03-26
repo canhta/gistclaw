@@ -32,11 +32,12 @@ type commandRunner struct {
 }
 
 type commandRequest struct {
-	command string
-	args    []string
-	cwd     string
-	stdin   string
-	effect  string
+	command           string
+	args              []string
+	cwd               string
+	stdin             string
+	effect            string
+	outputCapturePath string
 }
 
 func newCommandRunner(timeoutSec int, maxOutputBytes int) commandRunner {
@@ -74,6 +75,15 @@ func (r commandRunner) run(ctx context.Context, req commandRequest) (model.ToolR
 		Stdout:  stdout.String(),
 		Stderr:  stderr.String(),
 		Effect:  req.effect,
+	}
+	if strings.TrimSpace(req.outputCapturePath) != "" {
+		if captured, readErr := os.ReadFile(req.outputCapturePath); readErr == nil {
+			text := strings.TrimSpace(string(captured))
+			if text != "" {
+				result.Stdout = text
+			}
+		}
+		_ = os.Remove(req.outputCapturePath)
 	}
 	if len(result.Stdout) > r.maxOutput {
 		result.Stdout = result.Stdout[:r.maxOutput]

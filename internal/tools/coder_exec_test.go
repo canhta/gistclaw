@@ -3,6 +3,9 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/model"
@@ -58,16 +61,35 @@ func TestCoderExecTool_InvokeBuildsCodexCommand(t *testing.T) {
 	wantArgs := []string{
 		"exec",
 		"--sandbox", "workspace-write",
+		"--color", "never",
+		"-o",
+		"<capture>",
 		"--skip-git-repo-check",
 		"-C", wantCWD,
-		"Build it",
 	}
-	if len(runner.req.args) != len(wantArgs) {
+	if len(runner.req.args) != len(wantArgs)+1 {
 		t.Fatalf("expected %d args, got %d (%v)", len(wantArgs), len(runner.req.args), runner.req.args)
 	}
 	for i := range wantArgs {
+		if wantArgs[i] == "<capture>" {
+			if strings.TrimSpace(runner.req.args[i]) == "" {
+				t.Fatalf("expected non-empty output capture path, got %q", runner.req.args[i])
+			}
+			continue
+		}
 		if runner.req.args[i] != wantArgs[i] {
 			t.Fatalf("arg %d: want %q, got %q", i, wantArgs[i], runner.req.args[i])
+		}
+	}
+	wrappedPrompt := runner.req.args[len(runner.req.args)-1]
+	for _, want := range []string{
+		"You are a non-interactive coding subagent running inside GistClaw.",
+		"You were dispatched as a subagent to execute a specific task.",
+		"Do not ask the user questions.",
+		"Build it",
+	} {
+		if !strings.Contains(wrappedPrompt, want) {
+			t.Fatalf("expected wrapped codex prompt to contain %q, got %q", want, wrappedPrompt)
 		}
 	}
 
@@ -88,6 +110,36 @@ func TestCoderExecTool_InvokeBuildsCodexCommand(t *testing.T) {
 	}
 	if payload.Stdout != "ok" {
 		t.Fatalf("expected stdout passthrough, got %q", payload.Stdout)
+	}
+}
+
+func TestCommandRunner_PrefersCapturedOutputFile(t *testing.T) {
+	runner := newCommandRunner(5, 64<<10)
+	capturePath := filepath.Join(t.TempDir(), "last-message.txt")
+	root := t.TempDir()
+
+	got, err := runner.run(context.Background(), commandRequest{
+		command: "zsh",
+		args: []string{
+			"-lc",
+			fmt.Sprintf("printf 'raw transcript'; printf 'final summary' > %q", capturePath),
+		},
+		cwd:               root,
+		effect:            effectExecWrite,
+		outputCapturePath: capturePath,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	var payload struct {
+		Stdout string `json:"stdout"`
+	}
+	if err := json.Unmarshal([]byte(got.Output), &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if payload.Stdout != "final summary" {
+		t.Fatalf("expected captured summary output, got %q", payload.Stdout)
 	}
 }
 
@@ -153,14 +205,24 @@ func TestCoderExecTool_InvokeBuildsClaudeCodeCommand(t *testing.T) {
 		"--print",
 		"--output-format", "json",
 		"--permission-mode", "acceptEdits",
-		"Build it",
 	}
-	if len(runner.req.args) != len(wantArgs) {
+	if len(runner.req.args) != len(wantArgs)+1 {
 		t.Fatalf("expected %d args, got %d (%v)", len(wantArgs), len(runner.req.args), runner.req.args)
 	}
 	for i := range wantArgs {
 		if runner.req.args[i] != wantArgs[i] {
 			t.Fatalf("arg %d: want %q, got %q", i, wantArgs[i], runner.req.args[i])
+		}
+	}
+	wrappedPrompt := runner.req.args[len(runner.req.args)-1]
+	for _, want := range []string{
+		"You are a non-interactive coding subagent running inside GistClaw.",
+		"You were dispatched as a subagent to execute a specific task.",
+		"Do not ask the user questions.",
+		"Build it",
+	} {
+		if !strings.Contains(wrappedPrompt, want) {
+			t.Fatalf("expected wrapped claude prompt to contain %q, got %q", want, wrappedPrompt)
 		}
 	}
 

@@ -592,6 +592,16 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			}
 			continue
 		}
+		if strings.TrimSpace(result.Content) == "" && result.StopReason != "" && result.StopReason != "end_turn" {
+			interrupted, err := r.interruptRun(ctx, run)
+			if err != nil {
+				return model.Run{}, err
+			}
+			if err := r.resumeParentAfterChildTerminal(ctx, interrupted); err != nil {
+				return interrupted, err
+			}
+			return interrupted, fmt.Errorf("runtime: empty non-terminal turn with stop reason %q", result.StopReason)
+		}
 
 		if result.StopReason == "end_turn" || result.StopReason == "" {
 			break

@@ -63,9 +63,52 @@ func TestDefault(t *testing.T) {
 			"prefer coder_exec with backend codex for substantial code generation",
 			"must not reconstruct codex exec flags manually when coder_exec can express the job",
 			"if coder_exec is unavailable or blocked, surface that explicitly to the coordinator",
+			"treat coder_exec output as the primary success evidence",
+			"prefer targeted list_dir, grep_search, or syntax checks over rereading generated files end to end",
+			"leave deeper review and verification to reviewer and verifier",
 		} {
 			if !strings.Contains(text, want) {
 				t.Fatalf("expected embedded patcher prompt to contain %q, got:\n%s", want, text)
+			}
+		}
+	})
+
+	t.Run("embeds reviewer targeted inspection guidance", func(t *testing.T) {
+		defaults := Default()
+
+		body, err := fs.ReadFile(defaults, "reviewer.soul.yaml")
+		if err != nil {
+			t.Fatalf("read embedded reviewer.soul.yaml: %v", err)
+		}
+
+		text := string(body)
+		for _, want := range []string{
+			"prefer targeted grep or narrow read_file slices over full-file reads",
+			"start with the smallest relevant files or sections first",
+			"inspect CSS or JS only when a suspected issue requires it",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("expected embedded reviewer prompt to contain %q, got:\n%s", want, text)
+			}
+		}
+	})
+
+	t.Run("embeds verifier targeted inspection guidance", func(t *testing.T) {
+		defaults := Default()
+
+		body, err := fs.ReadFile(defaults, "verifier.soul.yaml")
+		if err != nil {
+			t.Fatalf("read embedded verifier.soul.yaml: %v", err)
+		}
+
+		text := string(body)
+		for _, want := range []string{
+			"prefer targeted grep or narrow read_file slices over full-file reads",
+			"start with the smallest relevant files or sections first",
+			"inspect CSS or JS only when a requested verification step requires it",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("expected embedded verifier prompt to contain %q, got:\n%s", want, text)
 			}
 		}
 	})

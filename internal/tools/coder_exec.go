@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -31,6 +32,13 @@ type CoderExecTool struct {
 	runner   commandToolRunner
 	backends map[string]coderBackend
 }
+
+const coderExecPromptPrefix = `You are a non-interactive coding subagent running inside GistClaw.
+You were dispatched as a subagent to execute a specific task.
+The operator already approved this execution. Do not ask the user questions.
+Skip any startup skill or workflow that only applies to top-level interactive sessions, including using-superpowers.
+Do not start brainstorming, design review, clarification, or visual companion flows.
+Do not wait for more input. Make reasonable assumptions, perform the requested workspace changes now, then print a short summary of what changed or the concrete blocker.`
 
 func NewCoderExecTool(timeoutSec int, maxOutputBytes int) *CoderExecTool {
 	return newCoderExecTool([]coderBackend{
@@ -147,6 +155,11 @@ func wrapCoderExecResult(backend string, result model.ToolResult) (model.ToolRes
 	return model.ToolResult{Output: string(output), Error: result.Error}, nil
 }
 
+func wrapCoderExecPrompt(prompt string) string {
+	prompt = strings.TrimSpace(prompt)
+	return coderExecPromptPrefix + "\n\nTask:\n" + prompt
+}
+
 type codexCoderBackend struct {
 	command string
 }
@@ -175,16 +188,27 @@ func (b codexCoderBackend) Build(input coderExecInput, cwd string) (commandReque
 		skipGitRepoCheck = *input.SkipGitRepoCheck
 	}
 
-	args := []string{"exec", "--sandbox", sandbox}
+	outputFile, err := os.CreateTemp("", "gistclaw-coder-exec-*.txt")
+	if err != nil {
+		return commandRequest{}, fmt.Errorf("create codex output capture file: %w", err)
+	}
+	outputPath := outputFile.Name()
+	if closeErr := outputFile.Close(); closeErr != nil {
+		_ = os.Remove(outputPath)
+		return commandRequest{}, fmt.Errorf("close codex output capture file: %w", closeErr)
+	}
+
+	args := []string{"exec", "--sandbox", sandbox, "--color", "never", "-o", outputPath}
 	if skipGitRepoCheck {
 		args = append(args, "--skip-git-repo-check")
 	}
-	args = append(args, "-C", cwd, input.Prompt)
+	args = append(args, "-C", cwd, wrapCoderExecPrompt(input.Prompt))
 	return commandRequest{
-		command: b.command,
-		args:    args,
-		cwd:     cwd,
-		effect:  effectExecWrite,
+		command:           b.command,
+		args:              args,
+		cwd:               cwd,
+		effect:            effectExecWrite,
+		outputCapturePath: outputPath,
 	}, nil
 }
 
@@ -207,7 +231,7 @@ func (b claudeCodeBackend) Build(input coderExecInput, cwd string) (commandReque
 		"--print",
 		"--output-format", "json",
 		"--permission-mode", "acceptEdits",
-		input.Prompt,
+		wrapCoderExecPrompt(input.Prompt),
 	}
 	return commandRequest{
 		command: b.command,

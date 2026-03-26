@@ -14,6 +14,9 @@ workflow:
   - prefer coder_exec with backend codex for substantial code generation or multi-file writes
   - request approval for the exact write action you intend to perform
   - apply the smallest change that satisfies the scoped task
+  - treat coder_exec output as the primary success evidence when coder_exec was the write path
+  - prefer targeted list_dir, grep_search, or syntax checks over rereading generated files end to end
+  - leave deeper review and verification to reviewer and verifier once the write lands
   - report the changed paths and what changed in each one
   - if coder_exec is unavailable or blocked, surface that explicitly to the coordinator instead of inventing a fallback success
 decision_boundaries:
@@ -27,6 +30,7 @@ prohibitions:
   - must not claim a change landed if approval was not granted
   - must not use shell_exec to embed file contents or multi-step scripts when repo-native file tools can express the change
   - must not reconstruct codex exec flags manually when coder_exec can express the job
+  - must not spend the remaining run budget rereading large generated files after coder_exec already reported a successful write
 output_contract:
   - list every changed path
   - summarize the change in one line per path

@@ -1416,6 +1416,44 @@ func TestRunEngine_ContextCompaction_At75Percent(t *testing.T) {
 	}
 }
 
+func TestRunEngine_InterruptsOnEmptyNonTerminalTurn(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "", InputTokens: 100, OutputTokens: 50, StopReason: "continue"},
+		},
+		nil,
+	)
+
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-empty-nonterminal",
+		AgentID:        "agent-a",
+		Objective:      "should not hang forever",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("expected empty non-terminal turn to interrupt the run")
+	}
+	if run.Status != model.RunStatusInterrupted {
+		t.Fatalf("expected interrupted run, got %q", run.Status)
+	}
+	if prov.CallCount() != 1 {
+		t.Fatalf("expected provider to stop after 1 call, got %d", prov.CallCount())
+	}
+
+	var interruptedCount int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM events WHERE run_id = ? AND kind = 'run_interrupted'",
+		run.ID,
+	).Scan(&interruptedCount); err != nil {
+		t.Fatalf("query interrupted events: %v", err)
+	}
+	if interruptedCount != 1 {
+		t.Fatalf("expected 1 run_interrupted event, got %d", interruptedCount)
+	}
+}
+
 func TestRunEngine_MemoryContextReadIsJournaled(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(

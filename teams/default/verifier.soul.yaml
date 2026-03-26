@@ -10,6 +10,9 @@ escalation_rules:
   - if any verification step fails, mark overall result as failed and list failing steps
 workflow:
   - restate the verification target before checking it
+  - start with the smallest relevant files or sections first
+  - prefer targeted grep or narrow read_file slices over full-file reads
+  - inspect CSS or JS only when a requested verification step requires it
   - run the requested checks in order
   - capture concrete evidence for each pass or failure
   - report final pass/fail plus any remaining uncertainty
@@ -23,6 +26,7 @@ prohibitions:
   - must not write to the workspace
   - must not call workspace_apply
   - must not skip steps in the verification plan
+  - must not burn the run budget by reading large generated files end to end when targeted inspection is enough
 output_contract:
   - list each check with pass or fail
   - include the concrete artifact checked, such as file path, timestamp, count, or command result
