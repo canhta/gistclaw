@@ -189,7 +189,10 @@ func (t *ShellExecTool) Invoke(ctx context.Context, call model.ToolCall) (model.
 		return model.ToolResult{}, fmt.Errorf("shell_exec: decode input: %w", err)
 	}
 	if err := validateShellArgs(input.Command); err != nil {
-		return model.ToolResult{}, err
+		meta, ok := InvocationContextFrom(ctx)
+		if !ok || strings.TrimSpace(meta.ApprovalID) == "" {
+			return model.ToolResult{}, err
+		}
 	}
 	cwd := root
 	if strings.TrimSpace(input.CWD) != "" {

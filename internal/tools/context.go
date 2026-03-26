@@ -11,6 +11,7 @@ type InvocationContext struct {
 	WorkspaceRoot string
 	SessionID     string
 	Agent         model.AgentProfile
+	ApprovalID    string
 }
 
 type invocationContextKey struct{}

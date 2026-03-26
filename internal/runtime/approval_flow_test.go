@@ -134,11 +134,72 @@ func TestResolveApproval_ApprovedExecutesToolAndResumesRun(t *testing.T) {
 	}
 }
 
+func TestResolveApproval_ApprovedShellExecRunsApprovedCommand(t *testing.T) {
+	prov := NewMockProvider([]GenerateResult{
+		{
+			ToolCalls: []model.ToolCallRequest{
+				{
+					ID:        "call-pipe",
+					ToolName:  "shell_exec",
+					InputJSON: []byte(`{"command":"printf 'hello\\n' | tee created.txt >/dev/null"}`),
+				},
+			},
+			StopReason: "tool_calls",
+		},
+		{Content: "done", StopReason: "end_turn"},
+	}, nil)
+	rt, db, prov := newApprovalRuntimeWithProvider(t, prov)
+	workspaceRoot := t.TempDir()
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID:        "conv-approval-approved-shell",
+		AgentID:               "patcher",
+		Objective:             "use approved shell syntax",
+		WorkspaceRoot:         workspaceRoot,
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, workspaceWriteSnapshot()),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	var ticketID string
+	if err := db.RawDB().QueryRow(
+		"SELECT id FROM approvals WHERE run_id = ? AND status = 'pending' LIMIT 1",
+		run.ID,
+	).Scan(&ticketID); err != nil {
+		t.Fatalf("query approval ticket: %v", err)
+	}
+
+	if err := rt.ResolveApproval(context.Background(), ticketID, "approved"); err != nil {
+		t.Fatalf("ResolveApproval approved: %v", err)
+	}
+
+	run, err = rt.loadRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if run.Status != model.RunStatusCompleted {
+		t.Fatalf("expected completed run, got %q", run.Status)
+	}
+
+	data, err := os.ReadFile(filepath.Join(workspaceRoot, "created.txt"))
+	if err != nil {
+		t.Fatalf("expected approved command to create file: %v", err)
+	}
+	if string(data) != "hello\n" {
+		t.Fatalf("expected created.txt to contain hello, got %q", string(data))
+	}
+
+	if len(prov.Requests) != 2 {
+		t.Fatalf("expected provider to resume after approved shell_exec, got %d requests", len(prov.Requests))
+	}
+}
+
 func TestResolveApproval_ApprovedToolErrorInterruptsRunWithoutResumingProvider(t *testing.T) {
 	prov := NewMockProvider([]GenerateResult{
 		{
 			ToolCalls: []model.ToolCallRequest{
-				{ID: "call-unsafe", ToolName: "shell_exec", InputJSON: []byte(`{"command":"touch created.txt; touch extra.txt"}`)},
+				{ID: "call-missing", ToolName: "shell_exec", InputJSON: []byte(`{"command":"missing-command created.txt"}`)},
 			},
 			StopReason: "tool_calls",
 		},
@@ -149,7 +210,7 @@ func TestResolveApproval_ApprovedToolErrorInterruptsRunWithoutResumingProvider(t
 	run, err := rt.Start(context.Background(), StartRun{
 		ConversationID:        "conv-approval-error",
 		AgentID:               "patcher",
-		Objective:             "mutate shell unsafely",
+		Objective:             "mutate shell with failing command",
 		WorkspaceRoot:         workspaceRoot,
 		ExecutionSnapshotJSON: mustSnapshotJSON(t, workspaceWriteSnapshot()),
 	})
@@ -177,7 +238,7 @@ func TestResolveApproval_ApprovedToolErrorInterruptsRunWithoutResumingProvider(t
 		t.Fatalf("expected interrupted run after approved tool error, got %q", run.Status)
 	}
 	if _, err := os.Stat(filepath.Join(workspaceRoot, "created.txt")); !os.IsNotExist(err) {
-		t.Fatalf("expected unsafe approved command to not create file, stat err=%v", err)
+		t.Fatalf("expected failing approved command to not create file, stat err=%v", err)
 	}
 
 	var decision, approvalID string

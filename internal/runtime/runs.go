@@ -784,6 +784,7 @@ func (r *Runtime) recordToolCall(
 				WorkspaceRoot: workspaceRoot,
 				SessionID:     sessionID,
 				Agent:         agent,
+				ApprovalID:    approvalID,
 			})
 			invoked, err := tool.Invoke(invokeCtx, model.ToolCall{
 				ID:        tc.ID,
