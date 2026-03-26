@@ -302,6 +302,51 @@ func TestBootstrap_SeedsStarterProjectWithShippedDefaultTeam(t *testing.T) {
 	}
 }
 
+func TestBootstrap_AppliesSavedBudgetSettingsToRuntime(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "gistclaw.db")
+	db, err := storeWiring(Config{DatabasePath: dbPath})
+	if err != nil {
+		t.Fatalf("storeWiring: %v", err)
+	}
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO settings (key, value, updated_at) VALUES
+		 ('per_run_token_budget', '50000', datetime('now')),
+		 ('daily_cost_cap_usd', '1.5', datetime('now'))
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+	); err != nil {
+		t.Fatalf("seed budget settings: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close seeded db: %v", err)
+	}
+
+	app, err := Bootstrap(Config{
+		DatabasePath: dbPath,
+		StateDir:     t.TempDir(),
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	t.Cleanup(func() {
+		app.runtime.WaitAsync()
+		if app.toolCloser != nil {
+			_ = app.toolCloser.Close()
+		}
+		_ = app.db.Close()
+	})
+
+	if app.runtime == nil {
+		t.Fatal("expected runtime to be initialized")
+	}
+	if app.runtime.BudgetGuard().PerRunTokenCap != 50000 {
+		t.Fatalf("expected bootstrap per-run token cap 50000, got %d", app.runtime.BudgetGuard().PerRunTokenCap)
+	}
+	if app.runtime.BudgetGuard().DailyCostCapUSD != 1.5 {
+		t.Fatalf("expected bootstrap daily cost cap 1.5, got %f", app.runtime.BudgetGuard().DailyCostCapUSD)
+	}
+}
+
 func TestEnsureProjectState_UsesConfiguredWorkspaceWhenNoActiveProjectExists(t *testing.T) {
 	db, err := storeWiring(Config{DatabasePath: ":memory:"})
 	if err != nil {

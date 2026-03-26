@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -1100,6 +1101,64 @@ func (r *Runtime) Resume(ctx context.Context, cmd ResumeRun) (model.Run, error) 
 	return r.loadRun(ctx, cmd.RunID)
 }
 
+func (r *Runtime) BudgetGuard() BudgetGuard {
+	return r.budget
+}
+
+func (r *Runtime) LoadBudgetSettings(ctx context.Context) error {
+	rows, err := r.store.RawDB().QueryContext(ctx,
+		`SELECT key, value
+		 FROM settings
+		 WHERE key IN ('per_run_token_budget', 'daily_cost_cap_usd')`,
+	)
+	if err != nil {
+		return fmt.Errorf("runtime: load budget settings: %w", err)
+	}
+	defer rows.Close()
+
+	settings := make(map[string]string, 2)
+	for rows.Next() {
+		var key string
+		var value string
+		if err := rows.Scan(&key, &value); err != nil {
+			return fmt.Errorf("runtime: scan budget setting: %w", err)
+		}
+		settings[key] = value
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("runtime: iterate budget settings: %w", err)
+	}
+	return r.applyBudgetSettings(settings)
+}
+
+func (r *Runtime) applyBudgetSettings(settings map[string]string) error {
+	if value, ok := settings["per_run_token_budget"]; ok {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			r.budget.PerRunTokenCap = 0
+		} else {
+			limit, err := strconv.Atoi(trimmed)
+			if err != nil {
+				return fmt.Errorf("runtime: parse per_run_token_budget: %w", err)
+			}
+			r.budget.PerRunTokenCap = limit
+		}
+	}
+	if value, ok := settings["daily_cost_cap_usd"]; ok {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			r.budget.DailyCostCapUSD = 0
+		} else {
+			limit, err := strconv.ParseFloat(trimmed, 64)
+			if err != nil {
+				return fmt.Errorf("runtime: parse daily_cost_cap_usd: %w", err)
+			}
+			r.budget.DailyCostCapUSD = limit
+		}
+	}
+	return nil
+}
+
 func (r *Runtime) ReconcileInterrupted(ctx context.Context) (ReconcileReport, error) {
 	rows, err := r.store.RawDB().QueryContext(ctx,
 		"SELECT id, conversation_id FROM runs WHERE status IN ('active', 'pending')",
@@ -1426,6 +1485,9 @@ func (r *Runtime) UpdateSettings(ctx context.Context, updates map[string]string)
 		if err != nil {
 			return fmt.Errorf("runtime: update setting %q: %w", key, err)
 		}
+	}
+	if err := r.applyBudgetSettings(updates); err != nil {
+		return err
 	}
 	return nil
 }

@@ -219,3 +219,24 @@ func TestBudget_CapRaiseAppliesOnNextRun(t *testing.T) {
 		t.Fatalf("run2 expected completed after cap raise, got %s", run2.Status)
 	}
 }
+
+func TestBudget_UpdateSettingsAppliesLiveBudgetLimits(t *testing.T) {
+	db, cs, mem, reg := setupMilestoneTestDeps(t)
+	prov := NewMockProvider(nil, nil)
+	sink := &model.NoopEventSink{}
+	rt := New(db, cs, reg, mem, prov, sink)
+
+	if err := rt.UpdateSettings(context.Background(), map[string]string{
+		"per_run_token_budget": "50000",
+		"daily_cost_cap_usd":   "1.5",
+	}); err != nil {
+		t.Fatalf("UpdateSettings: %v", err)
+	}
+
+	if rt.budget.PerRunTokenCap != 50000 {
+		t.Fatalf("expected live per-run token cap 50000, got %d", rt.budget.PerRunTokenCap)
+	}
+	if rt.budget.DailyCostCapUSD != 1.5 {
+		t.Fatalf("expected live daily cost cap 1.5, got %f", rt.budget.DailyCostCapUSD)
+	}
+}

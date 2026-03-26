@@ -87,6 +87,13 @@ func Bootstrap(cfg Config) (*App, error) {
 	broadcaster := web.NewSSEBroadcaster()
 	connectorNotifier := newConnectorRouteNotifier(db)
 	rt := runtimeWiring(cfg, db, convStore, reg, mem, newRunEventFanout(broadcaster, connectorNotifier))
+	if err := rt.LoadBudgetSettings(context.Background()); err != nil {
+		if toolCloser != nil {
+			_ = toolCloser.Close()
+		}
+		_ = db.Close()
+		return nil, fmt.Errorf("bootstrap: load budget settings: %w", err)
+	}
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
 		Spawn: rt.SpawnTool,
 	})
