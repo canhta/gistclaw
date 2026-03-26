@@ -201,6 +201,9 @@ func TestRepoTooling_ReleaseContract(t *testing.T) {
 				"/usr/local/bin/gistclaw",
 				"/etc/systemd/system/gistclaw.service",
 				"gistclaw inspect systemd-unit",
+				"chown -R gistclaw:gistclaw",
+				"chown root:gistclaw",
+				"chmod 640",
 				"systemctl enable --now gistclaw",
 			},
 		},
@@ -221,12 +224,15 @@ func TestRepoTooling_ReleaseContract(t *testing.T) {
 				"docs/install-macos.md",
 				"gistclaw version",
 				"gistclaw inspect systemd-unit",
+				"gistclaw inspect token",
 			},
 		},
 		{
 			path: filepath.Join(root, "docs", "install-ubuntu.md"),
 			wantSnips: []string{
 				"Ubuntu 24",
+				"self-contained",
+				"/var/lib/gistclaw",
 				"systemctl status gistclaw",
 				"journalctl -u gistclaw",
 				"gistclaw doctor",
@@ -237,6 +243,7 @@ func TestRepoTooling_ReleaseContract(t *testing.T) {
 			path: filepath.Join(root, "docs", "install-macos.md"),
 			wantSnips: []string{
 				"Apple Silicon",
+				"self-contained",
 				"gistclaw serve",
 				"127.0.0.1:8080",
 			},

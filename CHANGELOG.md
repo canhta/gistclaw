@@ -4,6 +4,10 @@
 
 ### Operator-facing
 
+Release binaries now embed the web templates and static assets they need to boot outside a source checkout.
+
+The Ubuntu installer now locks down `/etc/gistclaw/config.yaml` and hands `/var/lib/gistclaw` to the `gistclaw` service user before startup.
+
 Live model output now streams through the runtime into run detail, session pages, and Telegram draft replies instead of only appearing at turn boundaries.
 
 The tool surface now includes optional Tavily research and minimal MCP stdio loading, giving runs a broader read-only research path without changing the approval model.

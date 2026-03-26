@@ -109,6 +109,20 @@ set -euo pipefail
 echo "useradd \$*" >> "$log_dir/users.log"
 EOF
 	chmod +x "$stub_dir/useradd"
+
+	cat > "$stub_dir/chown" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+echo "chown \$*" >> "$log_dir/ownership.log"
+EOF
+	chmod +x "$stub_dir/chown"
+
+	cat > "$stub_dir/chmod" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+echo "chmod \$*" >> "$log_dir/ownership.log"
+EOF
+	chmod +x "$stub_dir/chmod"
 }
 
 run_happy_path() {
@@ -124,6 +138,7 @@ run_happy_path() {
 	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir"
 	: > "$log_dir/systemctl.log"
 	: > "$log_dir/users.log"
+	: > "$log_dir/ownership.log"
 	setup_fixture_repo "$fixture_dir" "$version"
 	setup_stub_bin "$stub_dir" "$fixture_dir" "$log_dir"
 
@@ -150,6 +165,9 @@ run_happy_path() {
 	assert_contains "$root_dir/etc/systemd/system/gistclaw.service" "ExecStart=$root_dir/usr/local/bin/gistclaw --config $root_dir/etc/gistclaw/config.yaml serve"
 	assert_contains "$log_dir/systemctl.log" "daemon-reload"
 	assert_contains "$log_dir/systemctl.log" "enable --now gistclaw"
+	assert_contains "$log_dir/ownership.log" "chown -R gistclaw:gistclaw $root_dir/var/lib/gistclaw"
+	assert_contains "$log_dir/ownership.log" "chown root:gistclaw $root_dir/etc/gistclaw/config.yaml"
+	assert_contains "$log_dir/ownership.log" "chmod 640 $root_dir/etc/gistclaw/config.yaml"
 }
 
 run_missing_provider_case() {
@@ -165,6 +183,7 @@ run_missing_provider_case() {
 	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir"
 	: > "$log_dir/systemctl.log"
 	: > "$log_dir/users.log"
+	: > "$log_dir/ownership.log"
 	setup_fixture_repo "$fixture_dir" "$version"
 	setup_stub_bin "$stub_dir" "$fixture_dir" "$log_dir"
 
@@ -208,6 +227,7 @@ run_checksum_failure_case() {
 	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir"
 	: > "$log_dir/systemctl.log"
 	: > "$log_dir/users.log"
+	: > "$log_dir/ownership.log"
 	setup_fixture_repo "$fixture_dir" "$version"
 	setup_stub_bin "$stub_dir" "$fixture_dir" "$log_dir"
 

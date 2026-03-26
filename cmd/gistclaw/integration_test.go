@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -89,7 +91,8 @@ func TestMain_ServeStartsAndStopsOnInterrupt(t *testing.T) {
 	}
 
 	bin := buildBinary(t)
-	cfgPath, _ := writeCLIConfig(t)
+	listenAddr := reserveListenAddr(t)
+	cfgPath, _ := writeCLIConfigWithListenAddr(t, listenAddr)
 
 	cmd := exec.Command(bin, "serve", "--config", cfgPath)
 	var output lockedBuffer
@@ -100,13 +103,7 @@ func TestMain_ServeStartsAndStopsOnInterrupt(t *testing.T) {
 		t.Fatalf("starting serve command: %v", err)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
-	for !strings.Contains(output.String(), "gistclaw serve: listening") && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if !strings.Contains(output.String(), "gistclaw serve: listening") {
-		t.Fatalf("serve did not report startup:\n%s", output.String())
-	}
+	waitForServeReady(t, listenAddr, &output)
 
 	if err := cmd.Process.Signal(os.Interrupt); err != nil {
 		t.Fatalf("signal interrupt: %v", err)
@@ -114,6 +111,50 @@ func TestMain_ServeStartsAndStopsOnInterrupt(t *testing.T) {
 
 	if err := cmd.Wait(); err != nil && !strings.Contains(err.Error(), "signal: interrupt") {
 		t.Fatalf("serve command exited with error: %v\n%s", err, output.String())
+	}
+}
+
+func TestMain_TrimpathServeUsesSelfContainedWebAssets(t *testing.T) {
+	if goRuntime.GOOS == "windows" {
+		t.Skip("interrupt signaling is platform-specific")
+	}
+
+	startMockAnthropicServer(t)
+	bin := buildBinaryTrimpath(t)
+	listenAddr := reserveListenAddr(t)
+	cfgPath, _ := writeCLIConfigWithListenAddr(t, listenAddr)
+
+	cmd := exec.Command(bin, "serve", "--config", cfgPath)
+	cmd.Dir = t.TempDir()
+	var output lockedBuffer
+	cmd.Stdout = &output
+	cmd.Stderr = &output
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("starting trimpath serve command: %v", err)
+	}
+	defer func() {
+		_ = cmd.Process.Signal(os.Interrupt)
+		_ = cmd.Wait()
+	}()
+
+	waitForServeReady(t, listenAddr, &output)
+
+	resp, err := http.Get("http://" + listenAddr + "/assets/vendor/cytoscape.min.js")
+	if err != nil {
+		t.Fatalf("fetch embedded asset: %v\n%s", err, output.String())
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected asset 200, got %d\n%s\n%s", resp.StatusCode, string(body), output.String())
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read asset body: %v", err)
+	}
+	if !bytes.Contains(body, []byte("cytoscape")) {
+		t.Fatalf("expected cytoscape asset body, got:\n%s", body)
 	}
 }
 
@@ -142,11 +183,24 @@ func startMockAnthropicServer(t *testing.T) {
 
 func buildBinary(t *testing.T) string {
 	t.Helper()
+	return buildBinaryWithArgs(t)
+}
+
+func buildBinaryTrimpath(t *testing.T) string {
+	t.Helper()
+	return buildBinaryWithArgs(t, "-trimpath")
+}
+
+func buildBinaryWithArgs(t *testing.T, extraArgs ...string) string {
+	t.Helper()
 
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "gistclaw")
 
-	build := exec.Command("go", "build", "-o", bin, "./cmd/gistclaw")
+	args := []string{"build"}
+	args = append(args, extraArgs...)
+	args = append(args, "-o", bin, "./cmd/gistclaw")
+	build := exec.Command("go", args...)
 	build.Dir = findModuleRoot(t)
 	build.Env = append(os.Environ(), "GOFLAGS=")
 	out, err := build.CombinedOutput()
@@ -158,6 +212,11 @@ func buildBinary(t *testing.T) string {
 }
 
 func writeCLIConfig(t *testing.T) (string, string) {
+	t.Helper()
+	return writeCLIConfigWithListenAddr(t, "127.0.0.1:0")
+}
+
+func writeCLIConfigWithListenAddr(t *testing.T, listenAddr string) (string, string) {
 	t.Helper()
 
 	dir := t.TempDir()
@@ -172,7 +231,7 @@ func writeCLIConfig(t *testing.T) (string, string) {
 		"workspace_root: %q\ndatabase_path: %q\nweb:\n  listen_addr: %q\nprovider:\n  name: anthropic\n  api_key: sk-test\n",
 		workspaceRoot,
 		dbPath,
-		"127.0.0.1:0",
+		listenAddr,
 	)
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
@@ -204,6 +263,34 @@ func fieldValue(t *testing.T, output, key string) string {
 
 	t.Fatalf("field %q not found in output:\n%s", key, output)
 	return ""
+}
+
+func waitForServeReady(t *testing.T, listenAddr string, output *lockedBuffer) {
+	t.Helper()
+
+	client := &http.Client{Timeout: 200 * time.Millisecond}
+	deadline := time.Now().Add(20 * time.Second)
+	url := "http://" + listenAddr + "/"
+	for time.Now().Before(deadline) {
+		resp, err := client.Get(url)
+		if err == nil {
+			resp.Body.Close()
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("serve did not become reachable at %s:\n%s", listenAddr, output.String())
+}
+
+func reserveListenAddr(t *testing.T) string {
+	t.Helper()
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve listen addr: %v", err)
+	}
+	defer ln.Close()
+	return ln.Addr().String()
 }
 
 type lockedBuffer struct {

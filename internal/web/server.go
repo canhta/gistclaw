@@ -10,8 +10,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"path/filepath"
-	goruntime "runtime"
 	"strings"
 
 	"github.com/canhta/gistclaw/internal/model"
@@ -115,7 +113,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /recover", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, pageRecoverApprovals, http.StatusSeeOther)
 	})
-	s.mux.Handle("GET /assets/{path...}", http.StripPrefix("/assets/", http.FileServer(http.Dir(staticAssetDir()))))
+	s.mux.Handle("GET /assets/{path...}", http.StripPrefix("/assets/", http.FileServer(http.FS(staticAssetFS()))))
 	if s.whatsAppWebhook != nil {
 		s.mux.Handle("GET /webhooks/whatsapp", s.whatsAppWebhook)
 		s.mux.Handle("POST /webhooks/whatsapp", s.whatsAppWebhook)
@@ -358,49 +356,6 @@ func (s *Server) writeUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)
 	_, _ = w.Write([]byte("unauthorized"))
-}
-
-func loadTemplates() (*template.Template, error) {
-	templateDir, err := templateDir()
-	if err != nil {
-		return nil, err
-	}
-
-	tpls, err := template.ParseFiles(
-		filepath.Join(templateDir, "layout.html"),
-		filepath.Join(templateDir, "runs.html"),
-		filepath.Join(templateDir, "run_detail.html"),
-		filepath.Join(templateDir, "run_submit.html"),
-		filepath.Join(templateDir, "approvals.html"),
-		filepath.Join(templateDir, "settings.html"),
-		filepath.Join(templateDir, "team.html"),
-		filepath.Join(templateDir, "onboarding.html"),
-		filepath.Join(templateDir, "memory.html"),
-		filepath.Join(templateDir, "sessions.html"),
-		filepath.Join(templateDir, "routes_deliveries.html"),
-		filepath.Join(templateDir, "session_detail.html"),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("web: parse templates: %w", err)
-	}
-	return tpls, nil
-}
-
-func templateDir() (string, error) {
-	_, currentFile, _, ok := goruntime.Caller(0)
-	if !ok {
-		return "", fmt.Errorf("web: locate template directory")
-	}
-
-	return filepath.Join(filepath.Dir(currentFile), "templates"), nil
-}
-
-func staticAssetDir() string {
-	_, currentFile, _, ok := goruntime.Caller(0)
-	if !ok {
-		return "."
-	}
-	return filepath.Join(filepath.Dir(currentFile), "static")
 }
 
 func lookupSetting(db *store.DB, key string) string {

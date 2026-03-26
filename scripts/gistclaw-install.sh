@@ -114,6 +114,8 @@ if command -v useradd >/dev/null 2>&1; then
 	useradd --system --gid gistclaw --home-dir "${VAR_DIR}" --shell /usr/sbin/nologin gistclaw 2>/dev/null || true
 fi
 
+chown -R gistclaw:gistclaw "${VAR_DIR}"
+
 tar -xzf "${ARCHIVE_FILE}" -C "${RELEASE_DIR}"
 chmod +x "${RELEASE_DIR}/gistclaw"
 ln -snf "${RELEASE_DIR}/gistclaw" "${BIN_LINK}"
@@ -127,6 +129,8 @@ workspace_root: ${VAR_DIR}/projects
 web:
   listen_addr: 127.0.0.1:8080
 EOF
+chown root:gistclaw "${CONFIG_PATH}"
+chmod 640 "${CONFIG_PATH}"
 
 # Generate the canonical unit via `gistclaw inspect systemd-unit`.
 GISTCLAW_SYSTEMD_BINARY_PATH="${BIN_LINK}" \

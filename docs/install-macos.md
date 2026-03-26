@@ -4,7 +4,7 @@ This path is for local Apple Silicon use, not `launchd` service management.
 
 ## Download and unpack
 
-Download the `darwin_arm64` archive from [GitHub Releases](https://github.com/canhta/gistclaw/releases) and unpack it:
+Download the self-contained `darwin_arm64` archive from [GitHub Releases](https://github.com/canhta/gistclaw/releases) and unpack it:
 
 ```bash
 tar -xzf gistclaw_v0.1.0_darwin_arm64.tar.gz

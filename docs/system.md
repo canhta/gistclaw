@@ -4,7 +4,7 @@ This document is the source of truth for what the repository ships today: packag
 
 ## What Ships Today
 
-- A single Go binary, `gistclaw`, with daemon and operator commands.
+- A single self-contained Go binary, `gistclaw`, with daemon and operator commands.
 - GitHub Releases with a blessed Ubuntu 24 installer path and Apple Silicon download path.
 - A local web host with starter-project onboarding plus operator-job pages grouped under Operate, Configure, and Recover.
 - A journal-backed runtime that records runs, session collaboration, approvals, receipts, route bindings, and outbound delivery state in SQLite.
@@ -30,7 +30,7 @@ This document is the source of truth for what the repository ships today: packag
 - `gistclaw serve` starts the daemon and local web host.
 - `gistclaw version` prints the running release/build metadata.
 - `gistclaw run` submits a task directly from the CLI.
-- `gistclaw inspect` reports status, runs, replay, the canonical `systemd` unit, the admin token, and storage health for the current database.
+- `gistclaw inspect` reports status, runs, replay, the canonical `systemd` unit, the admin token through `inspect token`, and storage health for the current database.
 - `gistclaw security audit` reports deployment-risk findings for the current config and runtime posture.
 - `gistclaw schedule` adds, updates, reports scheduler status, lists, shows, runs, enables, disables, and deletes scheduled tasks.
 - `gistclaw doctor` checks config, database, provider, workspace, research, MCP binaries, Telegram reachability, connector health, storage health, and scheduler state.

@@ -5,6 +5,7 @@ This is the blessed self-hosting path for GistClaw `v0.1.0`.
 ## What you get
 
 - one GitHub Releases flow
+- one self-contained binary release
 - one installer script
 - one `systemd` service
 - obvious logs through `journalctl`
@@ -23,9 +24,9 @@ sudo ./gistclaw-install.sh --version v0.1.0 --provider-name openai --provider-ap
 The installer writes:
 
 - `/usr/local/bin/gistclaw`
-- `/etc/gistclaw/config.yaml`
+- `/etc/gistclaw/config.yaml` as a root-owned file readable by the `gistclaw` service group
 - `/etc/systemd/system/gistclaw.service`
-- `/var/lib/gistclaw`
+- `/var/lib/gistclaw` as the service-owned state directory
 
 ## Verify the service
 
