@@ -281,11 +281,21 @@ func streamTerminalOutput(ctx context.Context, reader io.Reader, buffer *bytes.B
 		if err == nil {
 			continue
 		}
-		if errors.Is(err, io.EOF) {
+		if isExpectedTerminalReadClose(err) {
 			return nil
 		}
 		return err
 	}
+}
+
+func isExpectedTerminalReadClose(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, os.ErrClosed) {
+		return true
+	}
+	return strings.Contains(err.Error(), "input/output error")
 }
 
 func isClosedCommandPipe(err error) bool {

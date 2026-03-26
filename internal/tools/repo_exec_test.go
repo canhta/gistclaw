@@ -1,8 +1,11 @@
 package tools
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -154,6 +157,24 @@ func TestResolveShellCommandPrefersAvailableFallback(t *testing.T) {
 	}
 }
 
+func TestStreamTerminalOutput_IgnoresPTYCloseInputOutputError(t *testing.T) {
+	var terminal bytes.Buffer
+
+	err := streamTerminalOutput(context.Background(), &stubTerminalReader{
+		chunks: []terminalChunk{
+			{text: "line one\n"},
+			{text: "line two\n"},
+			{err: errors.New("read /dev/ptmx: input/output error")},
+		},
+	}, &terminal, nil)
+	if err != nil {
+		t.Fatalf("streamTerminalOutput: %v", err)
+	}
+	if terminal.String() != "line one\nline two\n" {
+		t.Fatalf("unexpected terminal output %q", terminal.String())
+	}
+}
+
 func mustShellRequest(t *testing.T, script string) shellCommand {
 	t.Helper()
 
@@ -163,4 +184,26 @@ func mustShellRequest(t *testing.T, script string) shellCommand {
 	}
 	shell.args = append(append([]string(nil), shell.args...), script)
 	return shell
+}
+
+type stubTerminalReader struct {
+	chunks []terminalChunk
+}
+
+type terminalChunk struct {
+	text string
+	err  error
+}
+
+func (r *stubTerminalReader) Read(p []byte) (int, error) {
+	if len(r.chunks) == 0 {
+		return 0, io.EOF
+	}
+	chunk := r.chunks[0]
+	r.chunks = r.chunks[1:]
+	if chunk.text == "" {
+		return 0, chunk.err
+	}
+	n := copy(p, chunk.text)
+	return n, chunk.err
 }
