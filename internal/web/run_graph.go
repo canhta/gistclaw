@@ -78,6 +78,8 @@ type runGraphNodeView struct {
 	Kind                 string                `json:"kind"`
 	LaneID               string                `json:"lane_id"`
 	ModelDisplay         string                `json:"model_display"`
+	TriggerLabel         string                `json:"trigger_label,omitempty"`
+	ExecutorLabel        string                `json:"executor_label,omitempty"`
 	TokenSummary         string                `json:"token_summary"`
 	TimeLabel            string                `json:"time_label"`
 	StartedAtLabel       string                `json:"started_at_label"`
@@ -141,6 +143,7 @@ func buildGraphNodes(snapshot replay.RunGraphSnapshot) []runGraphNodeView {
 			Kind:                 kind,
 			LaneID:               laneID,
 			ModelDisplay:         formatRunModelDisplay(node.ModelID, node.ModelLane),
+			ExecutorLabel:        "GistClaw agent",
 			TokenSummary:         formatRunTokenSummary(node.InputTokens, node.OutputTokens),
 			TimeLabel:            formatRunCompactTimestamp(node.CreatedAt),
 			StartedAtLabel:       formatRunCompactTimestamp(node.CreatedAt),
@@ -189,7 +192,7 @@ func buildGraphEdges(nodes []runGraphNodeView) []runGraphEdgeView {
 		if node.ParentRunID == "" {
 			continue
 		}
-		kind, label := graphDelegationEdge(node.Status)
+		kind, label := graphDelegationEdge(node)
 		edges = append(edges, runGraphEdgeView{
 			ID:          fmt.Sprintf("%s->%s:%s", node.ParentRunID, node.ID, kind),
 			From:        node.ParentRunID,
@@ -204,7 +207,7 @@ func buildGraphEdges(nodes []runGraphNodeView) []runGraphEdgeView {
 				From:        node.ID,
 				To:          node.ParentRunID,
 				Kind:        "reports",
-				Label:       "reported back",
+				Label:       "report",
 				StatusClass: "is-muted",
 			})
 		}
@@ -398,11 +401,24 @@ func graphBranchLabel(node runGraphNodeView, rootRunID string) string {
 	return fmt.Sprintf("%s branch", node.AgentID)
 }
 
-func graphDelegationEdge(status string) (kind, label string) {
-	if status == string(model.RunStatusNeedsApproval) {
-		return "blocked", "waiting approval"
+func graphDelegationEdge(node runGraphNodeView) (kind, label string) {
+	if node.Status == string(model.RunStatusNeedsApproval) {
+		return "blocked", "approve"
 	}
-	return "delegates", "delegated"
+	switch node.AgentID {
+	case "researcher":
+		return "delegates", "research"
+	case "patcher":
+		return "delegates", "build"
+	case "reviewer":
+		return "delegates", "review"
+	case "verifier":
+		return "delegates", "verify"
+	case "assistant":
+		return "delegates", "coordinate"
+	default:
+		return "delegates", "delegate"
+	}
 }
 
 func graphEdgeStatusClass(kind, statusClass string) string {

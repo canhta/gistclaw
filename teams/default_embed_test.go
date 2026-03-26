@@ -40,6 +40,9 @@ func TestDefault(t *testing.T) {
 			"must route external research through researcher",
 			"must route workspace writes through patcher",
 			"must not claim a specialist acted unless a child run exists",
+			"may answer obvious yes/no continue questions on behalf of the team",
+			"must not ask the operator for reversible workflow choices that can be decided from task context",
+			"must keep human escalation limited to critical boundaries or missing external facts",
 			"reviewer and verifier may run in parallel only after patcher work lands",
 			"workflow:",
 			"output_contract:",
@@ -63,6 +66,7 @@ func TestDefault(t *testing.T) {
 			"prefer coder_exec with backend codex for substantial code generation",
 			"must not reconstruct codex exec flags manually when coder_exec can express the job",
 			"if coder_exec is unavailable or blocked, surface that explicitly to the coordinator",
+			"must not ask the operator directly",
 			"treat coder_exec output as the primary success evidence",
 			"prefer targeted list_dir, grep_search, or syntax checks over rereading generated files end to end",
 			"leave deeper review and verification to reviewer and verifier",
@@ -86,6 +90,7 @@ func TestDefault(t *testing.T) {
 			"prefer targeted grep or narrow read_file slices over full-file reads",
 			"start with the smallest relevant files or sections first",
 			"inspect CSS or JS only when a suspected issue requires it",
+			"must not ask the operator directly",
 		} {
 			if !strings.Contains(text, want) {
 				t.Fatalf("expected embedded reviewer prompt to contain %q, got:\n%s", want, text)
@@ -106,9 +111,29 @@ func TestDefault(t *testing.T) {
 			"prefer targeted grep or narrow read_file slices over full-file reads",
 			"start with the smallest relevant files or sections first",
 			"inspect CSS or JS only when a requested verification step requires it",
+			"must not ask the operator directly",
 		} {
 			if !strings.Contains(text, want) {
 				t.Fatalf("expected embedded verifier prompt to contain %q, got:\n%s", want, text)
+			}
+		}
+	})
+
+	t.Run("embeds researcher coordinator-first escalation guidance", func(t *testing.T) {
+		defaults := Default()
+
+		body, err := fs.ReadFile(defaults, "researcher.soul.yaml")
+		if err != nil {
+			t.Fatalf("read embedded researcher.soul.yaml: %v", err)
+		}
+
+		text := string(body)
+		for _, want := range []string{
+			"do not ask the operator directly",
+			"route unresolved blockers back through the coordinator",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("expected embedded researcher prompt to contain %q, got:\n%s", want, text)
 			}
 		}
 	})

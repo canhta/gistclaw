@@ -25,6 +25,8 @@ import (
 	"github.com/canhta/gistclaw/internal/projectscope"
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
+	"github.com/canhta/gistclaw/internal/sessions"
+	"github.com/canhta/gistclaw/internal/store"
 )
 
 type runListItem struct {
@@ -79,11 +81,16 @@ type runListClusterView struct {
 type runDetailPageData struct {
 	RunID                 string
 	RunShortID            string
+	ObjectiveText         string
+	TriggerLabel          string
 	Status                string
 	StatusLabel           string
 	StatusClass           string
+	StateLabel            string
 	StartedAtLabel        string
 	LastActivityLabel     string
+	ModelDisplay          string
+	TokenSummary          string
 	EventCount            int
 	TurnCount             int
 	StreamURL             string
@@ -144,6 +151,7 @@ type runNodeDetailView struct {
 	AgentID           string                `json:"agent_id"`
 	SessionID         string                `json:"session_id,omitempty"`
 	SessionShortID    string                `json:"session_short_id,omitempty"`
+	SessionURL        string                `json:"session_url,omitempty"`
 	Status            string                `json:"status"`
 	StatusLabel       string                `json:"status_label"`
 	StatusClass       string                `json:"status_class"`
@@ -155,7 +163,23 @@ type runNodeDetailView struct {
 	Task              runStructuredTextView `json:"task"`
 	Output            runStructuredTextView `json:"output"`
 	Chain             runNodeChainView      `json:"chain"`
+	Approval          *runNodeApprovalView  `json:"approval,omitempty"`
 	Logs              []runNodeLogEntryView `json:"logs,omitempty"`
+}
+
+type runNodeApprovalView struct {
+	ID               string `json:"id"`
+	ToolName         string `json:"tool_name"`
+	TargetPath       string `json:"target_path,omitempty"`
+	Reason           string `json:"reason,omitempty"`
+	Status           string `json:"status"`
+	StatusLabel      string `json:"status_label"`
+	StatusClass      string `json:"status_class"`
+	RequestedAtLabel string `json:"requested_at_label,omitempty"`
+	ResolvedAtLabel  string `json:"resolved_at_label,omitempty"`
+	ResolveURL       string `json:"resolve_url,omitempty"`
+	ViewURL          string `json:"view_url,omitempty"`
+	CanResolve       bool   `json:"can_resolve"`
 }
 
 type runNodeChainView struct {
@@ -318,6 +342,16 @@ type runToolCallRecord struct {
 	Decision   string
 	ApprovalID string
 	CreatedAt  time.Time
+}
+
+type runApprovalRecord struct {
+	ID         string
+	ToolName   string
+	TargetPath string
+	Status     string
+	ResolvedBy string
+	CreatedAt  string
+	ResolvedAt string
 }
 
 func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
@@ -502,15 +536,28 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to load run graph", http.StatusInternalServerError)
 		return
 	}
+	graphView := buildRunGraphView(graphSnapshot)
+	graphView, err = decorateRunGraphView(r.Context(), s.db, graphView)
+	if err != nil {
+		http.Error(w, "failed to decorate run graph", http.StatusInternalServerError)
+		return
+	}
+	objectiveText, modelDisplay, tokenSummary := runDetailRootSummary(graphView)
+	triggerLabel := runDetailTriggerLabel(graphView)
 
 	s.renderTemplate(w, r, "Run Detail", "run_detail_body", runDetailPageData{
 		RunID:                 replayRun.RunID,
 		RunShortID:            compactIdentifier(replayRun.RunID),
+		ObjectiveText:         objectiveText,
+		TriggerLabel:          triggerLabel,
 		Status:                string(replayRun.Status),
 		StatusLabel:           humanizeRunStatus(string(replayRun.Status)),
 		StatusClass:           runStatusClass(string(replayRun.Status)),
+		StateLabel:            graphView.Headline,
 		StartedAtLabel:        formatRunTimestamp(startedAt),
 		LastActivityLabel:     formatRunTimestamp(lastActivity),
+		ModelDisplay:          modelDisplay,
+		TokenSummary:          tokenSummary,
 		EventCount:            len(events),
 		TurnCount:             len(turns),
 		StreamURL:             runEventsPath(replayRun.RunID),
@@ -518,7 +565,7 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		NodeDetailURLTemplate: runNodeDetailTemplatePath(replayRun.RunID),
 		Turns:                 turns,
 		Events:                events,
-		Graph:                 buildRunGraphView(graphSnapshot),
+		Graph:                 graphView,
 		ExecutionSnapshot:     buildExecutionSnapshotView(replayRun.TeamID, replayRun.ExecutionSnapshotJSON),
 	})
 }
@@ -545,7 +592,14 @@ func (s *Server) handleRunGraph(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, buildRunGraphView(graphSnapshot))
+	graphView := buildRunGraphView(graphSnapshot)
+	graphView, err = decorateRunGraphView(r.Context(), s.db, graphView)
+	if err != nil {
+		http.Error(w, "failed to decorate run graph", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, graphView)
 }
 
 func (s *Server) handleRunNodeDetail(w http.ResponseWriter, r *http.Request) {
@@ -604,8 +658,13 @@ func (s *Server) handleRunNodeDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to load tool calls", http.StatusInternalServerError)
 		return
 	}
+	approvals, err := loadRunApprovals(r.Context(), s.db.RawDB(), nodeRunID)
+	if err != nil {
+		http.Error(w, "failed to load approvals", http.StatusInternalServerError)
+		return
+	}
 
-	writeJSON(w, http.StatusOK, buildRunNodeDetailView(record, graphSnapshot.RootRunID, nodeMap, childrenByParent, events, toolCalls))
+	writeJSON(w, http.StatusOK, buildRunNodeDetailView(record, graphSnapshot.RootRunID, nodeMap, childrenByParent, events, toolCalls, approvals))
 }
 
 func turnContent(payload []byte) (string, bool) {
@@ -738,6 +797,44 @@ func loadRunToolCalls(ctx context.Context, db *sql.DB, runID string) ([]runToolC
 	return records, rows.Err()
 }
 
+func loadRunApprovals(ctx context.Context, db *sql.DB, runID string) ([]runApprovalRecord, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT id,
+		        tool_name,
+		        COALESCE(target_path, ''),
+		        status,
+		        COALESCE(resolved_by, ''),
+		        created_at,
+		        COALESCE(resolved_at, '')
+		   FROM approvals
+		  WHERE run_id = ?
+		  ORDER BY created_at DESC, id DESC`,
+		runID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	records := make([]runApprovalRecord, 0, 4)
+	for rows.Next() {
+		var record runApprovalRecord
+		if err := rows.Scan(
+			&record.ID,
+			&record.ToolName,
+			&record.TargetPath,
+			&record.Status,
+			&record.ResolvedBy,
+			&record.CreatedAt,
+			&record.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, rows.Err()
+}
+
 func buildRunNodeDetailView(
 	record runNodeRecord,
 	rootRunID string,
@@ -745,8 +842,13 @@ func buildRunNodeDetailView(
 	childrenByParent map[string][]replay.GraphNode,
 	events []model.Event,
 	toolCalls []runToolCallRecord,
+	approvals []runApprovalRecord,
 ) runNodeDetailView {
 	outputText := strings.TrimSpace(joinTurnContent(events))
+	sessionURL := ""
+	if strings.TrimSpace(record.SessionID) != "" {
+		sessionURL = sessionDetailPath(record.SessionID)
+	}
 	return runNodeDetailView{
 		ID:                record.ID,
 		ShortID:           compactIdentifier(record.ID),
@@ -755,6 +857,7 @@ func buildRunNodeDetailView(
 		AgentID:           record.AgentID,
 		SessionID:         record.SessionID,
 		SessionShortID:    compactIdentifier(record.SessionID),
+		SessionURL:        sessionURL,
 		Status:            record.Status,
 		StatusLabel:       humanizeRunStatus(record.Status),
 		StatusClass:       runStatusClass(record.Status),
@@ -766,8 +869,91 @@ func buildRunNodeDetailView(
 		Task:              buildStructuredTextView(record.Objective, 3),
 		Output:            buildStructuredTextView(outputText, 6),
 		Chain:             buildRunNodeChainView(record.ID, rootRunID, nodeMap, childrenByParent),
+		Approval:          buildRunNodeApprovalView(approvals, events),
 		Logs:              buildRunNodeLogEntries(events, toolCalls),
 	}
+}
+
+func buildRunNodeApprovalView(approvals []runApprovalRecord, events []model.Event) *runNodeApprovalView {
+	if len(approvals) == 0 {
+		return nil
+	}
+
+	metadata := make(map[string]struct {
+		ToolName   string
+		TargetPath string
+		Reason     string
+		CreatedAt  time.Time
+	}, len(approvals))
+	for _, evt := range events {
+		if evt.Kind != "approval_requested" {
+			continue
+		}
+		var payload struct {
+			ApprovalID string `json:"approval_id"`
+			ToolName   string `json:"tool_name"`
+			TargetPath string `json:"target_path"`
+			Reason     string `json:"reason"`
+		}
+		if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
+			continue
+		}
+		if strings.TrimSpace(payload.ApprovalID) == "" {
+			continue
+		}
+		metadata[payload.ApprovalID] = struct {
+			ToolName   string
+			TargetPath string
+			Reason     string
+			CreatedAt  time.Time
+		}{
+			ToolName:   strings.TrimSpace(payload.ToolName),
+			TargetPath: strings.TrimSpace(payload.TargetPath),
+			Reason:     strings.TrimSpace(payload.Reason),
+			CreatedAt:  evt.CreatedAt.UTC(),
+		}
+	}
+
+	selected := approvals[0]
+	for _, approval := range approvals {
+		if approval.Status == "pending" {
+			selected = approval
+			break
+		}
+	}
+
+	view := &runNodeApprovalView{
+		ID:          selected.ID,
+		ToolName:    strings.TrimSpace(selected.ToolName),
+		TargetPath:  strings.TrimSpace(selected.TargetPath),
+		Status:      strings.TrimSpace(selected.Status),
+		StatusLabel: strings.TrimSpace(strings.ReplaceAll(selected.Status, "_", " ")),
+		StatusClass: approvalStatusClass(selected.Status),
+		ResolveURL:  approvalResolvePath(selected.ID),
+		ViewURL:     pageRecoverApprovals + "?q=" + url.QueryEscape(selected.ID),
+		CanResolve:  selected.Status == "pending",
+	}
+	if requestedAt := parseRunListTimestamp(selected.CreatedAt); !requestedAt.IsZero() {
+		view.RequestedAtLabel = formatRunTimestamp(requestedAt)
+	}
+	if resolvedAt := parseRunListTimestamp(selected.ResolvedAt); !resolvedAt.IsZero() {
+		view.ResolvedAtLabel = formatRunTimestamp(resolvedAt)
+	}
+
+	if meta, ok := metadata[selected.ID]; ok {
+		if view.ToolName == "" {
+			view.ToolName = meta.ToolName
+		}
+		if view.TargetPath == "" {
+			view.TargetPath = meta.TargetPath
+		}
+		view.Reason = meta.Reason
+		if !meta.CreatedAt.IsZero() {
+			view.RequestedAtLabel = formatRunTimestamp(meta.CreatedAt)
+		}
+	}
+
+	return view
 }
 
 func joinTurnContent(events []model.Event) string {
@@ -968,6 +1154,237 @@ func buildExecutionSnapshotView(teamID string, raw []byte) runExecutionSnapshotV
 	}
 
 	return view
+}
+
+func runDetailRootSummary(graph runGraphView) (objectiveText, modelDisplay, tokenSummary string) {
+	objectiveText = "No objective captured for this run."
+	modelDisplay = "not recorded"
+	tokenSummary = "0 in / 0 out"
+	for _, node := range graph.Nodes {
+		if !node.IsRoot {
+			continue
+		}
+		if strings.TrimSpace(node.ObjectivePreview) != "" {
+			objectiveText = node.ObjectivePreview
+		} else if strings.TrimSpace(node.Objective) != "" {
+			objectiveText = node.Objective
+		}
+		if strings.TrimSpace(node.ModelDisplay) != "" {
+			modelDisplay = node.ModelDisplay
+		}
+		if strings.TrimSpace(node.TokenSummary) != "" {
+			tokenSummary = node.TokenSummary
+		}
+		break
+	}
+	return objectiveText, modelDisplay, tokenSummary
+}
+
+type runCoderExecInput struct {
+	Backend string `json:"backend"`
+}
+
+func decorateRunGraphView(ctx context.Context, db *store.DB, view runGraphView) (runGraphView, error) {
+	if db == nil || len(view.Nodes) == 0 {
+		return view, nil
+	}
+
+	executorByRun, err := loadRunGraphExecutorLabels(ctx, db.RawDB(), view.Nodes)
+	if err != nil {
+		return runGraphView{}, err
+	}
+	triggerLabel, err := loadRunGraphTriggerLabel(ctx, db, view.Nodes)
+	if err != nil {
+		return runGraphView{}, err
+	}
+
+	for i := range view.Nodes {
+		if label := strings.TrimSpace(executorByRun[view.Nodes[i].ID]); label != "" {
+			view.Nodes[i].ExecutorLabel = label
+		}
+		if view.Nodes[i].IsRoot && strings.TrimSpace(triggerLabel) != "" {
+			view.Nodes[i].TriggerLabel = triggerLabel
+		}
+	}
+	for i := range view.Lanes {
+		for j := range view.Lanes[i].Branches {
+			for k := range view.Lanes[i].Branches[j].Nodes {
+				runID := view.Lanes[i].Branches[j].Nodes[k].ID
+				if label := strings.TrimSpace(executorByRun[runID]); label != "" {
+					view.Lanes[i].Branches[j].Nodes[k].ExecutorLabel = label
+				}
+				if view.Lanes[i].Branches[j].Nodes[k].IsRoot && strings.TrimSpace(triggerLabel) != "" {
+					view.Lanes[i].Branches[j].Nodes[k].TriggerLabel = triggerLabel
+				}
+			}
+		}
+	}
+
+	return view, nil
+}
+
+func loadRunGraphTriggerLabel(ctx context.Context, db *store.DB, nodes []runGraphNodeView) (string, error) {
+	rootSessionID := ""
+	for _, node := range nodes {
+		if node.IsRoot {
+			rootSessionID = strings.TrimSpace(node.SessionID)
+			break
+		}
+	}
+	if rootSessionID == "" {
+		return "Chat", nil
+	}
+
+	svc := sessions.NewService(db, nil)
+	route, err := svc.LoadRouteBySession(ctx, rootSessionID)
+	if err == nil {
+		return humanizeTriggerLabel(route.ConnectorID), nil
+	}
+	if !errors.Is(err, sessions.ErrSessionRouteNotFound) {
+		if errors.Is(err, sessions.ErrSessionNotFound) {
+			return "Chat", nil
+		}
+		return "", fmt.Errorf("load run graph trigger: %w", err)
+	}
+
+	session, sessionErr := svc.LoadSession(ctx, rootSessionID)
+	if sessionErr != nil {
+		if errors.Is(sessionErr, sessions.ErrSessionNotFound) {
+			return "Chat", nil
+		}
+		return "", fmt.Errorf("load run graph trigger session: %w", sessionErr)
+	}
+	if session.Role == model.SessionRoleFront {
+		return "Chat", nil
+	}
+	return "Unbound", nil
+}
+
+func loadRunGraphExecutorLabels(ctx context.Context, db *sql.DB, nodes []runGraphNodeView) (map[string]string, error) {
+	labels := make(map[string]string, len(nodes))
+	runIDs := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		labels[node.ID] = "GistClaw agent"
+		runIDs = append(runIDs, node.ID)
+	}
+	if len(runIDs) == 0 {
+		return labels, nil
+	}
+
+	placeholders := strings.TrimRight(strings.Repeat("?,", len(runIDs)), ",")
+	args := make([]any, 0, len(runIDs))
+	for _, runID := range runIDs {
+		args = append(args, runID)
+	}
+
+	rows, err := db.QueryContext(ctx,
+		`SELECT run_id, tool_name, COALESCE(input_json, x''), COALESCE(output_json, x'')
+		 FROM tool_calls
+		 WHERE run_id IN (`+placeholders+`)
+		 ORDER BY created_at DESC, id DESC`,
+		args...,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load run graph executors: %w", err)
+	}
+	defer rows.Close()
+
+	seen := make(map[string]struct{}, len(runIDs))
+	for rows.Next() {
+		var runID string
+		var toolName string
+		var inputJSON []byte
+		var outputJSON []byte
+		if err := rows.Scan(&runID, &toolName, &inputJSON, &outputJSON); err != nil {
+			return nil, fmt.Errorf("scan run graph executor: %w", err)
+		}
+		if _, ok := seen[runID]; ok {
+			continue
+		}
+		if label := executorLabelFromToolCall(toolName, inputJSON, outputJSON); label != "" {
+			labels[runID] = label
+			seen[runID] = struct{}{}
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate run graph executors: %w", err)
+	}
+
+	return labels, nil
+}
+
+func executorLabelFromToolCall(toolName string, inputJSON, outputJSON []byte) string {
+	switch toolName {
+	case "coder_exec":
+		var input runCoderExecInput
+		if len(inputJSON) > 0 && json.Unmarshal(inputJSON, &input) == nil {
+			if label := humanizeExecutorLabel(input.Backend, ""); label != "" {
+				return label
+			}
+		}
+	case "shell_exec":
+		// Fall through to command inspection below.
+	default:
+		return ""
+	}
+
+	toolResult, err := decodeToolResult(outputJSON)
+	if err != nil {
+		return ""
+	}
+	meta, err := decodeCommandMeta(toolResult.Output)
+	if err != nil {
+		return ""
+	}
+	return humanizeExecutorLabel(meta.Backend, meta.Command)
+}
+
+func humanizeTriggerLabel(connectorID string) string {
+	switch strings.ToLower(strings.TrimSpace(connectorID)) {
+	case "", "chat", "web", "local":
+		return "Chat"
+	case "telegram":
+		return "Telegram"
+	case "whatsapp":
+		return "WhatsApp"
+	default:
+		normalized := strings.ReplaceAll(strings.TrimSpace(connectorID), "_", " ")
+		if normalized == "" {
+			return "Chat"
+		}
+		return strings.ToUpper(normalized[:1]) + normalized[1:]
+	}
+}
+
+func humanizeExecutorLabel(backend, command string) string {
+	switch strings.ToLower(strings.TrimSpace(backend)) {
+	case "codex":
+		return "Codex CLI"
+	case "claude_code":
+		return "Claude Code"
+	}
+	command = strings.TrimSpace(command)
+	switch {
+	case strings.HasPrefix(command, "codex "):
+		return "Codex CLI"
+	case command == "codex":
+		return "Codex CLI"
+	case strings.HasPrefix(command, "claude "):
+		return "Claude Code"
+	case command == "claude":
+		return "Claude Code"
+	default:
+		return ""
+	}
+}
+
+func runDetailTriggerLabel(graph runGraphView) string {
+	for _, node := range graph.Nodes {
+		if node.IsRoot && strings.TrimSpace(node.TriggerLabel) != "" {
+			return node.TriggerLabel
+		}
+	}
+	return "Chat"
 }
 
 type runListRequest struct {

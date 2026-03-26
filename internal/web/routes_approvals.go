@@ -15,15 +15,17 @@ import (
 )
 
 type approvalItem struct {
-	ID          string
-	RunID       string
-	ToolName    string
-	TargetPath  string
-	Status      string
-	StatusClass string
-	ResolvedBy  string
-	CreatedAt   time.Time
-	ResolvedAt  *time.Time
+	ID              string
+	RunID           string
+	ToolName        string
+	TargetPath      string
+	Status          string
+	StatusLabel     string
+	StatusClass     string
+	ResolvedBy      string
+	CreatedAt       time.Time
+	ResolvedAt      *time.Time
+	ResolvedAtLabel string
 }
 
 type approvalsPageData struct {
@@ -61,9 +63,11 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to load approvals", http.StatusInternalServerError)
 			return
 		}
+		item.StatusLabel = humanizeWebLabel(item.Status)
 		item.StatusClass = approvalStatusClass(item.Status)
 		if resolvedAt.Valid {
 			item.ResolvedAt = &resolvedAt.Time
+			item.ResolvedAtLabel = formatWebTimestamp(resolvedAt.Time)
 		}
 		approvalRows = append(approvalRows, approvalListRow{Item: item, CreatedAt: createdAt})
 	}
@@ -86,6 +90,7 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleApprovalResolve(w http.ResponseWriter, r *http.Request) {
 	ticketID := r.PathValue("id")
+	wantsJSON := strings.Contains(strings.ToLower(r.Header.Get("Accept")), "application/json")
 	visible, err := s.approvalVisibleInActiveProject(r.Context(), ticketID)
 	if err != nil {
 		http.Error(w, "failed to load approval", http.StatusInternalServerError)
@@ -110,28 +115,40 @@ func (s *Server) handleApprovalResolve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form", http.StatusBadRequest)
+		writeApprovalResolveError(w, wantsJSON, http.StatusBadRequest, "invalid form")
 		return
 	}
 
 	decision := r.FormValue("decision")
 	if decision != "approved" && decision != "denied" {
-		http.Error(w, "decision must be approved or denied", http.StatusBadRequest)
+		writeApprovalResolveError(w, wantsJSON, http.StatusBadRequest, "decision must be approved or denied")
 		return
 	}
 
 	if s.rt == nil {
-		http.Error(w, "runtime not configured", http.StatusInternalServerError)
+		writeApprovalResolveError(w, wantsJSON, http.StatusInternalServerError, "runtime not configured")
 		return
 	}
 
-	if err := s.rt.ResolveApproval(r.Context(), ticketID, decision); err != nil {
+	if err := s.rt.ResolveApprovalAsync(r.Context(), ticketID, decision); err != nil {
+		if wantsJSON {
+			writeApprovalResolveError(w, true, http.StatusInternalServerError, err.Error())
+			return
+		}
 		s.renderTemplate(w, r, "Approvals", "approvals_body", approvalsPageData{
 			Error: err.Error(),
 		})
 		return
 	}
 
+	if wantsJSON {
+		writeJSON(w, http.StatusOK, map[string]string{
+			"approval_id": ticketID,
+			"decision":    decision,
+			"status":      decision,
+		})
+		return
+	}
 	http.Redirect(w, r, pageRecoverApprovals, http.StatusSeeOther)
 }
 
@@ -295,4 +312,12 @@ func approvalStatusClass(status string) string {
 	default:
 		return ""
 	}
+}
+
+func writeApprovalResolveError(w http.ResponseWriter, wantsJSON bool, status int, message string) {
+	if wantsJSON {
+		writeJSON(w, status, map[string]string{"message": message})
+		return
+	}
+	http.Error(w, message, status)
 }

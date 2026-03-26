@@ -125,7 +125,7 @@
           </td>
           <td>
             <div class="mono"><a href="/operate/sessions/{{.SessionID}}">{{.SessionID}}</a></div>
-            <div>{{.AgentID}} <span class="muted">({{.Role}})</span></div>
+            <div>{{.AgentID}} <span class="muted">({{.RoleLabel}})</span></div>
             <div class="muted mono">conversation: {{.ConversationID}}</div>
           </td>
           <td>
@@ -157,7 +157,7 @@
         <div class="directory-card-section">
           <span class="directory-card-label">Binding</span>
           <div class="mono"><a href="/operate/sessions/{{.SessionID}}">{{.SessionID}}</a></div>
-          <div>{{.AgentID}} <span class="muted">({{.Role}})</span></div>
+          <div>{{.AgentID}} <span class="muted">({{.RoleLabel}})</span></div>
           <div class="muted mono">conversation: {{.ConversationID}}</div>
         </div>
       </div>
@@ -210,11 +210,11 @@
           </td>
           <td>
             <div>{{.ConnectorID}} / {{.ChatID}}</div>
-            <div class="muted">{{.MessageText}}</div>
+            <div class="muted structured-preview">{{.Message.PreviewText}}</div>
           </td>
           <td>
-            <div>{{.Status}}</div>
-            <div class="muted mono">attempts: {{.Attempts}}</div>
+            <div>{{.StatusLabel}}</div>
+            <div class="muted mono">{{.AttemptsLabel}}</div>
           </td>
           <td>
             {{if eq .Status "terminal"}}
@@ -243,12 +243,12 @@
         <div class="directory-card-section">
           <span class="directory-card-label">Target</span>
           <div>{{.ConnectorID}} / {{.ChatID}}</div>
-          <div class="muted">{{.MessageText}}</div>
+          <div class="muted structured-preview">{{.Message.PreviewText}}</div>
         </div>
         <div class="directory-card-section">
           <span class="directory-card-label">Status</span>
-          <div>{{.Status}}</div>
-          <div class="muted mono">attempts: {{.Attempts}}</div>
+          <div>{{.StatusLabel}}</div>
+          <div class="muted mono">{{.AttemptsLabel}}</div>
         </div>
       </div>
       <div class="directory-card-actions">
@@ -297,14 +297,14 @@
             <div>{{.ConnectorID}} / {{.ExternalID}}</div>
           </td>
           <td>
-            <div>{{.Status}}</div>
-            {{if .DeactivatedAt}}
-            <div class="muted mono">{{.DeactivatedAt.Format "2006-01-02T15:04:05Z"}}</div>
+            <div>{{.StatusLabel}}</div>
+            {{if .DeactivatedLabel}}
+            <div class="muted mono">{{.DeactivatedLabel}}</div>
             {{end}}
           </td>
           <td>
-            {{if .DeactivationReason}}
-            <div>{{.DeactivationReason}}</div>
+            {{if .DeactivationNote}}
+            <div>{{.DeactivationNote}}</div>
             {{else}}
             <div class="muted">unknown</div>
             {{end}}
@@ -328,13 +328,13 @@
       <div class="directory-card-grid">
         <div class="directory-card-section">
           <span class="directory-card-label">Status</span>
-          <div>{{.Status}}</div>
-          {{if .DeactivatedAt}}<div class="muted mono">{{.DeactivatedAt.Format "2006-01-02T15:04:05Z"}}</div>{{end}}
+          <div>{{.StatusLabel}}</div>
+          {{if .DeactivatedLabel}}<div class="muted mono">{{.DeactivatedLabel}}</div>{{end}}
         </div>
         <div class="directory-card-section">
           <span class="directory-card-label">Reason</span>
-          {{if .DeactivationReason}}
-          <div>{{.DeactivationReason}}</div>
+          {{if .DeactivationNote}}
+          <div>{{.DeactivationNote}}</div>
           {{else}}
           <div class="muted">unknown</div>
           {{end}}

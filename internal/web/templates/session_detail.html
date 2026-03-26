@@ -3,7 +3,7 @@
   <span class="page-eyebrow">Operate</span>
   <h1>Session Detail</h1>
   <div class="mono">{{.Session.ID}}</div>
-  <p class="muted">{{.Session.AgentID}} · {{.Session.Role}} · {{.Session.Status}}</p>
+  <p class="muted">{{.Session.AgentID}} · {{.Session.RoleLabel}} · {{.Session.StatusLabel}}</p>
 </section>
 
 {{if .Error}}
@@ -34,14 +34,14 @@
     <tbody id="session-mailbox-body">
       {{if .Messages}}
       {{range .Messages}}
-      <tr data-message-kind="{{.Kind}}" data-source-run-id="{{.Provenance.SourceRunID}}">
-        <td>{{.Body}}</td>
-        <td>{{.Kind}}</td>
+      <tr data-message-kind="{{.Kind}}" data-source-run-id="{{.SourceRunID}}">
+        <td>{{template "structured_text_blocks" .Body}}</td>
+        <td>{{.KindLabel}}</td>
         <td>
-          {{if .SenderSessionID}}
-          <span class="mono">{{.SenderSessionID}}</span>
+          {{if .SenderIsMono}}
+          <span class="mono">{{.SenderLabel}}</span>
           {{else}}
-          <span class="muted">operator/runtime</span>
+          <span class="muted">{{.SenderLabel}}</span>
           {{end}}
         </td>
       </tr>
@@ -53,7 +53,7 @@
       {{end}}
       <tr id="session-live-draft" hidden>
         <td><pre id="session-live-text" class="run-output-text"></pre></td>
-        <td>assistant</td>
+        <td>Assistant</td>
         <td><span class="muted">streaming</span></td>
       </tr>
     </tbody>
@@ -65,7 +65,12 @@
   {{if .Route}}
   <div class="mono">{{.Route.ID}}</div>
   <div>{{.Route.ConnectorID}} / {{.Route.ExternalID}}</div>
+  <div class="muted">status: {{.Route.StatusLabel}}</div>
   <div class="muted mono">thread: {{.Route.ThreadID}}</div>
+  <div class="muted mono">created: {{.Route.CreatedAtLabel}}</div>
+  {{if .Route.DeactivatedLabel}}
+  <div class="muted mono">deactivated: {{.Route.DeactivatedLabel}}</div>
+  {{end}}
   {{else}}
   <p class="muted">This session is not currently bound to an external route.</p>
   {{end}}
@@ -88,11 +93,11 @@
         <td>
           <div class="mono">{{.ID}}</div>
           <div>{{.ConnectorID}} / {{.ChatID}}</div>
-          <div class="muted">{{.MessageText}}</div>
+          <div class="muted structured-preview">{{.Message.PreviewText}}</div>
         </td>
         <td>
-          <div>{{.Status}}</div>
-          <div class="muted mono">attempts: {{.Attempts}}</div>
+          <div>{{.StatusLabel}}</div>
+          <div class="muted mono">{{.AttemptsLabel}}</div>
         </td>
         <td>
           {{if eq .Status "terminal"}}
@@ -128,8 +133,14 @@
         <td>
           <div class="mono">{{.ID}}</div>
           <div>{{.ConnectorID}} / {{.ChatID}}</div>
+          <div class="muted mono">{{.CreatedAtLabel}}</div>
         </td>
-        <td>{{.Error}}</td>
+        <td>
+          <div>{{.Error}}</div>
+          {{if .EventKindLabel}}
+          <div class="muted">{{.EventKindLabel}}</div>
+          {{end}}
+        </td>
       </tr>
       {{end}}
     </tbody>
@@ -159,6 +170,14 @@
   let currentSource = null;
   let draft = "";
   let sending = false;
+
+  function humanizeLabel(value) {
+    if (!value) {
+      return "Unknown";
+    }
+    const text = String(value).replaceAll("_", " ");
+    return text.charAt(0).toUpperCase() + text.slice(1);
+  }
 
   function setStatus(text) {
     if (status) {
@@ -202,11 +221,14 @@
     }
 
     const bodyCell = document.createElement("td");
-    bodyCell.textContent = body;
+    const bodyText = document.createElement("pre");
+    bodyText.className = "run-output-text";
+    bodyText.textContent = body;
+    bodyCell.appendChild(bodyText);
     row.appendChild(bodyCell);
 
     const kindCell = document.createElement("td");
-    kindCell.textContent = kind || "";
+    kindCell.textContent = humanizeLabel(kind || "assistant");
     row.appendChild(kindCell);
 
     const senderCell = document.createElement("td");
@@ -216,7 +238,7 @@
       sender.textContent = senderSessionID;
     } else {
       sender.className = "muted";
-      sender.textContent = "operator/runtime";
+      sender.textContent = "Operator / Runtime";
     }
     senderCell.appendChild(sender);
     row.appendChild(senderCell);

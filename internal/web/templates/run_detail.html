@@ -28,84 +28,69 @@
 <section class="page-header">
   <span class="page-eyebrow">Execution</span>
   <h1>Run Detail</h1>
-  <p class="page-lede">Inspect one execution with timestamps, delegation ownership, and the evidence trail the operator needs to trust the outcome.</p>
-  <div class="run-meta-grid">
-    <article class="run-meta-card">
-      <span class="run-meta-label">Root run</span>
-      <span class="run-meta-value mono">{{.RunID}}</span>
-      <span class="subtle">Short label {{.RunShortID}}</span>
+  <p class="page-lede run-detail-objective">{{.ObjectiveText}}</p>
+  <div id="run-command-strip" class="run-command-strip {{.StatusClass}}" data-run-command-strip>
+    <article class="run-command-cell">
+      <span class="run-command-label">Status</span>
+      <span class="run-status {{.StatusClass}}" data-run-status-label>{{.StatusLabel}}</span>
     </article>
-    <article class="run-meta-card">
-      <span class="run-meta-label">Started</span>
-      <span id="run-started-at" class="run-meta-value mono">{{.StartedAtLabel}}</span>
-      <span class="subtle">First recorded event in this execution.</span>
+    <article class="run-command-cell">
+      <span class="run-command-label">Trigger</span>
+      <span class="run-command-value">{{.TriggerLabel}}</span>
     </article>
-    <article class="run-meta-card">
-      <span class="run-meta-label">Last activity</span>
-      <span id="run-last-activity" class="run-meta-value mono">{{.LastActivityLabel}}</span>
-      <span class="subtle">Most recent journal entry seen for this run.</span>
+    <article class="run-command-cell run-command-cell-wide">
+      <span class="run-command-label">Current state</span>
+      <span id="run-graph-headline" class="run-command-value">{{.StateLabel}}</span>
     </article>
-    <article class="run-meta-card">
-      <span class="run-meta-label">Recorded events</span>
-      <span id="run-event-count" class="run-meta-value mono">{{.EventCount}}</span>
-      <span class="subtle"><span id="run-turn-count" class="mono">{{.TurnCount}}</span> completed turns captured.</span>
+    <article class="run-command-cell">
+      <span class="run-command-label">Started</span>
+      <span id="run-started-at" class="run-command-value mono">{{.StartedAtLabel}}</span>
+    </article>
+    <article class="run-command-cell">
+      <span class="run-command-label">Updated</span>
+      <span id="run-last-activity" class="run-command-value mono">{{.LastActivityLabel}}</span>
+    </article>
+    <article class="run-command-cell">
+      <span class="run-command-label">Model</span>
+      <span class="run-command-value">{{.ModelDisplay}}</span>
+    </article>
+    <article class="run-command-cell">
+      <span class="run-command-label">Tokens</span>
+      <span class="run-command-value mono">{{.TokenSummary}}</span>
     </article>
   </div>
+  <p id="run-live-status" class="run-live-note muted">Live updates enabled.</p>
 </section>
 
 <section class="page-section">
-  <article id="run-live-banner" class="status-banner {{.StatusClass}}">
-    <div class="button-row">
-      <span class="page-eyebrow">Live Status</span>
-      <span class="run-status {{.StatusClass}}" data-run-status-label>{{.StatusLabel}}</span>
+  <div class="panel run-primary-panel">
+    <div class="run-primary-head">
+      <div class="stack-sm">
+        <h2 class="section-title">Orchestration Map</h2>
+        <p class="panel-note">Map shows ownership and flow. Rail jumps to the branch that needs attention.</p>
+      </div>
+      <div class="graph-control-row">
+        <button class="btn btn-subtle btn-inline" type="button" data-graph-action="focus-active">Focus active path</button>
+        <button class="btn btn-subtle btn-inline" type="button" data-graph-action="expand-active">Expand active branches</button>
+        <button class="btn btn-subtle btn-inline" type="button" data-graph-action="collapse-settled">Collapse settled branches</button>
+      </div>
     </div>
-    <p id="run-live-status" class="muted">Watching live graph and turn updates.</p>
-  </article>
-</section>
-
-<section class="page-section">
-  <div class="panel">
-    <h2 class="section-title">Orchestration Map</h2>
-    <p id="run-graph-headline" class="graph-headline">{{.Graph.Headline}}</p>
-    <div id="run-graph-summary" class="graph-summary">
-      <article class="graph-metric">
-        <span class="graph-metric-value">{{.Graph.Summary.Total}}</span>
-        <span class="subtle">Visible runs</span>
-      </article>
-      <article class="graph-metric is-active">
-        <span class="graph-metric-value">{{.Graph.Summary.Active}}</span>
-        <span class="subtle">Active</span>
-      </article>
-      <article class="graph-metric is-approval">
-        <span class="graph-metric-value">{{.Graph.Summary.NeedsApproval}}</span>
-        <span class="subtle">Needs approval</span>
-      </article>
-      <article class="graph-metric is-pending">
-        <span class="graph-metric-value">{{.Graph.Summary.Pending}}</span>
-        <span class="subtle">Pending</span>
-      </article>
-      <article class="graph-metric is-success">
-        <span class="graph-metric-value">{{.Graph.Summary.Completed}}</span>
-        <span class="subtle">Completed</span>
-      </article>
-      <article class="graph-metric is-error">
-        <span class="graph-metric-value">{{.Graph.Summary.Failed}}</span>
-        <span class="subtle">Failed</span>
-      </article>
-      <article class="graph-metric is-muted">
-        <span class="graph-metric-value">{{.Graph.Summary.Interrupted}}</span>
-        <span class="subtle">Interrupted</span>
-      </article>
-    </div>
-    <div class="graph-control-row">
-      <button class="btn btn-subtle btn-inline" type="button" data-graph-action="focus-active">Focus active path</button>
-      <button class="btn btn-subtle btn-inline" type="button" data-graph-action="expand-active">Expand active branches</button>
-      <button class="btn btn-subtle btn-inline" type="button" data-graph-action="collapse-settled">Collapse settled branches</button>
-    </div>
-    <div class="graph-stage">
-      <section class="graph-stage-panel graph-stage-panel-board">
-        <div class="panel-kicker">Branch directory</div>
-        <p class="panel-note">The board groups delegated work by lane and branch so settled work can collapse while active paths stay obvious. Click any node to inspect the full task, output, chain, and execution evidence.</p>
+    <div class="run-primary-board" data-run-primary-board>
+      <section class="graph-stage-panel run-map-hero" data-run-map-hero>
+        <div class="panel-kicker">Topology map</div>
+        <div class="graph-legend">
+          {{range .Graph.Legend}}
+            <div class="graph-legend-item {{.StatusClass}}" data-edge-kind="{{.Kind}}">
+              <span class="graph-legend-rail"></span>
+              <span>{{.Label}}</span>
+            </div>
+          {{end}}
+        </div>
+        <div id="run-graph-diagram" class="graph-diagram" aria-label="Run collaboration diagram"></div>
+      </section>
+      <aside class="graph-stage-panel graph-stage-panel-board run-branch-rail" data-run-branch-rail>
+        <div class="panel-kicker">Branch rail</div>
+        <p class="panel-note">Active and blocked branches stay open. Settled work collapses.</p>
         <div id="run-graph-board" class="graph-board" data-graph-url="{{.GraphURL}}" data-node-detail-url-template="{{.NodeDetailURLTemplate}}">
           {{range .Graph.Lanes}}
             <section class="graph-lane" data-lane-id="{{.ID}}">
@@ -127,48 +112,22 @@
                       {{range .Nodes}}
                         <article class="graph-node {{.StatusClass}}" data-run-id="{{.ID}}" data-open-node-detail>
                           <div class="graph-node-head">
-                            <div class="stack-sm">
-                              <div class="button-row">
-                                <span class="run-status {{.StatusClass}}">{{.StatusLabel}}</span>
-                                {{if .IsRoot}}<span class="badge badge-muted">root</span>{{end}}
-                              </div>
-                              <div class="graph-node-title-row">
-                                <div class="graph-node-title">{{.AgentID}}</div>
-                                <div class="mono subtle">Run {{.ShortID}}</div>
-                              </div>
+                            <div class="button-row">
+                              <span class="run-status {{.StatusClass}}">{{.StatusLabel}}</span>
+                              {{if .IsRoot}}<span class="badge badge-muted">root</span>{{end}}
                             </div>
                             <button class="btn btn-subtle btn-inline" type="button" data-open-node-detail>Read more</button>
                           </div>
+                          <div class="graph-node-title-row">
+                            <div class="graph-node-title">{{.AgentID}}</div>
+                            <div class="mono subtle">Run {{.ShortID}}</div>
+                          </div>
                           <div class="graph-node-objective structured-preview">{{if .ObjectivePreview}}{{.ObjectivePreview}}{{else}}No objective captured for this run.{{end}}</div>
-                          <div class="graph-node-facts">
-                            <div class="graph-node-fact">
-                              <span class="graph-node-fact-label">Model</span>
-                              <span>{{.ModelDisplay}}</span>
-                            </div>
-                            <div class="graph-node-fact">
-                              <span class="graph-node-fact-label">Tokens</span>
-                              <span>{{.TokenSummary}}</span>
-                            </div>
-                            <div class="graph-node-fact">
-                              <span class="graph-node-fact-label">Started</span>
-                              <span class="mono">{{.StartedAtLabel}}</span>
-                            </div>
-                            <div class="graph-node-fact">
-                              <span class="graph-node-fact-label">Updated</span>
-                              <span class="mono">{{.UpdatedAtLabel}}</span>
-                            </div>
-                            {{if .SessionShortID}}
-                            <div class="graph-node-fact">
-                              <span class="graph-node-fact-label">Session</span>
-                              <span class="mono">{{.SessionShortID}}</span>
-                            </div>
-                            {{end}}
-                            {{if .ParentLabel}}
-                            <div class="graph-node-fact">
-                              <span class="graph-node-fact-label">Parent</span>
-                              <span class="mono">{{.ParentLabel}}</span>
-                            </div>
-                            {{end}}
+                          <div class="graph-node-meta mono subtle">
+                            {{if .TriggerLabel}}<span>{{.TriggerLabel}}</span>{{end}}
+                            <span>{{.ExecutorLabel}}</span>
+                            <span>{{.TokenSummary}}</span>
+                            <span>{{.TimeLabel}}</span>
                           </div>
                         </article>
                       {{end}}
@@ -179,62 +138,23 @@
             </section>
           {{end}}
         </div>
-      </section>
-      <section class="graph-stage-panel">
-        <div class="panel-kicker">Topology map</div>
-        <p class="panel-note">Use the diagram for delegation shape after the branch directory tells you which path needs attention next.</p>
-        <div class="graph-legend">
-          {{range .Graph.Legend}}
-            <div class="graph-legend-item {{.StatusClass}}" data-edge-kind="{{.Kind}}">
-              <span class="graph-legend-rail"></span>
-              <span>{{.Label}}</span>
-            </div>
-          {{end}}
+      </aside>
+    </div>
+  </div>
+</section>
+
+<section class="page-section">
+  <div class="grid-two run-evidence-grid">
+    <details class="panel run-disclosure run-outcome-panel" data-run-outcome>
+      <summary class="run-disclosure-summary">
+        <div class="stack-sm">
+          <h2 class="section-title">Run Outcome</h2>
+          <p class="panel-note">Turns and any live draft.</p>
         </div>
-        <div id="run-graph-diagram" class="graph-diagram" aria-label="Run collaboration diagram"></div>
-      </section>
-    </div>
-  </div>
-</section>
-
-<section class="page-section">
-  <div class="panel">
-    <h2 class="section-title">Execution Snapshot</h2>
-    <p class="graph-headline">Immutable team and capability snapshot bound when this run started.</p>
-    <div class="snapshot-summary">
-      <span class="page-eyebrow">Bound Team</span>
-      <div class="row-title">{{if .ExecutionSnapshot.TeamID}}{{.ExecutionSnapshot.TeamID}}{{else}}Unscoped run{{end}}</div>
-    </div>
-    {{if .ExecutionSnapshot.Agents}}
-      <div class="snapshot-grid">
-        {{range .ExecutionSnapshot.Agents}}
-          <article class="snapshot-agent">
-            <div class="snapshot-agent-head">
-              <div class="snapshot-agent-name">{{.ID}}</div>
-              <div class="mono subtle">{{.ToolProfile}}</div>
-            </div>
-            {{if .Capabilities}}
-              <div class="capability-list">
-                {{range .Capabilities}}
-                  <span class="badge badge-muted">{{.}}</span>
-                {{end}}
-              </div>
-            {{end}}
-          </article>
-        {{end}}
-      </div>
-    {{else}}
-      <p class="muted">No execution snapshot was recorded for this run.</p>
-    {{end}}
-  </div>
-</section>
-
-<section class="page-section">
-  <div class="grid-two">
-    <section class="panel">
-      <h2 class="section-title">Assistant Output</h2>
-      <p class="graph-headline">Completed turns stay timestamped so you can correlate visible output with the collaboration graph.</p>
-      <div id="run-live-output" data-stream-url="{{.StreamURL}}" data-turn-count="{{.TurnCount}}">
+        <div class="mono subtle"><span id="run-turn-count">{{.TurnCount}}</span> turn(s)</div>
+      </summary>
+      <div class="run-disclosure-body">
+        <div id="run-live-output" data-stream-url="{{.StreamURL}}" data-turn-count="{{.TurnCount}}">
         <div id="run-turns">
           {{if .Turns}}
             {{range .Turns}}
@@ -257,12 +177,19 @@
           </div>
           <pre id="run-live-text" class="run-output-text"></pre>
         </article>
+        </div>
       </div>
-    </section>
-    <section class="panel">
-      <h2 class="section-title">Events</h2>
-      <p class="graph-headline">The event trail is the compact execution log: what happened, in what order, and when.</p>
-      <div id="run-events" data-event-count="{{.EventCount}}">
+    </details>
+    <details class="panel run-disclosure run-timeline-panel" data-run-timeline>
+      <summary class="run-disclosure-summary">
+        <div class="stack-sm">
+          <h2 class="section-title">Timeline</h2>
+          <p class="panel-note">Event history.</p>
+        </div>
+        <div class="mono subtle"><span id="run-event-count">{{.EventCount}}</span> event(s)</div>
+      </summary>
+      <div class="run-disclosure-body">
+        <div id="run-events" data-event-count="{{.EventCount}}">
         {{if .Events}}
           {{range .Events}}
             <article class="run-row run-timeline-card {{.ToneClass}}">
@@ -276,32 +203,79 @@
         {{else}}
           <p class="muted">No events recorded yet.</p>
         {{end}}
+        </div>
       </div>
-    </section>
+    </details>
   </div>
+</section>
+<section class="page-section">
+  <details class="panel run-disclosure run-contract" data-run-contract>
+    <summary class="run-disclosure-summary run-contract-summary">
+      <div class="stack-sm">
+        <h2 class="section-title">Run Contract</h2>
+        <p class="panel-note">Bound team and capabilities.</p>
+      </div>
+      <span class="mono subtle">Show bound team</span>
+    </summary>
+    <div class="run-disclosure-body run-contract-body">
+      <div class="snapshot-summary">
+        <span class="page-eyebrow">Bound Team</span>
+        <div class="row-title">{{if .ExecutionSnapshot.TeamID}}{{.ExecutionSnapshot.TeamID}}{{else}}Unscoped run{{end}}</div>
+      </div>
+      {{if .ExecutionSnapshot.Agents}}
+        <div class="snapshot-grid">
+          {{range .ExecutionSnapshot.Agents}}
+            <article class="snapshot-agent">
+              <div class="snapshot-agent-head">
+                <div class="snapshot-agent-name">{{.ID}}</div>
+                <div class="mono subtle">{{.ToolProfile}}</div>
+              </div>
+              {{if .Capabilities}}
+                <div class="capability-list">
+                  {{range .Capabilities}}
+                    <span class="badge badge-muted">{{.}}</span>
+                  {{end}}
+                </div>
+              {{end}}
+            </article>
+          {{end}}
+        </div>
+      {{else}}
+        <p class="muted">No execution snapshot was recorded for this run.</p>
+      {{end}}
+    </div>
+  </details>
 </section>
 <dialog id="run-node-modal" class="run-node-modal">
   <form method="dialog" class="run-node-modal-frame">
-    <div class="run-node-modal-head">
-      <div class="stack-sm">
-        <span class="panel-kicker">Node inspector</span>
-        <div id="run-node-modal-title" class="row-title">Run node</div>
-        <div id="run-node-modal-subtitle" class="mono subtle"></div>
+    <div class="run-node-modal-sticky">
+      <div class="run-node-modal-head">
+        <div class="stack-sm">
+          <span class="panel-kicker">Node inspector</span>
+          <div id="run-node-modal-title" class="row-title">Run node</div>
+          <div id="run-node-modal-subtitle" class="mono subtle"></div>
+        </div>
+        <button class="btn btn-subtle btn-inline" type="submit">Close</button>
       </div>
-      <button class="btn btn-subtle btn-inline" type="submit">Close</button>
+      <div class="run-node-modal-tabs" role="tablist" aria-label="Node detail tabs">
+        <button id="run-node-tab-overview" type="button" role="tab" aria-selected="true" aria-controls="run-node-modal-overview" class="btn btn-subtle btn-inline is-active" data-node-tab="overview">Overview</button>
+        <button id="run-node-tab-task" type="button" role="tab" aria-selected="false" aria-controls="run-node-modal-task" class="btn btn-subtle btn-inline" data-node-tab="task">Task</button>
+        <button id="run-node-tab-output" type="button" role="tab" aria-selected="false" aria-controls="run-node-modal-output" class="btn btn-subtle btn-inline" data-node-tab="output">Output</button>
+        <button id="run-node-tab-chain" type="button" role="tab" aria-selected="false" aria-controls="run-node-modal-chain" class="btn btn-subtle btn-inline" data-node-tab="chain">Chain</button>
+        <button id="run-node-tab-logs" type="button" role="tab" aria-selected="false" aria-controls="run-node-modal-logs" class="btn btn-subtle btn-inline" data-node-tab="logs">Logs</button>
+      </div>
     </div>
-    <div class="run-node-modal-tabs" role="tablist" aria-label="Node detail tabs">
-      <button type="button" class="btn btn-subtle btn-inline is-active" data-node-tab="overview">Overview</button>
-      <button type="button" class="btn btn-subtle btn-inline" data-node-tab="task">Task</button>
-      <button type="button" class="btn btn-subtle btn-inline" data-node-tab="output">Output</button>
-      <button type="button" class="btn btn-subtle btn-inline" data-node-tab="chain">Chain</button>
-      <button type="button" class="btn btn-subtle btn-inline" data-node-tab="logs">Logs</button>
+    <div class="run-node-modal-body">
+      <section id="run-node-modal-overview" class="run-node-modal-panel" data-node-panel="overview" role="tabpanel" aria-labelledby="run-node-tab-overview"></section>
+      <section id="run-node-modal-task" class="run-node-modal-panel" data-node-panel="task" role="tabpanel" aria-labelledby="run-node-tab-task" hidden></section>
+      <section id="run-node-modal-output" class="run-node-modal-panel" data-node-panel="output" role="tabpanel" aria-labelledby="run-node-tab-output" hidden></section>
+      <section id="run-node-modal-chain" class="run-node-modal-panel" data-node-panel="chain" role="tabpanel" aria-labelledby="run-node-tab-chain" hidden></section>
+      <section id="run-node-modal-logs" class="run-node-modal-panel" data-node-panel="logs" data-log-collapsed="true" role="tabpanel" aria-labelledby="run-node-tab-logs" hidden></section>
     </div>
-    <section id="run-node-modal-overview" class="run-node-modal-panel" data-node-panel="overview"></section>
-    <section id="run-node-modal-task" class="run-node-modal-panel" data-node-panel="task" hidden></section>
-    <section id="run-node-modal-output" class="run-node-modal-panel" data-node-panel="output" hidden></section>
-    <section id="run-node-modal-chain" class="run-node-modal-panel" data-node-panel="chain" hidden></section>
-    <section id="run-node-modal-logs" class="run-node-modal-panel" data-node-panel="logs" hidden></section>
+    <div id="run-node-modal-footer" class="run-node-modal-footer" hidden>
+      <div id="run-node-modal-footer-copy" class="run-node-modal-footer-copy"></div>
+      <div id="run-node-modal-actions" class="run-node-modal-actions"></div>
+    </div>
   </form>
 </dialog>
 <script src="/assets/vendor/cytoscape.min.js"></script>
@@ -320,7 +294,7 @@
   }
 
   const status = document.getElementById("run-live-status");
-  const liveBanner = document.getElementById("run-live-banner");
+  const commandStrip = document.getElementById("run-command-strip");
   const statusLabels = document.querySelectorAll("[data-run-status-label]");
   const startedAt = document.getElementById("run-started-at");
   const lastActivity = document.getElementById("run-last-activity");
@@ -333,7 +307,6 @@
   const events = document.getElementById("run-events");
   const graphDiagram = document.getElementById("run-graph-diagram");
   const graphBoard = document.getElementById("run-graph-board");
-  const graphSummary = document.getElementById("run-graph-summary");
   const graphHeadline = document.getElementById("run-graph-headline");
   const graphActionButtons = document.querySelectorAll("[data-graph-action]");
   const graphURL = graphBoard ? graphBoard.dataset.graphUrl : "";
@@ -346,6 +319,9 @@
   const nodeModalOutput = document.getElementById("run-node-modal-output");
   const nodeModalChain = document.getElementById("run-node-modal-chain");
   const nodeModalLogs = document.getElementById("run-node-modal-logs");
+  const nodeModalFooter = document.getElementById("run-node-modal-footer");
+  const nodeModalFooterCopy = document.getElementById("run-node-modal-footer-copy");
+  const nodeModalActions = document.getElementById("run-node-modal-actions");
   const nodeTabButtons = document.querySelectorAll("[data-node-tab]");
   const nodePanels = document.querySelectorAll("[data-node-panel]");
   let cy = null;
@@ -358,7 +334,12 @@
   let nodeDetailPoll = null;
   let nodeStream = null;
   let activeNodeRunID = "";
+  let activeNodeTab = "overview";
+  let activeNodeDetail = null;
+  const nodeLogState = new Map();
   const branchState = new Map();
+  let nodeActionBusy = false;
+  let nodeActionError = "";
   let graphFocusMode = "";
   let eventCount = events ? Number(events.dataset.eventCount || "0") : 0;
   let turnCount = root ? Number(root.dataset.turnCount || "0") : 0;
@@ -536,12 +517,52 @@
   }
 
   function setNodeTab(tab) {
+    activeNodeTab = tab;
     for (const button of nodeTabButtons) {
-      button.classList.toggle("is-active", button.dataset.nodeTab === tab);
+      const isActive = button.dataset.nodeTab === tab;
+      button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-selected", isActive ? "true" : "false");
+      button.tabIndex = isActive ? 0 : -1;
     }
     for (const panel of nodePanels) {
       panel.hidden = panel.dataset.nodePanel !== tab;
     }
+  }
+
+  function nodeLogEntryKey(entry) {
+    if (!entry) {
+      return "";
+    }
+    return entry.entry_key || `${entry.tool_call_id || entry.tool_name || "tool"}::${entry.stream || "log"}`;
+  }
+
+  function syncNodeLogCardState(card) {
+    if (!(card instanceof HTMLDetailsElement)) {
+      return;
+    }
+    card.dataset.logCollapsed = card.open ? "false" : "true";
+  }
+
+  function bindNodeLogCard(card, entryKey) {
+    if (!(card instanceof HTMLDetailsElement)) {
+      return;
+    }
+    syncNodeLogCardState(card);
+    if (!card.dataset.logBound) {
+      card.addEventListener("toggle", () => {
+        nodeLogState.set(entryKey, card.open);
+        syncNodeLogCardState(card);
+      });
+      card.dataset.logBound = "true";
+    }
+  }
+
+  function nodeLogOpenState(entry) {
+    const entryKey = nodeLogEntryKey(entry);
+    if (entryKey && nodeLogState.has(entryKey)) {
+      return Boolean(nodeLogState.get(entryKey));
+    }
+    return defaultOpenLogEntry(entry);
   }
 
   function metricRow(labelText, valueText) {
@@ -557,9 +578,79 @@
     return row;
   }
 
+  function nodeActionButton(labelText, onClick, className = "btn btn-subtle btn-inline") {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.textContent = labelText;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  function nodeActionLink(labelText, href, className = "btn btn-subtle btn-inline") {
+    const link = document.createElement("a");
+    link.className = className;
+    link.href = href;
+    link.textContent = labelText;
+    return link;
+  }
+
+  function nodeChainAction(step, prefix) {
+    const wrap = document.createElement("li");
+    wrap.className = "node-chain-item";
+
+    const button = nodeActionButton(
+      `${prefix}${step.agent_id || "unknown"} · ${step.short_id || step.run_id || ""}`.trim(),
+      () => {
+        if (step.run_id) {
+          void openNodeDetail(step.run_id);
+        }
+      },
+    );
+    button.classList.add("node-chain-action");
+    wrap.appendChild(button);
+
+    const status = document.createElement("span");
+    status.className = "mono subtle";
+    status.textContent = step.status_label || step.status || "unknown";
+    wrap.appendChild(status);
+    return wrap;
+  }
+
   function renderNodeOverview(detail) {
     if (!nodeModalOverview) {
       return;
+    }
+    const wrap = document.createElement("div");
+    wrap.className = "stack-md";
+    if (detail.approval && detail.approval.id) {
+      const approval = detail.approval;
+      const card = document.createElement("article");
+      card.className = "node-approval-strip";
+      const head = document.createElement("div");
+      head.className = "node-approval-strip-head";
+      const copy = document.createElement("div");
+      copy.className = "node-approval-strip-copy";
+      const title = document.createElement("div");
+      title.className = "row-title";
+      title.textContent = approval.can_resolve ? `Approval needed for ${approval.tool_name || "tool"}` : `${humanizeLabel(approval.status || "approval")} approval`;
+      copy.appendChild(title);
+      if (approval.target_path) {
+        copy.appendChild(metricRow("Target", approval.target_path));
+      }
+      if (approval.reason) {
+        const reason = document.createElement("p");
+        reason.className = "node-inline-note";
+        reason.textContent = approval.reason;
+        copy.appendChild(reason);
+      }
+      head.appendChild(copy);
+      const status = document.createElement("span");
+      status.className = `run-status ${approval.status_class || ""}`.trim();
+      status.textContent = approval.status_label || approval.status || "pending";
+      head.appendChild(status);
+      card.appendChild(head);
+      wrap.appendChild(card);
     }
     const grid = document.createElement("div");
     grid.className = "graph-node-facts";
@@ -574,7 +665,8 @@
     if (detail.parent_short_id) {
       grid.appendChild(metricRow("Parent", detail.parent_short_id));
     }
-    nodeModalOverview.replaceChildren(grid);
+    wrap.appendChild(grid);
+    nodeModalOverview.replaceChildren(wrap);
   }
 
   function renderNodeChain(detail) {
@@ -591,11 +683,9 @@
     pathTitle.textContent = "Delegation path";
     path.appendChild(pathTitle);
     const ordered = document.createElement("ol");
-    ordered.className = "structured-list";
+    ordered.className = "structured-list node-chain-list";
     for (const step of (detail.chain && detail.chain.path) || []) {
-      const item = document.createElement("li");
-      item.textContent = `${step.agent_id || "unknown"} · ${step.short_id || step.run_id}`;
-      ordered.appendChild(item);
+      ordered.appendChild(nodeChainAction(step, ""));
     }
     path.appendChild(ordered);
     wrap.appendChild(path);
@@ -609,11 +699,9 @@
       childTitle.textContent = "Delegated children";
       childSection.appendChild(childTitle);
       const list = document.createElement("ul");
-      list.className = "structured-list";
+      list.className = "structured-list node-chain-list";
       for (const child of children) {
-        const item = document.createElement("li");
-        item.textContent = `${child.agent_id || "unknown"} · ${child.short_id || child.run_id}`;
-        list.appendChild(item);
+        list.appendChild(nodeChainAction(child, ""));
       }
       childSection.appendChild(list);
       wrap.appendChild(childSection);
@@ -622,11 +710,136 @@
     nodeModalChain.replaceChildren(wrap);
   }
 
+  function renderNodeFooter(detail) {
+    if (!nodeModalFooter || !nodeModalFooterCopy || !nodeModalActions) {
+      return;
+    }
+    nodeModalFooter.className = "run-node-modal-footer";
+    nodeModalFooterCopy.replaceChildren();
+    nodeModalActions.replaceChildren();
+
+    const actions = [];
+    if (detail.parent_run_id) {
+      actions.push(nodeActionButton("Open parent", () => {
+        void openNodeDetail(detail.parent_run_id);
+      }));
+    }
+    if (detail.session_url) {
+      actions.push(nodeActionLink("Open session", detail.session_url));
+    }
+    if (detail.approval && detail.approval.view_url) {
+      actions.push(nodeActionLink("Open recovery", detail.approval.view_url));
+    }
+    if (detail.approval && detail.approval.can_resolve && detail.approval.resolve_url) {
+      nodeModalFooter.classList.add("is-approval");
+      actions.push(nodeActionButton("Deny", () => {
+        void resolveNodeApproval("denied");
+      }));
+      actions.push(nodeActionButton("Approve", () => {
+        void resolveNodeApproval("approved");
+      }, "btn btn-primary"));
+    }
+
+    if (actions.length === 0) {
+      nodeModalFooter.hidden = true;
+      return;
+    }
+
+    if (detail.approval && detail.approval.id) {
+      const eyebrow = document.createElement("span");
+      eyebrow.className = "graph-node-fact-label";
+      eyebrow.textContent = detail.approval.can_resolve ? "Approval queue" : "Node actions";
+      nodeModalFooterCopy.appendChild(eyebrow);
+
+      const title = document.createElement("div");
+      title.className = "row-title";
+      title.textContent = detail.approval.can_resolve
+        ? `${detail.approval.tool_name || "Tool"} is waiting for a decision`
+        : `${humanizeLabel(detail.approval.status || "approval")} approval`;
+      nodeModalFooterCopy.appendChild(title);
+
+      if (detail.approval.reason) {
+        const note = document.createElement("p");
+        note.className = "node-inline-note";
+        note.textContent = detail.approval.reason;
+        nodeModalFooterCopy.appendChild(note);
+      } else if (detail.approval.target_path) {
+        const note = document.createElement("p");
+        note.className = "node-inline-note mono";
+        note.textContent = detail.approval.target_path;
+        nodeModalFooterCopy.appendChild(note);
+      }
+    }
+    if (nodeModalFooterCopy.childElementCount === 0) {
+      const title = document.createElement("div");
+      title.className = "row-title";
+      title.textContent = "Node actions";
+      nodeModalFooterCopy.appendChild(title);
+    }
+
+    if (nodeActionError) {
+      const error = document.createElement("p");
+      error.className = "node-inline-note is-error";
+      error.textContent = nodeActionError;
+      nodeModalFooterCopy.appendChild(error);
+    }
+
+    for (const action of actions) {
+      if (action instanceof HTMLButtonElement) {
+        action.disabled = nodeActionBusy;
+      }
+      nodeModalActions.appendChild(action);
+    }
+    nodeModalFooter.hidden = false;
+  }
+
+  async function resolveNodeApproval(decision) {
+    if (!activeNodeDetail || !activeNodeDetail.approval || !activeNodeDetail.approval.resolve_url || !window.fetch || nodeActionBusy) {
+      return;
+    }
+    nodeActionBusy = true;
+    nodeActionError = "";
+    renderNodeFooter(activeNodeDetail);
+    try {
+      const response = await fetch(activeNodeDetail.approval.resolve_url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Accept": "application/json",
+        },
+        body: new URLSearchParams({decision}).toString(),
+        credentials: "same-origin",
+      });
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch (_err) {
+        payload = null;
+      }
+      if (!response.ok) {
+        nodeActionError = payload && payload.message ? payload.message : "Approval update failed.";
+        renderNodeFooter(activeNodeDetail);
+        return;
+      }
+      await refreshGraph();
+      await openNodeDetail(activeNodeDetail.id || activeNodeRunID, false);
+    } catch (_err) {
+      nodeActionError = "Approval update failed.";
+      renderNodeFooter(activeNodeDetail);
+    } finally {
+      nodeActionBusy = false;
+      if (activeNodeDetail) {
+        renderNodeFooter(activeNodeDetail);
+      }
+    }
+  }
+
   function renderNodeLogs(detail) {
     if (!nodeModalLogs) {
       return;
     }
     const logs = Array.isArray(detail.logs) ? detail.logs : [];
+    nodeModalLogs.dataset.logCollapsed = "true";
     if (logs.length === 0) {
       const empty = document.createElement("p");
       empty.className = "muted";
@@ -637,18 +850,24 @@
     const list = document.createElement("div");
     list.className = "stack-md";
     for (const entry of logs) {
-      const card = document.createElement("article");
-      card.className = "run-row run-timeline-card";
-      if (entry.entry_key) {
-        card.dataset.logKey = entry.entry_key;
+      const card = document.createElement("details");
+      card.className = "node-log-entry";
+      const entryKey = nodeLogEntryKey(entry);
+      if (entryKey) {
+        card.dataset.logKey = entryKey;
       }
-      card.appendChild(timelineHead(entry.title || entry.tool_name || "Log", entry.created_at_label || ""));
+      card.open = nodeLogOpenState(entry);
+      bindNodeLogCard(card, entryKey);
+      const summary = document.createElement("summary");
+      summary.className = "node-log-summary";
+      summary.appendChild(timelineHead(entry.title || entry.tool_name || "Log", entry.created_at_label || ""));
       const meta = document.createElement("div");
       meta.className = "mono subtle";
       meta.textContent = entry.stream || "log";
-      card.appendChild(meta);
+      summary.appendChild(meta);
+      card.appendChild(summary);
       const body = document.createElement("div");
-      body.className = "run-output-text";
+      body.className = "node-log-body";
       if (entry.body_html) {
         body.innerHTML = entry.body_html;
       } else {
@@ -667,12 +886,12 @@
     if (!card) {
       return;
     }
-    const existingBody = card.querySelector(".run-output-text");
+    const existingBody = card.querySelector(".node-log-body");
     if (existingBody) {
       existingBody.remove();
     }
     const body = document.createElement("div");
-    body.className = "run-output-text";
+    body.className = "node-log-body";
     if (payload.body_html) {
       body.innerHTML = payload.body_html;
     } else {
@@ -688,6 +907,7 @@
     if (!nodeModalLogs || !payload || !payload.text) {
       return;
     }
+    nodeModalLogs.dataset.logCollapsed = "true";
     const empty = nodeModalLogs.querySelector(".muted");
     if (empty) {
       empty.remove();
@@ -698,20 +918,26 @@
       list.className = "stack-md";
       nodeModalLogs.replaceChildren(list);
     }
-    const entryKey = payload.entry_key || `${payload.tool_call_id || payload.tool_name || "tool"}::${payload.stream || "log"}`;
+    const entryKey = nodeLogEntryKey(payload);
     let card = list.querySelector(`[data-log-key="${CSS.escape(entryKey)}"]`);
-    if (!(card instanceof HTMLElement)) {
-      card = document.createElement("article");
-      card.className = "run-row run-timeline-card";
+    if (!(card instanceof HTMLDetailsElement)) {
+      card = document.createElement("details");
+      card.className = "node-log-entry";
       card.dataset.logKey = entryKey;
       const title = payload.title || `${payload.tool_name || "tool"} ${payload.stream || "log"}`.trim();
-      card.appendChild(timelineHead(title, formatTimestamp(occurredAt)));
+      card.open = nodeLogOpenState(payload);
+      bindNodeLogCard(card, entryKey);
+      const summary = document.createElement("summary");
+      summary.className = "node-log-summary";
+      summary.appendChild(timelineHead(title, formatTimestamp(occurredAt)));
       const meta = document.createElement("div");
       meta.className = "mono subtle";
       meta.textContent = payload.stream || "log";
-      card.appendChild(meta);
+      summary.appendChild(meta);
+      card.appendChild(summary);
       list.appendChild(card);
     } else {
+      bindNodeLogCard(card, entryKey);
       const headTime = card.querySelector(".run-timeline-head .mono.subtle");
       if (headTime) {
         headTime.textContent = formatTimestamp(occurredAt);
@@ -770,6 +996,7 @@
     if (!detail || !nodeModal) {
       return;
     }
+    activeNodeDetail = detail;
     activeNodeRunID = detail.id || "";
     applyGraphSelection(lastGraphSnapshot);
     if (nodeModalTitle) {
@@ -783,7 +1010,9 @@
     renderStructuredText(nodeModalOutput, detail.output || {});
     renderNodeChain(detail);
     renderNodeLogs(detail);
-    setNodeTab((Array.isArray(detail.logs) && detail.logs.length > 0) ? "logs" : "overview");
+    renderNodeFooter(detail);
+    const nextTab = nodeModal.open ? activeNodeTab : "overview";
+    setNodeTab(nextTab);
     if (!nodeModal.open) {
       nodeModal.showModal();
     }
@@ -799,6 +1028,12 @@
     const url = nodeDetailURL(runID);
     if (!url || !window.fetch) {
       return;
+    }
+    if (focusModal && runID && runID !== activeNodeRunID) {
+      activeNodeTab = "overview";
+      nodeLogState.clear();
+      nodeActionBusy = false;
+      nodeActionError = "";
     }
     try {
       const response = await fetch(url, {headers: {"Accept": "application/json"}, cache: "no-store"});
@@ -858,35 +1093,13 @@
     lastActivity.textContent = formatTimestamp(timestamp);
   }
 
-  function appendGraphFact(container, labelText, valueText, mono) {
-    if (!valueText) {
+  function setCommandStripTone(statusTone) {
+    if (!commandStrip) {
       return;
     }
-    const fact = document.createElement("div");
-    fact.className = "graph-node-fact";
-
-    const label = document.createElement("span");
-    label.className = "graph-node-fact-label";
-    label.textContent = labelText;
-    fact.appendChild(label);
-
-    const value = document.createElement("span");
-    if (mono) {
-      value.className = "mono";
-    }
-    value.textContent = valueText;
-    fact.appendChild(value);
-
-    container.appendChild(fact);
-  }
-
-  function setBannerTone(statusTone) {
-    if (!liveBanner) {
-      return;
-    }
-    liveBanner.className = "status-banner";
+    commandStrip.className = "run-command-strip";
     if (statusTone) {
-      liveBanner.classList.add(statusTone);
+      commandStrip.classList.add(statusTone);
     }
   }
 
@@ -912,7 +1125,7 @@
 
   function syncStatusLabels(statusText) {
     const tone = statusClass(statusText);
-    setBannerTone(tone);
+    setCommandStripTone(tone);
     for (const label of statusLabels) {
       label.className = "run-status";
       if (tone) {
@@ -920,26 +1133,6 @@
       }
       label.textContent = humanizeLabel(statusText);
     }
-  }
-
-  function renderGraphMetric(value, label, tone) {
-    const card = document.createElement("article");
-    card.className = "graph-metric";
-    if (tone) {
-      card.classList.add(tone);
-    }
-
-    const metricValue = document.createElement("span");
-    metricValue.className = "graph-metric-value";
-    metricValue.textContent = String(value);
-    card.appendChild(metricValue);
-
-    const metricLabel = document.createElement("span");
-    metricLabel.className = "subtle";
-    metricLabel.textContent = label;
-    card.appendChild(metricLabel);
-
-    return card;
   }
 
   function graphNodes(snapshot) {
@@ -951,6 +1144,16 @@
     const facts = [];
     if (node.short_label) {
       facts.push(node.short_label);
+    }
+    const executionMeta = [];
+    if (node.trigger_label) {
+      executionMeta.push(node.trigger_label);
+    }
+    if (node.executor_label) {
+      executionMeta.push(node.executor_label);
+    }
+    if (executionMeta.length > 0) {
+      facts.push(executionMeta.join(" · "));
     }
     if (node.status_label) {
       facts.push(node.status_label);
@@ -1071,6 +1274,14 @@
           "line-color": palette.borderSoft,
           "target-arrow-color": palette.borderHard,
           "target-arrow-shape": "triangle",
+          "label": "data(label)",
+          "font-family": '"JetBrains Mono", "Fira Code", monospace',
+          "font-size": 9,
+          "color": palette.text2,
+          "text-background-color": palette.surface,
+          "text-background-opacity": 1,
+          "text-background-padding": 2,
+          "text-margin-y": -10,
           "curve-style": "taxi",
           "taxi-direction": "downward",
           "taxi-turn": 24
@@ -1081,6 +1292,7 @@
         style: {
           "line-color": palette.borderHard,
           "target-arrow-color": palette.borderHard,
+          "color": palette.text1,
           "line-style": "solid",
           "curve-style": "taxi"
         }
@@ -1090,6 +1302,7 @@
         style: {
           "line-color": palette.muted,
           "target-arrow-color": palette.muted,
+          "color": palette.muted,
           "line-style": "dashed",
           "curve-style": "taxi"
         }
@@ -1099,6 +1312,7 @@
         style: {
           "line-color": palette.approval,
           "target-arrow-color": palette.approval,
+          "color": palette.approval,
           "line-style": "solid",
           "curve-style": "taxi"
         }
@@ -1220,6 +1434,10 @@
     time.appendChild(value);
 
     return time;
+  }
+
+  function defaultOpenLogEntry(entry) {
+    return !(entry && (entry.tool_name === "coder_exec" || entry.stream === "terminal"));
   }
 
   function graphNodeTitleRow(agentID, shortID) {
@@ -1382,9 +1600,6 @@
           const nodeHead = document.createElement("div");
           nodeHead.className = "graph-node-head";
 
-          const titleStack = document.createElement("div");
-          titleStack.className = "stack-sm";
-
           const labels = document.createElement("div");
           labels.className = "button-row";
 
@@ -1400,28 +1615,32 @@
             labels.appendChild(rootBadge);
           }
 
-          titleStack.appendChild(labels);
-          titleStack.appendChild(graphNodeTitleRow(node.agent_id, node.short_id));
-          nodeHead.appendChild(titleStack);
+          nodeHead.appendChild(labels);
           nodeHead.appendChild(openNodeButton());
           card.appendChild(nodeHead);
+          card.appendChild(graphNodeTitleRow(node.agent_id, node.short_id));
 
           const objective = document.createElement("div");
           objective.className = "graph-node-objective structured-preview";
           objective.textContent = node.objective_preview || node.objective || "No objective captured for this run.";
           card.appendChild(objective);
 
-          const facts = document.createElement("div");
-          facts.className = "graph-node-facts";
-          appendGraphFact(facts, "Model", node.model_display || "not recorded", false);
-          appendGraphFact(facts, "Tokens", node.token_summary || "0 in / 0 out", false);
-          appendGraphFact(facts, "Started", node.started_at_label || "Not recorded", true);
-          appendGraphFact(facts, "Updated", node.updated_at_label || "Not recorded", true);
-          appendGraphFact(facts, "Session", node.session_short_id || "", true);
-          appendGraphFact(facts, "Parent", node.parent_label || "", true);
-          if (facts.childNodes.length > 0) {
-            card.appendChild(facts);
+          const meta = document.createElement("div");
+          meta.className = "graph-node-meta mono subtle";
+          for (const value of [
+            node.trigger_label || "",
+            node.executor_label || "GistClaw agent",
+            node.token_summary || "0 in / 0 out",
+            node.time_label || "not recorded",
+          ]) {
+            if (!value) {
+              continue;
+            }
+            const part = document.createElement("span");
+            part.textContent = value;
+            meta.appendChild(part);
           }
+          card.appendChild(meta);
 
           nodes.appendChild(card);
         }
@@ -1492,7 +1711,7 @@
   }
 
   function renderGraph(snapshot) {
-    if (!snapshot || !graphSummary || !graphHeadline) {
+    if (!snapshot || !graphHeadline) {
       return;
     }
 
@@ -1503,15 +1722,6 @@
     }
 
     graphHeadline.textContent = snapshot.headline || "Graph status is available.";
-    graphSummary.replaceChildren(
-      renderGraphMetric(snapshot.summary.total || 0, "Visible runs", ""),
-      renderGraphMetric(snapshot.summary.active || 0, "Active", "is-active"),
-      renderGraphMetric(snapshot.summary.needs_approval || 0, "Needs approval", "is-approval"),
-      renderGraphMetric(snapshot.summary.pending || 0, "Pending", "is-pending"),
-      renderGraphMetric(snapshot.summary.completed || 0, "Completed", "is-success"),
-      renderGraphMetric(snapshot.summary.failed || 0, "Failed", "is-error"),
-      renderGraphMetric(snapshot.summary.interrupted || 0, "Interrupted", "is-muted")
-    );
     renderDiagram(snapshot);
     renderBoard(snapshot);
     applyGraphSelection(snapshot);
@@ -1682,7 +1892,12 @@
     nodeModal.addEventListener("close", () => {
       clearNodeStream();
       clearNodeDetailPoll();
+      activeNodeDetail = null;
       activeNodeRunID = "";
+      activeNodeTab = "overview";
+      nodeActionBusy = false;
+      nodeActionError = "";
+      nodeLogState.clear();
       applyGraphSelection(lastGraphSnapshot);
     });
   }

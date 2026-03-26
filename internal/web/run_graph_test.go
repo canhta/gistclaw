@@ -36,11 +36,20 @@ func TestBuildRunGraphViewAssignsLanesKindsAndEdgeSemantics(t *testing.T) {
 	if !hasGraphEdge(view.Edges, "root", "r1", "delegates") {
 		t.Fatal("expected delegates edge")
 	}
+	if got := findGraphEdge(t, view.Edges, "root", "r1", "delegates").Label; got != "research" {
+		t.Fatalf("expected research edge label, got %q", got)
+	}
 	if !hasGraphEdge(view.Edges, "r1", "root", "reports") {
 		t.Fatal("expected report-back edge for completed child")
 	}
+	if got := findGraphEdge(t, view.Edges, "r1", "root", "reports").Label; got != "report" {
+		t.Fatalf("expected report edge label, got %q", got)
+	}
 	if !hasGraphEdge(view.Edges, "root", "p1", "blocked") {
 		t.Fatal("expected blocked edge for approval wait")
+	}
+	if got := findGraphEdge(t, view.Edges, "root", "p1", "blocked").Label; got != "approve" {
+		t.Fatalf("expected approve edge label, got %q", got)
 	}
 }
 
@@ -63,6 +72,18 @@ func hasGraphEdge(edges []runGraphEdgeView, from, to, kind string) bool {
 		}
 	}
 	return false
+}
+
+func findGraphEdge(t *testing.T, edges []runGraphEdgeView, from, to, kind string) runGraphEdgeView {
+	t.Helper()
+
+	for _, edge := range edges {
+		if edge.From == from && edge.To == to && edge.Kind == kind {
+			return edge
+		}
+	}
+	t.Fatalf("edge %q -> %q (%s) not found", from, to, kind)
+	return runGraphEdgeView{}
 }
 
 func TestBuildRunGraphViewDoesNotExposeLegacyDepthColumns(t *testing.T) {

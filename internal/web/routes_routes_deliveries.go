@@ -13,11 +13,11 @@ import (
 
 type routesDeliveriesPageData struct {
 	Health         []model.ConnectorDeliveryHealth
-	ActiveRoutes   []model.RouteDirectoryItem
+	ActiveRoutes   []routesDeliveriesRouteView
 	ActivePaging   pageLinks
-	RouteHistory   []model.RouteDirectoryItem
+	RouteHistory   []routesDeliveriesRouteView
 	HistoryPaging  pageLinks
-	Deliveries     []model.DeliveryQueueItem
+	Deliveries     []routesDeliveriesDeliveryView
 	DeliveryPaging pageLinks
 	Filters        routesDeliveriesPageFilters
 	Error          string
@@ -31,6 +31,33 @@ type routesDeliveriesPageFilters struct {
 	ActiveLimit    int
 	HistoryLimit   int
 	DeliveryLimit  int
+}
+
+type routesDeliveriesRouteView struct {
+	ID                string
+	ConnectorID       string
+	ExternalID        string
+	ThreadID          string
+	SessionID         string
+	ConversationID    string
+	AgentID           string
+	RoleLabel         string
+	StatusLabel       string
+	DeactivatedLabel  string
+	DeactivationNote  string
+	ReplacedByRouteID string
+}
+
+type routesDeliveriesDeliveryView struct {
+	ID            string
+	RunID         string
+	SessionID     string
+	ConnectorID   string
+	ChatID        string
+	Message       runStructuredTextView
+	Status        string
+	StatusLabel   string
+	AttemptsLabel string
 }
 
 func (s *Server) handleRoutesDeliveriesPage(w http.ResponseWriter, r *http.Request) {
@@ -252,11 +279,11 @@ func (s *Server) loadRoutesDeliveriesPageData(r *http.Request) (routesDeliveries
 
 	return routesDeliveriesPageData{
 		Health:         health,
-		ActiveRoutes:   activeRoutes,
+		ActiveRoutes:   buildRoutesDeliveriesRouteViews(activeRoutes),
 		ActivePaging:   activePaging,
-		RouteHistory:   routeHistory,
+		RouteHistory:   buildRoutesDeliveriesRouteViews(routeHistory),
 		HistoryPaging:  historyPaging,
-		Deliveries:     deliveryPage.Items,
+		Deliveries:     buildRoutesDeliveriesDeliveryViews(deliveryPage.Items),
 		DeliveryPaging: buildPageLinks(pageRecoverRoutesDeliveries, cloneQuery(r.URL.Query()), "delivery_cursor", "delivery_direction", deliveryPage.NextCursor, deliveryPage.PrevCursor, deliveryPage.HasNext, deliveryPage.HasPrev),
 		Filters:        filters,
 	}, nil
@@ -298,4 +325,43 @@ func filterConnectorHealth(list []model.ConnectorDeliveryHealth, filters routesD
 		filtered = append(filtered, item)
 	}
 	return filtered
+}
+
+func buildRoutesDeliveriesRouteViews(items []model.RouteDirectoryItem) []routesDeliveriesRouteView {
+	views := make([]routesDeliveriesRouteView, 0, len(items))
+	for _, item := range items {
+		views = append(views, routesDeliveriesRouteView{
+			ID:                item.ID,
+			ConnectorID:       item.ConnectorID,
+			ExternalID:        item.ExternalID,
+			ThreadID:          item.ThreadID,
+			SessionID:         item.SessionID,
+			ConversationID:    item.ConversationID,
+			AgentID:           item.AgentID,
+			RoleLabel:         sessionRoleLabel(item.Role),
+			StatusLabel:       humanizeWebLabel(item.Status),
+			DeactivatedLabel:  formatOptionalWebTimestamp(item.DeactivatedAt),
+			DeactivationNote:  item.DeactivationReason,
+			ReplacedByRouteID: item.ReplacedByRouteID,
+		})
+	}
+	return views
+}
+
+func buildRoutesDeliveriesDeliveryViews(items []model.DeliveryQueueItem) []routesDeliveriesDeliveryView {
+	views := make([]routesDeliveriesDeliveryView, 0, len(items))
+	for _, item := range items {
+		views = append(views, routesDeliveriesDeliveryView{
+			ID:            item.ID,
+			RunID:         item.RunID,
+			SessionID:     item.SessionID,
+			ConnectorID:   item.ConnectorID,
+			ChatID:        item.ChatID,
+			Message:       buildStructuredTextView(item.MessageText, 3),
+			Status:        item.Status,
+			StatusLabel:   humanizeWebLabel(item.Status),
+			AttemptsLabel: attemptLabel(item.Attempts),
+		})
+	}
+	return views
 }

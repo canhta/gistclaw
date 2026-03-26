@@ -56,12 +56,12 @@
       </div>
       <div class="muted mono">run: {{.RunID}}</div>
       <div class="button-row approval-card-meta">
-        <span class="run-status {{.StatusClass}}">{{.Status}}</span>
+        <span class="run-status {{.StatusClass}}">{{.StatusLabel}}</span>
         {{if .ResolvedBy}}
           <span class="muted mono">by {{.ResolvedBy}}</span>
         {{end}}
         {{if .ResolvedAt}}
-          <span class="muted mono">{{.ResolvedAt.Format "2006-01-02T15:04:05Z"}}</span>
+          <span class="muted mono">{{.ResolvedAtLabel}}</span>
         {{end}}
       </div>
       {{if eq .Status "pending"}}

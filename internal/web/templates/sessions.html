@@ -96,12 +96,11 @@
             <div class="muted mono">conversation: {{.ConversationID}}</div>
           </td>
           <td>
-            <div>{{.AgentID}}</div>
-            <div class="muted">{{.Role}}</div>
+            <div class="session-summary-line"><span>{{.AgentID}}</span><span class="muted session-inline-meta">{{.RoleLabel}}</span></div>
           </td>
           <td>
-            <div>{{.Status}}</div>
-            <div class="muted mono">{{.UpdatedAt.Format "2006-01-02T15:04:05Z"}}</div>
+            <div>{{.StatusLabel}}</div>
+            <div class="muted mono">{{.UpdatedAtLabel}}</div>
           </td>
           <td>
             <a href="/operate/sessions/{{.ID}}">Open detail</a>
@@ -122,13 +121,12 @@
       <div class="directory-card-grid">
         <div class="directory-card-section">
           <span class="directory-card-label">Agent</span>
-          <div>{{.AgentID}}</div>
-          <div class="muted">{{.Role}}</div>
+          <div class="session-summary-line"><span>{{.AgentID}}</span><span class="muted session-inline-meta">{{.RoleLabel}}</span></div>
         </div>
         <div class="directory-card-section">
           <span class="directory-card-label">Status</span>
-          <div>{{.Status}}</div>
-          <div class="muted mono">{{.UpdatedAt.Format "2006-01-02T15:04:05Z"}}</div>
+          <div>{{.StatusLabel}}</div>
+          <div class="muted mono">{{.UpdatedAtLabel}}</div>
         </div>
       </div>
       <div class="directory-card-actions">

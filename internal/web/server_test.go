@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -250,25 +251,45 @@ func TestRuns(t *testing.T) {
 		body := rr.Body.String()
 		for _, want := range []string{
 			"082b1c314823744cc779ece2f90e80e7",
-			"Execution Snapshot",
+			"Run Contract",
 			"Repo Task Team",
 			"assistant",
 			"workspace_write",
+			"Trigger",
+			"Chat",
+			"Current state",
 			"Started",
-			"Last activity",
-			"Recorded events",
-			"Assistant Output",
+			"Updated",
+			"Model",
+			"Tokens",
+			"Run Outcome",
+			"Timeline",
 			"2026-03-25 08:00:00 UTC",
 			"2026-03-25 08:06:00 UTC",
 			"Run started",
 			"082b1c31…80e7",
-			"Updated",
 			"Draft the rollout plan.",
+			`data-run-command-strip`,
+			`data-run-primary-board`,
+			`data-run-branch-rail`,
+			`data-run-map-hero`,
+			`<details class="panel run-disclosure run-outcome-panel" data-run-outcome>`,
+			`<details class="panel run-disclosure run-timeline-panel" data-run-timeline>`,
+			`<details class="panel run-disclosure run-contract" data-run-contract>`,
 			`id="run-node-modal"`,
+			`class="run-node-modal-sticky"`,
+			`class="run-node-modal-body"`,
+			`id="run-node-modal-footer"`,
+			`id="run-node-modal-footer-copy"`,
+			`id="run-node-modal-actions"`,
 			`id="run-node-modal-task"`,
 			`id="run-node-modal-output"`,
 			`id="run-node-modal-chain"`,
 			`id="run-node-modal-logs"`,
+			`role="tab"`,
+			`aria-selected="true"`,
+			`aria-controls="run-node-modal-overview"`,
+			`data-log-collapsed`,
 			`data-node-detail-url-template="/operate/runs/082b1c314823744cc779ece2f90e80e7/nodes/__RUN_ID__"`,
 			`data-open-node-detail`,
 			"Read more",
@@ -283,12 +304,28 @@ func TestRuns(t *testing.T) {
 			`window.cytoscape`,
 			`fetch(graphURL`,
 			`openNodeDetail`,
+			`resolveNodeApproval`,
 			`connectNodeStream`,
+			`let activeNodeTab = "overview"`,
+			`activeNodeTab = tab`,
+			`const nextTab = nodeModal.open ? activeNodeTab : "overview"`,
 			`new EventSource(url)`,
 			`new EventSource(streamURL)`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
+			}
+		}
+		for _, unwanted := range []string{
+			"Live Status",
+			"Recorded events",
+			"Assistant Output",
+			">Events<",
+			"Execution Snapshot",
+			`class="run-meta-grid"`,
+		} {
+			if strings.Contains(body, unwanted) {
+				t.Fatalf("expected body to drop %q:\n%s", unwanted, body)
 			}
 		}
 		if strings.Contains(body, `<pre class="run-output-text">`) {
@@ -315,7 +352,29 @@ func TestRuns(t *testing.T) {
 
 	t.Run("detail renders orchestration map structure", func(t *testing.T) {
 		h := newServerHarness(t)
+		sessionSvc := sessions.NewService(h.db, conversations.NewConversationStore(h.db))
+		front, err := sessionSvc.OpenFrontSession(context.Background(), sessions.OpenFrontSession{
+			ConversationID: "conv-map",
+			AgentID:        "assistant",
+			WorkspaceRoot:  h.workspaceRoot,
+		})
+		if err != nil {
+			t.Fatalf("OpenFrontSession failed: %v", err)
+		}
+		if err := sessionSvc.BindFollowUp(context.Background(), sessions.BindFollowUp{
+			ConversationID: "conv-map",
+			ThreadID:       "main",
+			SessionID:      front.ID,
+			ConnectorID:    "telegram",
+			AccountID:      "acct-map",
+			ExternalID:     "chat-map",
+		}); err != nil {
+			t.Fatalf("BindFollowUp failed: %v", err)
+		}
 		h.insertRunAt(t, "run-map-root", "conv-map", "Coordinate the launch", "active", "2026-03-25 08:00:00")
+		if _, err := h.db.RawDB().Exec(`UPDATE runs SET session_id = ? WHERE id = 'run-map-root'`, front.ID); err != nil {
+			t.Fatalf("bind root session: %v", err)
+		}
 		if _, err := h.db.RawDB().Exec(
 			`INSERT INTO runs
 			 (id, conversation_id, agent_id, session_id, team_id, parent_run_id, objective, workspace_root, status, created_at, updated_at)
@@ -324,6 +383,15 @@ func TestRuns(t *testing.T) {
 			h.workspaceRoot,
 		); err != nil {
 			t.Fatalf("insert child run: %v", err)
+		}
+		if _, err := h.db.RawDB().Exec(
+			`INSERT INTO tool_calls
+			 (id, run_id, tool_name, input_json, output_json, decision, approval_id, created_at)
+			 VALUES
+			 ('tool-map-child', 'run-map-child', 'coder_exec', ?, x'', 'allow', '', '2026-03-25 08:03:30')`,
+			[]byte(`{"backend":"codex","prompt":"Create the landing page"}`),
+		); err != nil {
+			t.Fatalf("insert child coder_exec call: %v", err)
 		}
 
 		rr := httptest.NewRecorder()
@@ -338,9 +406,14 @@ func TestRuns(t *testing.T) {
 		body := rr.Body.String()
 		for _, want := range []string{
 			"Orchestration Map",
-			"Branch directory",
+			"Branch rail",
+			"Topology map",
+			"Telegram",
+			"Codex CLI",
 			`data-branch-root-id=`,
 			`data-lane-id=`,
+			`data-run-primary-board`,
+			`data-run-map-hero`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
@@ -516,7 +589,7 @@ func TestRuns(t *testing.T) {
 		if len(resp.Edges) != 1 || resp.Edges[0].From != "082b1c314823744cc779ece2f90e80e7" || resp.Edges[0].To != "4ed077c29497f4c95a19125b86096953" {
 			t.Fatalf("unexpected graph edges: %+v", resp.Edges)
 		}
-		if resp.Edges[0].Kind != "blocked" || resp.Edges[0].Label != "waiting approval" {
+		if resp.Edges[0].Kind != "blocked" || resp.Edges[0].Label != "approve" {
 			t.Fatalf("expected semantic blocked edge, got %+v", resp.Edges[0])
 		}
 		if resp.Nodes[1].StatusClass != "is-approval" {
@@ -669,6 +742,86 @@ func TestRuns(t *testing.T) {
 		}
 		if !strings.Contains(resp.Logs[0].BodyHTML, "Planning files") {
 			t.Fatalf("expected rendered log HTML, got %+v", resp.Logs[0])
+		}
+	})
+
+	t.Run("node detail endpoint returns approval action metadata", func(t *testing.T) {
+		h := newServerHarness(t)
+		h.insertRunAt(t, "run-root-approval-node", "conv-node-approval", "Coordinate the launch", "active", "2026-03-25 08:00:00")
+		if _, err := h.db.RawDB().Exec(
+			`INSERT INTO runs
+			 (id, conversation_id, agent_id, parent_run_id, session_id, team_id, objective, workspace_root, status, model_lane, model_id, input_tokens, output_tokens, created_at, updated_at)
+			 VALUES
+			 ('run-child-approval-node', 'conv-node-approval', 'patcher', 'run-root-approval-node', 'sess-child-approval-node', 'repo-task-team', ?, ?, 'needs_approval', 'build', 'gpt-5.4', 2730, 183, '2026-03-25 08:05:00', '2026-03-25 08:09:00')`,
+			"Apply the launch page changes",
+			h.workspaceRoot,
+		); err != nil {
+			t.Fatalf("insert approval child node run: %v", err)
+		}
+		approvalID := h.insertApprovalAt(t, "run-child-approval-node", "coder_exec", h.workspaceRoot+"/openclaw-launch-coder-final", "pending", "", "2026-03-25 08:07:00")
+		h.insertEventAtWithPayload(
+			t,
+			"evt-child-approval-requested",
+			"conv-node-approval",
+			"run-child-approval-node",
+			"approval_requested",
+			[]byte(`{"approval_id":"`+approvalID+`","tool_call_id":"call-coder-approval","tool_name":"coder_exec","target_path":"`+h.workspaceRoot+`/openclaw-launch-coder-final","reason":"Need confirmation before writing files into the project workspace."}`),
+			"2026-03-25 08:07:00",
+		)
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-root-approval-node/nodes/run-child-approval-node", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			ID         string `json:"id"`
+			SessionURL string `json:"session_url"`
+			Approval   struct {
+				ID               string `json:"id"`
+				ToolName         string `json:"tool_name"`
+				TargetPath       string `json:"target_path"`
+				Reason           string `json:"reason"`
+				Status           string `json:"status"`
+				StatusLabel      string `json:"status_label"`
+				RequestedAtLabel string `json:"requested_at_label"`
+				ResolveURL       string `json:"resolve_url"`
+				CanResolve       bool   `json:"can_resolve"`
+			} `json:"approval"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal node approval detail: %v", err)
+		}
+		if resp.ID != "run-child-approval-node" {
+			t.Fatalf("unexpected node detail identity: %+v", resp)
+		}
+		if resp.SessionURL != "/operate/sessions/sess-child-approval-node" {
+			t.Fatalf("expected session detail URL, got %+v", resp)
+		}
+		if resp.Approval.ID != approvalID {
+			t.Fatalf("expected approval id %q, got %+v", approvalID, resp.Approval)
+		}
+		if resp.Approval.ToolName != "coder_exec" || resp.Approval.Status != "pending" || !resp.Approval.CanResolve {
+			t.Fatalf("expected actionable pending approval, got %+v", resp.Approval)
+		}
+		if resp.Approval.TargetPath != h.workspaceRoot+"/openclaw-launch-coder-final" {
+			t.Fatalf("expected target path, got %+v", resp.Approval)
+		}
+		if resp.Approval.Reason != "Need confirmation before writing files into the project workspace." {
+			t.Fatalf("expected approval reason, got %+v", resp.Approval)
+		}
+		if resp.Approval.StatusLabel != "pending" {
+			t.Fatalf("expected approval status label, got %+v", resp.Approval)
+		}
+		if resp.Approval.RequestedAtLabel != "2026-03-25 08:07:00 UTC" {
+			t.Fatalf("expected requested-at label, got %+v", resp.Approval)
+		}
+		if resp.Approval.ResolveURL != "/recover/approvals/"+approvalID+"/resolve" {
+			t.Fatalf("expected approval resolve URL, got %+v", resp.Approval)
 		}
 	})
 
@@ -1049,6 +1202,29 @@ func TestApprovals(t *testing.T) {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected approvals page to contain %q:\n%s", want, body)
 			}
+		}
+	})
+
+	t.Run("page formats resolved approval metadata", func(t *testing.T) {
+		h := newServerHarness(t)
+		h.insertApprovalAt(t, "run-approval-resolved", "bash", "/tmp/fix.sh", "approved", "operator", "2026-03-25 10:00:00")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/recover/approvals?status=approved", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		for _, want := range []string{"Approved", "2026-03-25 10:00:00 UTC", "by operator"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected resolved approval metadata %q:\n%s", want, body)
+			}
+		}
+		if strings.Contains(body, "2026-03-25T10:00:00Z") {
+			t.Fatalf("expected resolved approval timestamp to be human-formatted:\n%s", body)
 		}
 	})
 
@@ -1667,6 +1843,140 @@ func TestApprovalsResolve(t *testing.T) {
 
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("approve returns json for modal action requests", func(t *testing.T) {
+		h := newServerHarness(t)
+		ticketID := h.insertApproval(t, "run-approve-json", "bash", "echo hi")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/recover/approvals/"+ticketID+"/resolve",
+			strings.NewReader("decision=approved"))
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d\nbody: %s", rr.Code, rr.Body.String())
+		}
+		if got := rr.Header().Get("Content-Type"); !strings.Contains(got, "application/json") {
+			t.Fatalf("expected JSON content type, got %q", got)
+		}
+		var resp struct {
+			ApprovalID string `json:"approval_id"`
+			Decision   string `json:"decision"`
+			Status     string `json:"status"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal approval response: %v", err)
+		}
+		if resp.ApprovalID != ticketID || resp.Decision != "approved" || resp.Status != "approved" {
+			t.Fatalf("unexpected approval json response: %+v", resp)
+		}
+	})
+
+	t.Run("approve returns promptly while approved work continues in background", func(t *testing.T) {
+		blocker := &blockingCoderExecTool{
+			started: make(chan struct{}),
+			release: make(chan struct{}),
+		}
+		prov := runtime.NewMockProvider([]runtime.GenerateResult{
+			{
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:        "call-blocking-coder",
+						ToolName:  "coder_exec",
+						InputJSON: []byte(`{"backend":"codex","prompt":"Create created.txt"}`),
+					},
+				},
+				StopReason: "tool_calls",
+			},
+			{Content: "done", StopReason: "end_turn"},
+		}, nil)
+		h := newServerHarnessWithProviderAndTools(t, prov, blocker)
+
+		run, err := h.rt.Start(context.Background(), runtime.StartRun{
+			ConversationID: "conv-approval-web-async",
+			AgentID:        "patcher",
+			Objective:      "mutate via coder",
+			WorkspaceRoot:  h.workspaceRoot,
+		})
+		if err != nil {
+			t.Fatalf("Start failed: %v", err)
+		}
+		if run.Status != model.RunStatusNeedsApproval {
+			t.Fatalf("expected needs_approval run, got %q", run.Status)
+		}
+
+		var ticketID string
+		if err := h.db.RawDB().QueryRow(
+			"SELECT id FROM approvals WHERE run_id = ? AND status = 'pending' LIMIT 1",
+			run.ID,
+		).Scan(&ticketID); err != nil {
+			t.Fatalf("query approval ticket: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/recover/approvals/"+ticketID+"/resolve", strings.NewReader("decision=approved"))
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
+
+		done := make(chan struct{})
+		go func() {
+			h.server.ServeHTTP(rr, req)
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(200 * time.Millisecond):
+			close(blocker.release)
+			t.Fatal("expected approval resolve request to return before approved work finishes")
+		}
+
+		var status string
+		if err := h.db.RawDB().QueryRow(
+			"SELECT status FROM approvals WHERE id = ?",
+			ticketID,
+		).Scan(&status); err != nil {
+			close(blocker.release)
+			t.Fatalf("query approval status: %v", err)
+		}
+		if status != "approved" {
+			close(blocker.release)
+			t.Fatalf("expected approval row to be marked approved, got %q", status)
+		}
+
+		select {
+		case <-blocker.started:
+		case <-time.After(time.Second):
+			close(blocker.release)
+			t.Fatal("expected approved tool work to continue in the background")
+		}
+
+		runStatus := ""
+		if err := h.db.RawDB().QueryRow("SELECT status FROM runs WHERE id = ?", run.ID).Scan(&runStatus); err != nil {
+			close(blocker.release)
+			t.Fatalf("query run status: %v", err)
+		}
+		if runStatus != "active" {
+			close(blocker.release)
+			t.Fatalf("expected run to stay active while approved tool is blocked, got %q", runStatus)
+		}
+
+		if rr.Code != http.StatusOK {
+			close(blocker.release)
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		close(blocker.release)
+		waitForRunStatus(t, h.db, run.ID, "completed")
+		if _, err := os.Stat(filepath.Join(h.workspaceRoot, "created.txt")); err != nil {
+			t.Fatalf("expected background approved tool to create file: %v", err)
 		}
 	})
 
@@ -3200,6 +3510,49 @@ func TestRoutesDeliveriesPage(t *testing.T) {
 		}
 	})
 
+	t.Run("GET /recover/routes-deliveries formats route and delivery labels", func(t *testing.T) {
+		h := newServerHarness(t)
+		run, route, intentID := h.seedRoutesDeliveriesData(t)
+		h.markOutboundIntentTerminal(t, intentID)
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE outbound_intents
+			 SET message_text = ?, attempts = 3
+			 WHERE id = ?`,
+			"## Delivery check\n\n- Retry the connector\n- Confirm the route",
+			intentID,
+		); err != nil {
+			t.Fatalf("update outbound intent message: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/recover/routes-deliveries", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		routePattern := regexp.MustCompile(regexp.QuoteMeta(route.ID) + `(?s).*?assistant.*?\(Front\)`)
+		if !routePattern.MatchString(body) {
+			t.Fatalf("expected route row to render a humanized role label:\n%s", body)
+		}
+		for _, want := range []string{"Terminal", "3 attempts", `class="muted structured-preview"`} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected routes and deliveries page to contain %q:\n%s", want, body)
+			}
+		}
+		if !strings.Contains(body, "Retry the connector") || !strings.Contains(body, "Confirm the route") {
+			t.Fatalf("expected delivery preview to preserve structured text:\n%s", body)
+		}
+		if strings.Contains(body, ">terminal<") {
+			t.Fatalf("expected delivery status to be humanized:\n%s", body)
+		}
+		if !strings.Contains(body, run.SessionID) {
+			t.Fatalf("expected bound session to remain visible:\n%s", body)
+		}
+	})
+
 	t.Run("GET /recover/routes-deliveries applies shared query filters", func(t *testing.T) {
 		h := newServerHarness(t)
 		_, route, intentID := h.seedRoutesDeliveriesData(t)
@@ -3475,6 +3828,76 @@ func TestSessionPages(t *testing.T) {
 		}
 	})
 
+	t.Run("GET /operate/sessions formats role status and timestamps", func(t *testing.T) {
+		h := newServerHarness(t)
+		front := h.startFrontSession(t, "Inspect the repo.")
+		worker := h.spawnWorkerSession(t, front.SessionID, "researcher", "Inspect docs.")
+		const workerUpdatedAt = "2031-03-25 10:15:00"
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE sessions
+			 SET status = 'archived'
+			 WHERE id = ?`,
+			worker.SessionID,
+		); err != nil {
+			t.Fatalf("update worker session metadata: %v", err)
+		}
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE runs
+			 SET updated_at = ?
+			 WHERE session_id = ?`,
+			workerUpdatedAt,
+			worker.SessionID,
+		); err != nil {
+			t.Fatalf("update worker run activity: %v", err)
+		}
+		if _, err := h.db.RawDB().Exec(
+			`UPDATE session_messages
+			 SET created_at = ?
+			 WHERE session_id = ?`,
+			workerUpdatedAt,
+			worker.SessionID,
+		); err != nil {
+			t.Fatalf("update worker session message activity: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		workerPattern := regexp.MustCompile(regexp.QuoteMeta(worker.SessionID) + `(?s).*?researcher.*?Worker.*?Archived.*?2031-03-25 10:15:00 UTC`)
+		if !workerPattern.MatchString(body) {
+			t.Fatalf("expected worker session row to render humanized labels and timestamp:\n%s", body)
+		}
+		if strings.Contains(body, "2031-03-25T10:15:00Z") {
+			t.Fatalf("expected session timestamp to be human-formatted:\n%s", body)
+		}
+	})
+
+	t.Run("GET /operate/sessions keeps role inline with the agent summary row", func(t *testing.T) {
+		h := newServerHarness(t)
+		front := h.startFrontSession(t, "Inspect the repo.")
+		h.spawnWorkerSession(t, front.SessionID, "researcher", "Inspect docs.")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		body := rr.Body.String()
+		want := `<div class="session-summary-line"><span>researcher</span><span class="muted session-inline-meta">Worker</span></div>`
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected worker agent summary to keep role inline with the primary row:\n%s", body)
+		}
+	})
+
 	t.Run("GET /operate/sessions applies shared directory filters", func(t *testing.T) {
 		h := newServerHarness(t)
 		run, _, _ := h.seedRoutesDeliveriesData(t)
@@ -3570,6 +3993,16 @@ func TestSessionPages(t *testing.T) {
 		h := newServerHarness(t)
 		run, route, intentID := h.seedRoutesDeliveriesData(t)
 		h.markOutboundIntentTerminal(t, intentID)
+		svc := sessions.NewService(h.db, conversations.NewConversationStore(h.db))
+		if err := svc.AppendMessage(context.Background(), model.SessionMessage{
+			ID:        "msg-session-announce",
+			SessionID: run.SessionID,
+			Kind:      model.MessageAnnounce,
+			Body:      "## Delivery plan\n\n1. Gather context\n2. Fix formatting",
+			CreatedAt: time.Date(2026, time.March, 25, 9, 0, 0, 0, time.UTC),
+		}); err != nil {
+			t.Fatalf("AppendMessage failed: %v", err)
+		}
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions/"+run.SessionID, nil)
@@ -3580,10 +4013,25 @@ func TestSessionPages(t *testing.T) {
 			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 		}
 		body := rr.Body.String()
-		for _, want := range []string{"Session Detail", run.SessionID, "Inspect Telegram.", "mock response", route.ID, "terminal", "/operate/sessions/" + run.SessionID + "/messages"} {
+		for _, want := range []string{
+			"Session Detail",
+			run.SessionID,
+			"Inspect Telegram.",
+			"mock response",
+			route.ID,
+			"Announcement",
+			`class="structured-text structured-html"`,
+			"<h2>Delivery plan</h2>",
+			"<li>Gather context</li>",
+			"Terminal",
+			"/operate/sessions/" + run.SessionID + "/messages",
+		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected session detail to contain %q:\n%s", want, body)
 			}
+		}
+		if strings.Contains(body, "<td>announce</td>") {
+			t.Fatalf("expected mailbox message kind to be humanized:\n%s", body)
 		}
 	})
 
@@ -3721,7 +4169,7 @@ type serverHarness struct {
 
 func newServerHarness(t *testing.T) *serverHarness {
 	t.Helper()
-	return newServerHarnessWithProvider(t, runtime.NewMockProvider(nil, nil))
+	return newServerHarnessWithProviderAndTools(t, runtime.NewMockProvider(nil, nil))
 }
 
 type blockingProvider struct {
@@ -3755,6 +4203,11 @@ func (p *blockingProvider) Generate(ctx context.Context, _ runtime.GenerateReque
 
 func newServerHarnessWithProvider(t *testing.T, prov runtime.Provider) *serverHarness {
 	t.Helper()
+	return newServerHarnessWithProviderAndTools(t, prov)
+}
+
+func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, extraTools ...tools.Tool) *serverHarness {
+	t.Helper()
 
 	db, err := store.Open(":memory:")
 	if err != nil {
@@ -3786,6 +4239,12 @@ func newServerHarnessWithProvider(t *testing.T, prov runtime.Provider) *serverHa
 	cs := conversations.NewConversationStore(db)
 	mem := memory.NewStore(db, cs)
 	reg := tools.NewRegistry()
+	for _, tool := range extraTools {
+		if tool == nil {
+			continue
+		}
+		reg.Register(tool)
+	}
 	broadcaster := NewSSEBroadcaster()
 	rt := runtime.New(db, cs, reg, mem, prov, broadcaster)
 	t.Cleanup(func() {
@@ -3820,6 +4279,44 @@ func newServerHarnessWithProvider(t *testing.T, prov runtime.Provider) *serverHa
 		teamDir:       teamDir,
 		workspaceRoot: workspaceRoot,
 	}
+}
+
+type blockingCoderExecTool struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (t *blockingCoderExecTool) Name() string { return "coder_exec" }
+
+func (t *blockingCoderExecTool) Spec() model.ToolSpec {
+	return model.ToolSpec{
+		Name:       t.Name(),
+		Risk:       model.RiskHigh,
+		SideEffect: "exec_write",
+	}
+}
+
+func (t *blockingCoderExecTool) Invoke(ctx context.Context, _ model.ToolCall) (model.ToolResult, error) {
+	meta, ok := tools.InvocationContextFrom(ctx)
+	if !ok || meta.WorkspaceRoot == "" {
+		return model.ToolResult{}, tools.ErrWorkspaceRequired
+	}
+	select {
+	case <-t.started:
+	default:
+		close(t.started)
+	}
+	select {
+	case <-t.release:
+	case <-ctx.Done():
+		return model.ToolResult{}, ctx.Err()
+	}
+	if err := os.WriteFile(filepath.Join(meta.WorkspaceRoot, "created.txt"), []byte("created by blocking coder\n"), 0o644); err != nil {
+		return model.ToolResult{}, err
+	}
+	return model.ToolResult{
+		Output: `{"backend":"codex","command":"codex exec --sandbox workspace-write","cwd":".","stdout":"created created.txt","stderr":"","exit_code":0,"timed_out":false,"truncated":false,"effect":"exec_write"}`,
+	}, nil
 }
 
 func (h *serverHarness) insertProject(t *testing.T, name, workspaceRoot string) string {

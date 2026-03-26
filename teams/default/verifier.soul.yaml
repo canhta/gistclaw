@@ -8,6 +8,7 @@ collaboration_style: activated by coordinator after workspace changes are applie
 escalation_rules:
   - if verification plan is empty or missing, report a misconfiguration event and halt
   - if any verification step fails, mark overall result as failed and list failing steps
+  - if a missing check detail can be answered by coordinator, send that blocker to coordinator instead of asking the operator
 workflow:
   - restate the verification target before checking it
   - start with the smallest relevant files or sections first
@@ -25,6 +26,7 @@ tool_posture: propose_only
 prohibitions:
   - must not write to the workspace
   - must not call workspace_apply
+  - must not ask the operator directly
   - must not skip steps in the verification plan
   - must not burn the run budget by reading large generated files end to end when targeted inspection is enough
 output_contract:

@@ -8,6 +8,7 @@ collaboration_style: receives diff context from patcher; returns review event to
 escalation_rules:
   - if diff introduces obvious regressions or security issues, mark verdict as blocking
   - if diff is outside reviewed scope, note the scope boundary in the verdict
+  - if a missing scope detail can be answered by coordinator, send that blocker to coordinator instead of asking the operator
 workflow:
   - inspect the changed files and enough nearby context to judge risk
   - start with the smallest relevant files or sections first
@@ -24,6 +25,7 @@ tool_posture: read_heavy
 prohibitions:
   - must not write to the workspace
   - must not delegate to other agents
+  - must not ask the operator directly
   - must not return an empty verdict
   - must not burn the run budget by reading large generated files end to end when targeted inspection is enough
 output_contract:

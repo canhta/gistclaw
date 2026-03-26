@@ -12,20 +12,74 @@ import (
 )
 
 type sessionPageIndexData struct {
-	Sessions []model.Session
+	Sessions []sessionPageIndexItemView
 	Filters  sessionPageIndexFilters
 	Paging   pageLinks
 	Error    string
 }
 
 type sessionPageDetailData struct {
-	Session          model.Session
-	Messages         []model.SessionMessage
-	Route            *model.SessionRoute
+	Session          sessionPageDetailSessionView
+	Messages         []sessionPageDetailMessageView
+	Route            *sessionPageDetailRouteView
 	ActiveRunID      string
-	Deliveries       []model.OutboundIntent
-	DeliveryFailures []model.DeliveryFailure
+	Deliveries       []sessionPageDetailDeliveryView
+	DeliveryFailures []sessionPageDetailFailureView
 	Error            string
+}
+
+type sessionPageIndexItemView struct {
+	ID             string
+	ConversationID string
+	AgentID        string
+	RoleLabel      string
+	StatusLabel    string
+	UpdatedAtLabel string
+}
+
+type sessionPageDetailSessionView struct {
+	ID          string
+	AgentID     string
+	RoleLabel   string
+	StatusLabel string
+}
+
+type sessionPageDetailMessageView struct {
+	Kind         string
+	KindLabel    string
+	Body         runStructuredTextView
+	SenderLabel  string
+	SenderIsMono bool
+	SourceRunID  string
+}
+
+type sessionPageDetailRouteView struct {
+	ID               string
+	ConnectorID      string
+	ExternalID       string
+	ThreadID         string
+	StatusLabel      string
+	CreatedAtLabel   string
+	DeactivatedLabel string
+}
+
+type sessionPageDetailDeliveryView struct {
+	ID            string
+	ConnectorID   string
+	ChatID        string
+	Message       runStructuredTextView
+	Status        string
+	StatusLabel   string
+	AttemptsLabel string
+}
+
+type sessionPageDetailFailureView struct {
+	ID             string
+	ConnectorID    string
+	ChatID         string
+	EventKindLabel string
+	Error          string
+	CreatedAtLabel string
 }
 
 type sessionPageIndexFilters struct {
@@ -163,7 +217,7 @@ func (s *Server) loadSessionPageIndexData(r *http.Request) (sessionPageIndexData
 	}
 
 	return sessionPageIndexData{
-		Sessions: page.Items,
+		Sessions: buildSessionPageIndexViews(page.Items),
 		Filters: sessionPageIndexFilters{
 			Query:       filter.Query,
 			AgentID:     filter.AgentID,
@@ -226,11 +280,96 @@ func (s *Server) loadSessionPageDetailData(r *http.Request) (sessionPageDetailDa
 	}
 
 	return sessionPageDetailData{
-		Session:          session,
-		Messages:         messages,
-		Route:            route,
+		Session:          buildSessionPageDetailSessionView(session),
+		Messages:         buildSessionPageDetailMessageViews(messages),
+		Route:            buildSessionPageDetailRouteView(route),
 		ActiveRunID:      activeRun.ID,
-		Deliveries:       deliveries,
-		DeliveryFailures: failures,
+		Deliveries:       buildSessionPageDetailDeliveryViews(deliveries),
+		DeliveryFailures: buildSessionPageDetailFailureViews(failures),
 	}, http.StatusOK, nil
+}
+
+func buildSessionPageIndexViews(items []model.Session) []sessionPageIndexItemView {
+	views := make([]sessionPageIndexItemView, 0, len(items))
+	for _, item := range items {
+		views = append(views, sessionPageIndexItemView{
+			ID:             item.ID,
+			ConversationID: item.ConversationID,
+			AgentID:        item.AgentID,
+			RoleLabel:      sessionRoleLabel(item.Role),
+			StatusLabel:    humanizeWebLabel(item.Status),
+			UpdatedAtLabel: formatWebTimestamp(item.UpdatedAt),
+		})
+	}
+	return views
+}
+
+func buildSessionPageDetailSessionView(item model.Session) sessionPageDetailSessionView {
+	return sessionPageDetailSessionView{
+		ID:          item.ID,
+		AgentID:     item.AgentID,
+		RoleLabel:   sessionRoleSummaryLabel(item.Role),
+		StatusLabel: humanizeWebLabel(item.Status),
+	}
+}
+
+func buildSessionPageDetailMessageViews(items []model.SessionMessage) []sessionPageDetailMessageView {
+	views := make([]sessionPageDetailMessageView, 0, len(items))
+	for _, item := range items {
+		views = append(views, sessionPageDetailMessageView{
+			Kind:         string(item.Kind),
+			KindLabel:    sessionMessageKindLabel(item.Kind),
+			Body:         buildStructuredTextView(item.Body, 6),
+			SenderLabel:  sessionSenderLabel(item.SenderSessionID),
+			SenderIsMono: strings.TrimSpace(item.SenderSessionID) != "",
+			SourceRunID:  item.Provenance.SourceRunID,
+		})
+	}
+	return views
+}
+
+func buildSessionPageDetailRouteView(item *model.SessionRoute) *sessionPageDetailRouteView {
+	if item == nil {
+		return nil
+	}
+	return &sessionPageDetailRouteView{
+		ID:               item.ID,
+		ConnectorID:      item.ConnectorID,
+		ExternalID:       item.ExternalID,
+		ThreadID:         item.ThreadID,
+		StatusLabel:      humanizeWebLabel(item.Status),
+		CreatedAtLabel:   formatWebTimestamp(item.CreatedAt),
+		DeactivatedLabel: formatOptionalWebTimestamp(item.DeactivatedAt),
+	}
+}
+
+func buildSessionPageDetailDeliveryViews(items []model.OutboundIntent) []sessionPageDetailDeliveryView {
+	views := make([]sessionPageDetailDeliveryView, 0, len(items))
+	for _, item := range items {
+		views = append(views, sessionPageDetailDeliveryView{
+			ID:            item.ID,
+			ConnectorID:   item.ConnectorID,
+			ChatID:        item.ChatID,
+			Message:       buildStructuredTextView(item.MessageText, 3),
+			Status:        item.Status,
+			StatusLabel:   humanizeWebLabel(item.Status),
+			AttemptsLabel: attemptLabel(item.Attempts),
+		})
+	}
+	return views
+}
+
+func buildSessionPageDetailFailureViews(items []model.DeliveryFailure) []sessionPageDetailFailureView {
+	views := make([]sessionPageDetailFailureView, 0, len(items))
+	for _, item := range items {
+		views = append(views, sessionPageDetailFailureView{
+			ID:             item.ID,
+			ConnectorID:    item.ConnectorID,
+			ChatID:         item.ChatID,
+			EventKindLabel: humanizeWebLabel(item.EventKind),
+			Error:          item.Error,
+			CreatedAtLabel: formatWebTimestamp(item.CreatedAt),
+		})
+	}
+	return views
 }

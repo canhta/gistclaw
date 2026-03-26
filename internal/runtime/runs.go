@@ -1580,25 +1580,71 @@ func (r *Runtime) SubmitTask(ctx context.Context, objective, workspaceRoot strin
 // ResolveApproval approves or denies a pending approval ticket by its ID.
 // decision must be "approved" or "denied".
 func (r *Runtime) ResolveApproval(ctx context.Context, ticketID, decision string) error {
-	ticket, err := tools.LoadTicket(ctx, r.store, ticketID)
+	prepared, err := r.prepareApprovalResolution(ctx, ticketID, decision)
 	if err != nil {
 		return err
 	}
-	if err := tools.ResolveTicket(ctx, r.store, ticketID, decision); err != nil {
+	if !prepared.hasRun {
+		return nil
+	}
+	return r.finishApprovalResolution(ctx, prepared)
+}
+
+func (r *Runtime) ResolveApprovalAsync(ctx context.Context, ticketID, decision string) error {
+	prepared, err := r.prepareApprovalResolution(ctx, ticketID, decision)
+	if err != nil {
 		return err
+	}
+	if !prepared.hasRun {
+		return nil
+	}
+
+	execCtx := r.asyncCtx
+	if execCtx == nil {
+		execCtx = context.Background()
+	}
+	r.asyncWG.Add(1)
+	go func(prepared approvalResolution) {
+		defer r.asyncWG.Done()
+		_ = r.finishApprovalResolution(execCtx, prepared)
+	}(prepared)
+	return nil
+}
+
+type approvalResolution struct {
+	ticket   model.ApprovalTicket
+	run      model.Run
+	call     model.ToolCallRequest
+	decision string
+	hasRun   bool
+}
+
+func (r *Runtime) prepareApprovalResolution(ctx context.Context, ticketID, decision string) (approvalResolution, error) {
+	switch decision {
+	case "approved", "denied":
+	default:
+		return approvalResolution{}, fmt.Errorf("runtime: invalid approval decision %q", decision)
+	}
+
+	ticket, err := tools.LoadTicket(ctx, r.store, ticketID)
+	if err != nil {
+		return approvalResolution{}, err
+	}
+	if err := tools.ResolveTicket(ctx, r.store, ticketID, decision); err != nil {
+		return approvalResolution{}, err
 	}
 
 	run, err := r.loadRun(ctx, ticket.RunID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
-			return nil
+			return approvalResolution{ticket: ticket, decision: decision}, nil
 		}
-		return err
+		return approvalResolution{}, err
 	}
 
 	toolCallID, err := r.loadApprovalToolCallID(ctx, run.ID, ticket.ID)
 	if err != nil {
-		return err
+		return approvalResolution{}, err
 	}
 	if toolCallID == "" {
 		toolCallID = ticket.ID
@@ -1608,12 +1654,27 @@ func (r *Runtime) ResolveApproval(ctx context.Context, ticketID, decision string
 		ToolName:  ticket.ToolName,
 		InputJSON: ticket.ArgsJSON,
 	}
-
-	switch decision {
-	case "approved":
+	if decision == "approved" {
 		if err := r.appendRunResumed(ctx, run.ConversationID, run.ID, ticket.ID, decision); err != nil {
-			return err
+			return approvalResolution{}, err
 		}
+	}
+	return approvalResolution{
+		ticket:   ticket,
+		run:      run,
+		call:     call,
+		decision: decision,
+		hasRun:   true,
+	}, nil
+}
+
+func (r *Runtime) finishApprovalResolution(ctx context.Context, prepared approvalResolution) error {
+	run := prepared.run
+	ticket := prepared.ticket
+	call := prepared.call
+
+	switch prepared.decision {
+	case "approved":
 		agent, err := r.agentProfileForRun(ctx, run.ID, run.AgentID)
 		if err != nil {
 			return err
@@ -1657,7 +1718,7 @@ func (r *Runtime) ResolveApproval(ctx context.Context, ticketID, decision string
 		}
 		return r.resumeParentAfterChildTerminal(ctx, interrupted)
 	default:
-		return fmt.Errorf("runtime: invalid approval decision %q", decision)
+		return fmt.Errorf("runtime: invalid approval decision %q", prepared.decision)
 	}
 }
 
