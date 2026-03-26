@@ -31,19 +31,21 @@ import (
 )
 
 type App struct {
-	cfg        Config
-	db         *store.DB
-	convStore  *conversations.ConversationStore
-	runtime    *runtime.Runtime
-	scheduler  *scheduler.Service
-	replay     *replay.Service
-	webServer  *web.Server
-	connectors []model.Connector
-	toolCloser io.Closer
-	prepareMu  sync.Mutex
-	prepared   bool
-	webAddrMu  sync.RWMutex
-	webAddress string
+	cfg              Config
+	db               *store.DB
+	convStore        *conversations.ConversationStore
+	runtime          *runtime.Runtime
+	scheduler        *scheduler.Service
+	replay           *replay.Service
+	webServer        *web.Server
+	connectors       []model.Connector
+	supervisor       *connectorSupervisor
+	supervisorConfig connectorSupervisorConfig
+	toolCloser       io.Closer
+	prepareMu        sync.Mutex
+	prepared         bool
+	webAddrMu        sync.RWMutex
+	webAddress       string
 }
 
 func Bootstrap(cfg Config) (*App, error) {
@@ -124,12 +126,17 @@ func Bootstrap(cfg Config) (*App, error) {
 	rp := replayWiring(db)
 	sched := scheduler.NewService(scheduler.NewStore(db), schedulerRuntimeDispatcher{runtime: rt})
 
+	var whatsappHealth *whatsappconnector.HealthState
+	if cfg.WhatsApp.PhoneNumberID != "" || cfg.WhatsApp.AccessToken != "" || cfg.WhatsApp.VerifyToken != "" {
+		whatsappHealth = whatsappconnector.NewHealthState(nil)
+	}
+
 	webSrv, err := web.NewServer(web.Options{
 		DB:              db,
 		Replay:          rp,
 		Broadcaster:     broadcaster,
 		Runtime:         rt,
-		WhatsAppWebhook: buildWhatsAppWebhook(cfg, db, convStore, rt),
+		WhatsAppWebhook: buildWhatsAppWebhook(cfg, db, convStore, rt, whatsappHealth),
 	})
 	if err != nil {
 		if toolCloser != nil {
@@ -139,7 +146,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("bootstrap: web server: %w", err)
 	}
 
-	connectors := buildConnectors(cfg, db, convStore, rt)
+	connectors := buildConnectors(cfg, db, convStore, rt, whatsappHealth)
 	connectorNotifier.SetConnectors(connectors)
 
 	return &App{
@@ -478,6 +485,7 @@ func buildConnectors(
 	db *store.DB,
 	cs *conversations.ConversationStore,
 	rt *runtime.Runtime,
+	whatsappHealth *whatsappconnector.HealthState,
 ) []model.Connector {
 	connectors := make([]model.Connector, 0, 2)
 	if cfg.Telegram.BotToken != "" {
@@ -496,12 +504,19 @@ func buildConnectors(
 			cfg.WhatsApp.AccessToken,
 			db,
 			cs,
+			whatsappHealth,
 		))
 	}
 	return connectors
 }
 
-func buildWhatsAppWebhook(cfg Config, db *store.DB, cs *conversations.ConversationStore, rt *runtime.Runtime) http.Handler {
+func buildWhatsAppWebhook(
+	cfg Config,
+	db *store.DB,
+	cs *conversations.ConversationStore,
+	rt *runtime.Runtime,
+	health *whatsappconnector.HealthState,
+) http.Handler {
 	if cfg.WhatsApp.VerifyToken == "" || cfg.WhatsApp.PhoneNumberID == "" || cfg.WhatsApp.AccessToken == "" {
 		return nil
 	}
@@ -510,6 +525,7 @@ func buildWhatsAppWebhook(cfg Config, db *store.DB, cs *conversations.Conversati
 		cfg.WhatsApp.AccessToken,
 		db,
 		cs,
+		health,
 	)
 	return whatsappconnector.NewWebhookHandler(
 		cfg.WhatsApp.VerifyToken,
@@ -517,5 +533,6 @@ func buildWhatsAppWebhook(cfg Config, db *store.DB, cs *conversations.Conversati
 		cfg.WorkspaceRoot,
 		rt,
 		sender,
+		health,
 	)
 }

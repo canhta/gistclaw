@@ -10,8 +10,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/canhta/gistclaw/internal/model"
 )
 
 func (a *App) Prepare(ctx context.Context) error {
@@ -106,6 +104,7 @@ func (a *App) Start(ctx context.Context) error {
 	if a.runtime != nil {
 		a.runtime.SetAsyncContext(runCtx)
 	}
+	a.supervisor = nil
 
 	serviceCount := len(a.connectors)
 	errCh := make(chan error, len(a.connectors)+1)
@@ -155,18 +154,20 @@ func (a *App) Start(ctx context.Context) error {
 		return ctx.Err()
 	}
 
-	for _, connector := range a.connectors {
+	if len(a.connectors) > 0 {
+		supervisor := newConnectorSupervisor(a.connectors, a.supervisorConfig)
+		a.supervisor = supervisor
 		wg.Add(1)
-		go func(connector model.Connector) {
+		go func() {
 			defer wg.Done()
-			if err := connector.Start(runCtx); err != nil && err != context.Canceled && err != context.DeadlineExceeded {
+			if err := supervisor.Run(runCtx); err != nil && err != context.Canceled && err != context.DeadlineExceeded {
 				select {
-				case errCh <- fmt.Errorf("connector %s: %w", connector.ID(), err):
+				case errCh <- fmt.Errorf("connector supervisor: %w", err):
 				default:
 				}
 				cancel()
 			}
-		}(connector)
+		}()
 	}
 
 	shutdownWeb := func() {

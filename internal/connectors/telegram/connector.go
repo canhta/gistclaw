@@ -28,6 +28,7 @@ type Connector struct {
 	inbound       *InboundDispatcher
 	commands      *controlconnector.Dispatcher
 	drainInterval time.Duration
+	health        *healthState
 }
 
 func NewConnector(
@@ -38,7 +39,8 @@ func NewConnector(
 	defaultAgentID string,
 	workspaceRoot string,
 ) *Connector {
-	outbound := NewOutboundDispatcher(token, db, cs)
+	health := newHealthState(nil)
+	outbound := NewOutboundDispatcher(token, db, cs, health)
 	inbound := NewInboundDispatcher(rt, defaultAgentID, workspaceRoot)
 	connector := &Connector{
 		outbound:      outbound,
@@ -46,9 +48,13 @@ func NewConnector(
 		inbound:       inbound,
 		commands:      controlconnector.NewDispatcher(rt),
 		drainInterval: 250 * time.Millisecond,
+		health:        health,
 	}
 	outbound.bot.commandSpecs = controlconnector.DefaultCommandSpecs()
-
+	outbound.bot.onPollSuccess = health.markPollSuccess
+	outbound.bot.onPollError = func(at time.Time, err error) {
+		health.markFailure(at, "poll: "+err.Error())
+	}
 	outbound.bot.handler = connector.handleUpdate
 
 	return connector
@@ -66,6 +72,10 @@ func (c *Connector) Drain(ctx context.Context) error {
 	return c.outbound.Drain(ctx)
 }
 
+func (c *Connector) ConnectorHealthSnapshot() model.ConnectorHealthSnapshot {
+	return c.health.snapshot()
+}
+
 func (c *Connector) Start(ctx context.Context) error {
 	ticker := time.NewTicker(c.drainInterval)
 	defer ticker.Stop()
@@ -77,11 +87,15 @@ func (c *Connector) Start(ctx context.Context) error {
 
 	for {
 		if err := c.outbound.FlushDrafts(ctx); err != nil {
+			c.health.markFailure(time.Now().UTC(), "draft flush: "+err.Error())
 			log.Printf("telegram: draft flush warning: %v", err)
 		}
 
 		if err := c.Drain(ctx); err != nil {
+			c.health.markFailure(time.Now().UTC(), "drain: "+err.Error())
 			log.Printf("telegram: drain warning: %v", err)
+		} else {
+			c.health.markDrainSuccess(time.Now().UTC())
 		}
 
 		select {

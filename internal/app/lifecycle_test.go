@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -262,5 +263,49 @@ func TestLifecycle_StartDoesNotRepeatPrepareSideEffects(t *testing.T) {
 
 	if got := connector.drains.Load(); got != 1 {
 		t.Fatalf("expected connector drain to run once, got %d", got)
+	}
+}
+
+func TestLifecycle_StartRecoversConnectorFailureWithinBudget(t *testing.T) {
+	cfg := Config{
+		DatabasePath:  ":memory:",
+		StateDir:      t.TempDir(),
+		WorkspaceRoot: t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "anthropic",
+			APIKey: "sk-test",
+		},
+	}
+	app, err := Bootstrap(cfg)
+	if err != nil {
+		t.Fatalf("Bootstrap failed: %v", err)
+	}
+
+	connector := newStubSupervisedConnector("stub", errors.New("boom"))
+	app.connectors = []model.Connector{connector}
+	app.supervisorConfig = connectorSupervisorConfig{
+		CheckInterval:      time.Millisecond,
+		RestartCooldown:    time.Millisecond,
+		MaxRestartsPerHour: 1,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- app.Start(ctx)
+	}()
+
+	connector.waitForStarts(t, 2, 300*time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-errCh:
+		if err != nil && err != context.Canceled {
+			t.Fatalf("Start returned unexpected error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return after cancel")
 	}
 }

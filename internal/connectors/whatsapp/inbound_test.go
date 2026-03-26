@@ -112,7 +112,7 @@ func TestNormalizeWebhookPayload_TextMessageToEnvelope(t *testing.T) {
 }
 
 func TestWebhookHandler_VerifyChallenge(t *testing.T) {
-	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), &stubInboundReceiver{}, nil)
+	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), &stubInboundReceiver{}, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=verify-token&hub.challenge=12345", nil)
@@ -129,7 +129,7 @@ func TestWebhookHandler_VerifyChallenge(t *testing.T) {
 }
 
 func TestWebhookHandler_RejectsWrongVerifyToken(t *testing.T) {
-	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), &stubInboundReceiver{}, nil)
+	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), &stubInboundReceiver{}, nil, nil)
 
 	req := httptest.NewRequest(http.MethodGet,
 		"/webhooks/whatsapp?hub.mode=subscribe&hub.verify_token=wrong&hub.challenge=12345", nil)
@@ -144,7 +144,8 @@ func TestWebhookHandler_RejectsWrongVerifyToken(t *testing.T) {
 
 func TestWebhookHandler_DispatchesInboundTextMessages(t *testing.T) {
 	receiver := &stubInboundReceiver{}
-	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), receiver, nil)
+	health := NewHealthState(nil)
+	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), receiver, nil, health)
 
 	body := `{
 	  "object":"whatsapp_business_account",
@@ -191,12 +192,15 @@ func TestWebhookHandler_DispatchesInboundTextMessages(t *testing.T) {
 	if call.SourceMessageID != "wamid.42" {
 		t.Fatalf("expected source message ID to pass through, got %q", call.SourceMessageID)
 	}
+	if snapshot := health.snapshot(); snapshot.State != model.ConnectorHealthHealthy {
+		t.Fatalf("expected healthy webhook snapshot, got %#v", snapshot)
+	}
 }
 
 func TestWebhookHandler_RoutesHelpCommandToNativeReply(t *testing.T) {
 	receiver := &stubInboundReceiver{}
 	sender := &stubWhatsAppSender{}
-	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), receiver, sender)
+	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), receiver, sender, nil)
 
 	body := `{
 	  "object":"whatsapp_business_account",
@@ -239,7 +243,7 @@ func TestWebhookHandler_RoutesHelpCommandToNativeReply(t *testing.T) {
 func TestWebhookHandler_RoutesResetCommandToNativeReply(t *testing.T) {
 	receiver := &stubInboundReceiver{reset: runtime.ConversationResetCleared}
 	sender := &stubWhatsAppSender{}
-	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), receiver, sender)
+	handler := NewWebhookHandler("verify-token", "assistant", t.TempDir(), receiver, sender, nil)
 
 	body := `{
 	  "object":"whatsapp_business_account",

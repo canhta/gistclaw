@@ -117,6 +117,9 @@ func TestConnector_StartDispatchesInboundAndDrainsOutbound(t *testing.T) {
 	if sendMessageCalls.Load() == 0 {
 		t.Fatal("expected pending outbound intent to be drained and delivered")
 	}
+	if snapshot := connector.ConnectorHealthSnapshot(); snapshot.State != model.ConnectorHealthHealthy {
+		t.Fatalf("expected healthy connector snapshot, got %#v", snapshot)
+	}
 
 	if err := <-errCh; err != nil && err != context.DeadlineExceeded && err != context.Canceled {
 		t.Fatalf("Start returned unexpected error: %v", err)
@@ -180,5 +183,8 @@ func TestConnector_StartPublishesTelegramCommandMenu(t *testing.T) {
 	}
 	if publishedCommands[3]["command"] != "reset" {
 		t.Fatalf("unexpected published commands: %+v", publishedCommands)
+	}
+	if snapshot := connector.ConnectorHealthSnapshot(); snapshot.State != model.ConnectorHealthHealthy {
+		t.Fatalf("expected healthy connector snapshot, got %#v", snapshot)
 	}
 }

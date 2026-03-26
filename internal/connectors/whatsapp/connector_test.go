@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/canhta/gistclaw/internal/conversations"
+	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/store"
 )
 
@@ -49,7 +50,7 @@ func TestConnector_StartDrainsOutboundWhileRunning(t *testing.T) {
 		t.Fatalf("seed outbound intent: %v", err)
 	}
 
-	connector := NewConnector("phone-123", "access-token", db, cs)
+	connector := NewConnector("phone-123", "access-token", db, cs, nil)
 	connector.outbound.apiBase = srv.URL
 	connector.drainInterval = 10 * time.Millisecond
 
@@ -72,6 +73,9 @@ func TestConnector_StartDrainsOutboundWhileRunning(t *testing.T) {
 
 	if sendCalls.Load() == 0 {
 		t.Fatal("expected pending outbound intent to be drained and delivered")
+	}
+	if snapshot := connector.ConnectorHealthSnapshot(); snapshot.State != model.ConnectorHealthHealthy {
+		t.Fatalf("expected healthy connector snapshot, got %#v", snapshot)
 	}
 	if err := <-errCh; err != nil && err != context.DeadlineExceeded && err != context.Canceled {
 		t.Fatalf("Start returned unexpected error: %v", err)

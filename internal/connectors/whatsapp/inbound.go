@@ -32,6 +32,7 @@ type WebhookHandler struct {
 	rt            ConnectorRuntime
 	sender        MessageSender
 	commands      *controlconnector.Dispatcher
+	health        *HealthState
 }
 
 func NewWebhookHandler(
@@ -40,7 +41,11 @@ func NewWebhookHandler(
 	workspaceRoot string,
 	rt ConnectorRuntime,
 	sender MessageSender,
+	health *HealthState,
 ) *WebhookHandler {
+	if health == nil {
+		health = NewHealthState(nil)
+	}
 	return &WebhookHandler{
 		verifyToken:   verifyToken,
 		defaultAgent:  defaultAgent,
@@ -48,6 +53,7 @@ func NewWebhookHandler(
 		rt:            rt,
 		sender:        sender,
 		commands:      controlconnector.NewDispatcher(rt),
+		health:        health,
 	}
 }
 
@@ -96,6 +102,7 @@ func (h *WebhookHandler) handleMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	h.health.markWebhook(time.Now().UTC())
 
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))

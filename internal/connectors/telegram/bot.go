@@ -24,9 +24,11 @@ type Bot struct {
 	token   string
 	handler UpdateHandler
 	// apiBase can be overridden in tests to point at a mock server.
-	apiBase      string
-	client       *http.Client
-	commandSpecs []controlconnector.CommandSpec
+	apiBase       string
+	client        *http.Client
+	commandSpecs  []controlconnector.CommandSpec
+	onPollSuccess func(time.Time)
+	onPollError   func(time.Time, error)
 }
 
 // NewBot creates a Bot. If token is empty, Start returns immediately without polling.
@@ -63,6 +65,9 @@ func (b *Bot) Start(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
+			if b.onPollError != nil {
+				b.onPollError(time.Now().UTC(), err)
+			}
 			log.Printf("telegram: getUpdates error: %v", err)
 			select {
 			case <-ctx.Done():
@@ -70,6 +75,9 @@ func (b *Bot) Start(ctx context.Context) error {
 			case <-time.After(2 * time.Second):
 			}
 			continue
+		}
+		if b.onPollSuccess != nil {
+			b.onPollSuccess(time.Now().UTC())
 		}
 
 		for _, upd := range updates {

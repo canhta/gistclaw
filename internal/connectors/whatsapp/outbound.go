@@ -46,14 +46,19 @@ type OutboundDispatcher struct {
 	client        *http.Client
 	maxAttempts   int
 	retryDelay    time.Duration
+	health        *HealthState
 }
 
 // NewOutboundDispatcher creates a dispatcher for the given Meta phoneNumberID and accessToken.
-func NewOutboundDispatcher(phoneNumberID, accessToken string, db *store.DB, cs *conversations.ConversationStore) *OutboundDispatcher {
-	return newWithBaseURL(phoneNumberID, accessToken, db, cs, defaultAPIBase)
+func NewOutboundDispatcher(phoneNumberID, accessToken string, db *store.DB, cs *conversations.ConversationStore, health ...*HealthState) *OutboundDispatcher {
+	return newWithBaseURL(phoneNumberID, accessToken, db, cs, defaultAPIBase, health...)
 }
 
-func newWithBaseURL(phoneNumberID, accessToken string, db *store.DB, cs *conversations.ConversationStore, apiBase string) *OutboundDispatcher {
+func newWithBaseURL(phoneNumberID, accessToken string, db *store.DB, cs *conversations.ConversationStore, apiBase string, health ...*HealthState) *OutboundDispatcher {
+	var state *HealthState
+	if len(health) > 0 {
+		state = health[0]
+	}
 	return &OutboundDispatcher{
 		connectorID:   "whatsapp",
 		phoneNumberID: phoneNumberID,
@@ -64,6 +69,7 @@ func newWithBaseURL(phoneNumberID, accessToken string, db *store.DB, cs *convers
 		client:        &http.Client{},
 		maxAttempts:   5,
 		retryDelay:    2 * time.Second,
+		health:        state,
 	}
 }
 
@@ -175,6 +181,9 @@ func (d *OutboundDispatcher) deliverWithRetry(ctx context.Context, intentID, to,
 		}
 
 		d.markStatus(ctx, intentID, "delivered", attempt)
+		if d.health != nil {
+			d.health.markDeliverySuccess(time.Now().UTC())
+		}
 		return nil
 	}
 
@@ -189,6 +198,9 @@ func (d *OutboundDispatcher) deliverWithRetry(ctx context.Context, intentID, to,
 		eventKind,
 		lastErr,
 	)
+	if d.health != nil && lastErr != nil {
+		d.health.markFailure(time.Now().UTC(), "delivery: "+lastErr.Error())
+	}
 	return lastErr
 }
 

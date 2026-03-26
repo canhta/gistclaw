@@ -237,6 +237,22 @@ type ConnectorDeliveryHealth struct {
 	OldestRetryingAt *time.Time
 }
 
+type ConnectorHealthState string
+
+const (
+	ConnectorHealthUnknown  ConnectorHealthState = "unknown"
+	ConnectorHealthHealthy  ConnectorHealthState = "healthy"
+	ConnectorHealthDegraded ConnectorHealthState = "degraded"
+)
+
+type ConnectorHealthSnapshot struct {
+	ConnectorID      string
+	State            ConnectorHealthState
+	Summary          string
+	CheckedAt        time.Time
+	RestartSuggested bool
+}
+
 type DeliveryQueueItem struct {
 	OutboundIntent
 	SessionID      string

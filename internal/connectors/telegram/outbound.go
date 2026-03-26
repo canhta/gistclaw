@@ -41,6 +41,7 @@ type OutboundDispatcher struct {
 	retryDelay  time.Duration
 	draftMu     sync.Mutex
 	drafts      map[string]draftState
+	health      *healthState
 }
 
 type draftState struct {
@@ -67,7 +68,11 @@ func (d *OutboundDispatcher) Send(ctx context.Context, chatID, text string) erro
 }
 
 // NewOutboundDispatcher creates a dispatcher. token is the Telegram bot token.
-func NewOutboundDispatcher(token string, db *store.DB, cs *conversations.ConversationStore) *OutboundDispatcher {
+func NewOutboundDispatcher(token string, db *store.DB, cs *conversations.ConversationStore, health ...*healthState) *OutboundDispatcher {
+	var state *healthState
+	if len(health) > 0 {
+		state = health[0]
+	}
 	return &OutboundDispatcher{
 		connectorID: "telegram",
 		bot:         NewBot(token, nil),
@@ -76,6 +81,7 @@ func NewOutboundDispatcher(token string, db *store.DB, cs *conversations.Convers
 		maxAttempts: 5,
 		retryDelay:  2 * time.Second,
 		drafts:      make(map[string]draftState),
+		health:      state,
 	}
 }
 
@@ -264,6 +270,9 @@ func (d *OutboundDispatcher) deliverWithRetry(ctx context.Context, intentID, cha
 			"UPDATE outbound_intents SET status='delivered', attempts=?, last_attempt_at=datetime('now') WHERE id=?",
 			attempt, intentID,
 		)
+		if d.health != nil {
+			d.health.markDrainSuccess(time.Now().UTC())
+		}
 		return nil
 	}
 
@@ -284,6 +293,9 @@ func (d *OutboundDispatcher) deliverWithRetry(ctx context.Context, intentID, cha
 		eventKind,
 		lastErr,
 	)
+	if d.health != nil && lastErr != nil {
+		d.health.markFailure(time.Now().UTC(), "delivery: "+lastErr.Error())
+	}
 
 	return lastErr
 }
