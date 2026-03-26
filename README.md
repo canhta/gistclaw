@@ -22,6 +22,7 @@ Today the repo already ships a working daemon, CLI, local web control plane, rep
 - `gistclaw inspect token` prints the admin token stored in the runtime settings table.
 - The web UI includes onboarding plus operator-job pages for `Operate`, `Configure`, and `Recover`.
 - GitHub Releases now carry a self-contained binary for the blessed Ubuntu installer path and Apple Silicon download path.
+- The Ubuntu installer supports either a quick-start provider key path or an exact `--config-file` reinstall path for VPS operators.
 - Providers: Anthropic and OpenAI-compatible endpoints.
 - Tools: built-in web fetch, optional Tavily search, optional MCP stdio tools.
 - Live external surfaces: Telegram DM and WhatsApp.

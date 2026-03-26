@@ -6,6 +6,7 @@ REPO="${GISTCLAW_REPO:-canhta/gistclaw}"
 BASE_URL="${GISTCLAW_BASE_URL:-}"
 PROVIDER_NAME="${GISTCLAW_PROVIDER_NAME:-}"
 PROVIDER_API_KEY="${GISTCLAW_PROVIDER_API_KEY:-}"
+CONFIG_FILE="${GISTCLAW_CONFIG_FILE:-}"
 ALLOW_NON_ROOT="${GISTCLAW_ALLOW_NON_ROOT:-0}"
 ARCH_OVERRIDE="${GISTCLAW_ARCH:-}"
 
@@ -24,6 +25,7 @@ Usage: gistclaw-install.sh [options]
 
 Options:
   --version VERSION
+  --config-file PATH
   --provider-name NAME
   --provider-api-key KEY
   --repo OWNER/REPO
@@ -34,6 +36,10 @@ while [ $# -gt 0 ]; do
 	case "$1" in
 	--version)
 		VERSION="$2"
+		shift 2
+		;;
+	--config-file)
+		CONFIG_FILE="$2"
 		shift 2
 		;;
 	--provider-name)
@@ -65,7 +71,17 @@ if [ "${ALLOW_NON_ROOT}" != "1" ] && [ "$(id -u)" -ne 0 ]; then
 	exit 1
 fi
 
-if [ -z "${PROVIDER_NAME}" ] || [ -z "${PROVIDER_API_KEY}" ]; then
+if [ -n "${CONFIG_FILE}" ] && { [ -n "${PROVIDER_NAME}" ] || [ -n "${PROVIDER_API_KEY}" ]; }; then
+	echo "config-file mode cannot be combined with provider flags" >&2
+	exit 1
+fi
+
+if [ -n "${CONFIG_FILE}" ] && [ ! -f "${CONFIG_FILE}" ]; then
+	echo "config file not found: ${CONFIG_FILE}" >&2
+	exit 1
+fi
+
+if [ -z "${CONFIG_FILE}" ] && { [ -z "${PROVIDER_NAME}" ] || [ -z "${PROVIDER_API_KEY}" ]; }; then
 	echo "provider name and api key are required; refusing to enable service" >&2
 	exit 1
 fi
@@ -92,8 +108,23 @@ CHECKSUM_FILE="${DOWNLOAD_DIR}/${ARCHIVE}.sha256"
 RELEASE_DIR="${RELEASES_DIR}/${VERSION}"
 CONFIG_PATH="${ETC_DIR}/config.yaml"
 SERVICE_PATH="${SYSTEMD_DIR}/gistclaw.service"
+CONFIG_PATHS_ERR="${DOWNLOAD_DIR}/inspect-config-paths.err"
 
-mkdir -p "${DOWNLOAD_DIR}" "${RELEASE_DIR}" "$(dirname "${BIN_LINK}")" "${ETC_DIR}" "${SYSTEMD_DIR}" "${VAR_DIR}/projects" "${VAR_DIR}/backups"
+extract_config_value() {
+	key="$1"
+	printf '%s\n' "$2" | sed -n "s/^${key}: //p" | head -n 1
+}
+
+ensure_owned_dir() {
+	path="$1"
+	if [ -z "${path}" ]; then
+		return 0
+	fi
+	mkdir -p "${path}"
+	chown -R gistclaw:gistclaw "${path}"
+}
+
+mkdir -p "${DOWNLOAD_DIR}" "${RELEASE_DIR}" "$(dirname "${BIN_LINK}")" "${ETC_DIR}" "${SYSTEMD_DIR}" "${VAR_DIR}"
 
 curl -fsSL -o "${SUMS_FILE}" "${BASE_URL}/SHA256SUMS.txt"
 curl -fsSL -o "${ARCHIVE_FILE}" "${BASE_URL}/${ARCHIVE}"
@@ -120,7 +151,10 @@ tar -xzf "${ARCHIVE_FILE}" -C "${RELEASE_DIR}"
 chmod +x "${RELEASE_DIR}/gistclaw"
 ln -snf "${RELEASE_DIR}/gistclaw" "${BIN_LINK}"
 
-cat > "${CONFIG_PATH}" <<EOF
+if [ -n "${CONFIG_FILE}" ]; then
+	cp "${CONFIG_FILE}" "${CONFIG_PATH}"
+else
+	cat > "${CONFIG_PATH}" <<EOF
 provider:
   name: ${PROVIDER_NAME}
   api_key: ${PROVIDER_API_KEY}
@@ -129,13 +163,32 @@ workspace_root: ${VAR_DIR}/projects
 web:
   listen_addr: 127.0.0.1:8080
 EOF
+fi
 chown root:gistclaw "${CONFIG_PATH}"
 chmod 640 "${CONFIG_PATH}"
+
+CONFIG_PATHS_OUTPUT=$("${BIN_LINK}" inspect --config "${CONFIG_PATH}" config-paths 2>"${CONFIG_PATHS_ERR}") || {
+	cat "${CONFIG_PATHS_ERR}" >&2
+	exit 1
+}
+
+STATE_DIR=$(extract_config_value "state_dir" "${CONFIG_PATHS_OUTPUT}")
+DATABASE_DIR=$(extract_config_value "database_dir" "${CONFIG_PATHS_OUTPUT}")
+WORKSPACE_ROOT=$(extract_config_value "workspace_root" "${CONFIG_PATHS_OUTPUT}")
+if [ -z "${STATE_DIR}" ] || [ -z "${DATABASE_DIR}" ] || [ -z "${WORKSPACE_ROOT}" ]; then
+	echo "inspect config-paths returned incomplete output" >&2
+	exit 1
+fi
+
+ensure_owned_dir "${VAR_DIR}"
+ensure_owned_dir "${STATE_DIR}"
+ensure_owned_dir "${DATABASE_DIR}"
+ensure_owned_dir "${WORKSPACE_ROOT}"
 
 # Generate the canonical unit via `gistclaw inspect systemd-unit`.
 GISTCLAW_SYSTEMD_BINARY_PATH="${BIN_LINK}" \
 GISTCLAW_SYSTEMD_CONFIG_PATH="${CONFIG_PATH}" \
-	"${BIN_LINK}" inspect systemd-unit > "${SERVICE_PATH}"
+	"${BIN_LINK}" inspect --config "${CONFIG_PATH}" systemd-unit > "${SERVICE_PATH}"
 
 systemctl daemon-reload
 systemctl enable --now gistclaw

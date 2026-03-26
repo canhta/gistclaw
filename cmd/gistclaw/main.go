@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -32,6 +33,7 @@ Inspect subcommands:
   inspect status           Show active runs, interrupted runs, approvals, and storage health
   inspect runs             List all runs with status
   inspect replay <run_id>  Print replay for a run
+  inspect config-paths     Print installer-owned directories for a config file
   inspect systemd-unit     Print the canonical systemd service unit
   inspect token            Print admin token from settings table
 
@@ -129,11 +131,21 @@ func runTask(configPath string, args []string, stdout, stderr io.Writer) int {
 
 func runInspect(configPath string, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprint(stderr, "Usage: gistclaw inspect <subcommand>\n\nSubcommands:\n  status        Show active runs, interrupted runs, approvals, and storage health\n  runs          List all runs with status\n  replay        Print replay for a run\n  systemd-unit  Print the canonical systemd service unit\n  token         Print admin token\n")
+		fmt.Fprint(stderr, "Usage: gistclaw inspect <subcommand>\n\nSubcommands:\n  status        Show active runs, interrupted runs, approvals, and storage health\n  runs          List all runs with status\n  replay        Print replay for a run\n  config-paths  Print installer-owned directories for a config file\n  systemd-unit  Print the canonical systemd service unit\n  token         Print admin token\n")
 		return 1
 	}
 
 	switch args[0] {
+	case "config-paths":
+		cfg, err := app.LoadInstallConfig(configPath)
+		if err != nil {
+			fmt.Fprintf(stderr, "inspect config-paths failed: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdout, "state_dir: %s\n", cfg.StateDir)
+		fmt.Fprintf(stdout, "database_dir: %s\n", filepath.Dir(cfg.DatabasePath))
+		fmt.Fprintf(stdout, "workspace_root: %s\n", cfg.WorkspaceRoot)
+		return 0
 	case "systemd-unit":
 		fmt.Fprint(stdout, app.RenderSystemdUnit(systemdBinaryPath(), systemdConfigPath()))
 		return 0

@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -29,5 +31,63 @@ func TestRun_InspectSystemdUnit_PrintsCanonicalUnit(t *testing.T) {
 	}
 	if stderr.Len() != 0 {
 		t.Fatalf("expected empty stderr, got:\n%s", stderr.String())
+	}
+}
+
+func TestRun_InspectConfigPaths_PrintsInstallerOwnedDirectories(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	cfg := `
+provider:
+  name: openai
+  api_key: sk-test
+  base_url: https://example.invalid/v1
+  wire_api: chat_completions
+database_path: /srv/gistclaw/data/runtime.db
+workspace_root: /srv/gistclaw/projects
+`
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := run([]string{"--config", cfgPath, "inspect", "config-paths"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("inspect config-paths failed with code %d:\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+
+	for _, want := range []string{
+		"state_dir: /var/lib/gistclaw",
+		"database_dir: /srv/gistclaw/data",
+		"workspace_root: /srv/gistclaw/projects",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("config-paths output missing %q:\n%s", want, stdout.String())
+		}
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("expected empty stderr, got:\n%s", stderr.String())
+	}
+}
+
+func TestRun_InspectConfigPaths_FailsOnInvalidConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	cfg := `
+provider:
+  name: openai
+workspace_root: /srv/gistclaw/projects
+`
+	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
+		t.Fatalf("WriteFile failed: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := run([]string{"--config", cfgPath, "inspect", "config-paths"}, &stdout, &stderr); code == 0 {
+		t.Fatalf("expected inspect config-paths to fail:\nstdout:\n%s\nstderr:\n%s", stdout.String(), stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "inspect config-paths failed") {
+		t.Fatalf("expected config-paths failure in stderr, got:\n%s", stderr.String())
 	}
 }

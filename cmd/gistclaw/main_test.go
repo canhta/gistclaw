@@ -27,7 +27,7 @@ func TestRun_HelpFlag(t *testing.T) {
 		if !strings.Contains(stdout.String(), "Usage") {
 			t.Errorf("%s: expected Usage in stdout:\n%s", flag, stdout.String())
 		}
-		for _, want := range []string{"version", "inspect systemd-unit"} {
+		for _, want := range []string{"version", "inspect systemd-unit", "inspect config-paths"} {
 			if !strings.Contains(stdout.String(), want) {
 				t.Errorf("%s: expected %q in stdout:\n%s", flag, want, stdout.String())
 			}

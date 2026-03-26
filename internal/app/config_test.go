@@ -195,6 +195,76 @@ provider:
 	}
 }
 
+func TestLoadInstallConfig_RequiresExplicitRuntimePaths(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(cfgPath, []byte(`
+provider:
+  name: openai
+  api_key: sk-test-1234
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = LoadInstallConfig(cfgPath)
+	if err == nil || !strings.Contains(err.Error(), "database_path") {
+		t.Fatalf("expected install config to require database_path, got %v", err)
+	}
+}
+
+func TestLoadInstallConfig_AllowsMissingOwnedPaths(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	dbPath := filepath.Join(dir, "srv", "data", "runtime.db")
+	workspaceRoot := filepath.Join(dir, "srv", "projects")
+	err := os.WriteFile(cfgPath, []byte(`
+provider:
+  name: openai
+  api_key: sk-test-1234
+database_path: `+dbPath+`
+workspace_root: `+workspaceRoot+`
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadInstallConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.DatabasePath != dbPath {
+		t.Fatalf("expected database_path %q, got %q", dbPath, cfg.DatabasePath)
+	}
+	if cfg.WorkspaceRoot != workspaceRoot {
+		t.Fatalf("expected workspace_root %q, got %q", workspaceRoot, cfg.WorkspaceRoot)
+	}
+}
+
+func TestLoadInstallConfig_RejectsWorkspaceFile(t *testing.T) {
+	dir := t.TempDir()
+	workspaceFile := filepath.Join(dir, "workspace-file")
+	if err := os.WriteFile(workspaceFile, []byte("not-a-dir"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(cfgPath, []byte(`
+provider:
+  name: openai
+  api_key: sk-test-1234
+database_path: `+filepath.Join(dir, "runtime.db")+`
+workspace_root: `+workspaceFile+`
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = LoadInstallConfig(cfgPath)
+	if err == nil || !strings.Contains(err.Error(), "workspace_root") {
+		t.Fatalf("expected workspace_root install validation error, got %v", err)
+	}
+}
+
 func TestConfig_UnknownResearchProvider(t *testing.T) {
 	dir := t.TempDir()
 	wsDir := filepath.Join(dir, "workspace")

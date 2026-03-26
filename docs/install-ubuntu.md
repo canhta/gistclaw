@@ -21,6 +21,12 @@ chmod +x gistclaw-install.sh
 sudo ./gistclaw-install.sh --version v0.1.0 --provider-name openai --provider-api-key YOUR_REAL_KEY
 ```
 
+If you already have a full operator config, install from that exact config file instead of re-entering fields. That file should already include `database_path` and `workspace_root`.
+
+```bash
+sudo ./gistclaw-install.sh --version v0.1.0 --config-file /path/to/gistclaw-config.yaml
+```
+
 The installer writes:
 
 - `/usr/local/bin/gistclaw`
@@ -45,6 +51,14 @@ Back up first, then rerun the installer for the next version:
 ```bash
 sudo gistclaw backup --db /var/lib/gistclaw/runtime.db
 sudo ./gistclaw-install.sh --version v0.1.0 --provider-name openai --provider-api-key YOUR_REAL_KEY
+systemctl status gistclaw
+```
+
+For VPS re-installs and upgrades, prefer the exact config file path so comments, extra blocks, and custom provider settings survive unchanged:
+
+```bash
+sudo gistclaw backup --db /var/lib/gistclaw/runtime.db
+sudo ./gistclaw-install.sh --version v0.1.0 --config-file /path/to/gistclaw-config.yaml
 systemctl status gistclaw
 ```
 
