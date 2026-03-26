@@ -1,6 +1,7 @@
 package web
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -162,6 +163,33 @@ func TestFormatStructuredTextView(t *testing.T) {
 	}
 	if !view.HasOverflow {
 		t.Fatal("expected preview to report overflow")
+	}
+}
+
+func TestBuildStructuredTextViewRendersMarkdownHTML(t *testing.T) {
+	t.Parallel()
+
+	view := buildStructuredTextView("## OpenClaw\n\n- Research\n- Build\n\n<script>alert('x')</script>", 3)
+	if !strings.Contains(string(view.HTML), "<h2>OpenClaw</h2>") {
+		t.Fatalf("expected markdown heading HTML, got %q", view.HTML)
+	}
+	if !strings.Contains(string(view.HTML), "<ul>") {
+		t.Fatalf("expected markdown list HTML, got %q", view.HTML)
+	}
+	if strings.Contains(string(view.HTML), "<script>") {
+		t.Fatalf("expected markdown HTML to be sanitized, got %q", view.HTML)
+	}
+}
+
+func TestRenderTerminalLogHTMLSanitizesANSIOutput(t *testing.T) {
+	t.Parallel()
+
+	got := string(renderTerminalLogHTML("\x1b[31mFAIL\x1b[0m<script>alert('x')</script>"))
+	if !strings.Contains(got, "FAIL") {
+		t.Fatalf("expected rendered terminal HTML to contain text, got %q", got)
+	}
+	if strings.Contains(got, "<script>") {
+		t.Fatalf("expected rendered terminal HTML to be sanitized, got %q", got)
 	}
 }
 

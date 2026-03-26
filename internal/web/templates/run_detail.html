@@ -1,21 +1,25 @@
 {{define "structured_text_blocks"}}
-  {{range .}}
-    {{if eq .Kind "paragraph"}}
-      <p>{{.Text}}</p>
-    {{end}}
-    {{if eq .Kind "ordered_list"}}
-      <ol class="structured-list"{{if gt .Start 1}} start="{{.Start}}"{{end}}>
-        {{range .Items}}
-          <li>{{.}}</li>
-        {{end}}
-      </ol>
-    {{end}}
-    {{if eq .Kind "unordered_list"}}
-      <ul class="structured-list">
-        {{range .Items}}
-          <li>{{.}}</li>
-        {{end}}
-      </ul>
+  {{if .HTML}}
+    <div class="structured-text structured-html">{{.HTML}}</div>
+  {{else}}
+    {{range .Blocks}}
+      {{if eq .Kind "paragraph"}}
+        <p>{{.Text}}</p>
+      {{end}}
+      {{if eq .Kind "ordered_list"}}
+        <ol class="structured-list"{{if gt .Start 1}} start="{{.Start}}"{{end}}>
+          {{range .Items}}
+            <li>{{.}}</li>
+          {{end}}
+        </ol>
+      {{end}}
+      {{if eq .Kind "unordered_list"}}
+        <ul class="structured-list">
+          {{range .Items}}
+            <li>{{.}}</li>
+          {{end}}
+        </ul>
+      {{end}}
     {{end}}
   {{end}}
 {{end}}
@@ -213,7 +217,7 @@
                   <div class="row-title">Completed turn</div>
                   <div class="mono subtle">{{.CreatedAtLabel}}</div>
                 </div>
-                <div class="structured-text">{{template "structured_text_blocks" .Structured.Blocks}}</div>
+                <div class="structured-text">{{template "structured_text_blocks" .Structured}}</div>
               </article>
             {{end}}
           {{else}}
@@ -325,6 +329,7 @@
   let graphRefreshQueued = false;
   let lastGraphSnapshot = null;
   let nodeDetailPoll = null;
+  let nodeRefreshTimer = null;
   let nodeStream = null;
   let activeNodeRunID = "";
   let eventCount = events ? Number(events.dataset.eventCount || "0") : 0;
@@ -369,6 +374,14 @@
     }
     nodeStream.close();
     nodeStream = null;
+  }
+
+  function clearNodeRefreshTimer() {
+    if (!nodeRefreshTimer) {
+      return;
+    }
+    window.clearTimeout(nodeRefreshTimer);
+    nodeRefreshTimer = null;
   }
 
   function structuredTextFragment(view) {
@@ -476,6 +489,13 @@
 
   function renderStructuredText(container, view) {
     if (!container) {
+      return;
+    }
+    if (view && view.html) {
+      const rich = document.createElement("div");
+      rich.className = "structured-text structured-html";
+      rich.innerHTML = view.html;
+      container.replaceChildren(rich);
       return;
     }
     container.replaceChildren(structuredTextFragment(view));
@@ -604,9 +624,16 @@
       meta.className = "mono subtle";
       meta.textContent = entry.stream || "log";
       card.appendChild(meta);
-      const body = document.createElement("pre");
+      const body = document.createElement("div");
       body.className = "run-output-text";
-      body.textContent = entry.body || "";
+      if (entry.body_html) {
+        body.innerHTML = entry.body_html;
+      } else {
+        const pre = document.createElement("pre");
+        pre.className = "run-output-text";
+        pre.textContent = entry.body || "";
+        body.appendChild(pre);
+      }
       card.appendChild(body);
       list.appendChild(card);
     }
@@ -642,6 +669,14 @@
     list.appendChild(card);
   }
 
+  function scheduleNodeDetailRefresh(runID) {
+    clearNodeRefreshTimer();
+    nodeRefreshTimer = window.setTimeout(() => {
+      nodeRefreshTimer = null;
+      void openNodeDetail(runID, false);
+    }, 120);
+  }
+
   function connectNodeStream(runID) {
     clearNodeStream();
     clearNodeDetailPoll();
@@ -668,6 +703,7 @@
       }
       if (event.kind === "tool_log_recorded" && event.payload) {
         appendNodeLogEvent(event.payload, event.occurred_at);
+        scheduleNodeDetailRefresh(runID);
         return;
       }
       if (event.kind === "turn_delta") {
@@ -1388,6 +1424,7 @@
     nodeModal.addEventListener("close", () => {
       clearNodeStream();
       clearNodeDetailPoll();
+      clearNodeRefreshTimer();
       activeNodeRunID = "";
     });
   }

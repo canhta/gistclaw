@@ -209,6 +209,7 @@ func (b codexCoderBackend) Build(input coderExecInput, cwd string) (commandReque
 		cwd:               cwd,
 		effect:            effectExecWrite,
 		outputCapturePath: outputPath,
+		usePTY:            true,
 	}, nil
 }
 
@@ -238,5 +239,6 @@ func (b claudeCodeBackend) Build(input coderExecInput, cwd string) (commandReque
 		args:    args,
 		cwd:     cwd,
 		effect:  effectExecWrite,
+		usePTY:  true,
 	}, nil
 }

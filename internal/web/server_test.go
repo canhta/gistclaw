@@ -466,6 +466,7 @@ func TestRuns(t *testing.T) {
 			Task              struct {
 				PreviewText string `json:"preview_text"`
 				HasOverflow bool   `json:"has_overflow"`
+				HTML        string `json:"html"`
 				Blocks      []struct {
 					Kind  string   `json:"kind"`
 					Text  string   `json:"text"`
@@ -473,6 +474,7 @@ func TestRuns(t *testing.T) {
 				} `json:"blocks"`
 			} `json:"task"`
 			Output struct {
+				HTML   string `json:"html"`
 				Blocks []struct {
 					Kind  string   `json:"kind"`
 					Text  string   `json:"text"`
@@ -488,6 +490,7 @@ func TestRuns(t *testing.T) {
 			Logs []struct {
 				Title    string `json:"title"`
 				Body     string `json:"body"`
+				BodyHTML string `json:"body_html"`
 				Stream   string `json:"stream"`
 				ToolName string `json:"tool_name"`
 			} `json:"logs"`
@@ -513,8 +516,14 @@ func TestRuns(t *testing.T) {
 		if len(resp.Task.Blocks) != 1 || resp.Task.Blocks[0].Kind != "ordered_list" {
 			t.Fatalf("expected ordered-list task blocks, got %+v", resp.Task.Blocks)
 		}
+		if !strings.Contains(resp.Task.HTML, "<ol") {
+			t.Fatalf("expected rendered task HTML, got %+v", resp.Task)
+		}
 		if len(resp.Output.Blocks) != 2 || resp.Output.Blocks[1].Kind != "unordered_list" {
 			t.Fatalf("expected formatted output blocks, got %+v", resp.Output.Blocks)
+		}
+		if !strings.Contains(resp.Output.HTML, "<ul") {
+			t.Fatalf("expected rendered output HTML, got %+v", resp.Output)
 		}
 		if len(resp.Chain.Path) != 2 || resp.Chain.Path[0].RunID != "run-root-node" || resp.Chain.Path[1].RunID != "run-child-node" {
 			t.Fatalf("expected root-to-node chain, got %+v", resp.Chain.Path)
@@ -524,6 +533,9 @@ func TestRuns(t *testing.T) {
 		}
 		if resp.Logs[0].ToolName != "coder_exec" || resp.Logs[0].Stream != "stdout" || !strings.Contains(resp.Logs[0].Body, "Planning files") {
 			t.Fatalf("expected codex stdout log entry, got %+v", resp.Logs[0])
+		}
+		if !strings.Contains(resp.Logs[0].BodyHTML, "Planning files") {
+			t.Fatalf("expected rendered log HTML, got %+v", resp.Logs[0])
 		}
 	})
 

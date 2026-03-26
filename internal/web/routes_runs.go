@@ -1,17 +1,25 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
+	"html/template"
 	"net/http"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	terminal "github.com/buildkite/terminal-to-html/v3"
+	"github.com/microcosm-cc/bluemonday"
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
 
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/projectscope"
@@ -169,6 +177,7 @@ type runGraphNodeView struct {
 type runStructuredTextView struct {
 	PlainText   string                   `json:"plain_text,omitempty"`
 	PreviewText string                   `json:"preview_text,omitempty"`
+	HTML        template.HTML            `json:"html,omitempty"`
 	HasOverflow bool                     `json:"has_overflow"`
 	Blocks      []runStructuredBlockView `json:"blocks,omitempty"`
 }
@@ -216,11 +225,19 @@ type runNodeChainStepView struct {
 }
 
 type runNodeLogEntryView struct {
-	Title          string `json:"title"`
-	Body           string `json:"body"`
-	Stream         string `json:"stream"`
-	ToolName       string `json:"tool_name"`
-	CreatedAtLabel string `json:"created_at_label"`
+	Title          string        `json:"title"`
+	Body           string        `json:"body"`
+	BodyHTML       template.HTML `json:"body_html,omitempty"`
+	Stream         string        `json:"stream"`
+	ToolName       string        `json:"tool_name"`
+	CreatedAtLabel string        `json:"created_at_label"`
+}
+
+type runToolLogPayload struct {
+	ToolCallID string `json:"tool_call_id"`
+	ToolName   string `json:"tool_name"`
+	Stream     string `json:"stream"`
+	Text       string `json:"text"`
 }
 
 type runListFilters struct {
@@ -790,19 +807,22 @@ func buildRunNodeChainView(runID, rootRunID string, nodeMap map[string]replay.Gr
 
 func buildRunNodeLogEntries(events []model.Event, toolCalls []runToolCallRecord) []runNodeLogEntryView {
 	entries := make([]runNodeLogEntryView, 0, len(events)+len(toolCalls)*3)
+	grouped := make(map[string]int)
 	for _, evt := range events {
 		if evt.Kind != "tool_log_recorded" {
 			continue
 		}
-		var payload struct {
-			ToolName string `json:"tool_name"`
-			Stream   string `json:"stream"`
-			Text     string `json:"text"`
-		}
+		var payload runToolLogPayload
 		if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
 			continue
 		}
 		if strings.TrimSpace(payload.Text) == "" {
+			continue
+		}
+		groupKey := payload.ToolCallID + "::" + payload.ToolName + "::" + payload.Stream
+		if idx, ok := grouped[groupKey]; ok {
+			entries[idx].Body += payload.Text
+			entries[idx].BodyHTML = renderLogEntryHTML(entries[idx].Stream, entries[idx].Body)
 			continue
 		}
 		title := strings.TrimSpace(payload.ToolName + " " + payload.Stream)
@@ -812,10 +832,12 @@ func buildRunNodeLogEntries(events []model.Event, toolCalls []runToolCallRecord)
 		entries = append(entries, runNodeLogEntryView{
 			Title:          title,
 			Body:           payload.Text,
+			BodyHTML:       renderLogEntryHTML(payload.Stream, payload.Text),
 			Stream:         payload.Stream,
 			ToolName:       payload.ToolName,
 			CreatedAtLabel: formatRunTimestamp(evt.CreatedAt),
 		})
+		grouped[groupKey] = len(entries) - 1
 	}
 	for _, call := range toolCalls {
 		toolResult, _ := decodeToolResult(call.OutputJSON)
@@ -824,6 +846,7 @@ func buildRunNodeLogEntries(events []model.Event, toolCalls []runToolCallRecord)
 			entries = append(entries, runNodeLogEntryView{
 				Title:          call.ToolName + " stdout",
 				Body:           stdout,
+				BodyHTML:       renderLogEntryHTML("stdout", stdout),
 				Stream:         "stdout",
 				ToolName:       call.ToolName,
 				CreatedAtLabel: formatRunTimestamp(call.CreatedAt),
@@ -833,6 +856,7 @@ func buildRunNodeLogEntries(events []model.Event, toolCalls []runToolCallRecord)
 			entries = append(entries, runNodeLogEntryView{
 				Title:          call.ToolName + " stderr",
 				Body:           stderr,
+				BodyHTML:       renderLogEntryHTML("stderr", stderr),
 				Stream:         "stderr",
 				ToolName:       call.ToolName,
 				CreatedAtLabel: formatRunTimestamp(call.CreatedAt),
@@ -842,6 +866,7 @@ func buildRunNodeLogEntries(events []model.Event, toolCalls []runToolCallRecord)
 			entries = append(entries, runNodeLogEntryView{
 				Title:          call.ToolName + " command",
 				Body:           commandMeta.Command,
+				BodyHTML:       renderPlainHTML(commandMeta.Command),
 				Stream:         "meta",
 				ToolName:       call.ToolName,
 				CreatedAtLabel: formatRunTimestamp(call.CreatedAt),
@@ -851,6 +876,7 @@ func buildRunNodeLogEntries(events []model.Event, toolCalls []runToolCallRecord)
 			entries = append(entries, runNodeLogEntryView{
 				Title:          call.ToolName + " error",
 				Body:           toolResult.Error,
+				BodyHTML:       renderPlainHTML(toolResult.Error),
 				Stream:         "error",
 				ToolName:       call.ToolName,
 				CreatedAtLabel: formatRunTimestamp(call.CreatedAt),
@@ -1716,9 +1742,68 @@ func buildStructuredTextView(raw string, previewLines int) runStructuredTextView
 	return runStructuredTextView{
 		PlainText:   plain,
 		PreviewText: previewText,
+		HTML:        renderStructuredHTML(plain),
 		HasOverflow: len(preview) < structuredLineCount(blocks),
 		Blocks:      blocks,
 	}
+}
+
+func renderStructuredHTML(raw string) template.HTML {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	var out bytes.Buffer
+	parser := goldmark.New(goldmark.WithExtensions(extension.GFM))
+	if err := parser.Convert([]byte(raw), &out); err != nil {
+		return renderPlainHTML(raw)
+	}
+	return template.HTML(markdownHTMLPolicy().SanitizeBytes(out.Bytes()))
+}
+
+func renderTerminalLogHTML(raw string) template.HTML {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	screen, err := terminal.NewScreen(terminal.WithSize(120, 40), terminal.WithMaxSize(240, 4000))
+	if err != nil {
+		return renderPlainHTML(raw)
+	}
+	if _, err := screen.Write([]byte(raw)); err != nil {
+		return renderPlainHTML(raw)
+	}
+	html := `<div class="term-container">` + screen.AsHTML() + `</div>`
+	return template.HTML(terminalHTMLPolicy().Sanitize(html))
+}
+
+func renderPlainHTML(raw string) template.HTML {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	return template.HTML(markdownHTMLPolicy().Sanitize("<pre>" + html.EscapeString(raw) + "</pre>"))
+}
+
+func renderLogEntryHTML(stream, raw string) template.HTML {
+	switch stream {
+	case "stdout", "stderr", "terminal":
+		return renderTerminalLogHTML(raw)
+	default:
+		return renderPlainHTML(raw)
+	}
+}
+
+func markdownHTMLPolicy() *bluemonday.Policy {
+	p := bluemonday.UGCPolicy()
+	p.AllowAttrs("class").OnElements("code", "pre")
+	return p
+}
+
+func terminalHTMLPolicy() *bluemonday.Policy {
+	p := bluemonday.UGCPolicy()
+	p.AllowAttrs("class").OnElements("div", "span", "a")
+	return p
 }
 
 func normalizeStructuredTextLines(raw string) []string {

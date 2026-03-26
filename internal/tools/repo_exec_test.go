@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -80,5 +81,55 @@ func TestCommandRunner_StreamsToolLogs(t *testing.T) {
 	}
 	if payload.Stderr != "warn one\n" {
 		t.Fatalf("unexpected stderr payload %q", payload.Stderr)
+	}
+}
+
+func TestCommandRunner_StreamsPTYTerminalLogs(t *testing.T) {
+	t.Parallel()
+
+	runner := newCommandRunner(5, 64<<10)
+	root := t.TempDir()
+	sink := &recordingToolLogSink{}
+	ctx := WithInvocationContext(context.Background(), InvocationContext{
+		WorkspaceRoot: root,
+		LogSink:       sink,
+	})
+
+	got, err := runner.run(ctx, commandRequest{
+		command: "zsh",
+		args: []string{
+			"-lc",
+			"printf '\\033[31mred\\033[0m\\n'; printf 'warn\\n' >&2",
+		},
+		cwd:    root,
+		effect: effectExecWrite,
+		usePTY: true,
+	})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+
+	records := sink.snapshot()
+	if len(records) == 0 {
+		t.Fatal("expected terminal log records")
+	}
+	for _, record := range records {
+		if record.Stream != "terminal" {
+			t.Fatalf("expected PTY logs to use terminal stream, got %+v", records)
+		}
+	}
+
+	var payload struct {
+		Stdout string `json:"stdout"`
+		Stderr string `json:"stderr"`
+	}
+	if err := json.Unmarshal([]byte(got.Output), &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if payload.Stderr != "" {
+		t.Fatalf("expected PTY stderr to be merged into terminal stdout, got %q", payload.Stderr)
+	}
+	if !strings.Contains(payload.Stdout, "red") || !strings.Contains(payload.Stdout, "warn") {
+		t.Fatalf("expected PTY stdout to include merged terminal transcript, got %q", payload.Stdout)
 	}
 }

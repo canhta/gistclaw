@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/creack/pty/v2"
 )
 
 type commandResult struct {
@@ -40,6 +41,7 @@ type commandRequest struct {
 	stdin             string
 	effect            string
 	outputCapturePath string
+	usePTY            bool
 }
 
 func newCommandRunner(timeoutSec int, maxOutputBytes int) commandRunner {
@@ -59,7 +61,14 @@ func (r commandRunner) run(ctx context.Context, req commandRequest) (model.ToolR
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(runCtx, req.command, req.args...)
+	if req.usePTY && strings.TrimSpace(req.stdin) == "" {
+		return r.runPTY(runCtx, req)
+	}
+	return r.runPiped(runCtx, req)
+}
+
+func (r commandRunner) runPiped(ctx context.Context, req commandRequest) (model.ToolResult, error) {
+	cmd := exec.CommandContext(ctx, req.command, req.args...)
 	cmd.Dir = req.cwd
 	if req.stdin != "" {
 		cmd.Stdin = strings.NewReader(req.stdin)
@@ -83,10 +92,10 @@ func (r commandRunner) run(ctx context.Context, req commandRequest) (model.ToolR
 	stdoutDone := make(chan error, 1)
 	stderrDone := make(chan error, 1)
 	go func() {
-		stdoutDone <- streamCommandOutput(runCtx, stdoutPipe, &stdout, sink, "stdout")
+		stdoutDone <- streamCommandOutput(ctx, stdoutPipe, &stdout, sink, "stdout")
 	}()
 	go func() {
-		stderrDone <- streamCommandOutput(runCtx, stderrPipe, &stderr, sink, "stderr")
+		stderrDone <- streamCommandOutput(ctx, stderrPipe, &stderr, sink, "stderr")
 	}()
 
 	err = cmd.Wait()
@@ -130,7 +139,77 @@ func (r commandRunner) run(ctx context.Context, req commandRequest) (model.ToolR
 		result.ExitCode = 0
 	case errors.As(err, &exitErr):
 		result.ExitCode = exitErr.ExitCode()
-	case errors.Is(runCtx.Err(), context.DeadlineExceeded):
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
+		result.ExitCode = -1
+		result.TimedOut = true
+	default:
+		result.ExitCode = -1
+	}
+
+	output, marshalErr := json.Marshal(result)
+	if marshalErr != nil {
+		return model.ToolResult{}, fmt.Errorf("tools: encode command result: %w", marshalErr)
+	}
+	toolResult := model.ToolResult{Output: string(output)}
+	if err != nil {
+		if result.TimedOut {
+			return toolResult, fmt.Errorf("tools: command timed out")
+		}
+		return toolResult, fmt.Errorf("tools: command failed: %w", err)
+	}
+	return toolResult, nil
+}
+
+func (r commandRunner) runPTY(ctx context.Context, req commandRequest) (model.ToolResult, error) {
+	cmd := exec.CommandContext(ctx, req.command, req.args...)
+	cmd.Dir = req.cwd
+
+	tty, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: 120, Rows: 40})
+	if err != nil {
+		return model.ToolResult{}, fmt.Errorf("tools: start PTY command: %w", err)
+	}
+
+	var terminal bytes.Buffer
+	sink := toolLogSinkFromContext(ctx)
+	readDone := make(chan error, 1)
+	go func() {
+		readDone <- streamTerminalOutput(ctx, tty, &terminal, sink)
+	}()
+
+	err = cmd.Wait()
+	_ = tty.Close()
+	readErr := <-readDone
+	if err == nil && readErr != nil && !errors.Is(readErr, os.ErrClosed) {
+		err = readErr
+	}
+
+	result := commandResult{
+		Command: strings.TrimSpace(strings.Join(append([]string{req.command}, req.args...), " ")),
+		CWD:     req.cwd,
+		Stdout:  terminal.String(),
+		Effect:  req.effect,
+	}
+	if strings.TrimSpace(req.outputCapturePath) != "" {
+		if captured, readErr := os.ReadFile(req.outputCapturePath); readErr == nil {
+			text := strings.TrimSpace(string(captured))
+			if text != "" {
+				result.Stdout = text
+			}
+		}
+		_ = os.Remove(req.outputCapturePath)
+	}
+	if len(result.Stdout) > r.maxOutput {
+		result.Stdout = result.Stdout[:r.maxOutput]
+		result.Truncated = true
+	}
+
+	var exitErr *exec.ExitError
+	switch {
+	case err == nil:
+		result.ExitCode = 0
+	case errors.As(err, &exitErr):
+		result.ExitCode = exitErr.ExitCode()
+	case errors.Is(ctx.Err(), context.DeadlineExceeded):
 		result.ExitCode = -1
 		result.TimedOut = true
 	default:
@@ -161,6 +240,33 @@ func streamCommandOutput(ctx context.Context, reader io.Reader, buffer *bytes.Bu
 				if err := sink.Record(ctx, ToolLogRecord{
 					Stream:     stream,
 					Text:       chunk,
+					OccurredAt: time.Now().UTC(),
+				}); err != nil {
+					return err
+				}
+			}
+		}
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return err
+	}
+}
+
+func streamTerminalOutput(ctx context.Context, reader io.Reader, buffer *bytes.Buffer, sink ToolLogSink) error {
+	chunk := make([]byte, 4096)
+	for {
+		n, err := reader.Read(chunk)
+		if n > 0 {
+			text := string(chunk[:n])
+			buffer.WriteString(text)
+			if sink != nil {
+				if err := sink.Record(ctx, ToolLogRecord{
+					Stream:     "terminal",
+					Text:       text,
 					OccurredAt: time.Now().UTC(),
 				}); err != nil {
 					return err

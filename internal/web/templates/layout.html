@@ -635,6 +635,74 @@
       margin: 0;
       color: var(--text-1);
     }
+    .structured-html > :first-child {
+      margin-top: 0;
+    }
+    .structured-html > :last-child {
+      margin-bottom: 0;
+    }
+    .structured-html h1,
+    .structured-html h2,
+    .structured-html h3,
+    .structured-html h4 {
+      margin: 0 0 8px 0;
+      line-height: 1.2;
+      color: var(--text-1);
+    }
+    .structured-html h1 { font-size: 22px; }
+    .structured-html h2 { font-size: 18px; }
+    .structured-html h3,
+    .structured-html h4 { font-size: 15px; }
+    .structured-html pre,
+    .structured-html code {
+      font: 13px/1.6 var(--font-mono);
+    }
+    .structured-html pre {
+      margin: 0;
+      padding: 12px;
+      border: 1px solid var(--border-soft);
+      background: var(--bg);
+      overflow: auto;
+    }
+    .structured-html blockquote {
+      margin: 0;
+      padding-left: 12px;
+      border-left: 3px solid var(--border-hard);
+      color: var(--text-2);
+    }
+    .term-container {
+      margin-top: 8px;
+      padding: 12px;
+      border: 1px solid var(--border-soft);
+      background: var(--bg);
+      color: var(--text-1);
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font: 13px/1.6 var(--font-mono);
+    }
+    .term-container a {
+      color: var(--brand);
+      text-decoration: underline;
+    }
+    .term-container .term-fg30 { color: #1c1917; }
+    .term-container .term-fg31 { color: var(--error); }
+    .term-container .term-fg32 { color: var(--success); }
+    .term-container .term-fg33 { color: var(--approval); }
+    .term-container .term-fg34 { color: var(--brand); }
+    .term-container .term-fg35 { color: #a855f7; }
+    .term-container .term-fg36 { color: var(--active); }
+    .term-container .term-fg37 { color: var(--text-1); }
+    .term-container .term-fg90 { color: var(--text-3); }
+    .term-container .term-fg91 { color: #fb7185; }
+    .term-container .term-fg92 { color: #4ade80; }
+    .term-container .term-fg93 { color: #facc15; }
+    .term-container .term-fg94 { color: #93c5fd; }
+    .term-container .term-fg95 { color: #e879f9; }
+    .term-container .term-fg96 { color: #22d3ee; }
+    .term-container .term-fg97 { color: #f5f0e8; }
+    .term-container .term-bold { font-weight: 700; }
+    .term-container .term-underline { text-decoration: underline; }
     .structured-list {
       margin: 0;
       padding-left: 20px;
