@@ -1,10 +1,6 @@
 # Extensions
 
-## Extension Story
-
-Providers, connectors, tools, and plugins are part of GistClaw's long-term platform direction.
-
-That does not mean they all have to ship at once.
+Providers, connectors, tools, and plugins are part of GistClaw's long-term platform direction, but the runtime only ships the seams it can support cleanly today.
 
 ## Shipped Seams Today
 
@@ -27,9 +23,7 @@ The following are still intentionally deferred until the session-first runtime i
 
 ## Rule
 
-The extension layer should stay outside the kernel.
-
-The kernel owns:
+The extension layer should stay outside the kernel. The kernel owns:
 
 - sessions
 - collaboration primitives

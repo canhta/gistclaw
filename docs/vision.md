@@ -1,12 +1,8 @@
 # Vision
 
+GistClaw aims to feel like one assistant at the surface, even when the runtime is coordinating a larger team behind the scenes.
+
 ## Product Direction
-
-GistClaw is an assistant-first platform.
-
-The user should experience one assistant. That assistant may stay simple, or it may spin up a larger working team behind the scenes. The product surface stays personal; the runtime underneath stays multi-agent.
-
-## Long-Term Shape
 
 GistClaw is intended to carry forward the right parts of OpenClaw:
 
@@ -20,17 +16,13 @@ It is not intended to carry forward OpenClaw's old architectural sprawl.
 
 ## Core Bet
 
-The core bet is that one-agent and many-agent behavior should come from the same runtime model.
-
 - a simple assistant is a one-front-agent system
 - a richer assistant is the same front agent plus spawned worker sessions
 - users should be able to define different team shapes without changing the kernel
 
 ## Immediate Constraint
 
-The immediate rewrite does not try to rebuild all of OpenClaw.
-
-The near-term goal is to earn the new runtime contract first:
+The near-term goal is to earn the runtime contract before expanding platform breadth:
 
 - front agent
 - spawned worker sessions
@@ -40,10 +32,6 @@ The near-term goal is to earn the new runtime contract first:
 
 ## What Is Still Missing
 
-The current implementation is closer to OpenClaw in kernel direction than in product breadth.
-
-What is still not earned yet:
-
 - a broader channel and gateway matrix on top of the session kernel
 - user-created teams and team editing at runtime instead of repo-managed structure only
 - richer extension workflows around providers, connectors, tools, and plugins
@@ -51,9 +39,7 @@ What is still not earned yet:
 
 ## Current Build Direction
 
-The current build direction is to make the session kernel operationally trustworthy and operator-friendly.
-
-That means the next implementation work favors:
+The next implementation work favors:
 
 - one journal-backed session control plane instead of mixed write paths
 - session-addressed collaboration and delivery instead of run-addressed shortcuts

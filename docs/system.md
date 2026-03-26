@@ -1,16 +1,6 @@
 # Current System
 
-This document is the source of truth for what the repository currently ships.
-
-Use it for package ownership, runtime shape, and operator surface. Use the other docs for product direction, kernel rules, future roadmap, and extension philosophy.
-
-## User Value First
-
-If you are evaluating GistClaw as a tool, the current value is:
-
-- you can run it locally and keep control of state, approvals, and replay on your own machine
-- you can treat it like one assistant at the surface while still getting multi-agent coordination underneath
-- you can inspect what happened after a run through replay, sessions, routes, deliveries, and memory instead of trusting a black box
+This document is the source of truth for what the repository ships today: package ownership, runtime shape, and operator surface. Use [docs/vision.md](vision.md) and [docs/roadmap.md](roadmap.md) for direction, and [docs/kernel.md](kernel.md) for invariants.
 
 ## What Ships Today
 
@@ -40,7 +30,7 @@ If you are evaluating GistClaw as a tool, the current value is:
 - `gistclaw serve` starts the daemon and local web host.
 - `gistclaw version` prints the running release/build metadata.
 - `gistclaw run` submits a task directly from the CLI.
-- `gistclaw inspect` reports status, runs, replay, the canonical `systemd` unit, the admin token, and storage-health fields for the current database.
+- `gistclaw inspect` reports status, runs, replay, the canonical `systemd` unit, the admin token, and storage health for the current database.
 - `gistclaw security audit` reports deployment-risk findings for the current config and runtime posture.
 - `gistclaw schedule` adds, updates, reports scheduler status, lists, shows, runs, enables, disables, and deletes scheduled tasks.
 - `gistclaw doctor` checks config, database, provider, workspace, research, MCP binaries, Telegram reachability, connector health, storage health, and scheduler state.
@@ -73,7 +63,7 @@ If you are evaluating GistClaw as a tool, the current value is:
 - Connectors live in `internal/connectors/`.
 - Team definitions live in `teams/`.
 
-These seams are real in the codebase today. The runtime should depend on their interfaces, not on hardcoded product-specific shortcuts.
+These seams are real in the codebase today. The runtime should depend on their interfaces, not on hardcoded shortcuts.
 
 ## Package Map
 

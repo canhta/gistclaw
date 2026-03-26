@@ -2,19 +2,16 @@
 
 GistClaw is a local-first multi-agent runtime for software repo tasks.
 
-It lets you hand one task to one assistant, let that assistant coordinate specialist workers behind the scenes, approve risky actions before they touch your repo, and inspect exactly what happened afterward.
+It gives you one assistant surface, lets that assistant coordinate specialist workers behind the scenes, asks for approval before risky repo changes, and keeps a replayable record of what happened.
 
-Today the repo already ships a working daemon, CLI, local web control plane, replay model, memory store, provider adapters, tool registry, scheduled local tasks, and live connector paths for Telegram DM and WhatsApp.
+Today the repo already ships a working daemon, CLI, local web control plane, replay model, memory store, provider adapters, tool registry, scheduled local tasks, and live Telegram DM and WhatsApp paths.
 
-## Why People Use It
+## Why It Exists
 
-- One assistant surface, with worker agents coordinated through runtime-managed sessions instead of ad hoc delegation.
-- Risky edits stay reviewable because approvals gate workspace writes before they happen.
-- Everything stays local-first: daemon, web UI, and database all run on your machine.
-- Runs remain inspectable after the fact through replay, session history, route bindings, deliveries, and memory.
-- Operators can start from the CLI, then move into a richer local control plane when recovery, approvals, or debugging matter.
-- Repetitive local tasks can be scheduled durably in SQLite and recovered cleanly after restarts.
-- Security, connector, and storage health can be audited from the operator CLI before drift turns into a recovery problem.
+- Keep state, approvals, and replay on your own machine.
+- Start with one assistant surface, but let the runtime manage real worker sessions underneath.
+- Recover and debug from facts in the journal, not from guesswork.
+- Move between CLI and local web controls without switching systems.
 
 ## What Ships Today
 
@@ -58,33 +55,22 @@ go run ./cmd/gistclaw serve
 
 Create `~/.config/gistclaw/config.yaml` using the minimal example in [CONTRIBUTING.md](CONTRIBUTING.md), then open `http://127.0.0.1:8080`.
 
-## CLI Surface
+## Common Commands
 
 ```bash
 gistclaw serve
-gistclaw version
 gistclaw run "fix the failing tests"
 gistclaw inspect status
-gistclaw inspect runs
 gistclaw inspect replay <run_id>
 gistclaw inspect systemd-unit
-gistclaw inspect token
 gistclaw security audit
-gistclaw schedule add --name "Daily review" --objective "Inspect repository status" --at 2030-01-01T00:00:00Z
-gistclaw schedule update <schedule_id> --objective "Inspect repository status after the update"
-gistclaw schedule status
-gistclaw schedule list
-gistclaw schedule show <schedule_id>
-gistclaw schedule run <schedule_id>
-gistclaw schedule enable <schedule_id>
-gistclaw schedule disable <schedule_id>
-gistclaw schedule delete <schedule_id>
+gistclaw schedule --help
 gistclaw doctor
 gistclaw backup --db ~/.local/share/gistclaw/runtime.db
 gistclaw export --db ~/.local/share/gistclaw/runtime.db --out export.json
 ```
 
-`gistclaw inspect status` now includes storage-health fields such as database bytes, WAL bytes, free disk bytes, backup status, and any active storage warnings. `gistclaw doctor` now summarizes connector and storage health, and `gistclaw security audit` reports deployment-risk findings with exit codes that distinguish warn-only from failing posture.
+Use `gistclaw help`, `gistclaw inspect --help`, and `gistclaw schedule --help` for the full command surface. `gistclaw inspect status` includes storage-health details, `gistclaw doctor` summarizes connector and storage health, and `gistclaw security audit` reports deployment-risk findings with distinct exit codes for warnings vs failures.
 
 ## Build And Test
 
@@ -108,21 +94,13 @@ make coverage
 
 The coverage floor remains `70%`.
 
-## Documentation Map
+## Documentation Guide
 
-Read these in order:
-
-1. [docs/system.md](docs/system.md)
-2. [docs/install-ubuntu.md](docs/install-ubuntu.md)
-3. [docs/install-macos.md](docs/install-macos.md)
-4. [docs/recovery.md](docs/recovery.md)
-5. [docs/vision.md](docs/vision.md)
-6. [docs/kernel.md](docs/kernel.md)
-7. [docs/roadmap.md](docs/roadmap.md)
-8. [docs/extensions.md](docs/extensions.md)
-9. [AGENTS.md](AGENTS.md) (`CLAUDE.md` is a symlink to this file)
-10. [CONTRIBUTING.md](CONTRIBUTING.md)
-11. [CHANGELOG.md](CHANGELOG.md)
+- Start with [docs/system.md](docs/system.md) if you want the shipped surface and package ownership.
+- Use [docs/install-ubuntu.md](docs/install-ubuntu.md), [docs/install-macos.md](docs/install-macos.md), and [docs/recovery.md](docs/recovery.md) if you want to run a release build.
+- Use [docs/vision.md](docs/vision.md), [docs/kernel.md](docs/kernel.md), [docs/roadmap.md](docs/roadmap.md), and [docs/extensions.md](docs/extensions.md) if you want product direction and runtime rules.
+- Use [AGENTS.md](AGENTS.md) (`CLAUDE.md` is a symlink) and [CONTRIBUTING.md](CONTRIBUTING.md) if you want to work in the repo.
+- Use [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## Related Project
 

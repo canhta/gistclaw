@@ -1,19 +1,6 @@
 # Roadmap
 
-## Current Operator Value
-
-Right now GistClaw gives operators a local-first assistant runtime with approvals, replay, and a control plane that can inspect sessions, routes, deliveries, and memory after a task runs.
-
-## Current Baseline
-
-The repository already ships:
-
-- a daemon and local web control plane
-- journal-backed runs, sessions, approvals, replay, deliveries, and memory
-- provider adapters for Anthropic and OpenAI-compatible endpoints
-- built-in tools plus optional Tavily research and MCP loading
-- live Telegram and WhatsApp connector paths
-- a default team definition in `teams/default/`
+This roadmap assumes the current shipped surface described in [docs/system.md](system.md). It only covers what should change next.
 
 ## Near-Term Priorities
 
@@ -32,10 +19,6 @@ These remain out of scope for the current implementation slice:
 - weakening the journal-first runtime contract to move faster at the surface
 
 ## Remaining Gap To Broader Assistant-Platform Behavior
-
-The session kernel is in place, but the product still does not fully behave like the broader assistant platform it is aiming toward.
-
-Remaining gaps:
 
 - the broader channel and gateway matrix is still intentionally narrow
 - teams are now operator-selectable per project, but higher-level sharing and installation workflows still do not exist
