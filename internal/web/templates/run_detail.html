@@ -943,16 +943,7 @@
   }
 
   function graphNodes(snapshot) {
-    if (Array.isArray(snapshot.nodes) && snapshot.nodes.length > 0) {
-      return snapshot.nodes;
-    }
-    const flattened = [];
-    for (const column of snapshot.columns || []) {
-      for (const node of column.nodes || []) {
-        flattened.push(node);
-      }
-    }
-    return flattened;
+    return Array.isArray(snapshot && snapshot.nodes) ? snapshot.nodes : [];
   }
 
   function graphLabel(node) {

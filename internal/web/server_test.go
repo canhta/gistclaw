@@ -484,19 +484,16 @@ func TestRuns(t *testing.T) {
 					RootNodeID string `json:"root_node_id"`
 				} `json:"branches"`
 			} `json:"lanes"`
-			Columns []struct {
-				Depth int `json:"depth"`
-				Nodes []struct {
-					ID             string `json:"id"`
-					ShortID        string `json:"short_id"`
-					Kind           string `json:"kind"`
-					LaneID         string `json:"lane_id"`
-					Status         string `json:"status"`
-					StatusClass    string `json:"status_class"`
-					StatusLabel    string `json:"status_label"`
-					UpdatedAtLabel string `json:"updated_at_label"`
-				} `json:"nodes"`
-			} `json:"columns"`
+			Nodes []struct {
+				ID             string `json:"id"`
+				ShortID        string `json:"short_id"`
+				Kind           string `json:"kind"`
+				LaneID         string `json:"lane_id"`
+				Status         string `json:"status"`
+				StatusClass    string `json:"status_class"`
+				StatusLabel    string `json:"status_label"`
+				UpdatedAtLabel string `json:"updated_at_label"`
+			} `json:"nodes"`
 		}
 		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("unmarshal graph response: %v", err)
@@ -507,14 +504,14 @@ func TestRuns(t *testing.T) {
 		if resp.Summary.Total != 2 || resp.Summary.Active != 1 || resp.Summary.NeedsApproval != 1 {
 			t.Fatalf("unexpected graph summary: %+v", resp.Summary)
 		}
-		if len(resp.Columns) != 2 {
-			t.Fatalf("expected 2 graph columns, got %d", len(resp.Columns))
+		if len(resp.Nodes) != 2 {
+			t.Fatalf("expected 2 graph nodes, got %d", len(resp.Nodes))
 		}
 		if len(resp.Lanes) != 2 || resp.Lanes[0].ID != "coordination" || resp.Lanes[1].ID != "research" {
 			t.Fatalf("expected coordination and research lanes, got %+v", resp.Lanes)
 		}
-		if resp.Columns[0].Nodes[0].ID != "082b1c314823744cc779ece2f90e80e7" || resp.Columns[1].Nodes[0].ID != "4ed077c29497f4c95a19125b86096953" {
-			t.Fatalf("unexpected graph nodes: %+v", resp.Columns)
+		if resp.Nodes[0].ID != "082b1c314823744cc779ece2f90e80e7" || resp.Nodes[1].ID != "4ed077c29497f4c95a19125b86096953" {
+			t.Fatalf("unexpected graph nodes: %+v", resp.Nodes)
 		}
 		if len(resp.Edges) != 1 || resp.Edges[0].From != "082b1c314823744cc779ece2f90e80e7" || resp.Edges[0].To != "4ed077c29497f4c95a19125b86096953" {
 			t.Fatalf("unexpected graph edges: %+v", resp.Edges)
@@ -522,20 +519,20 @@ func TestRuns(t *testing.T) {
 		if resp.Edges[0].Kind != "blocked" || resp.Edges[0].Label != "waiting approval" {
 			t.Fatalf("expected semantic blocked edge, got %+v", resp.Edges[0])
 		}
-		if resp.Columns[1].Nodes[0].StatusClass != "is-approval" {
-			t.Fatalf("expected approval status class for worker node, got %+v", resp.Columns[1].Nodes[0])
+		if resp.Nodes[1].StatusClass != "is-approval" {
+			t.Fatalf("expected approval status class for worker node, got %+v", resp.Nodes[1])
 		}
-		if resp.Columns[1].Nodes[0].Kind != "worker" || resp.Columns[1].Nodes[0].LaneID != "research" {
-			t.Fatalf("expected worker node metadata, got %+v", resp.Columns[1].Nodes[0])
+		if resp.Nodes[1].Kind != "worker" || resp.Nodes[1].LaneID != "research" {
+			t.Fatalf("expected worker node metadata, got %+v", resp.Nodes[1])
 		}
-		if resp.Columns[0].Nodes[0].ShortID != "082b1c31…80e7" {
-			t.Fatalf("expected short root id, got %+v", resp.Columns[0].Nodes[0])
+		if resp.Nodes[0].ShortID != "082b1c31…80e7" {
+			t.Fatalf("expected short root id, got %+v", resp.Nodes[0])
 		}
-		if resp.Columns[1].Nodes[0].StatusLabel != "needs approval" {
-			t.Fatalf("expected humanized status label, got %+v", resp.Columns[1].Nodes[0])
+		if resp.Nodes[1].StatusLabel != "needs approval" {
+			t.Fatalf("expected humanized status label, got %+v", resp.Nodes[1])
 		}
-		if resp.Columns[1].Nodes[0].UpdatedAtLabel != "2026-03-25 08:05:00 UTC" {
-			t.Fatalf("expected updated-at label, got %+v", resp.Columns[1].Nodes[0])
+		if resp.Nodes[1].UpdatedAtLabel != "2026-03-25 08:05:00 UTC" {
+			t.Fatalf("expected updated-at label, got %+v", resp.Nodes[1])
 		}
 	})
 

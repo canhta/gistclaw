@@ -16,7 +16,6 @@ type runGraphView struct {
 	Edges      []runGraphEdgeView       `json:"edges"`
 	Legend     []runGraphLegendItemView `json:"legend,omitempty"`
 	ActivePath []string                 `json:"active_path,omitempty"`
-	Columns    []runGraphColumnView     `json:"columns,omitempty"`
 }
 
 type runGraphLaneView struct {
@@ -59,12 +58,6 @@ type runGraphSummaryView struct {
 	Failed        int    `json:"failed"`
 	Interrupted   int    `json:"interrupted"`
 	RootStatus    string `json:"root_status"`
-}
-
-type runGraphColumnView struct {
-	Depth int                `json:"depth"`
-	Label string             `json:"label"`
-	Nodes []runGraphNodeView `json:"nodes"`
 }
 
 type runGraphNodeView struct {
@@ -112,7 +105,6 @@ func buildRunGraphView(snapshot replay.RunGraphSnapshot) runGraphView {
 		Edges:      buildGraphEdges(nodes),
 		Legend:     buildGraphLegend(),
 		ActivePath: activePath,
-		Columns:    buildGraphColumns(nodes),
 	}
 }
 
@@ -347,25 +339,6 @@ func buildGraphBranches(nodes []runGraphNodeView, rootRunID string) []runGraphBr
 	return result
 }
 
-func buildGraphColumns(nodes []runGraphNodeView) []runGraphColumnView {
-	columnIndex := make(map[int]int, len(nodes))
-	columns := make([]runGraphColumnView, 0, len(nodes))
-	for _, node := range nodes {
-		idx, ok := columnIndex[node.Depth]
-		if !ok {
-			columns = append(columns, runGraphColumnView{
-				Depth: node.Depth,
-				Label: legacyGraphColumnLabel(node.Depth),
-				Nodes: []runGraphNodeView{},
-			})
-			idx = len(columns) - 1
-			columnIndex[node.Depth] = idx
-		}
-		columns[idx].Nodes = append(columns[idx].Nodes, node)
-	}
-	return columns
-}
-
 func graphNodeKind(rootRunID, nodeID, agentID string) string {
 	if nodeID == rootRunID {
 		return "root"
@@ -474,17 +447,6 @@ func isSettledGraphStatus(status string) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-func legacyGraphColumnLabel(depth int) string {
-	switch depth {
-	case 0:
-		return "Front Session"
-	case 1:
-		return "Delegated Workers"
-	default:
-		return fmt.Sprintf("Depth %d", depth)
 	}
 }
 
