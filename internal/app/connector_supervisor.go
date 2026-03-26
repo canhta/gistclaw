@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -16,14 +17,18 @@ type connectorHealthReporter interface {
 type connectorSupervisorConfig struct {
 	StartupGrace       time.Duration
 	CheckInterval      time.Duration
+	PersistInterval    time.Duration
 	RestartCooldown    time.Duration
 	MaxRestartsPerHour int
 	now                func() time.Time
+	persistSnapshots   func(context.Context, []model.ConnectorHealthSnapshot) error
 }
 
 type connectorSupervisor struct {
-	connectors []model.Connector
-	cfg        connectorSupervisorConfig
+	connectors       []model.Connector
+	cfg              connectorSupervisorConfig
+	lastPersistedAt  time.Time
+	lastPersistedMap map[string]model.ConnectorHealthSnapshot
 }
 
 type supervisedConnector struct {
@@ -44,6 +49,9 @@ func newConnectorSupervisor(connectors []model.Connector, cfg connectorSuperviso
 	if cfg.CheckInterval <= 0 {
 		cfg.CheckInterval = 250 * time.Millisecond
 	}
+	if cfg.PersistInterval <= 0 {
+		cfg.PersistInterval = connectorHealthPersistInterval
+	}
 	if cfg.RestartCooldown <= 0 {
 		cfg.RestartCooldown = 2 * time.Second
 	}
@@ -55,8 +63,9 @@ func newConnectorSupervisor(connectors []model.Connector, cfg connectorSuperviso
 	}
 
 	return &connectorSupervisor{
-		connectors: connectors,
-		cfg:        cfg,
+		connectors:       connectors,
+		cfg:              cfg,
+		lastPersistedMap: make(map[string]model.ConnectorHealthSnapshot, len(connectors)),
 	}
 }
 
@@ -74,6 +83,7 @@ func (s *connectorSupervisor) Run(ctx context.Context) error {
 		s.startConnector(ctx, state, now, &wg)
 		states = append(states, state)
 	}
+	s.persistSnapshots(ctx, now, true)
 
 	ticker := time.NewTicker(s.cfg.CheckInterval)
 	defer ticker.Stop()
@@ -95,6 +105,7 @@ func (s *connectorSupervisor) Run(ctx context.Context) error {
 				s.restartIfDegraded(state, now)
 				s.startPending(ctx, state, now, &wg)
 			}
+			s.persistSnapshots(ctx, now, false)
 		}
 	}
 }
@@ -195,4 +206,48 @@ func pruneRestarts(restarts []time.Time, now time.Time) []time.Time {
 		}
 	}
 	return kept
+}
+
+func (s *connectorSupervisor) persistSnapshots(ctx context.Context, now time.Time, force bool) {
+	if s.cfg.persistSnapshots == nil {
+		return
+	}
+
+	snapshots := collectConnectorHealthSnapshots(s.connectors)
+	if len(snapshots) == 0 {
+		return
+	}
+	if !force && !s.shouldPersistSnapshots(snapshots, now) {
+		return
+	}
+	if err := s.cfg.persistSnapshots(ctx, snapshots); err != nil {
+		if ctx.Err() == nil {
+			fmt.Printf("connector health persist warning: %v\n", err)
+		}
+		return
+	}
+	s.lastPersistedAt = now
+	s.lastPersistedMap = make(map[string]model.ConnectorHealthSnapshot, len(snapshots))
+	for _, snapshot := range snapshots {
+		s.lastPersistedMap[snapshot.ConnectorID] = snapshot
+	}
+}
+
+func (s *connectorSupervisor) shouldPersistSnapshots(snapshots []model.ConnectorHealthSnapshot, now time.Time) bool {
+	if s.lastPersistedAt.IsZero() || now.Sub(s.lastPersistedAt) >= s.cfg.PersistInterval {
+		return true
+	}
+	if len(snapshots) != len(s.lastPersistedMap) {
+		return true
+	}
+	for _, snapshot := range snapshots {
+		prior, ok := s.lastPersistedMap[snapshot.ConnectorID]
+		if !ok {
+			return true
+		}
+		if prior.State != snapshot.State || prior.Summary != snapshot.Summary || prior.RestartSuggested != snapshot.RestartSuggested {
+			return true
+		}
+	}
+	return false
 }

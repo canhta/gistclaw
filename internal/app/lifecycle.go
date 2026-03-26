@@ -10,6 +10,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/canhta/gistclaw/internal/model"
 )
 
 func (a *App) Prepare(ctx context.Context) error {
@@ -155,7 +157,11 @@ func (a *App) Start(ctx context.Context) error {
 	}
 
 	if len(a.connectors) > 0 {
-		supervisor := newConnectorSupervisor(a.connectors, a.supervisorConfig)
+		supervisorConfig := a.supervisorConfig
+		supervisorConfig.persistSnapshots = func(ctx context.Context, snapshots []model.ConnectorHealthSnapshot) error {
+			return storeConnectorHealthSnapshots(ctx, a.db, snapshots)
+		}
+		supervisor := newConnectorSupervisor(a.connectors, supervisorConfig)
 		a.supervisor = supervisor
 		wg.Add(1)
 		go func() {

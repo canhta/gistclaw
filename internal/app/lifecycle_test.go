@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"path/filepath"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -308,4 +309,70 @@ func TestLifecycle_StartRecoversConnectorFailureWithinBudget(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Start did not return after cancel")
 	}
+}
+
+func TestLifecycle_StartPersistsConnectorHealthSnapshots(t *testing.T) {
+	cfg := Config{
+		DatabasePath:  filepath.Join(t.TempDir(), "state", "runtime.db"),
+		StateDir:      filepath.Join(t.TempDir(), "state"),
+		WorkspaceRoot: t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "anthropic",
+			APIKey: "sk-test",
+		},
+	}
+	app, err := Bootstrap(cfg)
+	if err != nil {
+		t.Fatalf("Bootstrap failed: %v", err)
+	}
+
+	connector := newStubSupervisedConnector("telegram")
+	connector.mu.Lock()
+	connector.health.CheckedAt = time.Now().UTC()
+	connector.mu.Unlock()
+	app.connectors = []model.Connector{connector}
+	app.supervisorConfig = connectorSupervisorConfig{
+		CheckInterval: time.Millisecond,
+		StartupGrace:  time.Hour,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- app.Start(ctx)
+	}()
+
+	connector.waitForStarts(t, 1, 300*time.Millisecond)
+
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for time.Now().Before(deadline) {
+		var raw string
+		err := app.db.RawDB().QueryRow("SELECT value FROM settings WHERE key = 'connector_health.telegram'").Scan(&raw)
+		if err == nil && raw != "" {
+			cancel()
+			select {
+			case err := <-errCh:
+				if err != nil && err != context.Canceled {
+					t.Fatalf("Start returned unexpected error: %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("Start did not return after cancel")
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil && err != context.Canceled {
+			t.Fatalf("Start returned unexpected error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Start did not return after cancel")
+	}
+	t.Fatal("expected connector health snapshot to be persisted")
 }

@@ -35,3 +35,19 @@ func TestHealthState_RecentPollIsHealthy(t *testing.T) {
 		t.Fatalf("did not expect restart suggestion, got %#v", snapshot)
 	}
 }
+
+func TestHealthState_WaitsForFirstPollBeforeSuggestingRestart(t *testing.T) {
+	now := time.Date(2026, 3, 26, 21, 0, 0, 0, time.UTC)
+	state := newHealthState(func() time.Time { return now })
+
+	snapshot := state.snapshot()
+	if snapshot.State != model.ConnectorHealthDegraded {
+		t.Fatalf("expected degraded snapshot, got %#v", snapshot)
+	}
+	if snapshot.Summary != "no successful poll yet" {
+		t.Fatalf("expected startup summary, got %#v", snapshot)
+	}
+	if snapshot.RestartSuggested {
+		t.Fatalf("did not expect restart suggestion before first poll, got %#v", snapshot)
+	}
+}

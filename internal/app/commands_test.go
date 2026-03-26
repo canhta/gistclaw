@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/canhta/gistclaw/internal/model"
 )
@@ -174,6 +175,115 @@ func TestApp_ConnectorHealthReturnsReporterSnapshots(t *testing.T) {
 	}
 	if snapshots[1].ConnectorID != "whatsapp" || snapshots[1].State != model.ConnectorHealthHealthy {
 		t.Fatalf("unexpected second snapshot: %+v", snapshots[1])
+	}
+}
+
+func TestConfiguredConnectorHealth_UsesRecentPersistedSnapshot(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "state", "runtime.db")
+	db, err := storeWiring(Config{DatabasePath: dbPath})
+	if err != nil {
+		t.Fatalf("storeWiring failed: %v", err)
+	}
+	defer db.Close()
+
+	now := time.Now().UTC()
+	raw, err := json.Marshal(model.ConnectorHealthSnapshot{
+		ConnectorID: "telegram",
+		State:       model.ConnectorHealthHealthy,
+		Summary:     "poll loop healthy",
+		CheckedAt:   now,
+	})
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		"connector_health.telegram",
+		string(raw),
+	); err != nil {
+		t.Fatalf("insert connector health: %v", err)
+	}
+
+	cfg := Config{
+		DatabasePath:  dbPath,
+		StateDir:      filepath.Dir(dbPath),
+		WorkspaceRoot: t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "openai",
+			APIKey: "sk-test",
+		},
+		Telegram: TelegramConfig{
+			BotToken: "telegram-test-token",
+		},
+	}
+
+	snapshots, err := ConfiguredConnectorHealth(context.Background(), cfg, db)
+	if err != nil {
+		t.Fatalf("ConfiguredConnectorHealth failed: %v", err)
+	}
+	if len(snapshots) != 1 {
+		t.Fatalf("expected 1 connector snapshot, got %d", len(snapshots))
+	}
+	if snapshots[0].ConnectorID != "telegram" {
+		t.Fatalf("expected telegram snapshot, got %+v", snapshots[0])
+	}
+	if snapshots[0].State != model.ConnectorHealthHealthy || snapshots[0].Summary != "poll loop healthy" {
+		t.Fatalf("expected persisted healthy snapshot, got %+v", snapshots[0])
+	}
+}
+
+func TestConfiguredConnectorHealth_IgnoresStalePersistedSnapshot(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "state", "runtime.db")
+	db, err := storeWiring(Config{DatabasePath: dbPath})
+	if err != nil {
+		t.Fatalf("storeWiring failed: %v", err)
+	}
+	defer db.Close()
+
+	raw, err := json.Marshal(model.ConnectorHealthSnapshot{
+		ConnectorID: "telegram",
+		State:       model.ConnectorHealthHealthy,
+		Summary:     "poll loop healthy",
+		CheckedAt:   time.Now().UTC().Add(-time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		"connector_health.telegram",
+		string(raw),
+	); err != nil {
+		t.Fatalf("insert connector health: %v", err)
+	}
+
+	cfg := Config{
+		DatabasePath:  dbPath,
+		StateDir:      filepath.Dir(dbPath),
+		WorkspaceRoot: t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "openai",
+			APIKey: "sk-test",
+		},
+		Telegram: TelegramConfig{
+			BotToken: "telegram-test-token",
+		},
+	}
+
+	snapshots, err := ConfiguredConnectorHealth(context.Background(), cfg, db)
+	if err != nil {
+		t.Fatalf("ConfiguredConnectorHealth failed: %v", err)
+	}
+	if len(snapshots) != 1 {
+		t.Fatalf("expected 1 connector snapshot, got %d", len(snapshots))
+	}
+	if snapshots[0].ConnectorID != "telegram" {
+		t.Fatalf("expected telegram snapshot, got %+v", snapshots[0])
+	}
+	if snapshots[0].State != model.ConnectorHealthDegraded || snapshots[0].Summary != "no successful poll yet" {
+		t.Fatalf("expected fallback connector snapshot, got %+v", snapshots[0])
 	}
 }
 

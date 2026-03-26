@@ -147,7 +147,22 @@ func ConfiguredConnectorHealth(ctx context.Context, cfg Config, db *store.DB) ([
 	app := &App{
 		connectors: buildConnectors(cfg, db, cs, rt, nil),
 	}
-	return app.ConnectorHealth(ctx)
+
+	snapshots, err := app.ConnectorHealth(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	persisted, err := loadRecentConnectorHealthSnapshots(ctx, db, time.Now().UTC(), connectorHealthSnapshotMaxAge)
+	if err != nil {
+		return nil, err
+	}
+	for i := range snapshots {
+		if snapshot, ok := persisted[snapshots[i].ConnectorID]; ok {
+			snapshots[i] = snapshot
+		}
+	}
+	return snapshots, nil
 }
 
 func collectConnectorHealthSnapshots(connectors []model.Connector) []model.ConnectorHealthSnapshot {

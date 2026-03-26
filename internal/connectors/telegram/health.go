@@ -71,7 +71,6 @@ func (h *healthState) snapshot() model.ConnectorHealthSnapshot {
 	case h.lastPollSuccess.IsZero():
 		snapshot.State = model.ConnectorHealthDegraded
 		snapshot.Summary = "no successful poll yet"
-		snapshot.RestartSuggested = true
 	case now.Sub(h.lastPollSuccess) > h.staleAfter:
 		snapshot.State = model.ConnectorHealthDegraded
 		snapshot.Summary = "poll loop stale"
