@@ -133,3 +133,68 @@ func TestSetActiveProject_RejectsUnknownProject(t *testing.T) {
 		t.Fatal("expected SetActiveProject to reject unknown project")
 	}
 }
+
+func TestActiveProjectTeamProfile_DefaultsToDefault(t *testing.T) {
+	db, _, _, _ := setupRunTestDeps(t)
+	workspaceRoot := filepath.Join(t.TempDir(), "project-alpha")
+
+	project, err := ActivateWorkspace(context.Background(), db, workspaceRoot, "alpha", "operator")
+	if err != nil {
+		t.Fatalf("ActivateWorkspace: %v", err)
+	}
+	if err := SetActiveProject(context.Background(), db, project.ID); err != nil {
+		t.Fatalf("SetActiveProject: %v", err)
+	}
+
+	profile, err := ActiveProjectTeamProfile(context.Background(), db)
+	if err != nil {
+		t.Fatalf("ActiveProjectTeamProfile: %v", err)
+	}
+	if profile != "default" {
+		t.Fatalf("expected default profile, got %q", profile)
+	}
+}
+
+func TestSetActiveProjectTeamProfile_PersistsPerProject(t *testing.T) {
+	db, _, _, _ := setupRunTestDeps(t)
+	alphaRoot := filepath.Join(t.TempDir(), "project-alpha")
+	betaRoot := filepath.Join(t.TempDir(), "project-beta")
+
+	alpha, err := ActivateWorkspace(context.Background(), db, alphaRoot, "alpha", "operator")
+	if err != nil {
+		t.Fatalf("ActivateWorkspace alpha: %v", err)
+	}
+	beta, err := ActivateWorkspace(context.Background(), db, betaRoot, "beta", "operator")
+	if err != nil {
+		t.Fatalf("ActivateWorkspace beta: %v", err)
+	}
+
+	if err := SetActiveProjectTeamProfile(context.Background(), db, alpha.ID, "review"); err != nil {
+		t.Fatalf("SetActiveProjectTeamProfile alpha: %v", err)
+	}
+	if err := SetActiveProjectTeamProfile(context.Background(), db, beta.ID, "ops"); err != nil {
+		t.Fatalf("SetActiveProjectTeamProfile beta: %v", err)
+	}
+
+	if err := SetActiveProject(context.Background(), db, alpha.ID); err != nil {
+		t.Fatalf("SetActiveProject alpha: %v", err)
+	}
+	alphaProfile, err := ActiveProjectTeamProfile(context.Background(), db)
+	if err != nil {
+		t.Fatalf("ActiveProjectTeamProfile alpha: %v", err)
+	}
+	if alphaProfile != "review" {
+		t.Fatalf("expected alpha profile %q, got %q", "review", alphaProfile)
+	}
+
+	if err := SetActiveProject(context.Background(), db, beta.ID); err != nil {
+		t.Fatalf("SetActiveProject beta: %v", err)
+	}
+	betaProfile, err := ActiveProjectTeamProfile(context.Background(), db)
+	if err != nil {
+		t.Fatalf("ActiveProjectTeamProfile beta: %v", err)
+	}
+	if betaProfile != "ops" {
+		t.Fatalf("expected beta profile %q, got %q", "ops", betaProfile)
+	}
+}

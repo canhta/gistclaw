@@ -15,20 +15,47 @@ func (r *Runtime) SetTeamDir(teamDir string) {
 	r.teamDir = teamDir
 }
 
-func (r *Runtime) resolveTeamDir(ctx context.Context) string {
+func (r *Runtime) resolveTeamDir(ctx context.Context) (string, error) {
 	project, err := ActiveProject(ctx, r.store)
-	if err == nil && project.WorkspaceRoot != "" {
-		teamDir := filepath.Join(project.WorkspaceRoot, ".gistclaw", "teams", "default")
+	if err != nil {
+		return "", err
+	}
+	if project.WorkspaceRoot != "" {
+		profile, err := ActiveProjectTeamProfile(ctx, r.store)
+		if err != nil {
+			return "", err
+		}
+		teamDir := teams.ProfileDir(project.WorkspaceRoot, profile)
 		if _, statErr := os.Stat(filepath.Join(teamDir, "team.yaml")); statErr == nil {
-			return teamDir
+			return teamDir, nil
+		}
+		if profile != teams.DefaultProfileName {
+			return teamDir, nil
 		}
 	}
-	return r.teamDir
+	return r.teamDir, nil
+}
+
+func (r *Runtime) resolveReadableTeamDir(ctx context.Context) (string, error) {
+	teamDir, err := r.resolveTeamDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	if teamDir == "" {
+		return "", nil
+	}
+	if _, statErr := os.Stat(filepath.Join(teamDir, "team.yaml")); statErr == nil {
+		return teamDir, nil
+	}
+	if teamDir != r.teamDir {
+		return teamDir, nil
+	}
+	return r.teamDir, nil
 }
 
 func (r *Runtime) executionSnapshotForContext(ctx context.Context) (model.ExecutionSnapshot, []byte, error) {
-	teamDir := r.resolveTeamDir(ctx)
-	if teamDir == "" {
+	teamDir, err := r.resolveReadableTeamDir(ctx)
+	if err != nil || teamDir == "" {
 		return r.defaultSnapshot, append([]byte(nil), r.defaultSnapshotJSON...), nil
 	}
 
@@ -44,7 +71,10 @@ func (r *Runtime) executionSnapshotForContext(ctx context.Context) (model.Execut
 }
 
 func (r *Runtime) TeamConfig(ctx context.Context) (teams.Config, error) {
-	teamDir := r.resolveTeamDir(ctx)
+	teamDir, err := r.resolveReadableTeamDir(ctx)
+	if err != nil {
+		return teams.Config{}, fmt.Errorf("runtime: resolve team dir: %w", err)
+	}
 	if teamDir == "" {
 		return teams.Config{}, fmt.Errorf("runtime: team dir not configured")
 	}
@@ -56,7 +86,10 @@ func (r *Runtime) TeamConfig(ctx context.Context) (teams.Config, error) {
 }
 
 func (r *Runtime) UpdateTeam(ctx context.Context, cfg teams.Config) error {
-	teamDir := r.resolveTeamDir(ctx)
+	teamDir, err := r.resolveTeamDir(ctx)
+	if err != nil {
+		return fmt.Errorf("runtime: resolve team dir: %w", err)
+	}
 	if teamDir == "" {
 		return fmt.Errorf("runtime: team dir not configured")
 	}
