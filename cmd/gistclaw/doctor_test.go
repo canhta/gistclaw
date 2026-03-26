@@ -109,8 +109,8 @@ func TestDoctor_LowDiskIsWarn(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	runDoctor(cfgPath, &stdout, &stderr)
 	output := stdout.String()
-	if !strings.Contains(output, "disk") {
-		t.Errorf("expected disk check line in output:\n%s", output)
+	if !strings.Contains(output, "storage") {
+		t.Errorf("expected storage check line in output:\n%s", output)
 	}
 }
 
@@ -381,6 +381,35 @@ func TestDoctor_WarnsOnBrokenSchedulerState(t *testing.T) {
 		"stuck_dispatching=1",
 		"missing_next_run=1",
 	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("doctor output missing %q:\n%s", want, stdout.String())
+		}
+	}
+}
+
+func TestDoctor_PrintsStorageHealthSummary(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	exec.Command("git", "init", workspaceRoot).Run()
+	dbPath := filepath.Join(t.TempDir(), "gistclaw.db")
+	cfgPath := makeValidConfig(t, dbPath, workspaceRoot)
+	seedDB(t, dbPath)
+
+	backupPath := filepath.Join(filepath.Dir(dbPath), "gistclaw.20260326-010203.db.bak")
+	if err := os.WriteFile(backupPath, []byte("backup"), 0o644); err != nil {
+		t.Fatalf("write backup: %v", err)
+	}
+	backupAt := time.Date(2026, time.March, 26, 1, 2, 3, 0, time.UTC)
+	if err := os.Chtimes(backupPath, backupAt, backupAt); err != nil {
+		t.Fatalf("chtimes backup: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runDoctor(cfgPath, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected warn-or-pass exit code, got %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+
+	for _, want := range []string{"storage", "db=", "backup=fresh"} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("doctor output missing %q:\n%s", want, stdout.String())
 		}

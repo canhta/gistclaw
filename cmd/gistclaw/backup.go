@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
-	"strings"
 	"time"
 
 	sqlite "modernc.org/sqlite"
@@ -41,12 +40,7 @@ func runBackup(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// Build destination path: insert timestamp before .db extension.
-	ts := time.Now().UTC().Format("20060102-150405")
-	base := filepath.Base(srcPath)
-	ext := filepath.Ext(base)
-	stem := strings.TrimSuffix(base, ext)
-	dstName := fmt.Sprintf("%s.%s%s.bak", stem, ts, ext)
-	dstPath := filepath.Join(filepath.Dir(srcPath), dstName)
+	dstPath := store.BackupPathForTime(srcPath, time.Now().UTC())
 
 	// Use SQLite online backup API via conn.Raw.
 	rawConn, err := db.RawDB().Conn(context.Background())

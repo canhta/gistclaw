@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
@@ -20,6 +21,7 @@ type Status struct {
 	ActiveRuns       int
 	InterruptedRuns  int
 	PendingApprovals int
+	Storage          store.HealthReport
 }
 
 func (a *App) RunTask(ctx context.Context, objective string) (model.Run, error) {
@@ -62,6 +64,12 @@ func (a *App) InspectStatus(ctx context.Context) (Status, error) {
 			return Status{}, err
 		}
 	}
+
+	health, err := store.LoadHealth(a.cfg.DatabasePath, time.Now().UTC())
+	if err != nil {
+		return Status{}, fmt.Errorf("load storage health: %w", err)
+	}
+	status.Storage = health
 
 	return status, nil
 }

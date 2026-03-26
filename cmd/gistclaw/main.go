@@ -9,8 +9,10 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/canhta/gistclaw/internal/app"
+	"github.com/canhta/gistclaw/internal/store"
 )
 
 const usage = `Usage: gistclaw <subcommand> [options]
@@ -20,13 +22,13 @@ Subcommands:
   run        Submit a task directly
   inspect    Inspect daemon state
   security   Run deployment security audit
-  doctor     Run health checks (config, database, provider, workspace, disk, scheduler)
+  doctor     Run health checks (config, database, provider, workspace, storage, scheduler)
   backup     Back up the SQLite database to a timestamped .db.bak file
   export     Export runs, receipts, and approvals to a JSON file
   schedule   Manage scheduled tasks
 
 Inspect subcommands:
-  inspect status           Show active runs, interrupted runs, pending approvals
+  inspect status           Show active runs, interrupted runs, approvals, and storage health
   inspect runs             List all runs with status
   inspect replay <run_id>  Print replay for a run
   inspect token            Print admin token from settings table
@@ -123,7 +125,7 @@ func runTask(configPath string, args []string, stdout, stderr io.Writer) int {
 
 func runInspect(configPath string, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprint(stderr, "Usage: gistclaw inspect <subcommand>\n\nSubcommands:\n  status    Show active runs, interrupted runs, pending approvals\n  runs      List all runs with status\n  replay    Print replay for a run\n  token     Print admin token\n")
+		fmt.Fprint(stderr, "Usage: gistclaw inspect <subcommand>\n\nSubcommands:\n  status    Show active runs, interrupted runs, approvals, and storage health\n  runs      List all runs with status\n  replay    Print replay for a run\n  token     Print admin token\n")
 		return 1
 	}
 
@@ -142,6 +144,16 @@ func runInspect(configPath string, args []string, stdout, stderr io.Writer) int 
 			return 1
 		}
 		fmt.Fprintf(stdout, "active_runs: %d\ninterrupted_runs: %d\npending_approvals: %d\n", status.ActiveRuns, status.InterruptedRuns, status.PendingApprovals)
+		fmt.Fprintf(stdout, "database_bytes: %d\nwal_bytes: %d\nfree_disk_bytes: %d\nbackup_status: %s\n", status.Storage.DatabaseBytes, status.Storage.WALBytes, status.Storage.FreeDiskBytes, status.Storage.BackupStatus)
+		if status.Storage.LatestBackupAt != nil {
+			fmt.Fprintf(stdout, "latest_backup_at: %s\n", status.Storage.LatestBackupAt.Format(time.RFC3339))
+		}
+		if status.Storage.LatestBackupPath != "" {
+			fmt.Fprintf(stdout, "latest_backup_path: %s\n", status.Storage.LatestBackupPath)
+		}
+		if len(status.Storage.Warnings) > 0 {
+			fmt.Fprintf(stdout, "storage_warnings: %s\n", joinStorageWarnings(status.Storage.Warnings))
+		}
 		return 0
 	case "runs":
 		runs, err := application.ListRuns(context.Background())
@@ -229,4 +241,16 @@ func loadPreparedApp(configPath string) (*app.App, error) {
 		return nil, err
 	}
 	return application, nil
+}
+
+func joinStorageWarnings(warnings []store.HealthWarning) string {
+	if len(warnings) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(warnings))
+	for _, warning := range warnings {
+		parts = append(parts, string(warning))
+	}
+	return strings.Join(parts, ",")
 }

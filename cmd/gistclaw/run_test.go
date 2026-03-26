@@ -3,8 +3,11 @@ package main
 import (
 	"bytes"
 	"database/sql"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -190,5 +193,31 @@ func TestRun_InspectDoesNotInterruptActiveRuns(t *testing.T) {
 	}
 	if status != "active" {
 		t.Fatalf("inspect should not mutate active run status, got %q", status)
+	}
+}
+
+func TestRun_InspectStatusIncludesStorageHealth(t *testing.T) {
+	cfgPath, dbPath := writeCLIConfig(t)
+	seedDB(t, dbPath)
+
+	backupPath := filepath.Join(filepath.Dir(dbPath), "runtime.20260326-010203.db.bak")
+	if err := os.WriteFile(backupPath, []byte("backup"), 0o644); err != nil {
+		t.Fatalf("write backup: %v", err)
+	}
+	backupAt := time.Date(2026, time.March, 26, 1, 2, 3, 0, time.UTC)
+	if err := os.Chtimes(backupPath, backupAt, backupAt); err != nil {
+		t.Fatalf("chtimes backup: %v", err)
+	}
+
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	if code := run([]string{"inspect", "--config", cfgPath, "status"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("inspect status failed with code %d:\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+
+	for _, want := range []string{"database_bytes:", "wal_bytes:", "free_disk_bytes:", "backup_status: fresh"} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("inspect status missing %q:\n%s", want, stdout.String())
+		}
 	}
 }

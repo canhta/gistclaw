@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/canhta/gistclaw/internal/app"
@@ -161,28 +160,17 @@ func runDoctor(configPath string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	// 7. Disk space advisory (500 MB threshold).
-	diskDir := cfg.DatabasePath
-	for i := len(diskDir) - 1; i >= 0; i-- {
-		if diskDir[i] == '/' || diskDir[i] == os.PathSeparator {
-			diskDir = diskDir[:i]
-			break
-		}
-	}
-	if diskDir == "" {
-		diskDir = "."
-	}
-	var stat syscall.Statfs_t
-	if sErr := syscall.Statfs(diskDir, &stat); sErr == nil {
-		available := stat.Bavail * uint64(stat.Bsize)
-		const low = 500 * 1024 * 1024
-		if available < low {
-			checks = append(checks, check{name: "disk", status: "WARN", detail: fmt.Sprintf("available %d bytes (below 500 MB)", available)})
+	if db != nil {
+		health, err := store.LoadHealth(cfg.DatabasePath, time.Now().UTC())
+		if err != nil {
+			checks = append(checks, check{name: "storage", status: "WARN", detail: err.Error()})
 		} else {
-			checks = append(checks, check{name: "disk", status: "PASS", detail: fmt.Sprintf("available %.1f GB", float64(available)/1e9)})
+			status := "PASS"
+			if len(health.Warnings) > 0 {
+				status = "WARN"
+			}
+			checks = append(checks, check{name: "storage", status: status, detail: formatStorageHealth(health)})
 		}
-	} else {
-		checks = append(checks, check{name: "disk", status: "WARN", detail: "could not determine disk space"})
 	}
 
 	if db != nil {
@@ -269,6 +257,30 @@ func enabledMCPTools(tools []toolspkg.MCPToolConfig) int {
 		}
 	}
 	return count
+}
+
+func formatStorageHealth(report store.HealthReport) string {
+	parts := []string{
+		fmt.Sprintf("db=%d", report.DatabaseBytes),
+		fmt.Sprintf("wal=%d", report.WALBytes),
+		fmt.Sprintf("free=%d", report.FreeDiskBytes),
+		fmt.Sprintf("backup=%s", report.BackupStatus),
+	}
+	if report.LatestBackupAt != nil {
+		parts = append(parts, "latest="+report.LatestBackupAt.Format(time.RFC3339))
+	}
+	if len(report.Warnings) > 0 {
+		parts = append(parts, "warnings="+joinStorageWarningDetails(report.Warnings))
+	}
+	return strings.Join(parts, " ")
+}
+
+func joinStorageWarningDetails(warnings []store.HealthWarning) string {
+	parts := make([]string, 0, len(warnings))
+	for _, warning := range warnings {
+		parts = append(parts, string(warning))
+	}
+	return strings.Join(parts, ",")
 }
 
 func resolveBinary(command string) (string, error) {
