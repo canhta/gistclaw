@@ -1043,6 +1043,11 @@ func (r *Runtime) resumeParentAfterChildTerminal(ctx context.Context, child mode
 		}
 	}
 
+	if child.Status != model.RunStatusCompleted {
+		_, err := r.interruptRun(ctx, parent)
+		return err
+	}
+
 	_, err = r.executeRunLoop(ctx, runLoopOpts{
 		runID:             parent.ID,
 		conversationID:    parent.ConversationID,

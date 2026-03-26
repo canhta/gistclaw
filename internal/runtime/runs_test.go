@@ -486,6 +486,151 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 	}
 }
 
+func TestRunEngine_SessionSpawnInterruptsParentWhenChildInterrupts(t *testing.T) {
+	db, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+
+	cs := conversations.NewConversationStore(db)
+	mem := memory.NewStore(db, cs)
+	reg, closer, err := tools.BuildRegistry(context.Background(), tools.BuildOptions{})
+	if err != nil {
+		t.Fatalf("BuildRegistry failed: %v", err)
+	}
+	if closer != nil {
+		t.Cleanup(func() { _ = closer.Close() })
+	}
+
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:       "call-spawn",
+						ToolName: "session_spawn",
+						InputJSON: []byte(`{
+							"agent_id":"patcher",
+							"prompt":"Run the missing binary in the workspace."
+						}`),
+					},
+				},
+				InputTokens:  4,
+				OutputTokens: 6,
+			},
+			{
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:        "call-shell",
+						ToolName:  "shell_exec",
+						InputJSON: []byte(`{"command":"missing-command created.txt"}`),
+					},
+				},
+				InputTokens:  5,
+				OutputTokens: 7,
+			},
+			{Content: "This should not be emitted.", InputTokens: 6, OutputTokens: 8, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
+		Spawn: rt.SpawnTool,
+	})
+
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID: "default",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:      "assistant",
+				Capabilities: []model.AgentCapability{model.CapReadHeavy, model.CapSpawn},
+				ToolProfile:  "read_heavy",
+				CanSpawn:     []string{"patcher"},
+			},
+			"patcher": {
+				AgentID:      "patcher",
+				Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
+				ToolProfile:  "workspace_write",
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	parent, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Coordinate the delivery workflow.",
+		WorkspaceRoot: t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+	if parent.Status != model.RunStatusActive {
+		t.Fatalf("expected parent run to stay active while child waits on approval, got %s", parent.Status)
+	}
+
+	var childID string
+	if err := db.RawDB().QueryRow(
+		"SELECT id FROM runs WHERE parent_run_id = ? ORDER BY created_at ASC LIMIT 1",
+		parent.ID,
+	).Scan(&childID); err != nil {
+		t.Fatalf("query child run: %v", err)
+	}
+
+	var ticketID string
+	if err := db.RawDB().QueryRow(
+		"SELECT id FROM approvals WHERE run_id = ? AND status = 'pending' ORDER BY created_at ASC LIMIT 1",
+		childID,
+	).Scan(&ticketID); err != nil {
+		t.Fatalf("query child approval: %v", err)
+	}
+
+	if err := rt.ResolveApproval(context.Background(), ticketID, "approved"); err != nil {
+		t.Fatalf("ResolveApproval approved: %v", err)
+	}
+
+	parent, err = rt.loadRun(context.Background(), parent.ID)
+	if err != nil {
+		t.Fatalf("reload parent run: %v", err)
+	}
+	if parent.Status != model.RunStatusInterrupted {
+		t.Fatalf("expected parent run interrupted after child interruption, got %s", parent.Status)
+	}
+
+	child, err := rt.loadRun(context.Background(), childID)
+	if err != nil {
+		t.Fatalf("reload child run: %v", err)
+	}
+	if child.Status != model.RunStatusInterrupted {
+		t.Fatalf("expected child run interrupted after approved tool error, got %s", child.Status)
+	}
+
+	var completedEvents int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM events WHERE run_id = ? AND kind = 'run_completed'",
+		parent.ID,
+	).Scan(&completedEvents); err != nil {
+		t.Fatalf("query parent completion events: %v", err)
+	}
+	if completedEvents != 0 {
+		t.Fatalf("expected parent run to stay incomplete after child interruption, got %d completion events", completedEvents)
+	}
+
+	if len(prov.Requests) != 2 {
+		t.Fatalf("expected provider to not resume parent after child interruption, got %d requests", len(prov.Requests))
+	}
+}
+
 func TestRunEngine_IncludesSoulInstructionsInProviderRequests(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(
