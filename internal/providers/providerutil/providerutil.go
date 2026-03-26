@@ -18,22 +18,44 @@ type ToolCallRecordedPayload struct {
 	Decision   string          `json:"decision"`
 }
 
+const maxToolResultContentRunes = 8 << 10
+
+const toolResultTruncationNotice = "\n\n[tool result truncated for model context; rerun with a narrower scope or inspect the source directly]"
+
 func RenderToolResultContent(raw json.RawMessage) string {
+	content := ""
 	var result model.ToolResult
 	if err := json.Unmarshal(raw, &result); err == nil {
 		switch {
 		case result.Output != "" && result.Error != "":
-			return result.Output + "\n" + result.Error
+			content = result.Output + "\n" + result.Error
 		case result.Output != "":
-			return result.Output
+			content = result.Output
 		case result.Error != "":
-			return result.Error
+			content = result.Error
 		}
 	}
-	if len(raw) == 0 {
-		return ""
+	if content == "" {
+		if len(raw) == 0 {
+			return ""
+		}
+		content = string(raw)
 	}
-	return string(raw)
+	return truncateToolResultContent(content)
+}
+
+func truncateToolResultContent(content string) string {
+	runes := []rune(content)
+	if len(runes) <= maxToolResultContentRunes {
+		return content
+	}
+
+	notice := []rune(toolResultTruncationNotice)
+	limit := maxToolResultContentRunes - len(notice)
+	if limit <= 0 {
+		return string(notice)
+	}
+	return string(runes[:limit]) + toolResultTruncationNotice
 }
 
 func SchemaObject(raw string) map[string]any {

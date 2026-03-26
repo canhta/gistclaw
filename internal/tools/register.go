@@ -18,7 +18,7 @@ func BuildRegistry(ctx context.Context, opts BuildOptions) (*Registry, io.Closer
 	var closers multiCloser
 
 	registerRepoTools(reg)
-	reg.Register(NewWebFetchTool(newBoundedHTTPClient(researchTimeout(opts.Research)), 1<<20))
+	reg.Register(NewWebFetchTool(newBoundedHTTPClient(researchTimeout(opts.Research)), defaultWebFetchBytes))
 
 	research := normalizeResearchConfig(opts.Research)
 	if research.Provider != "" {

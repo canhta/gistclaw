@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/model"
@@ -258,6 +259,61 @@ func TestProvider_ToolCallEventsConvertedToMessages(t *testing.T) {
 	if toolResultMsg["tool_call_id"] != "call_123" {
 		t.Fatalf("unexpected tool_call_id %v", toolResultMsg["tool_call_id"])
 	}
+}
+
+func TestProvider_TruncatesOversizedToolResultMessages(t *testing.T) {
+	var capturedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(successResponse("response", 5, 3))
+	}))
+	defer srv.Close()
+
+	toolPayload, _ := json.Marshal(map[string]any{
+		"tool_call_id": "call_oversized",
+		"tool_name":    "web_fetch",
+		"input_json":   map[string]any{"url": "https://example.com"},
+		"output_json":  map[string]any{"output": strings.Repeat("a", 20000), "error": ""},
+		"decision":     "allow",
+	})
+
+	p := New("key", "gpt-4o", srv.URL, "")
+	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "system",
+		MaxTokens:    100,
+		ConversationCtx: []model.Event{
+			{Kind: "tool_call_recorded", PayloadJSON: toolPayload},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	msgs, ok := capturedBody["messages"].([]any)
+	if !ok {
+		t.Fatalf("expected messages array, got %T", capturedBody["messages"])
+	}
+
+	for _, raw := range msgs {
+		msg := raw.(map[string]any)
+		if msg["role"] != "tool" {
+			continue
+		}
+		content, ok := msg["content"].(string)
+		if !ok {
+			t.Fatalf("expected tool content string, got %T", msg["content"])
+		}
+		if !strings.Contains(content, "tool result truncated") {
+			t.Fatalf("expected tool result content to include truncation marker, got %q", content)
+		}
+		if len(content) >= 20000 {
+			t.Fatalf("expected truncated tool result content, got len=%d", len(content))
+		}
+		return
+	}
+
+	t.Fatalf("expected tool result message, got %v", msgs)
 }
 
 func TestProvider_ToolCallsInResponse(t *testing.T) {

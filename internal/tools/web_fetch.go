@@ -20,12 +20,14 @@ type WebFetchTool struct {
 	maxBytes int64
 }
 
+const defaultWebFetchBytes int64 = 32 << 10
+
 func NewWebFetchTool(client *http.Client, maxBytes int64) *WebFetchTool {
 	if client == nil {
 		client = newBoundedHTTPClient(10 * time.Second)
 	}
 	if maxBytes <= 0 {
-		maxBytes = 1 << 20
+		maxBytes = defaultWebFetchBytes
 	}
 	return &WebFetchTool{client: client, maxBytes: maxBytes}
 }

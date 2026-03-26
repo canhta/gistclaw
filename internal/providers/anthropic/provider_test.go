@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	anthropicsdk "github.com/anthropics/anthropic-sdk-go"
@@ -288,6 +289,75 @@ func TestProvider_ToolCallEventsConvertedToMessages(t *testing.T) {
 	}
 	if userBlocks[0].(map[string]any)["type"] != "tool_result" {
 		t.Fatalf("expected tool_result block, got %v", userBlocks[0])
+	}
+}
+
+func TestProvider_TruncatesOversizedToolResultMessages(t *testing.T) {
+	var capturedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(successResponse("response", 5, 3))
+	}))
+	defer srv.Close()
+
+	toolPayload, _ := json.Marshal(map[string]any{
+		"tool_call_id": "toolu_oversized",
+		"tool_name":    "web_fetch",
+		"input_json":   map[string]any{"url": "https://example.com"},
+		"output_json":  map[string]any{"output": strings.Repeat("a", 20000), "error": ""},
+		"decision":     "allow",
+	})
+
+	p := newWithEndpoint("key", "claude-3-5-sonnet-20241022", srv.URL)
+	_, err := p.Generate(context.Background(), runtime.GenerateRequest{
+		Instructions: "system",
+		MaxTokens:    100,
+		ConversationCtx: []model.Event{
+			{Kind: "tool_call_recorded", PayloadJSON: toolPayload},
+		},
+	}, nil)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	msgs, ok := capturedBody["messages"].([]any)
+	if !ok || len(msgs) < 2 {
+		t.Fatalf("expected tool-use and tool-result messages, got %v", capturedBody["messages"])
+	}
+
+	userMsg := msgs[1].(map[string]any)
+	userBlocks, ok := userMsg["content"].([]any)
+	if !ok || len(userBlocks) == 0 {
+		t.Fatalf("expected user tool result block, got %v", userMsg["content"])
+	}
+
+	toolResult := userBlocks[0].(map[string]any)
+	var content string
+	switch raw := toolResult["content"].(type) {
+	case string:
+		content = raw
+	case []any:
+		if len(raw) != 1 {
+			t.Fatalf("expected one tool result content block, got %v", raw)
+		}
+		block, ok := raw[0].(map[string]any)
+		if !ok {
+			t.Fatalf("expected tool result content block object, got %T", raw[0])
+		}
+		text, ok := block["text"].(string)
+		if !ok {
+			t.Fatalf("expected tool result content block text, got %T", block["text"])
+		}
+		content = text
+	default:
+		t.Fatalf("expected tool result content string or block array, got %T", toolResult["content"])
+	}
+	if !strings.Contains(content, "tool result truncated") {
+		t.Fatalf("expected tool result content to include truncation marker, got %q", content)
+	}
+	if len(content) >= 20000 {
+		t.Fatalf("expected truncated tool result content, got len=%d", len(content))
 	}
 }
 

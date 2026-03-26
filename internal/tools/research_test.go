@@ -218,6 +218,50 @@ func TestBuildRegistry_RegistersDefaultWebFetchTool(t *testing.T) {
 	}
 }
 
+func TestBuildRegistry_DefaultWebFetchToolUsesBoundedOutput(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		_, _ = w.Write([]byte(strings.Repeat("a", 128<<10)))
+	}))
+	defer srv.Close()
+
+	reg, closer, err := BuildRegistry(context.Background(), BuildOptions{})
+	if err != nil {
+		t.Fatalf("BuildRegistry: %v", err)
+	}
+	if closer != nil {
+		defer closer.Close()
+	}
+
+	tool, ok := reg.Get("web_fetch")
+	if !ok {
+		t.Fatal("expected web_fetch to be registered")
+	}
+
+	got, err := tool.Invoke(context.Background(), model.ToolCall{
+		ID:        "call-fetch-default-limit",
+		ToolName:  "web_fetch",
+		InputJSON: []byte(`{"url":"` + srv.URL + `"}`),
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	var payload struct {
+		Truncated bool   `json:"truncated"`
+		Text      string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(got.Output), &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if !payload.Truncated {
+		t.Fatal("expected default registry web_fetch output to truncate oversized responses")
+	}
+	if len(payload.Text) > 32<<10 {
+		t.Fatalf("expected default registry web_fetch output to stay within 32KiB, got %d bytes", len(payload.Text))
+	}
+}
+
 func TestBuildRegistry_RejectsUnknownResearchProvider(t *testing.T) {
 	_, _, err := BuildRegistry(context.Background(), BuildOptions{
 		Research: ResearchConfig{Provider: "bing", APIKey: "key"},
