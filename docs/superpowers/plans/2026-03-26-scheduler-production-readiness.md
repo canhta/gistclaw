@@ -10,7 +10,27 @@
 
 ---
 
-## Current Assumption
+## Shipped Status
+
+As of `2026-03-26`, the scheduler rollout described here is shipped on `main`.
+
+Delivered commits:
+
+- `961e4f3` — `feat: add local scheduler`
+- `06afb62` — `feat: add schedule update command`
+- `9150238` — `feat: add scheduler status and health checks`
+- `306fd05` — `feat: tighten scheduler wake timing`
+- `a48ab00` — `docs: sync scheduler design with shipped behavior`
+
+Verification completed during rollout:
+
+- `go test ./...`
+- `go vet ./...`
+- `go build -o bin/gistclaw ./cmd/gistclaw`
+- aggregate coverage held at `70.2%`
+- manual smoke test confirmed one occurrence + one run on first serve start and no duplicate of the same slot after restart
+
+## Historical Assumption
 
 As of `2026-03-26`, this `main` checkout still shows the scheduler as design-only. This plan therefore covers both:
 
