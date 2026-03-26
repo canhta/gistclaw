@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	goRuntime "runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -91,7 +92,7 @@ func TestMain_ServeStartsAndStopsOnInterrupt(t *testing.T) {
 	cfgPath, _ := writeCLIConfig(t)
 
 	cmd := exec.Command(bin, "serve", "--config", cfgPath)
-	var output bytes.Buffer
+	var output lockedBuffer
 	cmd.Stdout = &output
 	cmd.Stderr = &output
 
@@ -203,4 +204,21 @@ func fieldValue(t *testing.T, output, key string) string {
 
 	t.Fatalf("field %q not found in output:\n%s", key, output)
 	return ""
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
