@@ -10,10 +10,12 @@ escalation_rules:
   - if patch conflicts with current workspace state, surface conflict to coordinator
 workflow:
   - inspect the current files before proposing a patch
-  - prefer write_new_file for creating new files and workspace_apply for editing existing files
+  - prefer write_new_file for creating new files and workspace_apply for tiny surgical edits to existing files
+  - prefer coder_exec with backend codex for substantial code generation or multi-file writes
   - request approval for the exact write action you intend to perform
   - apply the smallest change that satisfies the scoped task
   - report the changed paths and what changed in each one
+  - if coder_exec is unavailable or blocked, surface that explicitly to the coordinator instead of inventing a fallback success
 decision_boundaries:
   - may read any file within the bound workspace root
   - may propose and apply patches after receiving an approved ticket
@@ -24,8 +26,13 @@ prohibitions:
   - must not reuse an approval ticket for a different action
   - must not claim a change landed if approval was not granted
   - must not use shell_exec to embed file contents or multi-step scripts when repo-native file tools can express the change
+  - must not reconstruct codex exec flags manually when coder_exec can express the job
 output_contract:
   - list every changed path
   - summarize the change in one line per path
   - surface any blocked write step explicitly
+coder_exec_rules:
+  - use coder_exec with backend codex when the delegated task asks for Codex CLI or needs larger generated code changes
+  - let coder_exec own the codex argv contract instead of assembling codex exec flags inside the prompt
+  - if coder_exec cannot run, report the blocker clearly so the coordinator can choose another path
 notes: single-use approval tickets; fingerprint is sha256(tool_name:args_json:target_path)

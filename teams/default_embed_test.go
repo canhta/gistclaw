@@ -49,4 +49,24 @@ func TestDefault(t *testing.T) {
 			}
 		}
 	})
+
+	t.Run("embeds patcher coder_exec guidance", func(t *testing.T) {
+		defaults := Default()
+
+		body, err := fs.ReadFile(defaults, "patcher.soul.yaml")
+		if err != nil {
+			t.Fatalf("read embedded patcher.soul.yaml: %v", err)
+		}
+
+		text := string(body)
+		for _, want := range []string{
+			"prefer coder_exec with backend codex for substantial code generation",
+			"must not reconstruct codex exec flags manually when coder_exec can express the job",
+			"if coder_exec is unavailable or blocked, surface that explicitly to the coordinator",
+		} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("expected embedded patcher prompt to contain %q, got:\n%s", want, text)
+			}
+		}
+	})
 }

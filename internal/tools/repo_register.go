@@ -13,6 +13,7 @@ func registerRepoTools(reg *Registry) {
 	reg.Register(NewGitShowTool(30, 64<<10))
 	reg.Register(NewGitLogTool(30, 64<<10))
 	reg.Register(NewShellExecTool(30, 64<<10))
+	reg.Register(NewCoderExecTool(180, 64<<10))
 	reg.Register(NewRunTestsTool(60, 64<<10))
 	reg.Register(NewRunBuildTool(60, 64<<10))
 }

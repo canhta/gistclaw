@@ -77,6 +77,20 @@ func TestPolicy_WorkspaceWriteProfileAsksForShellExec(t *testing.T) {
 	}
 }
 
+func TestPolicy_WorkspaceWriteProfileAsksForCoderExec(t *testing.T) {
+	p := &Policy{Profile: "workspace_write"}
+	agent := model.AgentProfile{
+		Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
+		ToolProfile:  "workspace_write",
+	}
+	spec := model.ToolSpec{Name: "coder_exec", Risk: model.RiskHigh, SideEffect: effectExecWrite}
+
+	decision := p.Decide(agent, model.RunProfile{}, spec)
+	if decision.Mode != model.DecisionAsk {
+		t.Fatalf("expected ask for coder_exec with workspace_write profile, got %s", decision.Mode)
+	}
+}
+
 func TestPolicy_ReadToolAlwaysAllowed(t *testing.T) {
 	p := &Policy{Profile: "read_heavy"}
 	agent := model.AgentProfile{

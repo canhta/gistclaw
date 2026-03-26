@@ -51,7 +51,7 @@ func (p *Policy) decide(agent model.AgentProfile, spec model.ToolSpec, effect st
 			Reason: "profile denies risky tools",
 		}
 	case "workspace_write":
-		if spec.Name == "shell_exec" && effect == effectExecWrite {
+		if (spec.Name == "shell_exec" || spec.Name == "coder_exec") && effect == effectExecWrite {
 			return model.ToolDecision{
 				Mode:   model.DecisionAsk,
 				Reason: "workspace_write requires approval for mutating shell commands",
@@ -62,7 +62,7 @@ func (p *Policy) decide(agent model.AgentProfile, spec model.ToolSpec, effect st
 			Reason: "workspace_write allows workspace mutations",
 		}
 	case "operator_facing", "elevated":
-		if spec.Name == "shell_exec" && effect == effectExecWrite {
+		if (spec.Name == "shell_exec" || spec.Name == "coder_exec") && effect == effectExecWrite {
 			return model.ToolDecision{
 				Mode:   model.DecisionAsk,
 				Reason: "mutating shell commands require approval",

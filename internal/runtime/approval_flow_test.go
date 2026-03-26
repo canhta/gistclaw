@@ -134,6 +134,89 @@ func TestResolveApproval_ApprovedExecutesToolAndResumesRun(t *testing.T) {
 	}
 }
 
+func TestResolveApproval_ApprovedCoderExecutesToolAndResumesRun(t *testing.T) {
+	db, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	cs := conversations.NewConversationStore(db)
+	mem := memory.NewStore(db, cs)
+	reg := tools.NewRegistry()
+	reg.Register(&fakeCoderExecTool{})
+	prov := NewMockProvider([]GenerateResult{
+		{
+			ToolCalls: []model.ToolCallRequest{
+				{ID: "call-coder", ToolName: "coder_exec", InputJSON: []byte(`{"backend":"codex","prompt":"Create created.txt"}`)},
+			},
+			StopReason: "tool_calls",
+		},
+		{Content: "done", StopReason: "end_turn"},
+	}, nil)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	workspaceRoot := t.TempDir()
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID:        "conv-approval-coder",
+		AgentID:               "patcher",
+		Objective:             "mutate via coder",
+		WorkspaceRoot:         workspaceRoot,
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, workspaceWriteSnapshot()),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	var ticketID string
+	if err := db.RawDB().QueryRow(
+		"SELECT id FROM approvals WHERE run_id = ? AND status = 'pending' LIMIT 1",
+		run.ID,
+	).Scan(&ticketID); err != nil {
+		t.Fatalf("query approval ticket: %v", err)
+	}
+
+	if err := rt.ResolveApproval(context.Background(), ticketID, "approved"); err != nil {
+		t.Fatalf("ResolveApproval approved: %v", err)
+	}
+
+	run, err = rt.loadRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("load run: %v", err)
+	}
+	if run.Status != model.RunStatusCompleted {
+		t.Fatalf("expected completed run, got %q", run.Status)
+	}
+	data, err := os.ReadFile(filepath.Join(workspaceRoot, "created.txt"))
+	if err != nil {
+		t.Fatalf("expected approved coder tool to create file: %v", err)
+	}
+	if string(data) != "created by coder\n" {
+		t.Fatalf("unexpected created.txt content %q", string(data))
+	}
+
+	var decision, approvalID string
+	if err := db.RawDB().QueryRow(
+		"SELECT decision, COALESCE(approval_id, '') FROM tool_calls WHERE run_id = ? AND tool_name = 'coder_exec' LIMIT 1",
+		run.ID,
+	).Scan(&decision, &approvalID); err != nil {
+		t.Fatalf("query recorded tool call: %v", err)
+	}
+	if decision != string(model.DecisionAllow) || approvalID != ticketID {
+		t.Fatalf("unexpected recorded approval tool call: decision=%q approval_id=%q", decision, approvalID)
+	}
+
+	if len(prov.Requests) != 2 {
+		t.Fatalf("expected provider to resume for second request, got %d requests", len(prov.Requests))
+	}
+	if !containsEventKind(prov.Requests[1].ConversationCtx, "tool_call_recorded") {
+		t.Fatalf("expected resumed provider request to include tool_call_recorded context")
+	}
+}
+
 func TestResolveApproval_ApprovedShellExecRunsApprovedCommand(t *testing.T) {
 	prov := NewMockProvider([]GenerateResult{
 		{
@@ -380,4 +463,30 @@ func containsEventKind(events []model.Event, want string) bool {
 		}
 	}
 	return false
+}
+
+type fakeCoderExecTool struct{}
+
+func (t *fakeCoderExecTool) Name() string { return "coder_exec" }
+
+func (t *fakeCoderExecTool) Spec() model.ToolSpec {
+	return model.ToolSpec{
+		Name:       t.Name(),
+		Risk:       model.RiskHigh,
+		SideEffect: "exec_write",
+	}
+}
+
+func (t *fakeCoderExecTool) Invoke(ctx context.Context, _ model.ToolCall) (model.ToolResult, error) {
+	meta, ok := tools.InvocationContextFrom(ctx)
+	if !ok || meta.WorkspaceRoot == "" {
+		return model.ToolResult{}, tools.ErrWorkspaceRequired
+	}
+	target := filepath.Join(meta.WorkspaceRoot, "created.txt")
+	if err := os.WriteFile(target, []byte("created by coder\n"), 0o644); err != nil {
+		return model.ToolResult{}, err
+	}
+	return model.ToolResult{
+		Output: `{"backend":"codex","command":"codex exec --sandbox workspace-write","cwd":".","stdout":"created created.txt","stderr":"","exit_code":0,"timed_out":false,"truncated":false,"effect":"exec_write"}`,
+	}, nil
 }

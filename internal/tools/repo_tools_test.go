@@ -50,6 +50,7 @@ func TestBuildRegistry_RegistersRepoPowerTools(t *testing.T) {
 		"git_show",
 		"git_log",
 		"shell_exec",
+		"coder_exec",
 		"run_tests",
 		"run_build",
 	} {

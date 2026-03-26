@@ -186,6 +186,7 @@ func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "session_spawn", Risk: model.RiskLow}})
 	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "write_new_file", Risk: model.RiskMedium, SideEffect: "create"}})
+	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "coder_exec", Risk: model.RiskHigh, SideEffect: "exec_write"}})
 	prov := NewMockProvider(
 		[]GenerateResult{
 			{Content: "delegating", InputTokens: 3, OutputTokens: 5, StopReason: "end_turn"},
@@ -231,6 +232,55 @@ func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
 	}
 	if gotNames["write_new_file"] {
 		t.Fatalf("expected write_new_file to be hidden, got %+v", gotNames)
+	}
+	if gotNames["coder_exec"] {
+		t.Fatalf("expected coder_exec to be hidden from read_heavy assistant, got %+v", gotNames)
+	}
+}
+
+func TestRunEngine_AdvertisesCoderExecToWorkspaceWriteAgent(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "coder_exec", Risk: model.RiskHigh, SideEffect: "exec_write"}})
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "patch complete", InputTokens: 3, OutputTokens: 5, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-patcher-tools",
+		AgentID:        "patcher",
+		Objective:      "write the change",
+		WorkspaceRoot:  t.TempDir(),
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{
+			TeamID: "default",
+			Agents: map[string]model.AgentProfile{
+				"patcher": {
+					AgentID:      "patcher",
+					Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
+					ToolProfile:  "workspace_write",
+				},
+			},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if run.Status != model.RunStatusCompleted {
+		t.Fatalf("expected completed run, got %s", run.Status)
+	}
+	if len(prov.Requests) != 1 {
+		t.Fatalf("expected 1 provider request, got %d", len(prov.Requests))
+	}
+
+	gotNames := make(map[string]bool, len(prov.Requests[0].ToolSpecs))
+	for _, spec := range prov.Requests[0].ToolSpecs {
+		gotNames[spec.Name] = true
+	}
+	if !gotNames["coder_exec"] {
+		t.Fatalf("expected coder_exec to be visible to patcher, got %+v", gotNames)
 	}
 }
 
