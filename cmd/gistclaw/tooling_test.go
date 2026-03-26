@@ -170,6 +170,8 @@ func TestRepoTooling_ReleaseContract(t *testing.T) {
 		{
 			path: filepath.Join(root, ".github", "workflows", "ci.yml"),
 			wantSnips: []string{
+				"actions/checkout@v6",
+				"actions/setup-go@v6",
 				"go test ./...",
 				"go test -cover ./...",
 				"go vet ./...",
@@ -179,6 +181,8 @@ func TestRepoTooling_ReleaseContract(t *testing.T) {
 		{
 			path: filepath.Join(root, ".github", "workflows", "release.yml"),
 			wantSnips: []string{
+				"actions/checkout@v6",
+				"actions/setup-go@v6",
 				"refs/tags/v",
 				"GOOS=darwin",
 				"GOARCH=arm64",
@@ -187,6 +191,7 @@ func TestRepoTooling_ReleaseContract(t *testing.T) {
 				"-X github.com/canhta/gistclaw/cmd/gistclaw.version=",
 				"SHA256SUMS.txt",
 				"scripts/gistclaw-install.sh",
+				"gh release create",
 			},
 		},
 		{
@@ -258,6 +263,17 @@ func TestRepoTooling_ReleaseContract(t *testing.T) {
 			for _, snippet := range tc.wantSnips {
 				if !strings.Contains(content, snippet) {
 					t.Fatalf("%s missing %q", tc.path, snippet)
+				}
+			}
+			if strings.HasSuffix(tc.path, filepath.Join(".github", "workflows", "release.yml")) {
+				for _, forbidden := range []string{
+					"actions/checkout@v4",
+					"actions/setup-go@v5",
+					"softprops/action-gh-release",
+				} {
+					if strings.Contains(content, forbidden) {
+						t.Fatalf("%s still contains deprecated release dependency %q", tc.path, forbidden)
+					}
 				}
 			}
 		})

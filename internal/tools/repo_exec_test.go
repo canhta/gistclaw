@@ -3,6 +3,8 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -32,6 +34,7 @@ func TestCommandRunner_StreamsToolLogs(t *testing.T) {
 
 	runner := newCommandRunner(5, 64<<10)
 	root := t.TempDir()
+	shell := mustShellRequest(t, "printf 'line one\\nline two\\n'; printf 'warn one\\n' >&2")
 	sink := &recordingToolLogSink{}
 	ctx := WithInvocationContext(context.Background(), InvocationContext{
 		WorkspaceRoot: root,
@@ -39,11 +42,8 @@ func TestCommandRunner_StreamsToolLogs(t *testing.T) {
 	})
 
 	got, err := runner.run(ctx, commandRequest{
-		command: "zsh",
-		args: []string{
-			"-lc",
-			"printf 'line one\\nline two\\n'; printf 'warn one\\n' >&2",
-		},
+		command: shell.command,
+		args:    shell.args,
 		cwd:    root,
 		effect: effectExecWrite,
 	})
@@ -89,6 +89,7 @@ func TestCommandRunner_StreamsPTYTerminalLogs(t *testing.T) {
 
 	runner := newCommandRunner(5, 64<<10)
 	root := t.TempDir()
+	shell := mustShellRequest(t, "printf '\\033[31mred\\033[0m\\n'; printf 'warn\\n' >&2")
 	sink := &recordingToolLogSink{}
 	ctx := WithInvocationContext(context.Background(), InvocationContext{
 		WorkspaceRoot: root,
@@ -96,11 +97,8 @@ func TestCommandRunner_StreamsPTYTerminalLogs(t *testing.T) {
 	})
 
 	got, err := runner.run(ctx, commandRequest{
-		command: "zsh",
-		args: []string{
-			"-lc",
-			"printf '\\033[31mred\\033[0m\\n'; printf 'warn\\n' >&2",
-		},
+		command: shell.command,
+		args:    shell.args,
 		cwd:    root,
 		effect: effectExecWrite,
 		usePTY: true,
@@ -132,4 +130,37 @@ func TestCommandRunner_StreamsPTYTerminalLogs(t *testing.T) {
 	if !strings.Contains(payload.Stdout, "red") || !strings.Contains(payload.Stdout, "warn") {
 		t.Fatalf("expected PTY stdout to include merged terminal transcript, got %q", payload.Stdout)
 	}
+}
+
+func TestResolveShellCommandPrefersAvailableFallback(t *testing.T) {
+	dir := t.TempDir()
+	fallback := filepath.Join(dir, "sh")
+	if err := os.WriteFile(fallback, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatalf("WriteFile fallback shell: %v", err)
+	}
+
+	t.Setenv("PATH", dir)
+	t.Setenv("SHELL", filepath.Join(dir, "missing-shell"))
+
+	got, err := resolveShellCommand()
+	if err != nil {
+		t.Fatalf("resolveShellCommand: %v", err)
+	}
+	if got.command != fallback {
+		t.Fatalf("expected fallback shell %q, got %q", fallback, got.command)
+	}
+	if len(got.args) != 1 || got.args[0] != "-c" {
+		t.Fatalf("expected sh-style args [-c], got %v", got.args)
+	}
+}
+
+func mustShellRequest(t *testing.T, script string) shellCommand {
+	t.Helper()
+
+	shell, err := resolveShellCommand()
+	if err != nil {
+		t.Fatalf("resolveShellCommand: %v", err)
+	}
+	shell.args = append(append([]string(nil), shell.args...), script)
+	return shell
 }

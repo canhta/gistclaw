@@ -117,13 +117,11 @@ func TestCommandRunner_PrefersCapturedOutputFile(t *testing.T) {
 	runner := newCommandRunner(5, 64<<10)
 	capturePath := filepath.Join(t.TempDir(), "last-message.txt")
 	root := t.TempDir()
+	shell := mustShellRequest(t, fmt.Sprintf("printf 'raw transcript'; printf 'final summary' > %q", capturePath))
 
 	got, err := runner.run(context.Background(), commandRequest{
-		command: "zsh",
-		args: []string{
-			"-lc",
-			fmt.Sprintf("printf 'raw transcript'; printf 'final summary' > %q", capturePath),
-		},
+		command:           shell.command,
+		args:              shell.args,
 		cwd:               root,
 		effect:            effectExecWrite,
 		outputCapturePath: capturePath,

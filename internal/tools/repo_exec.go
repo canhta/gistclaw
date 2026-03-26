@@ -44,6 +44,11 @@ type commandRequest struct {
 	usePTY            bool
 }
 
+type shellCommand struct {
+	command string
+	args    []string
+}
+
 func newCommandRunner(timeoutSec int, maxOutputBytes int) commandRunner {
 	if timeoutSec <= 0 {
 		timeoutSec = 30
@@ -390,12 +395,58 @@ func (t *ShellExecTool) Invoke(ctx context.Context, call model.ToolCall) (model.
 		}
 	}
 	effect := classifyShellCommand(input.Command)
+	shell, err := resolveShellCommand()
+	if err != nil {
+		return model.ToolResult{}, fmt.Errorf("shell_exec: resolve shell: %w", err)
+	}
 	return t.runner.run(ctx, commandRequest{
-		command: "zsh",
-		args:    []string{"-lc", input.Command},
+		command: shell.command,
+		args:    append(shell.args, input.Command),
 		cwd:     cwd,
 		effect:  effect,
 	})
+}
+
+func resolveShellCommand() (shellCommand, error) {
+	candidates := candidateShells()
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		path, err := exec.LookPath(candidate)
+		if err != nil {
+			continue
+		}
+		return shellCommand{
+			command: path,
+			args:    shellArgsForPath(path),
+		}, nil
+	}
+	return shellCommand{}, fmt.Errorf("no supported shell found in PATH")
+}
+
+func candidateShells() []string {
+	return []string{
+		strings.TrimSpace(os.Getenv("SHELL")),
+		"zsh",
+		"bash",
+		"sh",
+	}
+}
+
+func shellArgsForPath(path string) []string {
+	switch filepath.Base(path) {
+	case "bash", "zsh":
+		return []string{"-lc"}
+	default:
+		return []string{"-c"}
+	}
 }
 
 type RunTestsTool struct {
