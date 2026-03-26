@@ -35,6 +35,7 @@ type CoderExecTool struct {
 func NewCoderExecTool(timeoutSec int, maxOutputBytes int) *CoderExecTool {
 	return newCoderExecTool([]coderBackend{
 		newCodexCoderBackend("codex"),
+		newClaudeCodeBackend("claude"),
 	}, newCommandRunner(timeoutSec, maxOutputBytes))
 }
 
@@ -179,6 +180,35 @@ func (b codexCoderBackend) Build(input coderExecInput, cwd string) (commandReque
 		args = append(args, "--skip-git-repo-check")
 	}
 	args = append(args, "-C", cwd, input.Prompt)
+	return commandRequest{
+		command: b.command,
+		args:    args,
+		cwd:     cwd,
+		effect:  effectExecWrite,
+	}, nil
+}
+
+type claudeCodeBackend struct {
+	command string
+}
+
+func newClaudeCodeBackend(command string) coderBackend {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		command = "claude"
+	}
+	return claudeCodeBackend{command: command}
+}
+
+func (b claudeCodeBackend) Name() string { return "claude_code" }
+
+func (b claudeCodeBackend) Build(input coderExecInput, cwd string) (commandRequest, error) {
+	args := []string{
+		"--print",
+		"--output-format", "json",
+		"--permission-mode", "acceptEdits",
+		input.Prompt,
+	}
 	return commandRequest{
 		command: b.command,
 		args:    args,

@@ -118,6 +118,67 @@ func TestCoderExecTool_InvokeHonorsExplicitSkipGitRepoCheckFalse(t *testing.T) {
 	}
 }
 
+func TestCoderExecTool_InvokeBuildsClaudeCodeCommand(t *testing.T) {
+	root := t.TempDir()
+	runner := &recordingCommandRunner{
+		res: model.ToolResult{Output: `{"command":"claude --print --output-format json --permission-mode acceptEdits \"Build it\"","cwd":"/tmp/project","stdout":"ok","stderr":"","exit_code":0,"timed_out":false,"truncated":false,"effect":"exec_write"}`},
+	}
+	tool := newCoderExecTool([]coderBackend{
+		newClaudeCodeBackend("claude"),
+	}, runner)
+
+	got, err := tool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+		ID:       "call-coder",
+		ToolName: tool.Name(),
+		InputJSON: []byte(`{
+			"backend":"claude_code",
+			"cwd":"project",
+			"prompt":"Build it"
+		}`),
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	wantCWD, _, err := resolveWorkspacePath(root, "project")
+	if err != nil {
+		t.Fatalf("resolveWorkspacePath: %v", err)
+	}
+	if runner.req.command != "claude" {
+		t.Fatalf("expected claude command, got %q", runner.req.command)
+	}
+	if runner.req.cwd != wantCWD {
+		t.Fatalf("expected cwd %q, got %q", wantCWD, runner.req.cwd)
+	}
+	wantArgs := []string{
+		"--print",
+		"--output-format", "json",
+		"--permission-mode", "acceptEdits",
+		"Build it",
+	}
+	if len(runner.req.args) != len(wantArgs) {
+		t.Fatalf("expected %d args, got %d (%v)", len(wantArgs), len(runner.req.args), runner.req.args)
+	}
+	for i := range wantArgs {
+		if runner.req.args[i] != wantArgs[i] {
+			t.Fatalf("arg %d: want %q, got %q", i, wantArgs[i], runner.req.args[i])
+		}
+	}
+
+	var payload struct {
+		Backend string `json:"backend"`
+		Stdout  string `json:"stdout"`
+	}
+	if err := json.Unmarshal([]byte(got.Output), &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if payload.Backend != "claude_code" {
+		t.Fatalf("expected claude_code backend, got %q", payload.Backend)
+	}
+	if payload.Stdout != "ok" {
+		t.Fatalf("expected stdout passthrough, got %q", payload.Stdout)
+	}
+}
+
 func TestCoderExecTool_InvokeRejectsUnknownBackend(t *testing.T) {
 	tool := newCoderExecTool([]coderBackend{
 		newCodexCoderBackend("codex"),
