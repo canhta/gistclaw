@@ -1,11 +1,13 @@
 package tools
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -65,10 +67,38 @@ func (r commandRunner) run(ctx context.Context, req commandRequest) (model.ToolR
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
+	stdoutPipe, err := cmd.StdoutPipe()
+	if err != nil {
+		return model.ToolResult{}, fmt.Errorf("tools: stdout pipe: %w", err)
+	}
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return model.ToolResult{}, fmt.Errorf("tools: stderr pipe: %w", err)
+	}
+	if err := cmd.Start(); err != nil {
+		return model.ToolResult{}, fmt.Errorf("tools: start command: %w", err)
+	}
 
-	err := cmd.Run()
+	sink := toolLogSinkFromContext(ctx)
+	stdoutDone := make(chan error, 1)
+	stderrDone := make(chan error, 1)
+	go func() {
+		stdoutDone <- streamCommandOutput(runCtx, stdoutPipe, &stdout, sink, "stdout")
+	}()
+	go func() {
+		stderrDone <- streamCommandOutput(runCtx, stderrPipe, &stderr, sink, "stderr")
+	}()
+
+	err = cmd.Wait()
+	stdoutErr := <-stdoutDone
+	stderrErr := <-stderrDone
+	if err == nil {
+		if stdoutErr != nil {
+			err = stdoutErr
+		} else if stderrErr != nil {
+			err = stderrErr
+		}
+	}
 	result := commandResult{
 		Command: strings.TrimSpace(strings.Join(append([]string{req.command}, req.args...), " ")),
 		CWD:     req.cwd,
@@ -119,6 +149,32 @@ func (r commandRunner) run(ctx context.Context, req commandRequest) (model.ToolR
 		return toolResult, fmt.Errorf("tools: command failed: %w", err)
 	}
 	return toolResult, nil
+}
+
+func streamCommandOutput(ctx context.Context, reader io.Reader, buffer *bytes.Buffer, sink ToolLogSink, stream string) error {
+	buf := bufio.NewReader(reader)
+	for {
+		chunk, err := buf.ReadString('\n')
+		if chunk != "" {
+			buffer.WriteString(chunk)
+			if sink != nil {
+				if err := sink.Record(ctx, ToolLogRecord{
+					Stream:     stream,
+					Text:       chunk,
+					OccurredAt: time.Now().UTC(),
+				}); err != nil {
+					return err
+				}
+			}
+		}
+		if err == nil {
+			continue
+		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return err
+	}
 }
 
 type ApplyPatchTool struct {

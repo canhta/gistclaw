@@ -112,6 +112,40 @@ func (t *specOnlyTool) Invoke(context.Context, model.ToolCall) (model.ToolResult
 	return model.ToolResult{Output: `{"ok":true}`}, nil
 }
 
+type loggingTool struct{}
+
+func (t *loggingTool) Name() string { return "logging_tool" }
+
+func (t *loggingTool) Spec() model.ToolSpec {
+	return model.ToolSpec{
+		Name:       t.Name(),
+		Risk:       model.RiskLow,
+		SideEffect: "read",
+	}
+}
+
+func (t *loggingTool) Invoke(ctx context.Context, _ model.ToolCall) (model.ToolResult, error) {
+	meta, ok := tools.InvocationContextFrom(ctx)
+	if !ok || meta.LogSink == nil {
+		return model.ToolResult{}, fmt.Errorf("missing tool log sink")
+	}
+	if err := meta.LogSink.Record(ctx, tools.ToolLogRecord{
+		Stream:     "stdout",
+		Text:       "planning files\n",
+		OccurredAt: time.Date(2026, time.March, 26, 4, 0, 0, 0, time.UTC),
+	}); err != nil {
+		return model.ToolResult{}, err
+	}
+	if err := meta.LogSink.Record(ctx, tools.ToolLogRecord{
+		Stream:     "stderr",
+		Text:       "warning: fallback path\n",
+		OccurredAt: time.Date(2026, time.March, 26, 4, 0, 1, 0, time.UTC),
+	}); err != nil {
+		return model.ToolResult{}, err
+	}
+	return model.ToolResult{Output: `{"ok":true}`}, nil
+}
+
 func TestRunEngine_StartAndComplete(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(
@@ -1710,6 +1744,80 @@ func TestRunEngine_ProviderInstructionsIncludeWorkspaceSnapshot(t *testing.T) {
 		if !strings.Contains(instructions, want) {
 			t.Fatalf("expected provider instructions to include %q, got:\n%s", want, instructions)
 		}
+	}
+}
+
+func TestRunEngine_JournalsToolLogsAndEmitsReplayDeltas(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	reg.Register(&loggingTool{})
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				Content: "Run the logging tool.",
+				ToolCalls: []model.ToolCallRequest{
+					{ID: "call-log", ToolName: "logging_tool", InputJSON: []byte(`{}`)},
+				},
+				InputTokens:  4,
+				OutputTokens: 5,
+			},
+			{Content: "Logs captured.", InputTokens: 3, OutputTokens: 4, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	sink := &recordingReplaySink{}
+	rt := New(db, cs, reg, mem, prov, sink)
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-tool-log",
+		AgentID:        "assistant",
+		Objective:      "capture tool logs",
+		WorkspaceRoot:  t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if run.Status != model.RunStatusCompleted {
+		t.Fatalf("expected completed run, got %s", run.Status)
+	}
+
+	var eventCount int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM events WHERE run_id = ? AND kind = 'tool_log_recorded'",
+		run.ID,
+	).Scan(&eventCount); err != nil {
+		t.Fatalf("query tool_log_recorded events: %v", err)
+	}
+	if eventCount != 2 {
+		t.Fatalf("expected 2 tool_log_recorded events, got %d", eventCount)
+	}
+
+	var sawStdout bool
+	var sawStderr bool
+	for _, evt := range sink.events {
+		if evt.Kind != "tool_log_recorded" {
+			continue
+		}
+		var payload struct {
+			ToolCallID string `json:"tool_call_id"`
+			ToolName   string `json:"tool_name"`
+			Stream     string `json:"stream"`
+			Text       string `json:"text"`
+		}
+		if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
+			t.Fatalf("unmarshal tool log payload: %v", err)
+		}
+		if payload.ToolCallID != "call-log" || payload.ToolName != "logging_tool" {
+			t.Fatalf("unexpected tool log payload %+v", payload)
+		}
+		switch payload.Stream {
+		case "stdout":
+			sawStdout = payload.Text == "planning files\n"
+		case "stderr":
+			sawStderr = payload.Text == "warning: fallback path\n"
+		}
+	}
+	if !sawStdout || !sawStderr {
+		t.Fatalf("expected stdout and stderr replay deltas, got %+v", sink.events)
 	}
 }
 

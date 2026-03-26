@@ -24,14 +24,19 @@ type ReplayGraph struct {
 }
 
 type GraphNode struct {
-	ID          string
-	ParentRunID string
-	AgentID     string
-	SessionID   string
-	Objective   string
-	Status      model.RunStatus
-	Depth       int
-	UpdatedAt   time.Time
+	ID           string
+	ParentRunID  string
+	AgentID      string
+	SessionID    string
+	Objective    string
+	Status       model.RunStatus
+	ModelLane    string
+	ModelID      string
+	InputTokens  int
+	OutputTokens int
+	CreatedAt    time.Time
+	Depth        int
+	UpdatedAt    time.Time
 }
 
 type RunGraphSnapshot struct {
@@ -118,13 +123,17 @@ func (s *Service) LoadGraph(ctx context.Context, rootRunID string) (ReplayGraph,
 
 func (s *Service) LoadGraphSnapshot(ctx context.Context, rootRunID string) (RunGraphSnapshot, error) {
 	rows, err := s.db.RawDB().QueryContext(ctx,
-		`WITH RECURSIVE lineage(id, parent_run_id, agent_id, session_id, objective, status, updated_at, created_at, depth) AS (
+		`WITH RECURSIVE lineage(id, parent_run_id, agent_id, session_id, objective, status, model_lane, model_id, input_tokens, output_tokens, updated_at, created_at, depth) AS (
 			SELECT id,
 			       COALESCE(parent_run_id, ''),
 			       agent_id,
 			       COALESCE(session_id, ''),
 			       COALESCE(objective, ''),
 			       status,
+			       COALESCE(model_lane, ''),
+			       COALESCE(model_id, ''),
+			       COALESCE(input_tokens, 0),
+			       COALESCE(output_tokens, 0),
 			       updated_at,
 			       created_at,
 			       0
@@ -137,13 +146,17 @@ func (s *Service) LoadGraphSnapshot(ctx context.Context, rootRunID string) (RunG
 			       COALESCE(r.session_id, ''),
 			       COALESCE(r.objective, ''),
 			       r.status,
+			       COALESCE(r.model_lane, ''),
+			       COALESCE(r.model_id, ''),
+			       COALESCE(r.input_tokens, 0),
+			       COALESCE(r.output_tokens, 0),
 			       r.updated_at,
 			       r.created_at,
 			       lineage.depth + 1
 			FROM runs r
 			INNER JOIN lineage ON r.parent_run_id = lineage.id
 		)
-		SELECT id, parent_run_id, agent_id, session_id, objective, status, updated_at, depth
+		SELECT id, parent_run_id, agent_id, session_id, objective, status, model_lane, model_id, input_tokens, output_tokens, updated_at, created_at, depth
 		FROM lineage
 		ORDER BY depth ASC, created_at ASC, id ASC`,
 		rootRunID,
@@ -164,7 +177,12 @@ func (s *Service) LoadGraphSnapshot(ctx context.Context, rootRunID string) (RunG
 			&node.SessionID,
 			&node.Objective,
 			&status,
+			&node.ModelLane,
+			&node.ModelID,
+			&node.InputTokens,
+			&node.OutputTokens,
 			&node.UpdatedAt,
+			&node.CreatedAt,
 			&node.Depth,
 		); err != nil {
 			return RunGraphSnapshot{}, fmt.Errorf("replay: scan graph lineage: %w", err)

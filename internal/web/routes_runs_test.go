@@ -1,34 +1,41 @@
 package web
 
 import (
-	"strings"
 	"testing"
 	"time"
 )
 
-func TestHumanizeRunRelativeTime(t *testing.T) {
+func TestFormatRunTokenSummary(t *testing.T) {
 	t.Parallel()
 
-	now := time.Date(2026, time.March, 26, 8, 0, 0, 0, time.UTC)
 	cases := []struct {
-		name string
-		when time.Time
-		want string
+		name         string
+		inputTokens  int
+		outputTokens int
+		want         string
 	}{
-		{name: "just now", when: now.Add(-20 * time.Second), want: "just now"},
-		{name: "minutes", when: now.Add(-5 * time.Minute), want: "5m ago"},
-		{name: "hours", when: now.Add(-3 * time.Hour), want: "3h ago"},
-		{name: "days", when: now.Add(-48 * time.Hour), want: "2d ago"},
+		{name: "small values stay raw", inputTokens: 34, outputTokens: 55, want: "34 in / 55 out"},
+		{name: "thousands compact to k", inputTokens: 2730, outputTokens: 28, want: "2.7K in / 28 out"},
+		{name: "millions compact to m", inputTokens: 1200000, outputTokens: 84000, want: "1.2M in / 84K out"},
 	}
 
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := humanizeRunRelativeTime(now, tc.when); got != tc.want {
+			if got := formatRunTokenSummary(tc.inputTokens, tc.outputTokens); got != tc.want {
 				t.Fatalf("expected %q, got %q", tc.want, got)
 			}
 		})
+	}
+}
+
+func TestFormatRunCompactTimestamp(t *testing.T) {
+	t.Parallel()
+
+	ts := time.Date(2026, time.March, 25, 10, 15, 9, 0, time.UTC)
+	if got := formatRunCompactTimestamp(ts); got != "2026-03-25 10:15 UTC" {
+		t.Fatalf("expected compact timestamp, got %q", got)
 	}
 }
 
@@ -69,14 +76,6 @@ func TestSummarizeRunBlocker(t *testing.T) {
 }
 
 func TestBuildRunListClusters(t *testing.T) {
-	previousNow := runListNow
-	runListNow = func() time.Time {
-		return time.Date(2026, time.March, 26, 8, 0, 0, 0, time.UTC)
-	}
-	t.Cleanup(func() {
-		runListNow = previousNow
-	})
-
 	roots := []runListRow{
 		{
 			ID:           "run-root",
@@ -125,8 +124,14 @@ func TestBuildRunListClusters(t *testing.T) {
 	if cluster.Root.TokenSummary != "34 in / 55 out" {
 		t.Fatalf("expected token summary, got %q", cluster.Root.TokenSummary)
 	}
-	if !strings.Contains(cluster.Root.StartedAtExact, "UTC") {
-		t.Fatalf("expected exact UTC timestamp, got %q", cluster.Root.StartedAtExact)
+	if cluster.Root.StartedAtShort != "2026-03-25 10:00 UTC" {
+		t.Fatalf("expected compact started-at label, got %q", cluster.Root.StartedAtShort)
+	}
+	if cluster.Root.LastActivityShort != "2026-03-25 11:00 UTC" {
+		t.Fatalf("expected compact last-activity label, got %q", cluster.Root.LastActivityShort)
+	}
+	if cluster.Root.StartedAtExact != "2026-03-25 10:00:00 UTC" {
+		t.Fatalf("expected exact started-at timestamp for drill-down, got %q", cluster.Root.StartedAtExact)
 	}
 	if cluster.ChildCountLabel != "1 worker" {
 		t.Fatalf("expected child count label, got %q", cluster.ChildCountLabel)
@@ -136,6 +141,27 @@ func TestBuildRunListClusters(t *testing.T) {
 	}
 	if len(cluster.Children) != 1 || cluster.Children[0].Depth != 1 {
 		t.Fatalf("expected one depth-1 child, got %#v", cluster.Children)
+	}
+}
+
+func TestFormatStructuredTextView(t *testing.T) {
+	t.Parallel()
+
+	view := buildStructuredTextView("OpenClaw summary\n\n1. Research the system\n2. Build the page\n3. Verify the output", 3)
+	if got := len(view.Blocks); got != 2 {
+		t.Fatalf("expected 2 blocks, got %d", got)
+	}
+	if view.Blocks[0].Kind != "paragraph" || view.Blocks[0].Text != "OpenClaw summary" {
+		t.Fatalf("unexpected first block: %+v", view.Blocks[0])
+	}
+	if view.Blocks[1].Kind != "ordered_list" || len(view.Blocks[1].Items) != 3 {
+		t.Fatalf("expected ordered list block, got %+v", view.Blocks[1])
+	}
+	if view.PreviewText != "OpenClaw summary\n1. Research the system\n2. Build the page" {
+		t.Fatalf("unexpected preview text %q", view.PreviewText)
+	}
+	if !view.HasOverflow {
+		t.Fatal("expected preview to report overflow")
 	}
 }
 

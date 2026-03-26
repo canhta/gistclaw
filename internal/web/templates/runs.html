@@ -125,13 +125,11 @@
         </div>
         <div class="run-cluster-meta">
           <span class="run-cluster-label">Started</span>
-          <time datetime="{{.Root.StartedAtISO}}" title="{{.Root.StartedAtExact}}">{{.Root.StartedAtShort}}</time>
-          <span class="subtle">{{.Root.StartedAtExact}}</span>
+          <time datetime="{{.Root.StartedAtISO}}">{{.Root.StartedAtShort}}</time>
         </div>
         <div class="run-cluster-meta">
           <span class="run-cluster-label">Last activity</span>
-          <time datetime="{{.Root.LastActivityISO}}" title="{{.Root.LastActivityExact}}">{{.Root.LastActivityShort}}</time>
-          <span class="subtle">{{.Root.LastActivityExact}}</span>
+          <time datetime="{{.Root.LastActivityISO}}">{{.Root.LastActivityShort}}</time>
         </div>
       </summary>
       {{if .Children}}
@@ -159,13 +157,11 @@
             </div>
             <div class="run-cluster-meta">
               <span class="run-cluster-label">Started</span>
-              <time datetime="{{.StartedAtISO}}" title="{{.StartedAtExact}}">{{.StartedAtShort}}</time>
-              <span class="subtle">{{.StartedAtExact}}</span>
+              <time datetime="{{.StartedAtISO}}">{{.StartedAtShort}}</time>
             </div>
             <div class="run-cluster-meta">
               <span class="run-cluster-label">Last activity</span>
-              <time datetime="{{.LastActivityISO}}" title="{{.LastActivityExact}}">{{.LastActivityShort}}</time>
-              <span class="subtle">{{.LastActivityExact}}</span>
+              <time datetime="{{.LastActivityISO}}">{{.LastActivityShort}}</time>
             </div>
           </article>
         {{end}}

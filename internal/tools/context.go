@@ -3,15 +3,27 @@ package tools
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/canhta/gistclaw/internal/model"
 )
+
+type ToolLogRecord struct {
+	Stream     string
+	Text       string
+	OccurredAt time.Time
+}
+
+type ToolLogSink interface {
+	Record(context.Context, ToolLogRecord) error
+}
 
 type InvocationContext struct {
 	WorkspaceRoot string
 	SessionID     string
 	Agent         model.AgentProfile
 	ApprovalID    string
+	LogSink       ToolLogSink
 }
 
 type invocationContextKey struct{}
@@ -33,4 +45,12 @@ func workspaceRootFromContext(ctx context.Context) (string, error) {
 		return "", ErrWorkspaceRequired
 	}
 	return meta.WorkspaceRoot, nil
+}
+
+func toolLogSinkFromContext(ctx context.Context) ToolLogSink {
+	meta, ok := InvocationContextFrom(ctx)
+	if !ok {
+		return nil
+	}
+	return meta.LogSink
 }

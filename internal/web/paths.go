@@ -40,6 +40,14 @@ func runEventsPath(runID string) string {
 	return runDetailPath(runID) + "/events"
 }
 
+func runNodeDetailPath(runID, nodeRunID string) string {
+	return runDetailPath(runID) + "/nodes/" + url.PathEscape(nodeRunID)
+}
+
+func runNodeDetailTemplatePath(runID string) string {
+	return runDetailPath(runID) + "/nodes/__RUN_ID__"
+}
+
 func runDismissPath(runID string) string {
 	return runDetailPath(runID) + "/dismiss"
 }

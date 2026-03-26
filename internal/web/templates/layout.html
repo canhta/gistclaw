@@ -626,6 +626,29 @@
       word-break: break-word;
       font: 13px/1.6 var(--font-mono);
     }
+    .structured-text {
+      display: grid;
+      gap: 12px;
+      color: var(--text-1);
+    }
+    .structured-text p {
+      margin: 0;
+      color: var(--text-1);
+    }
+    .structured-list {
+      margin: 0;
+      padding-left: 20px;
+      display: grid;
+      gap: 6px;
+    }
+    .structured-preview {
+      white-space: pre-line;
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 3;
+      overflow: hidden;
+      word-break: break-word;
+    }
     .error {
       border: 1.5px solid var(--error);
       color: var(--error);
@@ -990,6 +1013,14 @@
       padding: 0 8px;
       font-size: 11px;
     }
+    .btn-inline {
+      min-height: 28px;
+      padding: 0 10px;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
     .choice-list {
       display: grid;
       gap: 8px;
@@ -1286,6 +1317,7 @@
       border-left: 4px solid var(--border-hard);
       padding: 12px;
       background: var(--surface);
+      cursor: pointer;
     }
     .graph-node.is-pending {
       border-left-color: var(--pending);
@@ -1350,6 +1382,47 @@
       font-weight: 700;
       letter-spacing: 0.08em;
       text-transform: uppercase;
+    }
+    .run-node-modal {
+      width: min(920px, calc(100vw - 40px));
+      max-height: calc(100vh - 48px);
+      padding: 0;
+      border: 1.5px solid var(--border-hard);
+      background: var(--surface);
+      color: var(--text-1);
+    }
+    .run-node-modal::backdrop {
+      background: color-mix(in srgb, var(--border-hard) 28%, transparent);
+    }
+    .run-node-modal-frame {
+      display: grid;
+      gap: 16px;
+      padding: 22px 24px;
+    }
+    .run-node-modal-head {
+      display: flex;
+      gap: 16px;
+      align-items: start;
+      justify-content: space-between;
+    }
+    .run-node-modal-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .run-node-modal-tabs .is-active {
+      border-color: var(--border-hard);
+      color: var(--text-1);
+      background: var(--surface);
+    }
+    .run-node-modal-panel {
+      display: grid;
+      gap: 12px;
+      min-height: 180px;
+      overflow: auto;
+      padding-right: 4px;
     }
     .graph-headline {
       margin: 0 0 16px 0;

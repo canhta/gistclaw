@@ -1,3 +1,25 @@
+{{define "structured_text_blocks"}}
+  {{range .}}
+    {{if eq .Kind "paragraph"}}
+      <p>{{.Text}}</p>
+    {{end}}
+    {{if eq .Kind "ordered_list"}}
+      <ol class="structured-list"{{if gt .Start 1}} start="{{.Start}}"{{end}}>
+        {{range .Items}}
+          <li>{{.}}</li>
+        {{end}}
+      </ol>
+    {{end}}
+    {{if eq .Kind "unordered_list"}}
+      <ul class="structured-list">
+        {{range .Items}}
+          <li>{{.}}</li>
+        {{end}}
+      </ul>
+    {{end}}
+  {{end}}
+{{end}}
+
 {{define "run_detail_body"}}
 <section class="page-header">
   <span class="page-eyebrow">Execution</span>
@@ -74,8 +96,8 @@
     <div class="graph-stage">
       <section class="graph-stage-panel graph-stage-panel-board">
         <div class="panel-kicker">Readable board</div>
-        <p class="panel-note">Cards lead with owner, status, and timestamp so you can scan the handoff order without decoding raw IDs.</p>
-        <div id="run-graph-board" class="graph-board" data-graph-url="{{.GraphURL}}">
+        <p class="panel-note">Cards stay summary-first. Click any node to inspect the full task, output, chain, and execution evidence in a modal.</p>
+        <div id="run-graph-board" class="graph-board" data-graph-url="{{.GraphURL}}" data-node-detail-url-template="{{.NodeDetailURLTemplate}}">
           {{range .Graph.Columns}}
             <section class="graph-column" data-depth="{{.Depth}}">
               <div class="graph-column-head">
@@ -84,7 +106,7 @@
               </div>
               <div class="graph-node-stack">
                 {{range .Nodes}}
-                  <article class="graph-node {{.StatusClass}}" data-run-id="{{.ID}}">
+                  <article class="graph-node {{.StatusClass}}" data-run-id="{{.ID}}" data-open-node-detail>
                     <div class="graph-node-head">
                       <div class="stack-sm">
                         <div class="button-row">
@@ -96,13 +118,26 @@
                           <div class="mono subtle">Run {{.ShortID}}</div>
                         </div>
                       </div>
-                      <div class="graph-node-time">
+                      <button class="btn btn-subtle btn-inline" type="button" data-open-node-detail>Read more</button>
+                    </div>
+                    <div class="graph-node-objective structured-preview">{{if .ObjectivePreview}}{{.ObjectivePreview}}{{else}}No objective captured for this run.{{end}}</div>
+                    <div class="graph-node-facts">
+                      <div class="graph-node-fact">
+                        <span class="graph-node-fact-label">Model</span>
+                        <span>{{.ModelDisplay}}</span>
+                      </div>
+                      <div class="graph-node-fact">
+                        <span class="graph-node-fact-label">Tokens</span>
+                        <span>{{.TokenSummary}}</span>
+                      </div>
+                      <div class="graph-node-fact">
+                        <span class="graph-node-fact-label">Started</span>
+                        <span class="mono">{{.StartedAtLabel}}</span>
+                      </div>
+                      <div class="graph-node-fact">
                         <span class="graph-node-fact-label">Updated</span>
                         <span class="mono">{{.UpdatedAtLabel}}</span>
                       </div>
-                    </div>
-                    <div class="graph-node-objective">{{if .Objective}}{{.Objective}}{{else}}No objective captured for this run.{{end}}</div>
-                    <div class="graph-node-facts">
                       {{if .SessionShortID}}
                       <div class="graph-node-fact">
                         <span class="graph-node-fact-label">Session</span>
@@ -125,7 +160,7 @@
       </section>
       <section class="graph-stage-panel">
         <div class="panel-kicker">Lineage map</div>
-        <p class="panel-note">Use the diagram for delegation shape and dependency lines after the board tells you what each worker is doing.</p>
+        <p class="panel-note">Use the diagram for delegation shape after the board tells you which worker needs inspection next.</p>
         <div id="run-graph-diagram" class="graph-diagram" aria-label="Run collaboration diagram"></div>
       </section>
     </div>
@@ -178,7 +213,7 @@
                   <div class="row-title">Completed turn</div>
                   <div class="mono subtle">{{.CreatedAtLabel}}</div>
                 </div>
-                <pre class="run-output-text">{{.Content}}</pre>
+                <div class="structured-text">{{template "structured_text_blocks" .Structured.Blocks}}</div>
               </article>
             {{end}}
           {{else}}
@@ -215,6 +250,30 @@
     </section>
   </div>
 </section>
+<dialog id="run-node-modal" class="run-node-modal">
+  <form method="dialog" class="run-node-modal-frame">
+    <div class="run-node-modal-head">
+      <div class="stack-sm">
+        <span class="panel-kicker">Node inspector</span>
+        <div id="run-node-modal-title" class="row-title">Run node</div>
+        <div id="run-node-modal-subtitle" class="mono subtle"></div>
+      </div>
+      <button class="btn btn-subtle btn-inline" type="submit">Close</button>
+    </div>
+    <div class="run-node-modal-tabs" role="tablist" aria-label="Node detail tabs">
+      <button type="button" class="btn btn-subtle btn-inline is-active" data-node-tab="overview">Overview</button>
+      <button type="button" class="btn btn-subtle btn-inline" data-node-tab="task">Task</button>
+      <button type="button" class="btn btn-subtle btn-inline" data-node-tab="output">Output</button>
+      <button type="button" class="btn btn-subtle btn-inline" data-node-tab="chain">Chain</button>
+      <button type="button" class="btn btn-subtle btn-inline" data-node-tab="logs">Logs</button>
+    </div>
+    <section id="run-node-modal-overview" class="run-node-modal-panel" data-node-panel="overview"></section>
+    <section id="run-node-modal-task" class="run-node-modal-panel" data-node-panel="task" hidden></section>
+    <section id="run-node-modal-output" class="run-node-modal-panel" data-node-panel="output" hidden></section>
+    <section id="run-node-modal-chain" class="run-node-modal-panel" data-node-panel="chain" hidden></section>
+    <section id="run-node-modal-logs" class="run-node-modal-panel" data-node-panel="logs" hidden></section>
+  </form>
+</dialog>
 <script src="/assets/vendor/cytoscape.min.js"></script>
 <script src="/assets/vendor/dagre.min.js"></script>
 <script src="/assets/vendor/cytoscape-dagre.js"></script>
@@ -247,6 +306,17 @@
   const graphSummary = document.getElementById("run-graph-summary");
   const graphHeadline = document.getElementById("run-graph-headline");
   const graphURL = graphBoard ? graphBoard.dataset.graphUrl : "";
+  const nodeDetailURLTemplate = graphBoard ? graphBoard.dataset.nodeDetailUrlTemplate || "" : "";
+  const nodeModal = document.getElementById("run-node-modal");
+  const nodeModalTitle = document.getElementById("run-node-modal-title");
+  const nodeModalSubtitle = document.getElementById("run-node-modal-subtitle");
+  const nodeModalOverview = document.getElementById("run-node-modal-overview");
+  const nodeModalTask = document.getElementById("run-node-modal-task");
+  const nodeModalOutput = document.getElementById("run-node-modal-output");
+  const nodeModalChain = document.getElementById("run-node-modal-chain");
+  const nodeModalLogs = document.getElementById("run-node-modal-logs");
+  const nodeTabButtons = document.querySelectorAll("[data-node-tab]");
+  const nodePanels = document.querySelectorAll("[data-node-panel]");
   let cy = null;
   let dagreRegistered = false;
   let draft = "";
@@ -254,6 +324,9 @@
   let graphRefreshInFlight = false;
   let graphRefreshQueued = false;
   let lastGraphSnapshot = null;
+  let nodeDetailPoll = null;
+  let nodeStream = null;
+  let activeNodeRunID = "";
   let eventCount = events ? Number(events.dataset.eventCount || "0") : 0;
   let turnCount = root ? Number(root.dataset.turnCount || "0") : 0;
 
@@ -280,6 +353,386 @@
     }
     const text = String(value).replaceAll("_", " ");
     return text.charAt(0).toUpperCase() + text.slice(1);
+  }
+
+  function clearNodeDetailPoll() {
+    if (!nodeDetailPoll) {
+      return;
+    }
+    window.clearInterval(nodeDetailPoll);
+    nodeDetailPoll = null;
+  }
+
+  function clearNodeStream() {
+    if (!nodeStream) {
+      return;
+    }
+    nodeStream.close();
+    nodeStream = null;
+  }
+
+  function structuredTextFragment(view) {
+    const fragment = document.createDocumentFragment();
+    const blocks = Array.isArray(view && view.blocks) ? view.blocks : [];
+    if (blocks.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "Nothing recorded yet.";
+      fragment.appendChild(empty);
+      return fragment;
+    }
+    for (const block of blocks) {
+      if (!block || !block.kind) {
+        continue;
+      }
+      if (block.kind === "paragraph") {
+        const paragraph = document.createElement("p");
+        paragraph.textContent = block.text || "";
+        fragment.appendChild(paragraph);
+        continue;
+      }
+      if (block.kind === "ordered_list" || block.kind === "unordered_list") {
+        const list = document.createElement(block.kind === "ordered_list" ? "ol" : "ul");
+        list.className = "structured-list";
+        if (block.kind === "ordered_list" && Number(block.start) > 1) {
+          list.start = Number(block.start);
+        }
+        for (const item of block.items || []) {
+          const li = document.createElement("li");
+          li.textContent = item;
+          list.appendChild(li);
+        }
+        fragment.appendChild(list);
+      }
+    }
+    return fragment;
+  }
+
+  function buildStructuredTextView(text) {
+    const normalized = String(text || "").replaceAll("\r\n", "\n");
+    const lines = normalized.split("\n");
+    const blocks = [];
+    let paragraph = [];
+    let listItems = [];
+    let listKind = "";
+    let listStart = 1;
+
+    function flushParagraph() {
+      if (paragraph.length === 0) {
+        return;
+      }
+      blocks.push({kind: "paragraph", text: paragraph.join(" ")});
+      paragraph = [];
+    }
+
+    function flushList() {
+      if (listItems.length === 0) {
+        return;
+      }
+      blocks.push({kind: listKind, items: [...listItems], start: listStart});
+      listItems = [];
+      listKind = "";
+      listStart = 1;
+    }
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) {
+        flushParagraph();
+        flushList();
+        continue;
+      }
+      const ordered = line.match(/^(\d+)[.)]\s+(.*)$/);
+      if (ordered) {
+        flushParagraph();
+        if (listKind && listKind !== "ordered_list") {
+          flushList();
+        }
+        if (!listKind) {
+          listKind = "ordered_list";
+          listStart = Number(ordered[1]) || 1;
+        }
+        listItems.push(ordered[2]);
+        continue;
+      }
+      if (line.startsWith("- ") || line.startsWith("* ")) {
+        flushParagraph();
+        if (listKind && listKind !== "unordered_list") {
+          flushList();
+        }
+        if (!listKind) {
+          listKind = "unordered_list";
+        }
+        listItems.push(line.slice(2).trim());
+        continue;
+      }
+      flushList();
+      paragraph.push(line);
+    }
+    flushParagraph();
+    flushList();
+    return {blocks};
+  }
+
+  function renderStructuredText(container, view) {
+    if (!container) {
+      return;
+    }
+    container.replaceChildren(structuredTextFragment(view));
+  }
+
+  function nodeDetailURL(runID) {
+    if (!nodeDetailURLTemplate || !runID) {
+      return "";
+    }
+    return nodeDetailURLTemplate.replace("__RUN_ID__", encodeURIComponent(runID));
+  }
+
+  function nodeEventsURL(runID) {
+    if (!runID) {
+      return "";
+    }
+    return `/operate/runs/${encodeURIComponent(runID)}/events`;
+  }
+
+  function setNodeTab(tab) {
+    for (const button of nodeTabButtons) {
+      button.classList.toggle("is-active", button.dataset.nodeTab === tab);
+    }
+    for (const panel of nodePanels) {
+      panel.hidden = panel.dataset.nodePanel !== tab;
+    }
+  }
+
+  function metricRow(labelText, valueText) {
+    const row = document.createElement("div");
+    row.className = "graph-node-fact";
+    const label = document.createElement("span");
+    label.className = "graph-node-fact-label";
+    label.textContent = labelText;
+    row.appendChild(label);
+    const value = document.createElement("span");
+    value.textContent = valueText || "Not recorded";
+    row.appendChild(value);
+    return row;
+  }
+
+  function renderNodeOverview(detail) {
+    if (!nodeModalOverview) {
+      return;
+    }
+    const grid = document.createElement("div");
+    grid.className = "graph-node-facts";
+    grid.appendChild(metricRow("Status", detail.status_label || detail.status || "unknown"));
+    grid.appendChild(metricRow("Model", detail.model_display || "not recorded"));
+    grid.appendChild(metricRow("Tokens", detail.token_exact_summary || detail.token_summary || "not recorded"));
+    grid.appendChild(metricRow("Started", detail.started_at_label || "Not recorded yet"));
+    grid.appendChild(metricRow("Last activity", detail.last_activity_label || "Not recorded yet"));
+    if (detail.session_short_id) {
+      grid.appendChild(metricRow("Session", detail.session_short_id));
+    }
+    if (detail.parent_short_id) {
+      grid.appendChild(metricRow("Parent", detail.parent_short_id));
+    }
+    nodeModalOverview.replaceChildren(grid);
+  }
+
+  function renderNodeChain(detail) {
+    if (!nodeModalChain) {
+      return;
+    }
+    const wrap = document.createElement("div");
+    wrap.className = "stack-md";
+
+    const path = document.createElement("div");
+    path.className = "structured-text";
+    const pathTitle = document.createElement("p");
+    pathTitle.className = "graph-node-fact-label";
+    pathTitle.textContent = "Delegation path";
+    path.appendChild(pathTitle);
+    const ordered = document.createElement("ol");
+    ordered.className = "structured-list";
+    for (const step of (detail.chain && detail.chain.path) || []) {
+      const item = document.createElement("li");
+      item.textContent = `${step.agent_id || "unknown"} · ${step.short_id || step.run_id}`;
+      ordered.appendChild(item);
+    }
+    path.appendChild(ordered);
+    wrap.appendChild(path);
+
+    const children = (detail.chain && detail.chain.children) || [];
+    if (children.length > 0) {
+      const childSection = document.createElement("div");
+      childSection.className = "structured-text";
+      const childTitle = document.createElement("p");
+      childTitle.className = "graph-node-fact-label";
+      childTitle.textContent = "Delegated children";
+      childSection.appendChild(childTitle);
+      const list = document.createElement("ul");
+      list.className = "structured-list";
+      for (const child of children) {
+        const item = document.createElement("li");
+        item.textContent = `${child.agent_id || "unknown"} · ${child.short_id || child.run_id}`;
+        list.appendChild(item);
+      }
+      childSection.appendChild(list);
+      wrap.appendChild(childSection);
+    }
+
+    nodeModalChain.replaceChildren(wrap);
+  }
+
+  function renderNodeLogs(detail) {
+    if (!nodeModalLogs) {
+      return;
+    }
+    const logs = Array.isArray(detail.logs) ? detail.logs : [];
+    if (logs.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "muted";
+      empty.textContent = "No execution logs recorded yet.";
+      nodeModalLogs.replaceChildren(empty);
+      return;
+    }
+    const list = document.createElement("div");
+    list.className = "stack-md";
+    for (const entry of logs) {
+      const card = document.createElement("article");
+      card.className = "run-row run-timeline-card";
+      card.appendChild(timelineHead(entry.title || entry.tool_name || "Log", entry.created_at_label || ""));
+      const meta = document.createElement("div");
+      meta.className = "mono subtle";
+      meta.textContent = entry.stream || "log";
+      card.appendChild(meta);
+      const body = document.createElement("pre");
+      body.className = "run-output-text";
+      body.textContent = entry.body || "";
+      card.appendChild(body);
+      list.appendChild(card);
+    }
+    nodeModalLogs.replaceChildren(list);
+  }
+
+  function appendNodeLogEvent(payload, occurredAt) {
+    if (!nodeModalLogs || !payload || !payload.text) {
+      return;
+    }
+    const empty = nodeModalLogs.querySelector(".muted");
+    if (empty) {
+      empty.remove();
+    }
+    let list = nodeModalLogs.firstElementChild;
+    if (!(list instanceof HTMLElement) || !list.classList.contains("stack-md")) {
+      list = document.createElement("div");
+      list.className = "stack-md";
+      nodeModalLogs.replaceChildren(list);
+    }
+    const card = document.createElement("article");
+    card.className = "run-row run-timeline-card";
+    const title = `${payload.tool_name || "tool"} ${payload.stream || "log"}`.trim();
+    card.appendChild(timelineHead(title, formatTimestamp(occurredAt)));
+    const meta = document.createElement("div");
+    meta.className = "mono subtle";
+    meta.textContent = payload.stream || "log";
+    card.appendChild(meta);
+    const body = document.createElement("pre");
+    body.className = "run-output-text";
+    body.textContent = payload.text;
+    card.appendChild(body);
+    list.appendChild(card);
+  }
+
+  function connectNodeStream(runID) {
+    clearNodeStream();
+    clearNodeDetailPoll();
+    const url = nodeEventsURL(runID);
+    if (!url) {
+      return;
+    }
+    if (!window.EventSource) {
+      nodeDetailPoll = window.setInterval(() => {
+        void openNodeDetail(runID, false);
+      }, 2000);
+      return;
+    }
+    nodeStream = new EventSource(url);
+    nodeStream.onmessage = (message) => {
+      let event;
+      try {
+        event = JSON.parse(message.data);
+      } catch (_err) {
+        return;
+      }
+      if (!event || !event.kind) {
+        return;
+      }
+      if (event.kind === "tool_log_recorded" && event.payload) {
+        appendNodeLogEvent(event.payload, event.occurred_at);
+        return;
+      }
+      if (event.kind === "turn_delta") {
+        return;
+      }
+      void openNodeDetail(runID, false);
+      if (event.kind === "run_completed" || event.kind === "run_failed" || event.kind === "run_interrupted") {
+        clearNodeStream();
+      }
+    };
+    nodeStream.onerror = () => {
+      clearNodeStream();
+      if (!nodeDetailPoll) {
+        nodeDetailPoll = window.setInterval(() => {
+          void openNodeDetail(runID, false);
+        }, 2000);
+      }
+    };
+  }
+
+  function renderNodeDetail(detail) {
+    if (!detail || !nodeModal) {
+      return;
+    }
+    activeNodeRunID = detail.id || "";
+    if (nodeModalTitle) {
+      nodeModalTitle.textContent = detail.agent_id || "Run node";
+    }
+    if (nodeModalSubtitle) {
+      nodeModalSubtitle.textContent = `${detail.short_id || detail.id || ""} · ${detail.model_display || "not recorded"} · ${detail.token_summary || "0 in / 0 out"}`;
+    }
+    renderNodeOverview(detail);
+    renderStructuredText(nodeModalTask, detail.task || {});
+    renderStructuredText(nodeModalOutput, detail.output || {});
+    renderNodeChain(detail);
+    renderNodeLogs(detail);
+    setNodeTab((Array.isArray(detail.logs) && detail.logs.length > 0) ? "logs" : "overview");
+    if (!nodeModal.open) {
+      nodeModal.showModal();
+    }
+    if (detail.status && detail.status !== "completed" && detail.status !== "failed" && detail.status !== "interrupted") {
+      connectNodeStream(detail.id || "");
+    } else {
+      clearNodeStream();
+      clearNodeDetailPoll();
+    }
+  }
+
+  async function openNodeDetail(runID, focusModal = true) {
+    const url = nodeDetailURL(runID);
+    if (!url || !window.fetch) {
+      return;
+    }
+    try {
+      const response = await fetch(url, {headers: {"Accept": "application/json"}, cache: "no-store"});
+      if (!response.ok) {
+        return;
+      }
+      const detail = await response.json();
+      renderNodeDetail(detail);
+      if (focusModal && nodeModal && !nodeModal.open) {
+        nodeModal.showModal();
+      }
+    } catch (_err) {
+    }
   }
 
   function eventToneClass(kind) {
@@ -434,7 +887,7 @@
     } else if (node.status) {
       details.push(node.status);
     }
-    const objective = node.objective || "";
+    const objective = node.objective_preview || node.objective || "";
     const summary = objective.length > 52 ? `${objective.slice(0, 49)}...` : objective;
     if (summary) {
       return `${headline}\n${details.join(" · ")}\n${summary}`;
@@ -609,7 +1062,7 @@
       if (!runID) {
         return;
       }
-      window.location.assign(`/operate/runs/${encodeURIComponent(runID)}`);
+      void openNodeDetail(runID);
     });
   }
 
@@ -636,7 +1089,7 @@
 
     const label = document.createElement("span");
     label.className = "graph-node-fact-label";
-    label.textContent = "Updated";
+    label.textContent = "Started";
     time.appendChild(label);
 
     const value = document.createElement("span");
@@ -662,6 +1115,15 @@
     row.appendChild(meta);
 
     return row;
+  }
+
+  function openNodeButton() {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-subtle btn-inline";
+    button.dataset.openNodeDetail = "true";
+    button.textContent = "Read more";
+    return button;
   }
 
   function renderBoard(snapshot) {
@@ -696,6 +1158,7 @@
         const card = document.createElement("article");
         card.className = `graph-node ${node.status_class || ""}`.trim();
         card.dataset.runId = node.id || "";
+        card.dataset.openNodeDetail = "true";
 
         const nodeHead = document.createElement("div");
         nodeHead.className = "graph-node-head";
@@ -721,16 +1184,20 @@
         titleStack.appendChild(labels);
         titleStack.appendChild(graphNodeTitleRow(node.agent_id, node.short_id));
         nodeHead.appendChild(titleStack);
-        nodeHead.appendChild(graphNodeTime(node.updated_at_label || "Not recorded yet"));
+        nodeHead.appendChild(openNodeButton());
         card.appendChild(nodeHead);
 
         const objective = document.createElement("div");
-        objective.className = "graph-node-objective";
-        objective.textContent = node.objective || "No objective captured for this run.";
+        objective.className = "graph-node-objective structured-preview";
+        objective.textContent = node.objective_preview || node.objective || "No objective captured for this run.";
         card.appendChild(objective);
 
         const facts = document.createElement("div");
         facts.className = "graph-node-facts";
+        appendGraphFact(facts, "Model", node.model_display || "not recorded", false);
+        appendGraphFact(facts, "Tokens", node.token_summary || "0 in / 0 out", false);
+        appendGraphFact(facts, "Started", node.started_at_label || "Not recorded", true);
+        appendGraphFact(facts, "Updated", node.updated_at_label || "Not recorded", true);
         appendGraphFact(facts, "Session", node.session_short_id || "", true);
         appendGraphFact(facts, "Parent", node.parent_label || "", true);
         if (facts.childNodes.length > 0) {
@@ -829,10 +1296,10 @@
     const card = document.createElement("article");
     card.className = "run-row run-timeline-card is-success";
     card.appendChild(timelineHead("Completed turn", formatTimestamp(occurredAt)));
-    const body = document.createElement("pre");
-    body.className = "run-output-text";
-    body.textContent = content;
+    const body = document.createElement("div");
+    body.className = "structured-text";
     card.appendChild(body);
+    renderStructuredText(body, buildStructuredTextView(content, 6));
     turns.appendChild(card);
     turnCount += 1;
     syncCounts();
@@ -886,6 +1353,43 @@
         }
       });
     }
+  }
+
+  if (graphBoard) {
+    graphBoard.addEventListener("click", (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+      const trigger = target.closest("[data-open-node-detail]");
+      if (!trigger) {
+        return;
+      }
+      const card = trigger.closest("[data-run-id]");
+      if (!(card instanceof HTMLElement)) {
+        return;
+      }
+      const runID = card.dataset.runId || "";
+      if (!runID) {
+        return;
+      }
+      event.preventDefault();
+      void openNodeDetail(runID);
+    });
+  }
+
+  for (const button of nodeTabButtons) {
+    button.addEventListener("click", () => {
+      setNodeTab(button.dataset.nodeTab || "overview");
+    });
+  }
+
+  if (nodeModal) {
+    nodeModal.addEventListener("close", () => {
+      clearNodeStream();
+      clearNodeDetailPoll();
+      activeNodeRunID = "";
+    });
   }
 
   syncCounts();

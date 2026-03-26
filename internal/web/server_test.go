@@ -76,13 +76,21 @@ func TestRuns(t *testing.T) {
 			"gpt-5.4",
 			"10 in / 20 out",
 			"4 in / 6 out",
-			"2026-03-25 10:00:00 UTC",
-			"2026-03-25 10:15:00 UTC",
+			"2026-03-25 10:00 UTC",
+			"2026-03-25 10:15 UTC",
 			"Needs approval",
-			"ago",
 		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
+			}
+		}
+		for _, want := range []string{
+			"2026-03-25 10:00:00 UTC",
+			"2026-03-25 10:15:00 UTC",
+			"ago",
+		} {
+			if strings.Contains(body, want) {
+				t.Fatalf("expected runs list to avoid duplicate visible timestamps %q:\n%s", want, body)
 			}
 		}
 		for _, want := range []string{
@@ -249,13 +257,21 @@ func TestRuns(t *testing.T) {
 			"Started",
 			"Last activity",
 			"Recorded events",
-			"Completed turns",
+			"Assistant Output",
 			"2026-03-25 08:00:00 UTC",
 			"2026-03-25 08:06:00 UTC",
 			"Run started",
 			"082b1c31…80e7",
 			"Updated",
 			"Draft the rollout plan.",
+			`id="run-node-modal"`,
+			`id="run-node-modal-task"`,
+			`id="run-node-modal-output"`,
+			`id="run-node-modal-chain"`,
+			`id="run-node-modal-logs"`,
+			`data-node-detail-url-template="/operate/runs/082b1c314823744cc779ece2f90e80e7/nodes/__RUN_ID__"`,
+			`data-open-node-detail`,
+			"Read more",
 			`id="run-live-output"`,
 			`id="run-started-at"`,
 			`id="run-last-activity"`,
@@ -263,13 +279,20 @@ func TestRuns(t *testing.T) {
 			`id="run-graph-board"`,
 			`data-graph-url="/operate/runs/082b1c314823744cc779ece2f90e80e7/graph"`,
 			`/operate/runs/082b1c314823744cc779ece2f90e80e7/events`,
+			`/operate/runs/082b1c314823744cc779ece2f90e80e7/nodes/`,
 			`window.cytoscape`,
 			`fetch(graphURL`,
+			`openNodeDetail`,
+			`connectNodeStream`,
+			`new EventSource(url)`,
 			`new EventSource(streamURL)`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
 			}
+		}
+		if strings.Contains(body, `<pre class="run-output-text">`) {
+			t.Fatalf("expected assistant output to render as structured content instead of raw preformatted text:\n%s", body)
 		}
 	})
 
@@ -377,6 +400,130 @@ func TestRuns(t *testing.T) {
 		}
 		if resp.Columns[1].Nodes[0].UpdatedAtLabel != "2026-03-25 08:05:00 UTC" {
 			t.Fatalf("expected updated-at label, got %+v", resp.Columns[1].Nodes[0])
+		}
+	})
+
+	t.Run("node detail endpoint returns modal data and codex logs", func(t *testing.T) {
+		h := newServerHarness(t)
+		h.insertRunAt(t, "run-root-node", "conv-node", "Coordinate the launch", "active", "2026-03-25 08:00:00")
+		if _, err := h.db.RawDB().Exec(
+			`INSERT INTO runs
+			 (id, conversation_id, agent_id, parent_run_id, session_id, team_id, objective, workspace_root, status, model_lane, model_id, input_tokens, output_tokens, created_at, updated_at)
+			 VALUES
+			 ('run-child-node', 'conv-node', 'patcher', 'run-root-node', 'sess-child-node', 'repo-task-team', ?, ?, 'completed', 'build', 'gpt-5.4', 2730, 183, '2026-03-25 08:05:00', '2026-03-25 08:09:00')`,
+			"1. Create the launch page\n2. Refine the copy\n3. Ship the result",
+			h.workspaceRoot,
+		); err != nil {
+			t.Fatalf("insert child node run: %v", err)
+		}
+		h.insertEventAtWithPayload(
+			t,
+			"evt-child-turn",
+			"conv-node",
+			"run-child-node",
+			"turn_completed",
+			[]byte(`{"content":"Created index.html\n\n- Added FAQ\n- Added comparison table"}`),
+			"2026-03-25 08:08:00",
+		)
+		h.insertEventAtWithPayload(
+			t,
+			"evt-tool-log-node",
+			"conv-node",
+			"run-child-node",
+			"tool_log_recorded",
+			[]byte(`{"tool_call_id":"call-coder","tool_name":"coder_exec","stream":"stdout","text":"Planning files\n"}`),
+			"2026-03-25 08:07:30",
+		)
+		toolOutput := []byte(`{"Output":"{\"backend\":\"codex\",\"command\":\"codex exec --sandbox workspace-write\",\"cwd\":\"/Users/canh/Desktop\",\"stdout\":\"Planning files\\nWriting index.html\\nDone\",\"stderr\":\"warning: dry run disabled\",\"exit_code\":0}","Error":""}`)
+		if _, err := h.db.RawDB().Exec(
+			`INSERT INTO tool_calls
+			 (id, run_id, tool_name, input_json, output_json, decision, approval_id, created_at)
+			 VALUES
+			 ('evt-tool-node', 'run-child-node', 'coder_exec', ?, ?, 'allow', '', '2026-03-25 08:07:00')`,
+			[]byte(`{"backend":"codex","prompt":"Create the launch page"}`),
+			toolOutput,
+		); err != nil {
+			t.Fatalf("insert tool call: %v", err)
+		}
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-root-node/nodes/run-child-node", nil)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			ID                string `json:"id"`
+			AgentID           string `json:"agent_id"`
+			Status            string `json:"status"`
+			ModelDisplay      string `json:"model_display"`
+			TokenSummary      string `json:"token_summary"`
+			StartedAtLabel    string `json:"started_at_label"`
+			LastActivityLabel string `json:"last_activity_label"`
+			Task              struct {
+				PreviewText string `json:"preview_text"`
+				HasOverflow bool   `json:"has_overflow"`
+				Blocks      []struct {
+					Kind  string   `json:"kind"`
+					Text  string   `json:"text"`
+					Items []string `json:"items"`
+				} `json:"blocks"`
+			} `json:"task"`
+			Output struct {
+				Blocks []struct {
+					Kind  string   `json:"kind"`
+					Text  string   `json:"text"`
+					Items []string `json:"items"`
+				} `json:"blocks"`
+			} `json:"output"`
+			Chain struct {
+				Path []struct {
+					RunID   string `json:"run_id"`
+					AgentID string `json:"agent_id"`
+				} `json:"path"`
+			} `json:"chain"`
+			Logs []struct {
+				Title    string `json:"title"`
+				Body     string `json:"body"`
+				Stream   string `json:"stream"`
+				ToolName string `json:"tool_name"`
+			} `json:"logs"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("unmarshal node detail: %v", err)
+		}
+		if resp.ID != "run-child-node" || resp.AgentID != "patcher" || resp.Status != "completed" {
+			t.Fatalf("unexpected node detail identity: %+v", resp)
+		}
+		if resp.ModelDisplay != "gpt-5.4" {
+			t.Fatalf("expected model display, got %+v", resp)
+		}
+		if resp.TokenSummary != "2.7K in / 183 out" {
+			t.Fatalf("expected compact token summary, got %+v", resp)
+		}
+		if resp.StartedAtLabel != "2026-03-25 08:05:00 UTC" || resp.LastActivityLabel != "2026-03-25 08:09:00 UTC" {
+			t.Fatalf("expected exact modal timestamps, got %+v", resp)
+		}
+		if resp.Task.PreviewText != "1. Create the launch page\n2. Refine the copy\n3. Ship the result" || resp.Task.HasOverflow {
+			t.Fatalf("unexpected task preview: %+v", resp.Task)
+		}
+		if len(resp.Task.Blocks) != 1 || resp.Task.Blocks[0].Kind != "ordered_list" {
+			t.Fatalf("expected ordered-list task blocks, got %+v", resp.Task.Blocks)
+		}
+		if len(resp.Output.Blocks) != 2 || resp.Output.Blocks[1].Kind != "unordered_list" {
+			t.Fatalf("expected formatted output blocks, got %+v", resp.Output.Blocks)
+		}
+		if len(resp.Chain.Path) != 2 || resp.Chain.Path[0].RunID != "run-root-node" || resp.Chain.Path[1].RunID != "run-child-node" {
+			t.Fatalf("expected root-to-node chain, got %+v", resp.Chain.Path)
+		}
+		if len(resp.Logs) < 3 {
+			t.Fatalf("expected command logs, got %+v", resp.Logs)
+		}
+		if resp.Logs[0].ToolName != "coder_exec" || resp.Logs[0].Stream != "stdout" || !strings.Contains(resp.Logs[0].Body, "Planning files") {
+			t.Fatalf("expected codex stdout log entry, got %+v", resp.Logs[0])
 		}
 	})
 

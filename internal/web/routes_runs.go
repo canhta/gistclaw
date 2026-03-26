@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -68,21 +69,22 @@ type runListClusterView struct {
 }
 
 type runDetailPageData struct {
-	RunID             string
-	RunShortID        string
-	Status            string
-	StatusLabel       string
-	StatusClass       string
-	StartedAtLabel    string
-	LastActivityLabel string
-	EventCount        int
-	TurnCount         int
-	StreamURL         string
-	GraphURL          string
-	Turns             []runTurnView
-	Events            []runEventView
-	Graph             runGraphView
-	ExecutionSnapshot runExecutionSnapshotView
+	RunID                 string
+	RunShortID            string
+	Status                string
+	StatusLabel           string
+	StatusClass           string
+	StartedAtLabel        string
+	LastActivityLabel     string
+	EventCount            int
+	TurnCount             int
+	StreamURL             string
+	GraphURL              string
+	NodeDetailURLTemplate string
+	Turns                 []runTurnView
+	Events                []runEventView
+	Graph                 runGraphView
+	ExecutionSnapshot     runExecutionSnapshotView
 }
 
 type runEventView struct {
@@ -95,6 +97,7 @@ type runEventView struct {
 
 type runTurnView struct {
 	Content        string
+	Structured     runStructuredTextView
 	CreatedAt      time.Time
 	CreatedAtLabel string
 }
@@ -142,20 +145,82 @@ type runGraphColumnView struct {
 }
 
 type runGraphNodeView struct {
-	ID             string `json:"id"`
-	ShortID        string `json:"short_id"`
-	ParentRunID    string `json:"parent_run_id"`
-	AgentID        string `json:"agent_id"`
-	SessionID      string `json:"session_id,omitempty"`
-	SessionShortID string `json:"session_short_id,omitempty"`
-	Objective      string `json:"objective"`
-	Status         string `json:"status"`
-	StatusLabel    string `json:"status_label"`
-	StatusClass    string `json:"status_class"`
-	UpdatedAtLabel string `json:"updated_at_label"`
-	Depth          int    `json:"depth"`
-	IsRoot         bool   `json:"is_root"`
-	ParentLabel    string `json:"parent_label,omitempty"`
+	ID                   string `json:"id"`
+	ShortID              string `json:"short_id"`
+	ParentRunID          string `json:"parent_run_id"`
+	AgentID              string `json:"agent_id"`
+	SessionID            string `json:"session_id,omitempty"`
+	SessionShortID       string `json:"session_short_id,omitempty"`
+	Objective            string `json:"objective"`
+	ObjectivePreview     string `json:"objective_preview"`
+	HasObjectiveOverflow bool   `json:"has_objective_overflow"`
+	Status               string `json:"status"`
+	StatusLabel          string `json:"status_label"`
+	StatusClass          string `json:"status_class"`
+	ModelDisplay         string `json:"model_display"`
+	TokenSummary         string `json:"token_summary"`
+	StartedAtLabel       string `json:"started_at_label"`
+	UpdatedAtLabel       string `json:"updated_at_label"`
+	Depth                int    `json:"depth"`
+	IsRoot               bool   `json:"is_root"`
+	ParentLabel          string `json:"parent_label,omitempty"`
+}
+
+type runStructuredTextView struct {
+	PlainText   string                   `json:"plain_text,omitempty"`
+	PreviewText string                   `json:"preview_text,omitempty"`
+	HasOverflow bool                     `json:"has_overflow"`
+	Blocks      []runStructuredBlockView `json:"blocks,omitempty"`
+}
+
+type runStructuredBlockView struct {
+	Kind  string   `json:"kind"`
+	Text  string   `json:"text,omitempty"`
+	Items []string `json:"items,omitempty"`
+	Start int      `json:"start,omitempty"`
+}
+
+type runNodeDetailView struct {
+	ID                string                `json:"id"`
+	ShortID           string                `json:"short_id"`
+	ParentRunID       string                `json:"parent_run_id,omitempty"`
+	ParentShortID     string                `json:"parent_short_id,omitempty"`
+	AgentID           string                `json:"agent_id"`
+	SessionID         string                `json:"session_id,omitempty"`
+	SessionShortID    string                `json:"session_short_id,omitempty"`
+	Status            string                `json:"status"`
+	StatusLabel       string                `json:"status_label"`
+	StatusClass       string                `json:"status_class"`
+	ModelDisplay      string                `json:"model_display"`
+	TokenSummary      string                `json:"token_summary"`
+	TokenExactSummary string                `json:"token_exact_summary"`
+	StartedAtLabel    string                `json:"started_at_label"`
+	LastActivityLabel string                `json:"last_activity_label"`
+	Task              runStructuredTextView `json:"task"`
+	Output            runStructuredTextView `json:"output"`
+	Chain             runNodeChainView      `json:"chain"`
+	Logs              []runNodeLogEntryView `json:"logs,omitempty"`
+}
+
+type runNodeChainView struct {
+	Path     []runNodeChainStepView `json:"path"`
+	Children []runNodeChainStepView `json:"children,omitempty"`
+}
+
+type runNodeChainStepView struct {
+	RunID       string `json:"run_id"`
+	ShortID     string `json:"short_id"`
+	AgentID     string `json:"agent_id"`
+	Status      string `json:"status"`
+	StatusLabel string `json:"status_label"`
+}
+
+type runNodeLogEntryView struct {
+	Title          string `json:"title"`
+	Body           string `json:"body"`
+	Stream         string `json:"stream"`
+	ToolName       string `json:"tool_name"`
+	CreatedAtLabel string `json:"created_at_label"`
 }
 
 type runListFilters struct {
@@ -194,6 +259,31 @@ type runChildRow struct {
 	CreatedAt    string
 	UpdatedAt    string
 	Depth        int
+}
+
+type runNodeRecord struct {
+	ID           string
+	ParentRunID  string
+	AgentID      string
+	SessionID    string
+	Objective    string
+	Status       string
+	ModelLane    string
+	ModelID      string
+	InputTokens  int
+	OutputTokens int
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+type runToolCallRecord struct {
+	ID         string
+	ToolName   string
+	InputJSON  []byte
+	OutputJSON []byte
+	Decision   string
+	ApprovalID string
+	CreatedAt  time.Time
 }
 
 func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
@@ -363,6 +453,7 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		}
 		turns = append(turns, runTurnView{
 			Content:        content,
+			Structured:     buildStructuredTextView(content, 6),
 			CreatedAt:      evt.CreatedAt,
 			CreatedAtLabel: formatRunTimestamp(evt.CreatedAt),
 		})
@@ -379,21 +470,22 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.renderTemplate(w, r, "Run Detail", "run_detail_body", runDetailPageData{
-		RunID:             replayRun.RunID,
-		RunShortID:        compactIdentifier(replayRun.RunID),
-		Status:            string(replayRun.Status),
-		StatusLabel:       humanizeRunStatus(string(replayRun.Status)),
-		StatusClass:       runStatusClass(string(replayRun.Status)),
-		StartedAtLabel:    formatRunTimestamp(startedAt),
-		LastActivityLabel: formatRunTimestamp(lastActivity),
-		EventCount:        len(events),
-		TurnCount:         len(turns),
-		StreamURL:         runEventsPath(replayRun.RunID),
-		GraphURL:          runGraphPath(replayRun.RunID),
-		Turns:             turns,
-		Events:            events,
-		Graph:             buildRunGraphView(graphSnapshot),
-		ExecutionSnapshot: buildExecutionSnapshotView(replayRun.TeamID, replayRun.ExecutionSnapshotJSON),
+		RunID:                 replayRun.RunID,
+		RunShortID:            compactIdentifier(replayRun.RunID),
+		Status:                string(replayRun.Status),
+		StatusLabel:           humanizeRunStatus(string(replayRun.Status)),
+		StatusClass:           runStatusClass(string(replayRun.Status)),
+		StartedAtLabel:        formatRunTimestamp(startedAt),
+		LastActivityLabel:     formatRunTimestamp(lastActivity),
+		EventCount:            len(events),
+		TurnCount:             len(turns),
+		StreamURL:             runEventsPath(replayRun.RunID),
+		GraphURL:              runGraphPath(replayRun.RunID),
+		NodeDetailURLTemplate: runNodeDetailTemplatePath(replayRun.RunID),
+		Turns:                 turns,
+		Events:                events,
+		Graph:                 buildRunGraphView(graphSnapshot),
+		ExecutionSnapshot:     buildExecutionSnapshotView(replayRun.TeamID, replayRun.ExecutionSnapshotJSON),
 	})
 }
 
@@ -422,6 +514,66 @@ func (s *Server) handleRunGraph(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, buildRunGraphView(graphSnapshot))
 }
 
+func (s *Server) handleRunNodeDetail(w http.ResponseWriter, r *http.Request) {
+	rootRunID := r.PathValue("id")
+	nodeRunID := r.PathValue("node_id")
+
+	visible, err := s.runVisibleInActiveProject(r.Context(), rootRunID)
+	if err != nil {
+		http.Error(w, "failed to load run detail", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
+		return
+	}
+
+	graphSnapshot, err := s.replay.LoadGraphSnapshot(r.Context(), rootRunID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "failed to load run graph", http.StatusInternalServerError)
+		return
+	}
+
+	nodeMap := make(map[string]replay.GraphNode, len(graphSnapshot.Nodes))
+	childrenByParent := make(map[string][]replay.GraphNode, len(graphSnapshot.Nodes))
+	for _, node := range graphSnapshot.Nodes {
+		nodeMap[node.ID] = node
+		if node.ParentRunID != "" {
+			childrenByParent[node.ParentRunID] = append(childrenByParent[node.ParentRunID], node)
+		}
+	}
+	if _, ok := nodeMap[nodeRunID]; !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	record, err := loadRunNodeRecord(r.Context(), s.db.RawDB(), nodeRunID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "failed to load run node", http.StatusInternalServerError)
+		return
+	}
+	events, err := loadRunEventsForNode(r.Context(), s.db.RawDB(), nodeRunID)
+	if err != nil {
+		http.Error(w, "failed to load run events", http.StatusInternalServerError)
+		return
+	}
+	toolCalls, err := loadRunToolCalls(r.Context(), s.db.RawDB(), nodeRunID)
+	if err != nil {
+		http.Error(w, "failed to load tool calls", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, buildRunNodeDetailView(record, graphSnapshot.RootRunID, nodeMap, childrenByParent, events, toolCalls))
+}
+
 func turnContent(payload []byte) (string, bool) {
 	if len(payload) == 0 {
 		return "", false
@@ -436,6 +588,303 @@ func turnContent(payload []byte) (string, bool) {
 		return "", false
 	}
 	return decoded.Content, true
+}
+
+func loadRunNodeRecord(ctx context.Context, db *sql.DB, runID string) (runNodeRecord, error) {
+	var record runNodeRecord
+	err := db.QueryRowContext(ctx,
+		`SELECT id,
+		        COALESCE(parent_run_id, ''),
+		        COALESCE(agent_id, ''),
+		        COALESCE(session_id, ''),
+		        COALESCE(objective, ''),
+		        status,
+		        COALESCE(model_lane, ''),
+		        COALESCE(model_id, ''),
+		        COALESCE(input_tokens, 0),
+		        COALESCE(output_tokens, 0),
+		        created_at,
+		        updated_at
+		   FROM runs
+		  WHERE id = ?`,
+		runID,
+	).Scan(
+		&record.ID,
+		&record.ParentRunID,
+		&record.AgentID,
+		&record.SessionID,
+		&record.Objective,
+		&record.Status,
+		&record.ModelLane,
+		&record.ModelID,
+		&record.InputTokens,
+		&record.OutputTokens,
+		&record.CreatedAt,
+		&record.UpdatedAt,
+	)
+	if err != nil {
+		return runNodeRecord{}, err
+	}
+	return record, nil
+}
+
+func loadRunEventsForNode(ctx context.Context, db *sql.DB, runID string) ([]model.Event, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT id,
+		        conversation_id,
+		        COALESCE(run_id, ''),
+		        COALESCE(parent_run_id, ''),
+		        kind,
+		        COALESCE(payload_json, x''),
+		        created_at
+		   FROM events
+		  WHERE run_id = ?
+		  ORDER BY created_at ASC, rowid ASC`,
+		runID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	events := make([]model.Event, 0, 16)
+	for rows.Next() {
+		var evt model.Event
+		if err := rows.Scan(
+			&evt.ID,
+			&evt.ConversationID,
+			&evt.RunID,
+			&evt.ParentRunID,
+			&evt.Kind,
+			&evt.PayloadJSON,
+			&evt.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		events = append(events, evt)
+	}
+	return events, rows.Err()
+}
+
+func loadRunToolCalls(ctx context.Context, db *sql.DB, runID string) ([]runToolCallRecord, error) {
+	rows, err := db.QueryContext(ctx,
+		`SELECT id,
+		        tool_name,
+		        COALESCE(input_json, x''),
+		        COALESCE(output_json, x''),
+		        decision,
+		        COALESCE(approval_id, ''),
+		        created_at
+		   FROM tool_calls
+		  WHERE run_id = ?
+		  ORDER BY created_at ASC, id ASC`,
+		runID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	records := make([]runToolCallRecord, 0, 8)
+	for rows.Next() {
+		var record runToolCallRecord
+		if err := rows.Scan(
+			&record.ID,
+			&record.ToolName,
+			&record.InputJSON,
+			&record.OutputJSON,
+			&record.Decision,
+			&record.ApprovalID,
+			&record.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		records = append(records, record)
+	}
+	return records, rows.Err()
+}
+
+func buildRunNodeDetailView(
+	record runNodeRecord,
+	rootRunID string,
+	nodeMap map[string]replay.GraphNode,
+	childrenByParent map[string][]replay.GraphNode,
+	events []model.Event,
+	toolCalls []runToolCallRecord,
+) runNodeDetailView {
+	outputText := strings.TrimSpace(joinTurnContent(events))
+	return runNodeDetailView{
+		ID:                record.ID,
+		ShortID:           compactIdentifier(record.ID),
+		ParentRunID:       record.ParentRunID,
+		ParentShortID:     compactIdentifier(record.ParentRunID),
+		AgentID:           record.AgentID,
+		SessionID:         record.SessionID,
+		SessionShortID:    compactIdentifier(record.SessionID),
+		Status:            record.Status,
+		StatusLabel:       humanizeRunStatus(record.Status),
+		StatusClass:       runStatusClass(record.Status),
+		ModelDisplay:      formatRunModelDisplay(record.ModelID, record.ModelLane),
+		TokenSummary:      formatRunTokenSummary(record.InputTokens, record.OutputTokens),
+		TokenExactSummary: fmt.Sprintf("%d input / %d output", record.InputTokens, record.OutputTokens),
+		StartedAtLabel:    formatRunTimestamp(record.CreatedAt),
+		LastActivityLabel: formatRunTimestamp(record.UpdatedAt),
+		Task:              buildStructuredTextView(record.Objective, 3),
+		Output:            buildStructuredTextView(outputText, 6),
+		Chain:             buildRunNodeChainView(record.ID, rootRunID, nodeMap, childrenByParent),
+		Logs:              buildRunNodeLogEntries(events, toolCalls),
+	}
+}
+
+func joinTurnContent(events []model.Event) string {
+	parts := make([]string, 0, len(events))
+	for _, evt := range events {
+		if evt.Kind != "turn_completed" {
+			continue
+		}
+		content, ok := turnContent(evt.PayloadJSON)
+		if !ok {
+			continue
+		}
+		parts = append(parts, strings.TrimSpace(content))
+	}
+	return strings.Join(parts, "\n\n")
+}
+
+func buildRunNodeChainView(runID, rootRunID string, nodeMap map[string]replay.GraphNode, childrenByParent map[string][]replay.GraphNode) runNodeChainView {
+	path := make([]runNodeChainStepView, 0, 8)
+	currentID := runID
+	for currentID != "" {
+		node, ok := nodeMap[currentID]
+		if !ok {
+			break
+		}
+		path = append(path, runNodeChainStepView{
+			RunID:       node.ID,
+			ShortID:     compactIdentifier(node.ID),
+			AgentID:     node.AgentID,
+			Status:      string(node.Status),
+			StatusLabel: humanizeRunStatus(string(node.Status)),
+		})
+		if node.ID == rootRunID {
+			break
+		}
+		currentID = node.ParentRunID
+	}
+	for left, right := 0, len(path)-1; left < right; left, right = left+1, right-1 {
+		path[left], path[right] = path[right], path[left]
+	}
+
+	children := make([]runNodeChainStepView, 0, len(childrenByParent[runID]))
+	for _, child := range childrenByParent[runID] {
+		children = append(children, runNodeChainStepView{
+			RunID:       child.ID,
+			ShortID:     compactIdentifier(child.ID),
+			AgentID:     child.AgentID,
+			Status:      string(child.Status),
+			StatusLabel: humanizeRunStatus(string(child.Status)),
+		})
+	}
+	return runNodeChainView{Path: path, Children: children}
+}
+
+func buildRunNodeLogEntries(events []model.Event, toolCalls []runToolCallRecord) []runNodeLogEntryView {
+	entries := make([]runNodeLogEntryView, 0, len(events)+len(toolCalls)*3)
+	for _, evt := range events {
+		if evt.Kind != "tool_log_recorded" {
+			continue
+		}
+		var payload struct {
+			ToolName string `json:"tool_name"`
+			Stream   string `json:"stream"`
+			Text     string `json:"text"`
+		}
+		if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
+			continue
+		}
+		if strings.TrimSpace(payload.Text) == "" {
+			continue
+		}
+		title := strings.TrimSpace(payload.ToolName + " " + payload.Stream)
+		if title == "" {
+			title = "tool log"
+		}
+		entries = append(entries, runNodeLogEntryView{
+			Title:          title,
+			Body:           payload.Text,
+			Stream:         payload.Stream,
+			ToolName:       payload.ToolName,
+			CreatedAtLabel: formatRunTimestamp(evt.CreatedAt),
+		})
+	}
+	for _, call := range toolCalls {
+		toolResult, _ := decodeToolResult(call.OutputJSON)
+		commandMeta, _ := decodeCommandMeta(toolResult.Output)
+		if stdout := strings.TrimSpace(commandMeta.Stdout); stdout != "" {
+			entries = append(entries, runNodeLogEntryView{
+				Title:          call.ToolName + " stdout",
+				Body:           stdout,
+				Stream:         "stdout",
+				ToolName:       call.ToolName,
+				CreatedAtLabel: formatRunTimestamp(call.CreatedAt),
+			})
+		}
+		if stderr := strings.TrimSpace(commandMeta.Stderr); stderr != "" {
+			entries = append(entries, runNodeLogEntryView{
+				Title:          call.ToolName + " stderr",
+				Body:           stderr,
+				Stream:         "stderr",
+				ToolName:       call.ToolName,
+				CreatedAtLabel: formatRunTimestamp(call.CreatedAt),
+			})
+		}
+		if commandMeta.Command != "" {
+			entries = append(entries, runNodeLogEntryView{
+				Title:          call.ToolName + " command",
+				Body:           commandMeta.Command,
+				Stream:         "meta",
+				ToolName:       call.ToolName,
+				CreatedAtLabel: formatRunTimestamp(call.CreatedAt),
+			})
+		}
+		if strings.TrimSpace(toolResult.Error) != "" {
+			entries = append(entries, runNodeLogEntryView{
+				Title:          call.ToolName + " error",
+				Body:           toolResult.Error,
+				Stream:         "error",
+				ToolName:       call.ToolName,
+				CreatedAtLabel: formatRunTimestamp(call.CreatedAt),
+			})
+		}
+	}
+	return entries
+}
+
+func decodeToolResult(raw []byte) (model.ToolResult, error) {
+	var result model.ToolResult
+	if len(raw) == 0 {
+		return result, nil
+	}
+	err := json.Unmarshal(raw, &result)
+	return result, err
+}
+
+type runCommandMeta struct {
+	Backend  string `json:"backend"`
+	Command  string `json:"command"`
+	CWD      string `json:"cwd"`
+	Stdout   string `json:"stdout"`
+	Stderr   string `json:"stderr"`
+	ExitCode int    `json:"exit_code"`
+}
+
+func decodeCommandMeta(raw string) (runCommandMeta, error) {
+	var meta runCommandMeta
+	if strings.TrimSpace(raw) == "" {
+		return meta, nil
+	}
+	err := json.Unmarshal([]byte(raw), &meta)
+	return meta, err
 }
 
 func buildExecutionSnapshotView(teamID string, raw []byte) runExecutionSnapshotView {
@@ -772,7 +1221,7 @@ func formatRunModelDisplay(modelID, modelLane string) string {
 }
 
 func formatRunTokenSummary(inputTokens, outputTokens int) string {
-	return fmt.Sprintf("%d in / %d out", inputTokens, outputTokens)
+	return fmt.Sprintf("%s in / %s out", formatCompactTokenCount(inputTokens), formatCompactTokenCount(outputTokens))
 }
 
 func summarizeRunBlocker(queueStatus string, descendants []runChildRow, rootStatus string, childCount int) string {
@@ -847,10 +1296,6 @@ type runTimestampView struct {
 	ISO      string
 }
 
-var runListNow = func() time.Time {
-	return time.Now().UTC()
-}
-
 func parseRunListTimestamp(raw string) time.Time {
 	value := strings.TrimSpace(raw)
 	if value == "" {
@@ -885,32 +1330,9 @@ func buildRunTimestampView(ts time.Time) runTimestampView {
 		}
 	}
 	return runTimestampView{
-		Relative: humanizeRunRelativeTime(runListNow(), ts),
+		Relative: formatRunCompactTimestamp(ts),
 		Exact:    formatRunTimestamp(ts),
 		ISO:      ts.UTC().Format(time.RFC3339),
-	}
-}
-
-func humanizeRunRelativeTime(now, ts time.Time) string {
-	if ts.IsZero() {
-		return "Not recorded"
-	}
-	if now.IsZero() {
-		now = time.Now().UTC()
-	}
-	if ts.After(now) {
-		ts = now
-	}
-	delta := now.Sub(ts)
-	switch {
-	case delta < 30*time.Second:
-		return "just now"
-	case delta < time.Hour:
-		return fmt.Sprintf("%dm ago", int(delta/time.Minute))
-	case delta < 24*time.Hour:
-		return fmt.Sprintf("%dh ago", int(delta/time.Hour))
-	default:
-		return fmt.Sprintf("%dd ago", int(delta/(24*time.Hour)))
 	}
 }
 
@@ -1033,19 +1455,24 @@ func buildRunGraphView(snapshot replay.RunGraphSnapshot) runGraphView {
 	columnIndex := make(map[int]int, len(snapshot.Nodes))
 	for _, node := range snapshot.Nodes {
 		graphNode := runGraphNodeView{
-			ID:             node.ID,
-			ShortID:        compactIdentifier(node.ID),
-			ParentRunID:    node.ParentRunID,
-			AgentID:        node.AgentID,
-			SessionID:      node.SessionID,
-			SessionShortID: compactIdentifier(node.SessionID),
-			Objective:      node.Objective,
-			Status:         string(node.Status),
-			StatusLabel:    humanizeRunStatus(string(node.Status)),
-			StatusClass:    runStatusClass(string(node.Status)),
-			UpdatedAtLabel: formatRunTimestamp(node.UpdatedAt),
-			Depth:          node.Depth,
-			IsRoot:         node.ID == snapshot.RootRunID,
+			ID:                   node.ID,
+			ShortID:              compactIdentifier(node.ID),
+			ParentRunID:          node.ParentRunID,
+			AgentID:              node.AgentID,
+			SessionID:            node.SessionID,
+			SessionShortID:       compactIdentifier(node.SessionID),
+			Objective:            node.Objective,
+			ObjectivePreview:     buildStructuredTextView(node.Objective, 2).PreviewText,
+			HasObjectiveOverflow: buildStructuredTextView(node.Objective, 2).HasOverflow,
+			Status:               string(node.Status),
+			StatusLabel:          humanizeRunStatus(string(node.Status)),
+			StatusClass:          runStatusClass(string(node.Status)),
+			ModelDisplay:         formatRunModelDisplay(node.ModelID, node.ModelLane),
+			TokenSummary:         formatRunTokenSummary(node.InputTokens, node.OutputTokens),
+			StartedAtLabel:       formatRunCompactTimestamp(node.CreatedAt),
+			UpdatedAtLabel:       formatRunTimestamp(node.UpdatedAt),
+			Depth:                node.Depth,
+			IsRoot:               node.ID == snapshot.RootRunID,
 		}
 		if graphNode.ParentRunID != "" {
 			graphNode.ParentLabel = "from " + compactIdentifier(graphNode.ParentRunID)
@@ -1177,6 +1604,179 @@ func formatRunTimestamp(ts time.Time) string {
 		return "Not recorded yet"
 	}
 	return ts.UTC().Format("2006-01-02 15:04:05 UTC")
+}
+
+func formatRunCompactTimestamp(ts time.Time) string {
+	if ts.IsZero() {
+		return "Not recorded"
+	}
+	return ts.UTC().Format("2006-01-02 15:04 UTC")
+}
+
+func formatCompactTokenCount(tokens int) string {
+	switch {
+	case tokens >= 1000000:
+		return formatCompactUnit(float64(tokens)/1000000.0, "M")
+	case tokens >= 1000:
+		return formatCompactUnit(float64(tokens)/1000.0, "K")
+	default:
+		return strconv.Itoa(tokens)
+	}
+}
+
+func formatCompactUnit(value float64, suffix string) string {
+	if value >= 10 || value == float64(int(value)) {
+		return fmt.Sprintf("%d%s", int(value+0.00001), suffix)
+	}
+	return fmt.Sprintf("%.1f%s", value, suffix)
+}
+
+func buildStructuredTextView(raw string, previewLines int) runStructuredTextView {
+	lines := normalizeStructuredTextLines(raw)
+	blocks := make([]runStructuredBlockView, 0, len(lines))
+	preview := make([]string, 0, previewLines)
+	var paragraph []string
+	var listItems []string
+	listKind := ""
+	listStart := 1
+
+	flushParagraph := func() {
+		if len(paragraph) == 0 {
+			return
+		}
+		text := strings.Join(paragraph, " ")
+		blocks = append(blocks, runStructuredBlockView{Kind: "paragraph", Text: text})
+		if len(preview) < previewLines {
+			preview = append(preview, text)
+		}
+		paragraph = nil
+	}
+	flushList := func() {
+		if len(listItems) == 0 {
+			return
+		}
+		items := append([]string(nil), listItems...)
+		blocks = append(blocks, runStructuredBlockView{Kind: listKind, Items: items, Start: listStart})
+		if len(preview) < previewLines {
+			for idx, item := range items {
+				if len(preview) >= previewLines {
+					break
+				}
+				switch listKind {
+				case "ordered_list":
+					preview = append(preview, fmt.Sprintf("%d. %s", listStart+idx, item))
+				default:
+					preview = append(preview, "- "+item)
+				}
+			}
+		}
+		listItems = nil
+		listKind = ""
+		listStart = 1
+	}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			flushParagraph()
+			flushList()
+			continue
+		}
+		if item, start, ok := orderedListItem(trimmed); ok {
+			flushParagraph()
+			if listKind != "" && listKind != "ordered_list" {
+				flushList()
+			}
+			if listKind == "" {
+				listKind = "ordered_list"
+				listStart = start
+			}
+			listItems = append(listItems, item)
+			continue
+		}
+		if item, ok := unorderedListItem(trimmed); ok {
+			flushParagraph()
+			if listKind != "" && listKind != "unordered_list" {
+				flushList()
+			}
+			if listKind == "" {
+				listKind = "unordered_list"
+			}
+			listItems = append(listItems, item)
+			continue
+		}
+		flushList()
+		paragraph = append(paragraph, trimmed)
+	}
+	flushParagraph()
+	flushList()
+
+	plain := strings.TrimSpace(strings.ReplaceAll(raw, "\r\n", "\n"))
+	previewText := strings.Join(preview, "\n")
+	return runStructuredTextView{
+		PlainText:   plain,
+		PreviewText: previewText,
+		HasOverflow: len(preview) < structuredLineCount(blocks),
+		Blocks:      blocks,
+	}
+}
+
+func normalizeStructuredTextLines(raw string) []string {
+	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
+	normalized = strings.ReplaceAll(normalized, "\r", "\n")
+	return strings.Split(normalized, "\n")
+}
+
+func structuredLineCount(blocks []runStructuredBlockView) int {
+	count := 0
+	for _, block := range blocks {
+		switch block.Kind {
+		case "ordered_list", "unordered_list":
+			count += len(block.Items)
+		case "paragraph":
+			if strings.TrimSpace(block.Text) != "" {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func orderedListItem(line string) (string, int, bool) {
+	idx := 0
+	for idx < len(line) && line[idx] >= '0' && line[idx] <= '9' {
+		idx++
+	}
+	if idx == 0 || idx >= len(line) {
+		return "", 0, false
+	}
+	if line[idx] != '.' && line[idx] != ')' {
+		return "", 0, false
+	}
+	item := strings.TrimSpace(line[idx+1:])
+	if item == "" {
+		return "", 0, false
+	}
+	start, err := strconv.Atoi(line[:idx])
+	if err != nil {
+		return "", 0, false
+	}
+	return item, start, true
+}
+
+func unorderedListItem(line string) (string, bool) {
+	if len(line) < 2 {
+		return "", false
+	}
+	switch line[0] {
+	case '-', '*':
+		item := strings.TrimSpace(line[1:])
+		if item == "" {
+			return "", false
+		}
+		return item, true
+	}
+	return "", false
 }
 
 func runEventWindow(events []model.Event) (time.Time, time.Time) {

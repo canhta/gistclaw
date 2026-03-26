@@ -24,6 +24,54 @@ import (
 var ErrBudgetExhausted = fmt.Errorf("runtime: budget exhausted")
 var ErrDailyCap = fmt.Errorf("runtime: daily cost cap exceeded")
 
+type toolInvocationLogSink struct {
+	convStore      *conversations.ConversationStore
+	eventSink      model.RunEventSink
+	conversationID string
+	runID          string
+	toolCallID     string
+	toolName       string
+}
+
+func (s toolInvocationLogSink) Record(ctx context.Context, record tools.ToolLogRecord) error {
+	if strings.TrimSpace(record.Text) == "" {
+		return nil
+	}
+	occurredAt := record.OccurredAt.UTC()
+	if occurredAt.IsZero() {
+		occurredAt = time.Now().UTC()
+	}
+	payload, err := json.Marshal(map[string]any{
+		"tool_call_id": s.toolCallID,
+		"tool_name":    s.toolName,
+		"stream":       record.Stream,
+		"text":         record.Text,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal tool_log_recorded payload: %w", err)
+	}
+	evt := model.Event{
+		ID:             generateID(),
+		ConversationID: s.conversationID,
+		RunID:          s.runID,
+		Kind:           "tool_log_recorded",
+		PayloadJSON:    payload,
+		CreatedAt:      occurredAt,
+	}
+	if err := s.convStore.AppendEvent(ctx, evt); err != nil {
+		return fmt.Errorf("journal tool_log_recorded: %w", err)
+	}
+	if s.eventSink != nil {
+		_ = s.eventSink.Emit(ctx, s.runID, model.ReplayDelta{
+			RunID:       s.runID,
+			Kind:        "tool_log_recorded",
+			PayloadJSON: payload,
+			OccurredAt:  occurredAt,
+		})
+	}
+	return nil
+}
+
 type StartRun struct {
 	ConversationID        string
 	AgentID               string
@@ -835,6 +883,14 @@ func (r *Runtime) recordToolCall(
 				SessionID:     sessionID,
 				Agent:         agent,
 				ApprovalID:    approvalID,
+				LogSink: toolInvocationLogSink{
+					convStore:      r.convStore,
+					eventSink:      r.eventSink,
+					conversationID: conversationID,
+					runID:          runID,
+					toolCallID:     tc.ID,
+					toolName:       tc.ToolName,
+				},
 			})
 			invoked, err := tool.Invoke(invokeCtx, model.ToolCall{
 				ID:        tc.ID,

@@ -139,6 +139,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET "+pageOperateRuns, s.handleRunsIndex)
 	s.mux.HandleFunc("GET "+pageOperateRuns+"/{id}", s.handleRunDetail)
 	s.mux.HandleFunc("GET "+pageOperateRuns+"/{id}/graph", s.handleRunGraph)
+	s.mux.HandleFunc("GET "+pageOperateRuns+"/{id}/nodes/{node_id}", s.handleRunNodeDetail)
 	s.mux.HandleFunc("GET "+pageOperateRuns+"/{id}/events", s.handleRunEvents)
 	s.mux.Handle("POST "+pageOperateRuns+"/{id}/dismiss", s.adminAuth(http.HandlerFunc(s.handleRunDismiss)))
 	s.mux.HandleFunc("GET "+pageRecoverApprovals, s.handleApprovals)
