@@ -2,9 +2,7 @@ package tools
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/model"
@@ -222,18 +220,20 @@ func TestApproval_FingerprintChangeCausesExpiry(t *testing.T) {
 	ctx := context.Background()
 
 	ticket, err := CreateTicket(ctx, db, model.ApprovalRequest{
-		RunID:      "run-1",
-		ToolName:   "file_write",
-		ArgsJSON:   []byte(`{"path":"a.txt"}`),
-		TargetPath: "/workspace/a.txt",
+		RunID:       "run-1",
+		ToolName:    "file_write",
+		ArgsJSON:    []byte(`{"path":"a.txt"}`),
+		BindingJSON: []byte(`{"tool_name":"file_write","operands":["/workspace/a.txt"]}`),
 	})
 	if err != nil {
 		t.Fatalf("CreateTicket failed: %v", err)
 	}
 
-	newFingerprint := fmt.Sprintf("%x", sha256.Sum256(
-		[]byte("file_write:"+`{"path":"b.txt"}`+":/workspace/b.txt"),
-	))
+	newFingerprint := computeFingerprint(
+		"file_write",
+		[]byte(`{"path":"b.txt"}`),
+		[]byte(`{"tool_name":"file_write","operands":["/workspace/b.txt"]}`),
+	)
 
 	err = VerifyTicket(ctx, db, ticket.ID, newFingerprint)
 	if err == nil {
@@ -246,10 +246,10 @@ func TestApproval_SingleUse(t *testing.T) {
 	ctx := context.Background()
 
 	ticket, err := CreateTicket(ctx, db, model.ApprovalRequest{
-		RunID:      "run-2",
-		ToolName:   "file_write",
-		ArgsJSON:   []byte(`{"path":"a.txt"}`),
-		TargetPath: "/workspace/a.txt",
+		RunID:       "run-2",
+		ToolName:    "file_write",
+		ArgsJSON:    []byte(`{"path":"a.txt"}`),
+		BindingJSON: []byte(`{"tool_name":"file_write","operands":["/workspace/a.txt"]}`),
 	})
 	if err != nil {
 		t.Fatalf("CreateTicket failed: %v", err)
@@ -266,26 +266,28 @@ func TestApproval_SingleUse(t *testing.T) {
 	}
 }
 
-func TestApprovalTargetPath(t *testing.T) {
-	tests := []struct {
-		name     string
-		argsJSON []byte
-		want     string
-	}{
-		{name: "path", argsJSON: []byte(`{"path":"README.md"}`), want: "README.md"},
-		{name: "to", argsJSON: []byte(`{"to":"dst/file.txt"}`), want: "dst/file.txt"},
-		{name: "target", argsJSON: []byte(`{"target":" ./tmp/output.txt "}`), want: "./tmp/output.txt"},
-		{name: "file", argsJSON: []byte(`{"file":"notes.md"}`), want: "notes.md"},
-		{name: "missing", argsJSON: []byte(`{"command":"go test ./..."}`), want: ""},
-		{name: "invalid json", argsJSON: []byte(`{`), want: ""},
+func TestComputeFingerprint_BindsBindingJSON(t *testing.T) {
+	first := computeFingerprint(
+		"workspace_apply",
+		[]byte(`{"path":"README.md"}`),
+		[]byte(`{"tool_name":"workspace_apply","operands":["README.md"]}`),
+	)
+	second := computeFingerprint(
+		"workspace_apply",
+		[]byte(`{"path":"README.md"}`),
+		[]byte(`{"tool_name":"workspace_apply","operands":["README.md"]}`),
+	)
+	if first != second {
+		t.Fatalf("expected deterministic fingerprint, got %q then %q", first, second)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := ApprovalTargetPath("tool", tt.argsJSON); got != tt.want {
-				t.Fatalf("ApprovalTargetPath() = %q, want %q", got, tt.want)
-			}
-		})
+	changed := computeFingerprint(
+		"workspace_apply",
+		[]byte(`{"path":"README.md"}`),
+		[]byte(`{"tool_name":"workspace_apply","operands":["main.go"]}`),
+	)
+	if changed == first {
+		t.Fatal("expected binding_json to affect fingerprint")
 	}
 }
 
@@ -328,10 +330,10 @@ func TestWorkspaceApply_RequiresApprovedTicketForWorkerRun(t *testing.T) {
 	workspaceRoot := t.TempDir()
 
 	ticket, err := CreateTicket(ctx, db, model.ApprovalRequest{
-		RunID:      "run-front",
-		ToolName:   "workspace_apply",
-		ArgsJSON:   []byte(`{"path":"main.go"}`),
-		TargetPath: "main.go",
+		RunID:       "run-front",
+		ToolName:    "workspace_apply",
+		ArgsJSON:    []byte(`{"path":"main.go"}`),
+		BindingJSON: []byte(`{"tool_name":"workspace_apply","operands":["main.go"]}`),
 	})
 	if err != nil {
 		t.Fatalf("CreateTicket failed: %v", err)

@@ -100,3 +100,39 @@ func TestIsValidCapability_RecognizesSpawn(t *testing.T) {
 		t.Fatal("expected spawn to be a valid capability")
 	}
 }
+
+func TestHostExecutionTypes_ReplaceWorkspaceFields(t *testing.T) {
+	projectType := reflect.TypeOf(Project{})
+	assertHasField(t, projectType, "PrimaryPath", "RootsJSON", "PolicyJSON")
+	assertOmitsField(t, projectType, "WorkspaceRoot")
+
+	runType := reflect.TypeOf(Run{})
+	assertHasField(t, runType, "CWD", "AuthorityJSON")
+	assertOmitsField(t, runType, "WorkspaceRoot")
+
+	approvalRequestType := reflect.TypeOf(ApprovalRequest{})
+	assertHasField(t, approvalRequestType, "BindingJSON")
+	assertOmitsField(t, approvalRequestType, "TargetPath")
+
+	approvalTicketType := reflect.TypeOf(ApprovalTicket{})
+	assertHasField(t, approvalTicketType, "BindingJSON")
+	assertOmitsField(t, approvalTicketType, "TargetPath")
+}
+
+func assertHasField(t *testing.T, typ reflect.Type, fields ...string) {
+	t.Helper()
+	for _, field := range fields {
+		if _, ok := typ.FieldByName(field); !ok {
+			t.Fatalf("expected %s to expose field %q", typ.Name(), field)
+		}
+	}
+}
+
+func assertOmitsField(t *testing.T, typ reflect.Type, fields ...string) {
+	t.Helper()
+	for _, field := range fields {
+		if _, ok := typ.FieldByName(field); ok {
+			t.Fatalf("expected %s to omit field %q", typ.Name(), field)
+		}
+	}
+}

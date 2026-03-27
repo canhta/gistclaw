@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -56,11 +57,11 @@ func (a *WorkspaceApplier) Apply(ctx context.Context, runID string, ticket model
 
 	// If the applier has a DB reference, verify the stored fingerprint.
 	if a.db != nil {
-		targetPath := ""
-		if len(changes) > 0 {
-			targetPath = changes[0].Path
+		bindingJSON, err := workspaceApplyBindingJSON(ticket.ToolName, changes)
+		if err != nil {
+			return model.ApplyResult{}, fmt.Errorf("tools: encode workspace apply binding: %w", err)
 		}
-		expectedFP := computeFingerprint(ticket.ToolName, ticket.ArgsJSON, targetPath)
+		expectedFP := computeFingerprint(ticket.ToolName, ticket.ArgsJSON, bindingJSON)
 		if err := VerifyTicket(ctx, a.db, ticket.ID, expectedFP); err != nil {
 			return model.ApplyResult{}, fmt.Errorf("tools: fingerprint verification: %w", err)
 		}
@@ -88,4 +89,21 @@ func (a *WorkspaceApplier) validatePath(relPath string) error {
 	}
 
 	return nil
+}
+
+func workspaceApplyBindingJSON(toolName string, changes []model.FileChange) ([]byte, error) {
+	operands := make([]string, 0, len(changes))
+	for _, change := range changes {
+		if strings.TrimSpace(change.Path) == "" {
+			continue
+		}
+		operands = append(operands, change.Path)
+	}
+	return json.Marshal(struct {
+		ToolName string   `json:"tool_name"`
+		Operands []string `json:"operands,omitempty"`
+	}{
+		ToolName: toolName,
+		Operands: operands,
+	})
 }

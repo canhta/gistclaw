@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"database/sql"
+	"testing"
+)
 
 func TestMigrate_ExpectedMigrationFiles(t *testing.T) {
 	entries, err := migrationFS.ReadDir("migrations")
@@ -194,4 +197,89 @@ func TestMigrateCreatesSessionRuntimeTables(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected delegations table to be absent")
 	}
+}
+
+func TestMigrate_UsesHostExecutionSchema(t *testing.T) {
+	db, err := Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	defer db.Close()
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+
+	assertTableHasColumns(t, db, "projects", "primary_path", "roots_json", "policy_json")
+	assertTableHasColumns(t, db, "runs", "cwd", "authority_json")
+	assertTableHasColumns(t, db, "approvals", "binding_json")
+	assertTableHasColumns(t, db, "schedules", "project_id", "cwd", "authority_json")
+
+	assertTableOmitsColumns(t, db, "projects", "workspace_root")
+	assertTableOmitsColumns(t, db, "runs", "workspace_root")
+	assertTableOmitsColumns(t, db, "approvals", "target_path")
+	assertTableOmitsColumns(t, db, "schedules", "workspace_root")
+
+	for _, key := range []string{"storage_root", "approval_mode", "host_access_mode"} {
+		var value string
+		if err := db.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value); err != nil {
+			if err == sql.ErrNoRows {
+				t.Fatalf("expected settings key %q to exist", key)
+			}
+			t.Fatalf("select settings %q: %v", key, err)
+		}
+		if value == "" {
+			t.Fatalf("expected settings key %q to have a non-empty value", key)
+		}
+	}
+}
+
+func assertTableHasColumns(t *testing.T, db *DB, tableName string, columns ...string) {
+	t.Helper()
+	have := tableColumns(t, db, tableName)
+	for _, column := range columns {
+		if !have[column] {
+			t.Fatalf("expected table %q to contain column %q", tableName, column)
+		}
+	}
+}
+
+func assertTableOmitsColumns(t *testing.T, db *DB, tableName string, columns ...string) {
+	t.Helper()
+	have := tableColumns(t, db, tableName)
+	for _, column := range columns {
+		if have[column] {
+			t.Fatalf("expected table %q to omit column %q", tableName, column)
+		}
+	}
+}
+
+func tableColumns(t *testing.T, db *DB, tableName string) map[string]bool {
+	t.Helper()
+
+	rows, err := db.db.Query("PRAGMA table_info(" + tableName + ")")
+	if err != nil {
+		t.Fatalf("table info %q: %v", tableName, err)
+	}
+	defer rows.Close()
+
+	columns := make(map[string]bool)
+	for rows.Next() {
+		var (
+			cid          int
+			name         string
+			columnType   string
+			notNull      int
+			defaultValue sql.NullString
+			primaryKey   int
+		)
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			t.Fatalf("scan table info %q: %v", tableName, err)
+		}
+		columns[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("table info rows %q: %v", tableName, err)
+	}
+	return columns
 }

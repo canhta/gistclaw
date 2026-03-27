@@ -17,7 +17,9 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE TABLE IF NOT EXISTS projects (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    workspace_root TEXT NOT NULL UNIQUE,
+    primary_path TEXT NOT NULL DEFAULT '',
+    roots_json BLOB NOT NULL DEFAULT '[]',
+    policy_json BLOB NOT NULL DEFAULT '{}',
     source TEXT NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT (datetime('now')),
     last_used_at DATETIME NOT NULL DEFAULT (datetime('now'))
@@ -32,7 +34,8 @@ CREATE TABLE IF NOT EXISTS runs (
     project_id TEXT,
     parent_run_id TEXT,
     objective TEXT,
-    workspace_root TEXT,
+    cwd TEXT NOT NULL DEFAULT '',
+    authority_json BLOB NOT NULL DEFAULT '{}',
     status TEXT NOT NULL DEFAULT 'pending',
     execution_snapshot_json BLOB,
     input_tokens INTEGER DEFAULT 0,
@@ -109,7 +112,7 @@ CREATE TABLE IF NOT EXISTS approvals (
     run_id TEXT NOT NULL,
     tool_name TEXT NOT NULL,
     args_json BLOB,
-    target_path TEXT,
+    binding_json BLOB NOT NULL DEFAULT '{}',
     fingerprint TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     resolved_by TEXT,
@@ -210,7 +213,10 @@ CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at_revoked_at
 INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES
     ('per_run_token_budget', '50000',  datetime('now')),
     ('per_run_cost_cap_usd', '0.50',   datetime('now')),
-    ('daily_cost_cap_usd',   '5.00',   datetime('now'));
+    ('daily_cost_cap_usd',   '5.00',   datetime('now')),
+    ('storage_root',         '.gistclaw', datetime('now')),
+    ('approval_mode',        'prompt', datetime('now')),
+    ('host_access_mode',     'standard', datetime('now'));
 
 CREATE TABLE IF NOT EXISTS run_summaries (
     id TEXT PRIMARY KEY,
@@ -225,8 +231,10 @@ CREATE TABLE IF NOT EXISTS run_summaries (
 CREATE TABLE IF NOT EXISTS schedules (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
+    project_id TEXT NOT NULL DEFAULT '',
     objective TEXT NOT NULL,
-    workspace_root TEXT NOT NULL,
+    cwd TEXT NOT NULL DEFAULT '',
+    authority_json BLOB NOT NULL DEFAULT '{}',
     schedule_kind TEXT NOT NULL,
     schedule_at TEXT NOT NULL DEFAULT '',
     schedule_every_seconds INTEGER NOT NULL DEFAULT 0,

@@ -273,12 +273,14 @@ type RunRef struct {
 }
 
 type Project struct {
-	ID            string
-	Name          string
-	WorkspaceRoot string
-	Source        string
-	CreatedAt     time.Time
-	LastUsedAt    time.Time
+	ID          string
+	Name        string
+	PrimaryPath string
+	RootsJSON   string
+	PolicyJSON  string
+	Source      string
+	CreatedAt   time.Time
+	LastUsedAt  time.Time
 }
 
 type Run struct {
@@ -290,7 +292,8 @@ type Run struct {
 	ProjectID             string
 	ParentRunID           string
 	Objective             string
-	WorkspaceRoot         string
+	CWD                   string
+	AuthorityJSON         []byte
 	Status                RunStatus
 	ExecutionSnapshotJSON []byte
 	InputTokens           int
@@ -444,10 +447,10 @@ type RunReceipt struct {
 }
 
 type ApprovalRequest struct {
-	RunID      string
-	ToolName   string
-	ArgsJSON   []byte
-	TargetPath string
+	RunID       string
+	ToolName    string
+	ArgsJSON    []byte
+	BindingJSON []byte
 }
 
 type ApprovalTicket struct {
@@ -455,7 +458,7 @@ type ApprovalTicket struct {
 	RunID       string
 	ToolName    string
 	ArgsJSON    []byte
-	TargetPath  string
+	BindingJSON []byte
 	Fingerprint string
 	Status      string
 	CreatedAt   time.Time

@@ -104,81 +104,21 @@ func ensureProjectSchema(db *DB) error {
 		`CREATE TABLE IF NOT EXISTS projects (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
-			workspace_root TEXT NOT NULL UNIQUE,
+			primary_path TEXT NOT NULL DEFAULT '',
+			roots_json BLOB NOT NULL DEFAULT '[]',
+			policy_json BLOB NOT NULL DEFAULT '{}',
 			source TEXT NOT NULL DEFAULT '',
 			created_at DATETIME NOT NULL DEFAULT (datetime('now')),
 			last_used_at DATETIME NOT NULL DEFAULT (datetime('now'))
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_projects_last_used_at ON projects(last_used_at, created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_runs_project_id_status_updated_at ON runs(project_id, status, updated_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_memory_items_project_id_agent_id_scope ON memory_items(project_id, agent_id, scope)`,
+		`CREATE INDEX IF NOT EXISTS idx_run_summaries_project_id_run_id ON run_summaries(project_id, run_id)`,
 	} {
 		if _, err := db.db.Exec(stmt); err != nil {
 			return fmt.Errorf("migrate: ensure project schema: %w", err)
 		}
-	}
-
-	hasProjectID, err := tableHasColumn(db, "runs", "project_id")
-	if err != nil {
-		return err
-	}
-	if !hasProjectID {
-		if _, err := db.db.Exec(`ALTER TABLE runs ADD COLUMN project_id TEXT`); err != nil {
-			return fmt.Errorf("migrate: add runs.project_id: %w", err)
-		}
-	}
-	if _, err := db.db.Exec(`CREATE INDEX IF NOT EXISTS idx_runs_project_id_status_updated_at ON runs(project_id, status, updated_at)`); err != nil {
-		return fmt.Errorf("migrate: create runs.project_id index: %w", err)
-	}
-	if _, err := db.db.Exec(`UPDATE runs
-		SET project_id = (
-			SELECT projects.id
-			FROM projects
-			WHERE projects.workspace_root = runs.workspace_root
-		)
-		WHERE COALESCE(project_id, '') = ''
-		  AND COALESCE(workspace_root, '') != ''`); err != nil {
-		return fmt.Errorf("migrate: backfill runs.project_id: %w", err)
-	}
-
-	hasMemoryProjectID, err := tableHasColumn(db, "memory_items", "project_id")
-	if err != nil {
-		return err
-	}
-	if !hasMemoryProjectID {
-		if _, err := db.db.Exec(`ALTER TABLE memory_items ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`); err != nil {
-			return fmt.Errorf("migrate: add memory_items.project_id: %w", err)
-		}
-	}
-	if _, err := db.db.Exec(`UPDATE memory_items
-		SET project_id = COALESCE((
-			SELECT value FROM settings WHERE key = 'active_project_id'
-		), '')
-		WHERE COALESCE(project_id, '') = ''`); err != nil {
-		return fmt.Errorf("migrate: backfill memory_items.project_id: %w", err)
-	}
-	if _, err := db.db.Exec(`CREATE INDEX IF NOT EXISTS idx_memory_items_project_id_agent_id_scope ON memory_items(project_id, agent_id, scope)`); err != nil {
-		return fmt.Errorf("migrate: create memory_items.project_id index: %w", err)
-	}
-
-	hasRunSummariesProjectID, err := tableHasColumn(db, "run_summaries", "project_id")
-	if err != nil {
-		return err
-	}
-	if !hasRunSummariesProjectID {
-		if _, err := db.db.Exec(`ALTER TABLE run_summaries ADD COLUMN project_id TEXT NOT NULL DEFAULT ''`); err != nil {
-			return fmt.Errorf("migrate: add run_summaries.project_id: %w", err)
-		}
-	}
-	if _, err := db.db.Exec(`UPDATE run_summaries
-		SET project_id = COALESCE((
-			SELECT runs.project_id
-			FROM runs
-			WHERE runs.id = run_summaries.run_id
-		), '')
-		WHERE COALESCE(project_id, '') = ''`); err != nil {
-		return fmt.Errorf("migrate: backfill run_summaries.project_id: %w", err)
-	}
-	if _, err := db.db.Exec(`CREATE INDEX IF NOT EXISTS idx_run_summaries_project_id_run_id ON run_summaries(project_id, run_id)`); err != nil {
-		return fmt.Errorf("migrate: create run_summaries.project_id index: %w", err)
 	}
 
 	return nil

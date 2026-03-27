@@ -5,9 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/canhta/gistclaw/internal/model"
@@ -17,14 +15,14 @@ import (
 var ErrTicketExpired = fmt.Errorf("tools: approval ticket expired")
 
 func CreateTicket(ctx context.Context, db *store.DB, req model.ApprovalRequest) (model.ApprovalTicket, error) {
-	fingerprint := computeFingerprint(req.ToolName, req.ArgsJSON, req.TargetPath)
+	fingerprint := computeFingerprint(req.ToolName, req.ArgsJSON, req.BindingJSON)
 	id := toolsGenerateID()
 	now := time.Now().UTC()
 
 	_, err := db.RawDB().ExecContext(ctx,
-		`INSERT INTO approvals (id, run_id, tool_name, args_json, target_path, fingerprint, status, created_at)
+		`INSERT INTO approvals (id, run_id, tool_name, args_json, binding_json, fingerprint, status, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`,
-		id, req.RunID, req.ToolName, req.ArgsJSON, req.TargetPath, fingerprint, now,
+		id, req.RunID, req.ToolName, req.ArgsJSON, req.BindingJSON, fingerprint, now,
 	)
 	if err != nil {
 		return model.ApprovalTicket{}, fmt.Errorf("create ticket: %w", err)
@@ -35,7 +33,7 @@ func CreateTicket(ctx context.Context, db *store.DB, req model.ApprovalRequest) 
 		RunID:       req.RunID,
 		ToolName:    req.ToolName,
 		ArgsJSON:    req.ArgsJSON,
-		TargetPath:  req.TargetPath,
+		BindingJSON: req.BindingJSON,
 		Fingerprint: fingerprint,
 		Status:      "pending",
 		CreatedAt:   now,
@@ -81,10 +79,10 @@ func ResolveTicket(ctx context.Context, db *store.DB, ticketID string, decision 
 func LoadTicket(ctx context.Context, db *store.DB, ticketID string) (model.ApprovalTicket, error) {
 	var t model.ApprovalTicket
 	err := db.RawDB().QueryRowContext(ctx,
-		`SELECT id, run_id, tool_name, args_json, COALESCE(target_path,''), fingerprint, status, created_at
+		`SELECT id, run_id, tool_name, args_json, binding_json, fingerprint, status, created_at
 		 FROM approvals WHERE id = ?`,
 		ticketID,
-	).Scan(&t.ID, &t.RunID, &t.ToolName, &t.ArgsJSON, &t.TargetPath, &t.Fingerprint, &t.Status, &t.CreatedAt)
+	).Scan(&t.ID, &t.RunID, &t.ToolName, &t.ArgsJSON, &t.BindingJSON, &t.Fingerprint, &t.Status, &t.CreatedAt)
 	if err != nil {
 		return model.ApprovalTicket{}, fmt.Errorf("load ticket: %w", err)
 	}
@@ -108,31 +106,9 @@ func VerifyTicket(ctx context.Context, db *store.DB, ticketID string, currentFin
 	return nil
 }
 
-func computeFingerprint(toolName string, argsJSON []byte, targetPath string) string {
-	sum := sha256.Sum256([]byte(toolName + ":" + string(argsJSON) + ":" + targetPath))
+func computeFingerprint(toolName string, argsJSON []byte, bindingJSON []byte) string {
+	sum := sha256.Sum256([]byte(toolName + ":" + string(argsJSON) + ":" + string(bindingJSON)))
 	return fmt.Sprintf("%x", sum)
-}
-
-func ApprovalTargetPath(_ string, argsJSON []byte) string {
-	var payload map[string]any
-	if err := json.Unmarshal(argsJSON, &payload); err != nil {
-		return ""
-	}
-	for _, key := range []string{"path", "to", "target", "file"} {
-		value, ok := payload[key]
-		if !ok {
-			continue
-		}
-		text, ok := value.(string)
-		if !ok {
-			continue
-		}
-		text = strings.TrimSpace(text)
-		if text != "" {
-			return text
-		}
-	}
-	return ""
 }
 
 func toolsGenerateID() string {

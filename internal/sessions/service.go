@@ -286,10 +286,9 @@ func (s *Service) ListSessionsPage(ctx context.Context, filter SessionListFilter
 		 ) activity ON activity.session_id = sess.id
 		 WHERE 1 = 1`
 	args := make([]any, 0, 24)
-	if filter.ProjectID != "" || filter.WorkspaceRoot != "" {
+	if filter.ProjectID != "" {
 		scopeCondition, scopeArgs := projectscope.RunCondition(model.Project{
-			ID:            filter.ProjectID,
-			WorkspaceRoot: filter.WorkspaceRoot,
+			ID: filter.ProjectID,
 		}, "scope_runs")
 		query += `
 		   AND EXISTS (
@@ -638,10 +637,9 @@ func (s *Service) ListRoutesPage(ctx context.Context, filter RouteListFilter) (P
 	)
 
 	args := make([]any, 0, 12)
-	if filter.ProjectID != "" || filter.WorkspaceRoot != "" {
+	if filter.ProjectID != "" {
 		scopeCondition, scopeArgs := projectscope.RunCondition(model.Project{
-			ID:            filter.ProjectID,
-			WorkspaceRoot: filter.WorkspaceRoot,
+			ID: filter.ProjectID,
 		}, "scope_runs")
 		query.WriteString(` AND EXISTS (
 			SELECT 1
@@ -921,10 +919,9 @@ func (s *Service) ListDeliveryQueuePage(ctx context.Context, filter DeliveryQueu
 
 	args := make([]any, 0, 3)
 	conditions := make([]string, 0, 2)
-	if filter.ProjectID != "" || filter.WorkspaceRoot != "" {
+	if filter.ProjectID != "" {
 		scopeCondition, scopeArgs := projectscope.RunCondition(model.Project{
-			ID:            filter.ProjectID,
-			WorkspaceRoot: filter.WorkspaceRoot,
+			ID: filter.ProjectID,
 		}, "r")
 		conditions = append(conditions, scopeCondition)
 		args = append(args, scopeArgs...)
