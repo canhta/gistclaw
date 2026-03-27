@@ -552,6 +552,33 @@ func TestBootstrap_WiresWhatsAppConnectorWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestBootstrap_WiresZaloPersonalConnectorWhenConfigured(t *testing.T) {
+	cfg := Config{
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "anthropic",
+			APIKey: "sk-test",
+		},
+		ZaloPersonal: ZaloPersonalConfig{
+			Enabled: true,
+		},
+	}
+
+	app, err := Bootstrap(cfg)
+	if err != nil {
+		t.Fatalf("Bootstrap failed: %v", err)
+	}
+
+	if len(app.connectors) != 1 {
+		t.Fatalf("expected 1 wired connector, got %d", len(app.connectors))
+	}
+	if app.connectors[0].ID() != "zalo_personal" {
+		t.Fatalf("expected zalo_personal connector, got %q", app.connectors[0].ID())
+	}
+}
+
 func TestBuildToolRegistry_LoadsConfiguredMCPToolFromConfig(t *testing.T) {
 	reg, closer, err := buildToolRegistry(context.Background(), Config{
 		Research: tools.ResearchConfig{},

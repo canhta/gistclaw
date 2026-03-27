@@ -16,6 +16,7 @@ import (
 	"github.com/canhta/gistclaw/internal/auth"
 	telegramconnector "github.com/canhta/gistclaw/internal/connectors/telegram"
 	whatsappconnector "github.com/canhta/gistclaw/internal/connectors/whatsapp"
+	zalopersonalconnector "github.com/canhta/gistclaw/internal/connectors/zalopersonal"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -468,7 +469,7 @@ func buildConnectors(
 	rt *runtime.Runtime,
 	whatsappHealth *whatsappconnector.HealthState,
 ) []model.Connector {
-	connectors := make([]model.Connector, 0, 2)
+	connectors := make([]model.Connector, 0, 3)
 	if cfg.Telegram.BotToken != "" {
 		connectors = append(connectors, telegramconnector.NewConnector(
 			cfg.Telegram.BotToken,
@@ -486,6 +487,9 @@ func buildConnectors(
 			cs,
 			whatsappHealth,
 		))
+	}
+	if cfg.ZaloPersonal.Enabled {
+		connectors = append(connectors, zalopersonalconnector.NewConnector())
 	}
 	return connectors
 }

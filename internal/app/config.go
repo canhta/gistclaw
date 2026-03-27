@@ -24,6 +24,7 @@ type Config struct {
 	MCP            tools.MCPOptions         `yaml:"mcp"`
 	Telegram       TelegramConfig           `yaml:"telegram"`
 	WhatsApp       WhatsAppConfig           `yaml:"whatsapp"`
+	ZaloPersonal   ZaloPersonalConfig       `yaml:"zalo_personal"`
 	Web            WebConfig                `yaml:"web"`
 	AdminToken     string                   `yaml:"-"`
 }
@@ -51,6 +52,11 @@ type WhatsAppConfig struct {
 	AccessToken   string `yaml:"access_token"`
 	VerifyToken   string `yaml:"verify_token"`
 	AgentID       string `yaml:"agent_id"`
+}
+
+type ZaloPersonalConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	AgentID string `yaml:"agent_id"`
 }
 
 type WebConfig struct {
@@ -222,6 +228,9 @@ func (c *Config) applyDefaults(defaultStateDir string) {
 	}
 	if c.WhatsApp.AgentID == "" {
 		c.WhatsApp.AgentID = "assistant"
+	}
+	if c.ZaloPersonal.AgentID == "" {
+		c.ZaloPersonal.AgentID = "assistant"
 	}
 	if c.Web.ListenAddr == "" {
 		c.Web.ListenAddr = "127.0.0.1:8080"

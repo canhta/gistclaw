@@ -301,6 +301,42 @@ func TestConfiguredConnectorHealth_IgnoresStalePersistedSnapshot(t *testing.T) {
 	}
 }
 
+func TestConfiguredConnectorHealth_IncludesZaloPersonalWhenEnabled(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "state", "runtime.db")
+	db, err := storeWiring(Config{DatabasePath: dbPath})
+	if err != nil {
+		t.Fatalf("storeWiring failed: %v", err)
+	}
+	defer db.Close()
+
+	cfg := Config{
+		DatabasePath: dbPath,
+		StateDir:     filepath.Dir(dbPath),
+		StorageRoot:  t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "openai",
+			APIKey: "sk-test",
+		},
+		ZaloPersonal: ZaloPersonalConfig{
+			Enabled: true,
+		},
+	}
+
+	snapshots, err := ConfiguredConnectorHealth(context.Background(), cfg, db)
+	if err != nil {
+		t.Fatalf("ConfiguredConnectorHealth failed: %v", err)
+	}
+	if len(snapshots) != 1 {
+		t.Fatalf("expected 1 connector snapshot, got %d", len(snapshots))
+	}
+	if snapshots[0].ConnectorID != "zalo_personal" {
+		t.Fatalf("expected zalo_personal snapshot, got %+v", snapshots[0])
+	}
+	if snapshots[0].State != model.ConnectorHealthUnknown {
+		t.Fatalf("expected unknown cold-start snapshot, got %+v", snapshots[0])
+	}
+}
+
 // startMockAnthropicServer starts a local httptest.Server that returns minimal
 // valid Anthropic Messages API responses, and points the provider at it via
 // ANTHROPIC_BASE_URL. Must be called before Bootstrap.

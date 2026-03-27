@@ -84,6 +84,41 @@ provider:
 	}
 }
 
+func TestConfig_DefaultZaloPersonalAgentID(t *testing.T) {
+	dir := t.TempDir()
+	storageRoot := filepath.Join(dir, "storage")
+	if err := os.Mkdir(storageRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(cfgPath, []byte(`
+storage_root: `+storageRoot+`
+provider:
+  name: anthropic
+  api_key: sk-test-1234
+  models:
+    cheap: claude-3-haiku
+    strong: claude-sonnet-4-20250514
+zalo_personal:
+  enabled: true
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("unexpected error loading zalo_personal config: %v", err)
+	}
+	if !cfg.ZaloPersonal.Enabled {
+		t.Fatal("expected zalo_personal.enabled to round-trip")
+	}
+	if cfg.ZaloPersonal.AgentID != "assistant" {
+		t.Fatalf("expected default zalo_personal agent_id %q, got %q", "assistant", cfg.ZaloPersonal.AgentID)
+	}
+}
+
 func TestConfig_MissingAPIKey(t *testing.T) {
 	dir := t.TempDir()
 	storageRoot := filepath.Join(dir, "storage")
