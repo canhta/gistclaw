@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -64,6 +65,68 @@ func TestRunEngine_ApprovalRequestCreatesTicketAndPausesRun(t *testing.T) {
 		t.Fatalf("expected no recorded tool call before approval, got %d", toolCallCount)
 	}
 	if _, err := os.Stat(filepath.Join(workspaceRoot, "created.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected file to not exist before approval, stat err=%v", err)
+	}
+}
+
+func TestRunEngine_RequiredApprovalToolCreatesPreciseBindingAndPausesRun(t *testing.T) {
+	rt, db, _ := newApprovalRuntime(t, []GenerateResult{
+		{
+			ToolCalls: []model.ToolCallRequest{
+				{ID: "call-write", ToolName: "write_new_file", InputJSON: []byte(`{"path":"docs/new.txt","content":"hello"}`)},
+			},
+			StopReason: "tool_calls",
+		},
+	})
+	workspaceRoot := t.TempDir()
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID:        "conv-approval-write-new-file",
+		AgentID:               "patcher",
+		Objective:             "create one file",
+		CWD:                   workspaceRoot,
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, workspaceWriteSnapshot()),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if run.Status != model.RunStatusNeedsApproval {
+		t.Fatalf("expected needs_approval, got %q", run.Status)
+	}
+
+	var bindingJSON []byte
+	if err := db.RawDB().QueryRow(
+		"SELECT binding_json FROM approvals WHERE run_id = ? AND status = 'pending' LIMIT 1",
+		run.ID,
+	).Scan(&bindingJSON); err != nil {
+		t.Fatalf("query approval binding: %v", err)
+	}
+
+	var binding authority.Binding
+	if err := json.Unmarshal(bindingJSON, &binding); err != nil {
+		t.Fatalf("unmarshal binding: %v", err)
+	}
+	if binding.ToolName != "write_new_file" {
+		t.Fatalf("expected write_new_file binding, got %+v", binding)
+	}
+	if binding.CWD != workspaceRoot {
+		t.Fatalf("expected binding cwd %q, got %+v", workspaceRoot, binding)
+	}
+	if !binding.Mutating {
+		t.Fatalf("expected mutating binding, got %+v", binding)
+	}
+	resolvedRoot, err := filepath.EvalSymlinks(workspaceRoot)
+	if err != nil {
+		t.Fatalf("EvalSymlinks: %v", err)
+	}
+	wantOperand := filepath.Join(resolvedRoot, "docs", "new.txt")
+	if len(binding.Operands) != 1 || binding.Operands[0] != wantOperand {
+		t.Fatalf("expected concrete operand %q, got %+v", wantOperand, binding)
+	}
+	if len(binding.WriteRoots) != 1 || binding.WriteRoots[0] != workspaceRoot {
+		t.Fatalf("expected write root %q, got %+v", workspaceRoot, binding)
+	}
+	if _, err := os.Stat(filepath.Join(workspaceRoot, "docs", "new.txt")); !os.IsNotExist(err) {
 		t.Fatalf("expected file to not exist before approval, stat err=%v", err)
 	}
 }

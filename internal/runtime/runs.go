@@ -851,7 +851,7 @@ func (r *Runtime) executeToolCalls(
 				return outcome, nil
 			}
 		case model.DecisionAsk:
-			bindingJSON, err := approvalBindingJSON(tc.ToolName, cwd, tool.Spec())
+			bindingJSON, err := tools.BuildApprovalBindingJSON(tc.ToolName, cwd, tool.Spec(), tc.InputJSON, runAuthority)
 			if err != nil {
 				return outcome, fmt.Errorf("create approval binding: %w", err)
 			}
@@ -1899,15 +1899,6 @@ func normalizeRuntimeAuthorityJSON(raw []byte) []byte {
 		return []byte("{}")
 	}
 	return append([]byte(nil), raw...)
-}
-
-func approvalBindingJSON(toolName, cwd string, spec model.ToolSpec) ([]byte, error) {
-	binding := authority.Binding{
-		ToolName: toolName,
-		CWD:      cwd,
-		Mutating: strings.TrimSpace(spec.SideEffect) != "" && spec.SideEffect != "read",
-	}
-	return json.Marshal(binding)
 }
 
 func generateID() string {

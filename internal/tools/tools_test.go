@@ -89,6 +89,25 @@ func TestPolicy_ScopedWriteProfileAsksForCoderExec(t *testing.T) {
 	}
 }
 
+func TestPolicy_ScopedWriteProfileAsksForRequiredApprovalTool(t *testing.T) {
+	p := &Policy{Profile: "scoped_write"}
+	agent := model.AgentProfile{
+		Capabilities: []model.AgentCapability{model.CapScopedWrite},
+		ToolProfile:  "scoped_write",
+	}
+	spec := model.ToolSpec{
+		Name:       "write_new_file",
+		Risk:       model.RiskMedium,
+		SideEffect: effectCreate,
+		Approval:   "required",
+	}
+
+	decision := p.Decide(agent, model.RunProfile{}, spec)
+	if decision.Mode != model.DecisionAsk {
+		t.Fatalf("expected ask for required approval tool with scoped_write profile, got %s", decision.Mode)
+	}
+}
+
 func TestPolicy_ReadToolAlwaysAllowed(t *testing.T) {
 	p := &Policy{Profile: "read_heavy"}
 	agent := model.AgentProfile{

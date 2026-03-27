@@ -51,6 +51,12 @@ func (p *Policy) decide(agent model.AgentProfile, spec model.ToolSpec, effect st
 			Reason: "profile denies risky tools",
 		}
 	case "scoped_write":
+		if spec.Approval == "required" {
+			return model.ToolDecision{
+				Mode:   model.DecisionAsk,
+				Reason: "tool requires approval",
+			}
+		}
 		if (spec.Name == "shell_exec" || spec.Name == "coder_exec") && effect == effectExecWrite {
 			return model.ToolDecision{
 				Mode:   model.DecisionAsk,
@@ -62,6 +68,12 @@ func (p *Policy) decide(agent model.AgentProfile, spec model.ToolSpec, effect st
 			Reason: "scoped_write allows scoped mutations",
 		}
 	case "operator_facing", "elevated":
+		if spec.Approval == "required" {
+			return model.ToolDecision{
+				Mode:   model.DecisionAsk,
+				Reason: "tool requires approval",
+			}
+		}
 		if (spec.Name == "shell_exec" || spec.Name == "coder_exec") && effect == effectExecWrite {
 			return model.ToolDecision{
 				Mode:   model.DecisionAsk,
@@ -70,6 +82,12 @@ func (p *Policy) decide(agent model.AgentProfile, spec model.ToolSpec, effect st
 		}
 		return model.ToolDecision{Mode: model.DecisionAllow, Reason: "elevated profile"}
 	default:
+		if spec.Approval == "required" {
+			return model.ToolDecision{
+				Mode:   model.DecisionAsk,
+				Reason: "tool requires approval",
+			}
+		}
 		return model.ToolDecision{Mode: model.DecisionAllow, Reason: "default allow"}
 	}
 }
