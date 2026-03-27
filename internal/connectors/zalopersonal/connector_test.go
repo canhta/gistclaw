@@ -3,10 +3,12 @@ package zalopersonal
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
@@ -303,6 +305,89 @@ func TestConnectorSendText(t *testing.T) {
 		}
 		if gotChatID != "user-1" || gotText != "xin chao" {
 			t.Fatalf("unexpected send args: chatID=%q text=%q", gotChatID, gotText)
+		}
+	})
+
+	t.Run("long text is chunked on valid utf8 boundaries", func(t *testing.T) {
+		db := setupZaloOutboundDB(t)
+		cs := conversations.NewConversationStore(db)
+		rt := &stubInboundRuntime{}
+		if err := SaveStoredCredentials(context.Background(), db, StoredCredentials{
+			AccountID: "acct-1",
+			IMEI:      "imei-123",
+			Cookie:    "zpw_sek=abc123",
+			UserAgent: "Mozilla/5.0",
+			Language:  "vi",
+		}); err != nil {
+			t.Fatalf("SaveStoredCredentials: %v", err)
+		}
+
+		connector := NewConnector(db, cs, rt, "assistant")
+		calls := make([]string, 0, 2)
+		connector.sendText = func(_ context.Context, creds StoredCredentials, chatID, text string) error {
+			if creds.AccountID != "acct-1" {
+				t.Fatalf("unexpected creds: %+v", creds)
+			}
+			if chatID != "user-1" {
+				t.Fatalf("unexpected chat id %q", chatID)
+			}
+			calls = append(calls, text)
+			return nil
+		}
+
+		input := strings.Repeat("a", 1999) + "ạ"
+		if err := connector.SendText(context.Background(), "user-1", input); err != nil {
+			t.Fatalf("SendText: %v", err)
+		}
+		if len(calls) != 2 {
+			t.Fatalf("expected 2 send calls, got %d", len(calls))
+		}
+		if len(calls[0]) > 2000 || len(calls[1]) > 2000 {
+			t.Fatalf("expected each chunk to respect max text length, got lens %d and %d", len(calls[0]), len(calls[1]))
+		}
+		for i, chunk := range calls {
+			if !utf8.ValidString(chunk) {
+				t.Fatalf("expected chunk %d to be valid utf8, got %q", i, chunk)
+			}
+		}
+		if strings.Join(calls, "") != input {
+			t.Fatalf("expected chunked text to round-trip, got %q", strings.Join(calls, ""))
+		}
+	})
+
+	t.Run("long text prefers splitting at newline near chunk limit", func(t *testing.T) {
+		db := setupZaloOutboundDB(t)
+		cs := conversations.NewConversationStore(db)
+		rt := &stubInboundRuntime{}
+		if err := SaveStoredCredentials(context.Background(), db, StoredCredentials{
+			AccountID: "acct-1",
+			IMEI:      "imei-123",
+			Cookie:    "zpw_sek=abc123",
+			UserAgent: "Mozilla/5.0",
+			Language:  "vi",
+		}); err != nil {
+			t.Fatalf("SaveStoredCredentials: %v", err)
+		}
+
+		connector := NewConnector(db, cs, rt, "assistant")
+		calls := make([]string, 0, 2)
+		connector.sendText = func(_ context.Context, _ StoredCredentials, _, text string) error {
+			calls = append(calls, text)
+			return nil
+		}
+
+		input := strings.Repeat("a", 1990) + "\n" + strings.Repeat("b", 30)
+		if err := connector.SendText(context.Background(), "user-1", input); err != nil {
+			t.Fatalf("SendText: %v", err)
+		}
+		if len(calls) != 2 {
+			t.Fatalf("expected 2 send calls, got %d", len(calls))
+		}
+		if calls[0] != strings.Repeat("a", 1990)+"\n" {
+			t.Fatalf("expected first chunk to split at newline, got %q", calls[0])
+		}
+		if calls[1] != strings.Repeat("b", 30) {
+			t.Fatalf("expected second chunk to contain remainder, got %q", calls[1])
 		}
 	})
 

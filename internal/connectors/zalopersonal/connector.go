@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/canhta/gistclaw/internal/connectors/zalopersonal/protocol"
 	"github.com/canhta/gistclaw/internal/conversations"
@@ -41,6 +42,8 @@ type Connector struct {
 	credentialPollInterval time.Duration
 	reconnectDelay         time.Duration
 }
+
+const maxTextChunkBytes = 2000
 
 func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt ConnectorRuntime, defaultAgentID string) *Connector {
 	connector := &Connector{
@@ -189,7 +192,12 @@ func (c *Connector) SendText(ctx context.Context, chatID, text string) error {
 	if c.sendText == nil {
 		return fmt.Errorf("zalo personal connector: send path not configured")
 	}
-	return c.sendText(ctx, creds, chatID, text)
+	for _, chunk := range splitTextChunks(text) {
+		if err := c.sendText(ctx, creds, chatID, chunk); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *Connector) ConnectorHealthSnapshot() model.ConnectorHealthSnapshot {
@@ -254,6 +262,40 @@ func optionalLanguage(language string) *string {
 		return nil
 	}
 	return &language
+}
+
+func splitTextChunks(text string) []string {
+	if len(text) <= maxTextChunkBytes {
+		return []string{text}
+	}
+
+	chunks := make([]string, 0, len(text)/maxTextChunkBytes+1)
+	for len(text) > maxTextChunkBytes {
+		cutAt := safeChunkBoundary(text, maxTextChunkBytes)
+		if idx := strings.LastIndex(text[:cutAt], "\n"); idx > cutAt/2 {
+			cutAt = idx + 1
+		}
+		chunks = append(chunks, text[:cutAt])
+		text = text[cutAt:]
+	}
+	if text != "" {
+		chunks = append(chunks, text)
+	}
+	return chunks
+}
+
+func safeChunkBoundary(text string, limit int) int {
+	if limit >= len(text) {
+		return len(text)
+	}
+	for limit > 0 && !utf8.RuneStart(text[limit]) {
+		limit--
+	}
+	if limit == 0 {
+		_, size := utf8.DecodeRuneInString(text)
+		return size
+	}
+	return limit
 }
 
 func sleepContext(ctx context.Context, d time.Duration) error {
