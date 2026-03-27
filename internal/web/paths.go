@@ -6,15 +6,19 @@ import (
 )
 
 const (
-	pageOperateRuns             = "/operate/runs"
-	pageOperateSessions         = "/operate/sessions"
-	pageOperateStartTask        = "/operate/start-task"
-	pageConfigureTeam           = "/configure/team"
-	pageConfigureTeamExport     = "/configure/team/export"
-	pageConfigureMemory         = "/configure/memory"
-	pageConfigureSettings       = "/configure/settings"
-	pageRecoverApprovals        = "/recover/approvals"
-	pageRecoverRoutesDeliveries = "/recover/routes-deliveries"
+	pageLogin                     = "/login"
+	pageLogout                    = "/logout"
+	pageOperateRuns               = "/operate/runs"
+	pageOperateSessions           = "/operate/sessions"
+	pageOperateStartTask          = "/operate/start-task"
+	pageConfigureTeam             = "/configure/team"
+	pageConfigureTeamExport       = "/configure/team/export"
+	pageConfigureMemory           = "/configure/memory"
+	pageConfigureSettings         = "/configure/settings"
+	pageConfigureSettingsPassword = "/configure/settings/password"
+	pageConfigureSettingsDevices  = "/configure/settings/devices"
+	pageRecoverApprovals          = "/recover/approvals"
+	pageRecoverRoutesDeliveries   = "/recover/routes-deliveries"
 )
 
 type navLink struct {
@@ -88,6 +92,18 @@ func routeDeactivatePath(routeID string) string {
 
 func deliveryRetryPath(deliveryID string) string {
 	return pageRecoverRoutesDeliveries + "/deliveries/" + url.PathEscape(deliveryID) + "/retry"
+}
+
+func settingsDeviceRevokePath(deviceID string) string {
+	return pageConfigureSettingsDevices + "/" + url.PathEscape(deviceID) + "/revoke"
+}
+
+func settingsDeviceBlockPath(deviceID string) string {
+	return pageConfigureSettingsDevices + "/" + url.PathEscape(deviceID) + "/block"
+}
+
+func settingsDeviceUnblockPath(deviceID string) string {
+	return pageConfigureSettingsDevices + "/" + url.PathEscape(deviceID) + "/unblock"
 }
 
 func navigationForPath(path string) shellNavigation {

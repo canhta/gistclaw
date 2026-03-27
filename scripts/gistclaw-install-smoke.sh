@@ -118,6 +118,13 @@ echo "\$*" >> "$log_dir/systemctl.log"
 EOF
 	chmod +x "$stub_dir/systemctl"
 
+	cat > "$stub_dir/apt-get" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+echo "\$*" >> "$log_dir/apt.log"
+EOF
+	chmod +x "$stub_dir/apt-get"
+
 	cat > "$stub_dir/groupadd" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
@@ -159,6 +166,7 @@ run_happy_path() {
 	local version="v0.1.0"
 	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir"
 	: > "$log_dir/systemctl.log"
+	: > "$log_dir/apt.log"
 	: > "$log_dir/users.log"
 	: > "$log_dir/ownership.log"
 	setup_fixture_repo "$fixture_dir" "$version"
@@ -208,6 +216,7 @@ run_config_file_happy_path() {
 	local source_cfg="$tmp/source-config.yaml"
 	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir"
 	: > "$log_dir/systemctl.log"
+	: > "$log_dir/apt.log"
 	: > "$log_dir/users.log"
 	: > "$log_dir/ownership.log"
 	setup_fixture_repo "$fixture_dir" "$version"
@@ -271,6 +280,7 @@ run_missing_provider_case() {
 	local version="v0.1.0"
 	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir"
 	: > "$log_dir/systemctl.log"
+	: > "$log_dir/apt.log"
 	: > "$log_dir/users.log"
 	: > "$log_dir/ownership.log"
 	setup_fixture_repo "$fixture_dir" "$version"
@@ -315,6 +325,7 @@ run_missing_config_file_case() {
 	local version="v0.1.0"
 	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir"
 	: > "$log_dir/systemctl.log"
+	: > "$log_dir/apt.log"
 	: > "$log_dir/users.log"
 	: > "$log_dir/ownership.log"
 	setup_fixture_repo "$fixture_dir" "$version"
@@ -360,6 +371,7 @@ run_mixed_mode_case() {
 	local source_cfg="$tmp/source-config.yaml"
 	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir"
 	: > "$log_dir/systemctl.log"
+	: > "$log_dir/apt.log"
 	: > "$log_dir/users.log"
 	: > "$log_dir/ownership.log"
 	setup_fixture_repo "$fixture_dir" "$version"
@@ -406,6 +418,7 @@ run_invalid_config_helper_case() {
 	local source_cfg="$tmp/source-config.yaml"
 	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir"
 	: > "$log_dir/systemctl.log"
+	: > "$log_dir/apt.log"
 	: > "$log_dir/users.log"
 	: > "$log_dir/ownership.log"
 	setup_fixture_repo "$fixture_dir" "$version"
@@ -452,6 +465,7 @@ run_checksum_failure_case() {
 	local version="v0.1.0"
 	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir"
 	: > "$log_dir/systemctl.log"
+	: > "$log_dir/apt.log"
 	: > "$log_dir/users.log"
 	: > "$log_dir/ownership.log"
 	setup_fixture_repo "$fixture_dir" "$version"
@@ -483,6 +497,120 @@ run_checksum_failure_case() {
 	assert_contains "$tmp/err" "checksum mismatch"
 }
 
+run_public_domain_happy_path() {
+	local tmp
+	tmp="$(mktemp -d)"
+	trap 'rm -rf "$tmp"' RETURN
+
+	local fixture_dir="$tmp/fixtures"
+	local stub_dir="$tmp/stubs"
+	local log_dir="$tmp/logs"
+	local root_dir="$tmp/root"
+	local version="v0.1.0"
+	local domain="gistclaw.example.com"
+	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir"
+	: > "$log_dir/systemctl.log"
+	: > "$log_dir/apt.log"
+	: > "$log_dir/users.log"
+	: > "$log_dir/ownership.log"
+	setup_fixture_repo "$fixture_dir" "$version"
+	setup_stub_bin "$stub_dir" "$fixture_dir" "$log_dir"
+
+	PATH="$stub_dir:$PATH" \
+	GISTCLAW_ALLOW_NON_ROOT=1 \
+	GISTCLAW_ARCH=amd64 \
+	GISTCLAW_VERSION="$version" \
+	GISTCLAW_BASE_URL="https://example.invalid/$version" \
+	GISTCLAW_RELEASES_DIR="$root_dir/opt/gistclaw/releases" \
+	GISTCLAW_BIN_LINK="$root_dir/usr/local/bin/gistclaw" \
+	GISTCLAW_ETC_DIR="$root_dir/etc/gistclaw" \
+	GISTCLAW_SYSTEMD_DIR="$root_dir/etc/systemd/system" \
+	GISTCLAW_VAR_DIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_DOWNLOAD_DIR="$tmp/downloads" \
+	GISTCLAW_FAKE_WORKDIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_FAKE_STATE_DIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_FAKE_DATABASE_DIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_FAKE_WORKSPACE_ROOT="$root_dir/var/lib/gistclaw/projects" \
+	GISTCLAW_PROVIDER_NAME=openai \
+	GISTCLAW_PROVIDER_API_KEY=sk-test \
+	bash "$INSTALLER" --public-domain "$domain" >"$tmp/out"
+
+	test -f "$root_dir/etc/caddy/Caddyfile"
+	assert_contains "$root_dir/etc/caddy/Caddyfile" "$domain"
+	assert_contains "$root_dir/etc/caddy/Caddyfile" "reverse_proxy 127.0.0.1:8080"
+	assert_contains "$log_dir/apt.log" "update"
+	assert_contains "$log_dir/apt.log" "install -y caddy"
+	assert_contains "$log_dir/systemctl.log" "enable --now gistclaw"
+	assert_contains "$log_dir/systemctl.log" "enable --now caddy"
+	assert_contains "$log_dir/systemctl.log" "restart caddy"
+	assert_contains "$tmp/out" "gistclaw auth set-password --config $root_dir/etc/gistclaw/config.yaml"
+	assert_contains "$tmp/out" "https://$domain/login"
+}
+
+run_public_domain_requires_loopback_case() {
+	local tmp
+	tmp="$(mktemp -d)"
+	trap 'rm -rf "$tmp"' RETURN
+
+	local fixture_dir="$tmp/fixtures"
+	local stub_dir="$tmp/stubs"
+	local log_dir="$tmp/logs"
+	local root_dir="$tmp/root"
+	local version="v0.1.0"
+	local source_cfg="$tmp/source-config.yaml"
+	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir"
+	: > "$log_dir/systemctl.log"
+	: > "$log_dir/apt.log"
+	: > "$log_dir/users.log"
+	: > "$log_dir/ownership.log"
+	setup_fixture_repo "$fixture_dir" "$version"
+	setup_stub_bin "$stub_dir" "$fixture_dir" "$log_dir"
+
+	cat > "$source_cfg" <<EOF
+provider:
+  name: openai
+  api_key: sk-test
+database_path: $root_dir/srv/data/runtime.db
+workspace_root: $root_dir/srv/projects
+web:
+  listen_addr: 0.0.0.0:8080
+EOF
+
+	set +e
+	PATH="$stub_dir:$PATH" \
+	GISTCLAW_ALLOW_NON_ROOT=1 \
+	GISTCLAW_ARCH=amd64 \
+	GISTCLAW_VERSION="$version" \
+	GISTCLAW_BASE_URL="https://example.invalid/$version" \
+	GISTCLAW_RELEASES_DIR="$root_dir/opt/gistclaw/releases" \
+	GISTCLAW_BIN_LINK="$root_dir/usr/local/bin/gistclaw" \
+	GISTCLAW_ETC_DIR="$root_dir/etc/gistclaw" \
+	GISTCLAW_SYSTEMD_DIR="$root_dir/etc/systemd/system" \
+	GISTCLAW_VAR_DIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_DOWNLOAD_DIR="$tmp/downloads" \
+	GISTCLAW_FAKE_WORKDIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_FAKE_STATE_DIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_FAKE_DATABASE_DIR="$root_dir/srv/data" \
+	GISTCLAW_FAKE_WORKSPACE_ROOT="$root_dir/srv/projects" \
+	bash "$INSTALLER" --config-file "$source_cfg" --public-domain gistclaw.example.com >"$tmp/out" 2>"$tmp/err"
+	local status=$?
+	set -e
+
+	if [ "$status" -eq 0 ]; then
+		echo "expected installer to fail when public-domain mode is used with non-loopback web.listen_addr" >&2
+		exit 1
+	fi
+	assert_contains "$tmp/err" "public-domain mode requires web.listen_addr to stay on loopback"
+	if [ -s "$log_dir/apt.log" ]; then
+		echo "apt-get should not run when public-domain validation fails" >&2
+		exit 1
+	fi
+	if grep -Fq "enable --now gistclaw" "$log_dir/systemctl.log"; then
+		echo "gistclaw service should not start when public-domain validation fails" >&2
+		exit 1
+	fi
+}
+
 run_happy_path
 run_config_file_happy_path
 run_missing_provider_case
@@ -490,3 +618,5 @@ run_missing_config_file_case
 run_mixed_mode_case
 run_checksum_failure_case
 run_invalid_config_helper_case
+run_public_domain_happy_path
+run_public_domain_requires_loopback_case

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	authpkg "github.com/canhta/gistclaw/internal/auth"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -130,6 +131,13 @@ func (a *App) AdminToken(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("load admin token: %w", err)
 	}
 	return token, nil
+}
+
+func (a *App) SetPassword(ctx context.Context, password string, now time.Time) error {
+	if err := authpkg.SetPassword(ctx, a.db, password, now); err != nil {
+		return fmt.Errorf("set password: %w", err)
+	}
+	return nil
 }
 
 func (a *App) ConnectorHealth(context.Context) ([]model.ConnectorHealthSnapshot, error) {

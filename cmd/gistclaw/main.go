@@ -21,6 +21,7 @@ const usage = `Usage: gistclaw <subcommand> [options]
 Subcommands:
   serve      Start the GistClaw daemon
   run        Submit a task directly
+  auth       Manage built-in browser access
   version    Print release/build metadata
   inspect    Inspect daemon state
   security   Run deployment security audit
@@ -43,10 +44,14 @@ Flags:
 `
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(runWithInput(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
 func run(args []string, stdout, stderr io.Writer) int {
+	return runWithInput(args, os.Stdin, stdout, stderr)
+}
+
+func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, usage)
 		return 1
@@ -62,6 +67,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case "-h", "--help", "help":
 		fmt.Fprint(stdout, usage)
 		return 0
+	case "auth":
+		return runAuth(configPath, args[1:], stdin, stdout, stderr)
 	case "serve":
 		return runServe(configPath, stdout, stderr)
 	case "run":

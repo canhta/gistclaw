@@ -6,7 +6,7 @@ This document is the source of truth for what the repository ships today: packag
 
 - A single self-contained Go binary, `gistclaw`, with daemon and operator commands.
 - GitHub Releases with a blessed Ubuntu 24 installer path and Apple Silicon download path.
-- A local web host with starter-project onboarding plus operator-job pages grouped under Operate, Configure, and Recover.
+- A local web host with a built-in browser login, starter-project onboarding, and operator-job pages grouped under Operate, Configure, and Recover.
 - A journal-backed runtime that records runs, session collaboration, approvals, receipts, route bindings, and outbound delivery state in SQLite.
 - A SQLite-backed scheduler service for local scheduled tasks, occurrence history, restart repair, and CLI-first schedule management.
 - Provider adapters for Anthropic and OpenAI-compatible endpoints.
@@ -29,6 +29,7 @@ This document is the source of truth for what the repository ships today: packag
 
 - `gistclaw serve` starts the daemon and local web host.
 - `gistclaw version` prints the running release/build metadata.
+- `gistclaw auth set-password` bootstraps or resets the built-in browser password.
 - `gistclaw run` submits a task directly from the CLI.
 - `gistclaw inspect` reports status, runs, replay, the canonical `systemd` unit, the admin token through `inspect token`, and storage health for the current database.
 - `gistclaw security audit` reports deployment-risk findings for the current config and runtime posture.
@@ -39,14 +40,16 @@ This document is the source of truth for what the repository ships today: packag
 
 ### Web
 
+- `/login` is the browser gate for operator access and shows a locked setup-required page until a password has been bootstrapped.
 - `/onboarding` starts with a starter project, then lets the operator keep it, bind an existing repo, or create a new project elsewhere before the first run.
+- Operator UI pages and browser read APIs require the built-in login. Machine automation may still use the admin token path.
 - The shell includes a project switcher that updates the active workspace context without turning project selection into a primary Settings job.
 - `/operate/runs` and `/operate/runs/{id}` show run state and live replay, with the orchestration graph kept on runs and run detail. The runs queue defaults to the active project with an explicit all-projects filter.
 - `/operate/sessions` and `/operate/sessions/{id}` expose session mailbox history, route state, and delivery failures.
 - `/operate/start-task` starts a new operator task from the web surface.
 - `/configure/team` selects, creates, clones, deletes, edits, imports, and exports named team profiles for the active project.
 - `/configure/memory` lists, edits, and forgets stored facts.
-- `/configure/settings` updates machine-level operator settings such as budgets and tokens, and keeps raw workspace editing only as an advanced override.
+- `/configure/settings` updates machine-level operator settings, rotates the operator password, and manages current, active, and blocked browser devices.
 - `/recover/approvals` resolves risky tool actions.
 - `/recover/routes-deliveries` exposes connector health, route bindings, route history, and delivery retry actions.
 

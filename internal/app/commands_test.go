@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	authpkg "github.com/canhta/gistclaw/internal/auth"
 	"github.com/canhta/gistclaw/internal/model"
 )
 
@@ -138,6 +139,19 @@ func TestApp_PrepareReconcilesInterruptedRuns(t *testing.T) {
 	}
 	if status != "interrupted" {
 		t.Fatalf("expected interrupted status, got %q", status)
+	}
+}
+
+func TestApp_SetPassword(t *testing.T) {
+	application := setupCommandApp(t)
+	ctx := context.Background()
+	now := time.Date(2026, time.March, 27, 6, 0, 0, 0, time.UTC)
+
+	if err := application.SetPassword(ctx, "app-secret-pass", now); err != nil {
+		t.Fatalf("SetPassword: %v", err)
+	}
+	if err := authpkg.VerifyPassword(ctx, application.db, "app-secret-pass"); err != nil {
+		t.Fatalf("VerifyPassword: %v", err)
 	}
 }
 

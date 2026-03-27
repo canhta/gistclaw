@@ -1,6 +1,7 @@
 package security
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/app"
@@ -28,6 +29,8 @@ func TestRunAudit(t *testing.T) {
 		adminTokenPresent bool
 		wantID            string
 		wantSeverity      Severity
+		wantDetailParts   []string
+		wantFixParts      []string
 	}{
 		{
 			name:              "missing admin token",
@@ -51,6 +54,14 @@ func TestRunAudit(t *testing.T) {
 			adminTokenPresent: true,
 			wantID:            "web.listen_addr.exposed",
 			wantSeverity:      SeverityFail,
+			wantDetailParts: []string{
+				"0.0.0.0:8080",
+			},
+			wantFixParts: []string{
+				"127.0.0.1",
+				"reverse proxy",
+				"gistclaw auth set-password",
+			},
 		},
 		{
 			name: "invalid research provider",
@@ -139,6 +150,16 @@ func TestRunAudit(t *testing.T) {
 			}
 			if finding.Severity != tt.wantSeverity {
 				t.Fatalf("expected severity %q, got %q", tt.wantSeverity, finding.Severity)
+			}
+			for _, part := range tt.wantDetailParts {
+				if !strings.Contains(finding.Detail, part) {
+					t.Fatalf("expected detail %q to contain %q", finding.Detail, part)
+				}
+			}
+			for _, part := range tt.wantFixParts {
+				if !strings.Contains(finding.Remediation, part) {
+					t.Fatalf("expected remediation %q to contain %q", finding.Remediation, part)
+				}
 			}
 		})
 	}

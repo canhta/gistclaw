@@ -17,12 +17,13 @@ Today the repo already ships a working daemon, CLI, local web control plane, rep
 
 - `gistclaw serve` starts the daemon and local web host.
 - `gistclaw version` prints the installed release identity.
+- `gistclaw auth set-password` bootstraps or rotates the built-in browser login for VPS operators.
 - `gistclaw run`, `inspect`, `security audit`, `schedule`, `doctor`, `backup`, and `export` cover the operator CLI.
 - `gistclaw inspect systemd-unit` prints the canonical service file used by the Ubuntu installer.
 - `gistclaw inspect token` prints the admin token stored in the runtime settings table.
-- The web UI includes onboarding plus operator-job pages for `Operate`, `Configure`, and `Recover`.
+- The web UI includes a built-in login gate plus onboarding and operator-job pages for `Operate`, `Configure`, and `Recover`.
 - GitHub Releases now carry a self-contained binary for the blessed Ubuntu installer path and Apple Silicon download path.
-- The Ubuntu installer supports either a quick-start provider key path or an exact `--config-file` reinstall path for VPS operators.
+- The Ubuntu installer supports either a quick-start provider key path or an exact `--config-file` reinstall path for VPS operators, plus optional `--public-domain` Caddy bootstrap.
 - Providers: Anthropic and OpenAI-compatible endpoints.
 - Tools: built-in web fetch, optional Tavily search, optional MCP stdio tools.
 - Live external surfaces: Telegram DM and WhatsApp.
@@ -43,6 +44,7 @@ The Ubuntu path installs a `systemd` service, and the binary itself can show the
 
 ```bash
 gistclaw version
+gistclaw auth set-password
 gistclaw inspect systemd-unit
 gistclaw inspect token
 ```
@@ -62,6 +64,7 @@ Create `~/.config/gistclaw/config.yaml` using the minimal example in [CONTRIBUTI
 
 ```bash
 gistclaw serve
+gistclaw auth set-password
 gistclaw run "fix the failing tests"
 gistclaw inspect status
 gistclaw inspect replay <run_id>

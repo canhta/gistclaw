@@ -7,12 +7,14 @@ BASE_URL="${GISTCLAW_BASE_URL:-}"
 PROVIDER_NAME="${GISTCLAW_PROVIDER_NAME:-}"
 PROVIDER_API_KEY="${GISTCLAW_PROVIDER_API_KEY:-}"
 CONFIG_FILE="${GISTCLAW_CONFIG_FILE:-}"
+PUBLIC_DOMAIN="${GISTCLAW_PUBLIC_DOMAIN:-}"
 ALLOW_NON_ROOT="${GISTCLAW_ALLOW_NON_ROOT:-0}"
 ARCH_OVERRIDE="${GISTCLAW_ARCH:-}"
 
 RELEASES_DIR="${GISTCLAW_RELEASES_DIR:-/opt/gistclaw/releases}"
 BIN_LINK="${GISTCLAW_BIN_LINK:-/usr/local/bin/gistclaw}"
 ETC_DIR="${GISTCLAW_ETC_DIR:-/etc/gistclaw}"
+CADDY_ETC_DIR="${GISTCLAW_CADDY_ETC_DIR:-$(dirname "${ETC_DIR}")/caddy}"
 SYSTEMD_DIR="${GISTCLAW_SYSTEMD_DIR:-/etc/systemd/system}"
 VAR_DIR="${GISTCLAW_VAR_DIR:-/var/lib/gistclaw}"
 DOWNLOAD_DIR="${GISTCLAW_DOWNLOAD_DIR:-$(mktemp -d)}"
@@ -28,6 +30,7 @@ Options:
   --config-file PATH
   --provider-name NAME
   --provider-api-key KEY
+  --public-domain DOMAIN
   --repo OWNER/REPO
 EOF
 }
@@ -48,6 +51,10 @@ while [ $# -gt 0 ]; do
 		;;
 	--provider-api-key)
 		PROVIDER_API_KEY="$2"
+		shift 2
+		;;
+	--public-domain)
+		PUBLIC_DOMAIN="$2"
 		shift 2
 		;;
 	--repo)
@@ -107,6 +114,7 @@ ARCHIVE_FILE="${DOWNLOAD_DIR}/${ARCHIVE}"
 CHECKSUM_FILE="${DOWNLOAD_DIR}/${ARCHIVE}.sha256"
 RELEASE_DIR="${RELEASES_DIR}/${VERSION}"
 CONFIG_PATH="${ETC_DIR}/config.yaml"
+CADDYFILE_PATH="${CADDY_ETC_DIR}/Caddyfile"
 SERVICE_PATH="${SYSTEMD_DIR}/gistclaw.service"
 CONFIG_PATHS_ERR="${DOWNLOAD_DIR}/inspect-config-paths.err"
 
@@ -122,6 +130,33 @@ ensure_owned_dir() {
 	fi
 	mkdir -p "${path}"
 	chown -R gistclaw:gistclaw "${path}"
+}
+
+config_web_listen_addr() {
+	awk '
+		$1 == "web:" {
+			in_web = 1
+			next
+		}
+		/^[^[:space:]#]/ {
+			in_web = 0
+		}
+		in_web && $1 == "listen_addr:" {
+			print $2
+			exit
+		}
+	' "$1"
+}
+
+is_loopback_listen_addr() {
+	case "$1" in
+	127.0.0.1:*|localhost:*|"[::1]:"*|::1:*)
+		return 0
+		;;
+	*)
+		return 1
+		;;
+	esac
 }
 
 mkdir -p "${DOWNLOAD_DIR}" "${RELEASE_DIR}" "$(dirname "${BIN_LINK}")" "${ETC_DIR}" "${SYSTEMD_DIR}" "${VAR_DIR}"
@@ -167,6 +202,12 @@ fi
 chown root:gistclaw "${CONFIG_PATH}"
 chmod 640 "${CONFIG_PATH}"
 
+WEB_LISTEN_ADDR="$(config_web_listen_addr "${CONFIG_PATH}")"
+if [ -n "${PUBLIC_DOMAIN}" ] && ! is_loopback_listen_addr "${WEB_LISTEN_ADDR}"; then
+	echo "public-domain mode requires web.listen_addr to stay on loopback; found ${WEB_LISTEN_ADDR:-<missing>}" >&2
+	exit 1
+fi
+
 CONFIG_PATHS_OUTPUT=$("${BIN_LINK}" inspect --config "${CONFIG_PATH}" config-paths 2>"${CONFIG_PATHS_ERR}") || {
 	cat "${CONFIG_PATHS_ERR}" >&2
 	exit 1
@@ -193,6 +234,20 @@ GISTCLAW_SYSTEMD_CONFIG_PATH="${CONFIG_PATH}" \
 systemctl daemon-reload
 systemctl enable --now gistclaw
 
+if [ -n "${PUBLIC_DOMAIN}" ]; then
+	apt-get update
+	apt-get install -y caddy
+	mkdir -p "${CADDY_ETC_DIR}"
+	cat > "${CADDYFILE_PATH}" <<EOF
+${PUBLIC_DOMAIN} {
+	reverse_proxy ${WEB_LISTEN_ADDR}
+}
+EOF
+	chmod 644 "${CADDYFILE_PATH}"
+	systemctl enable --now caddy
+	systemctl restart caddy
+fi
+
 cat <<EOF
 Installed GistClaw ${VERSION}.
 
@@ -203,3 +258,11 @@ Next commands:
   gistclaw doctor --config ${CONFIG_PATH}
   gistclaw security audit --config ${CONFIG_PATH}
 EOF
+
+if [ -n "${PUBLIC_DOMAIN}" ]; then
+	cat <<EOF
+  gistclaw auth set-password --config ${CONFIG_PATH}
+  systemctl status caddy
+  curl -I https://${PUBLIC_DOMAIN}/login
+EOF
+fi

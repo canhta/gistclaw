@@ -193,6 +193,10 @@
       margin: 0 auto;
       padding: 40px 24px 56px;
     }
+    .auth-main {
+      max-width: 1180px;
+      padding-top: 56px;
+    }
     .shell-subnav {
       display: flex;
       flex-wrap: wrap;
@@ -1339,6 +1343,80 @@
       border-left: 4px solid var(--brand);
       font-weight: 600;
     }
+    .auth-workbench {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+      gap: 24px;
+      align-items: start;
+    }
+    .auth-context,
+    .auth-panel {
+      min-width: 0;
+    }
+    .auth-context-panel {
+      margin-top: 18px;
+    }
+    .command-block {
+      border: 1.5px solid var(--border-hard);
+      background: var(--surface);
+      padding: 12px 14px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .settings-auth-form {
+      display: grid;
+      gap: 12px;
+    }
+    .device-ledger {
+      display: grid;
+      gap: 12px;
+    }
+    .device-row {
+      display: grid;
+      gap: 12px;
+      border: 1.5px solid var(--border-hard);
+      border-left: 4px solid var(--border-hard);
+      background: var(--surface);
+      padding: 16px;
+    }
+    .device-row.is-current {
+      border-left-color: var(--active);
+    }
+    .device-row.is-blocked {
+      border-left-color: var(--error);
+    }
+    .device-row-head {
+      display: flex;
+      gap: 16px;
+      align-items: start;
+      justify-content: space-between;
+    }
+    .device-row-title {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .device-row-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      justify-content: flex-end;
+    }
+    .device-row-details {
+      padding-top: 12px;
+      border-top: 1px solid var(--border-soft);
+    }
+    .device-row-details summary {
+      cursor: pointer;
+      list-style: none;
+    }
+    .device-row-details summary::-webkit-details-marker {
+      display: none;
+    }
     .queue-strip {
       display: grid;
       gap: 18px;
@@ -1979,6 +2057,7 @@
       }
       .run-primary-head,
       .grid-two,
+      .auth-workbench,
                   .filter-grid,
                   .session-filter-grid,
                   .run-cluster-summary,
@@ -1995,6 +2074,11 @@
       }
       .run-disclosure-summary {
         display: grid;
+      }
+      .device-row-head,
+      .device-row-actions {
+        display: grid;
+        justify-content: stretch;
       }
       .run-node-modal-footer {
         grid-template-columns: 1fr;
@@ -2031,19 +2115,22 @@
                 }
               </style>
 </head>
-<body>
-  <header class="shell-header">
+<body{{if eq .ShellMode "auth"}} class="auth-shell"{{end}}>
+  <header class="shell-header{{if eq .ShellMode "auth"}} is-auth{{end}}">
     <nav class="shell-nav" aria-label="Primary">
       <div class="shell-brand-lockup">
         <span class="shell-brand">gistclaw</span>
         <span class="shell-brand-note">local operator runtime</span>
       </div>
+      {{if ne .ShellMode "auth"}}
       <div class="shell-nav-cluster">
       {{range .Navigation.Groups}}
       <a class="shell-nav-group{{if .Active}} is-active{{end}}" href="{{.Href}}">{{.Label}}</a>
       {{end}}
       </div>
+      {{end}}
       <div class="shell-toolbar">
+      {{if ne .ShellMode "auth"}}
       {{if .Project.Options}}
       <form class="shell-project-switcher" method="POST" action="/projects/activate">
         <input type="hidden" name="redirect_to" value="{{.CurrentPath}}">
@@ -2054,6 +2141,7 @@
         </select>
       </form>
       {{end}}
+      {{end}}
       <div class="theme-switcher" role="group" aria-label="Color theme">
         <button class="theme-toggle" type="button" data-theme-option="system">System</button>
         <button class="theme-toggle" type="button" data-theme-option="light">Light</button>
@@ -2062,7 +2150,7 @@
       </div>
     </nav>
   </header>
-  <main>
+  <main{{if .MainClass}} class="{{.MainClass}}"{{end}}>
     {{if .Navigation.Children}}
     <nav class="shell-subnav" aria-label="Section">
       {{range .Navigation.Children}}

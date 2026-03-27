@@ -165,6 +165,43 @@ CREATE TABLE IF NOT EXISTS settings (
     updated_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS auth_devices (
+    id TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    browser TEXT NOT NULL DEFAULT '',
+    platform TEXT NOT NULL DEFAULT '',
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    last_seen_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    last_ip TEXT NOT NULL DEFAULT '',
+    last_user_agent TEXT NOT NULL DEFAULT '',
+    blocked_at DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    id TEXT PRIMARY KEY,
+    device_id TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    last_seen_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    expires_at DATETIME NOT NULL,
+    revoked_at DATETIME,
+    revoke_reason TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (device_id) REFERENCES auth_devices(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_devices_last_seen_at
+    ON auth_devices(last_seen_at);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_token_hash
+    ON auth_sessions(token_hash);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_device_id_revoked_expires_at
+    ON auth_sessions(device_id, revoked_at, expires_at, last_seen_at);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at_revoked_at
+    ON auth_sessions(expires_at, revoked_at);
+
 -- Conservative default budget limits. Raising or disabling any cap requires
 -- an explicit operator action via the settings page.
 -- per_run_token_budget: 50,000 tokens per run

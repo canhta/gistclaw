@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	authpkg "github.com/canhta/gistclaw/internal/auth"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -1306,7 +1307,7 @@ func TestSettings(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "Settings") {
 		t.Fatalf("expected settings page, got:\n%s", rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), "Team composition and agent collaboration defaults now live in Configure &gt; Team.") {
+	if !strings.Contains(rr.Body.String(), "Team composition now lives in Configure &gt; Team.") {
 		t.Fatalf("expected settings page to use non-interactive team guidance, got:\n%s", rr.Body.String())
 	}
 	if strings.Contains(rr.Body.String(), `Team composition and agent collaboration defaults now live on the <a href="/configure/team">Team</a> page.`) {
@@ -2523,7 +2524,7 @@ func TestAdminToken(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review"))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		h.server.ServeHTTP(rr, req)
+		h.rawServer.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusUnauthorized {
 			t.Fatalf("expected 401, got %d", rr.Code)
@@ -2541,7 +2542,7 @@ func TestAdminToken(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer wrong-token")
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		h.server.ServeHTTP(rr, req)
+		h.rawServer.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusUnauthorized {
 			t.Fatalf("expected 401, got %d", rr.Code)
@@ -2560,7 +2561,7 @@ func TestAdminToken(t *testing.T) {
 		oldTokenReq.Header.Set("Authorization", "Bearer "+h.adminToken)
 		oldTokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		h.server.ServeHTTP(oldTokenResp, oldTokenReq)
+		h.rawServer.ServeHTTP(oldTokenResp, oldTokenReq)
 
 		if oldTokenResp.Code != http.StatusUnauthorized {
 			t.Fatalf("expected stale token to be rejected with 401, got %d", oldTokenResp.Code)
@@ -2571,7 +2572,7 @@ func TestAdminToken(t *testing.T) {
 		newTokenReq.Header.Set("Authorization", "Bearer rotated-admin-token")
 		newTokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		h.server.ServeHTTP(newTokenResp, newTokenReq)
+		h.rawServer.ServeHTTP(newTokenResp, newTokenReq)
 
 		// The handler succeeds (redirect to /operate/runs/{id}) — not 401
 		if newTokenResp.Code == http.StatusUnauthorized {
@@ -2579,31 +2580,40 @@ func TestAdminToken(t *testing.T) {
 		}
 	})
 
-	t.Run("html pages mint a host admin session cookie", func(t *testing.T) {
+	t.Run("login issues browser session cookies", func(t *testing.T) {
 		h := newServerHarness(t)
+		if err := authpkg.SetPassword(context.Background(), h.db, "test-password", time.Now().UTC()); err != nil {
+			t.Fatalf("set password: %v", err)
+		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/start-task", nil)
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/login", strings.NewReader("password=test-password"))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
 
-		h.server.ServeHTTP(rr, req)
+		h.rawServer.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
+		if rr.Code != http.StatusSeeOther {
+			t.Fatalf("expected 303, got %d", rr.Code)
 		}
 
-		cookie := findCookie(rr.Result().Cookies(), hostAdminCookieName)
-		if cookie == nil {
-			t.Fatalf("expected %s cookie to be set", hostAdminCookieName)
+		sessionCookie := findCookie(rr.Result().Cookies(), sessionCookieName)
+		deviceCookie := findCookie(rr.Result().Cookies(), deviceCookieName)
+		if sessionCookie == nil {
+			t.Fatalf("expected %s cookie to be set", sessionCookieName)
 		}
-		if !cookie.HttpOnly {
-			t.Fatal("expected host admin cookie to be HttpOnly")
+		if deviceCookie == nil {
+			t.Fatalf("expected %s cookie to be set", deviceCookieName)
 		}
-		if cookie.SameSite != http.SameSiteStrictMode {
-			t.Fatalf("expected SameSite=Strict, got %v", cookie.SameSite)
+		if !sessionCookie.HttpOnly || !deviceCookie.HttpOnly {
+			t.Fatal("expected browser auth cookies to be HttpOnly")
+		}
+		if sessionCookie.SameSite != http.SameSiteLaxMode || deviceCookie.SameSite != http.SameSiteLaxMode {
+			t.Fatalf("expected SameSite=Lax auth cookies, got session=%v device=%v", sessionCookie.SameSite, deviceCookie.SameSite)
 		}
 	})
 
-	t.Run("same-origin host admin cookie can submit run form", func(t *testing.T) {
+	t.Run("same-origin browser session can submit run form", func(t *testing.T) {
 		h := newServerHarness(t)
 		cookie := hostAdminSessionCookie(t, h, "http://localhost/operate/start-task")
 
@@ -2623,7 +2633,7 @@ func TestAdminToken(t *testing.T) {
 		}
 	})
 
-	t.Run("cross-origin host admin cookie is rejected", func(t *testing.T) {
+	t.Run("cross-origin browser session is rejected", func(t *testing.T) {
 		h := newServerHarness(t)
 		cookie := hostAdminSessionCookie(t, h, "http://localhost/operate/start-task")
 
@@ -2633,7 +2643,7 @@ func TestAdminToken(t *testing.T) {
 		req.Header.Set("Origin", "http://evil.test")
 		req.AddCookie(cookie)
 
-		h.server.ServeHTTP(rr, req)
+		h.rawServer.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusForbidden {
 			t.Fatalf("expected 403, got %d", rr.Code)
@@ -4443,13 +4453,31 @@ func TestSessionPages(t *testing.T) {
 
 type serverHarness struct {
 	db              *store.DB
-	server          *Server
+	server          *testServer
+	rawServer       *Server
 	broadcaster     *SSEBroadcaster
 	rt              *runtime.Runtime
 	adminToken      string
 	activeProjectID string
 	teamDir         string
 	workspaceRoot   string
+}
+
+type testServer struct {
+	raw        *Server
+	adminToken string
+}
+
+func (s *testServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	req := r.Clone(r.Context())
+	if req.Header.Get("X-Gistclaw-Test-No-Auto-Auth") == "" && req.Header.Get("Authorization") == "" {
+		req.Header.Set("Authorization", "Bearer "+s.adminToken)
+	}
+	s.raw.ServeHTTP(w, req)
+}
+
+func (s *testServer) projectLayoutData(r *http.Request) (shellProjectLayout, error) {
+	return s.raw.projectLayoutData(r)
 }
 
 type stubConnectorHealthSource struct {
@@ -4575,7 +4603,8 @@ func newServerHarnessWithProviderAndConnectorHealth(t *testing.T, prov runtime.P
 
 	return &serverHarness{
 		db:              db,
-		server:          server,
+		server:          &testServer{raw: server, adminToken: adminToken},
+		rawServer:       server,
 		broadcaster:     broadcaster,
 		rt:              rt,
 		adminToken:      adminToken,
@@ -4651,7 +4680,8 @@ func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, e
 
 	return &serverHarness{
 		db:              db,
-		server:          server,
+		server:          &testServer{raw: server, adminToken: adminToken},
+		rawServer:       server,
 		broadcaster:     broadcaster,
 		rt:              rt,
 		adminToken:      adminToken,
@@ -4822,18 +4852,25 @@ func (h *serverHarness) setAdminToken(t *testing.T, token string) {
 func hostAdminSessionCookie(t *testing.T, h *serverHarness, pageURL string) *http.Cookie {
 	t.Helper()
 
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, pageURL, nil)
-
-	h.server.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected GET %s to succeed, got %d", pageURL, rr.Code)
+	if err := authpkg.SetPassword(context.Background(), h.db, "test-password", time.Now().UTC()); err != nil {
+		t.Fatalf("set password: %v", err)
 	}
 
-	cookie := findCookie(rr.Result().Cookies(), hostAdminCookieName)
+	form := url.Values{"password": {"test-password"}}
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+
+	h.rawServer.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusSeeOther {
+		t.Fatalf("expected login to succeed before POST %s, got %d body=%s", pageURL, rr.Code, rr.Body.String())
+	}
+
+	cookie := findCookie(rr.Result().Cookies(), sessionCookieName)
 	if cookie == nil {
-		t.Fatalf("expected %s cookie after GET %s", hostAdminCookieName, pageURL)
+		t.Fatalf("expected %s cookie after login before %s", sessionCookieName, pageURL)
 	}
 	return cookie
 }

@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/canhta/gistclaw/internal/auth"
 	telegramconnector "github.com/canhta/gistclaw/internal/connectors/telegram"
 	whatsappconnector "github.com/canhta/gistclaw/internal/connectors/whatsapp"
 	"github.com/canhta/gistclaw/internal/conversations"
@@ -55,6 +56,10 @@ func Bootstrap(cfg Config) (*App, error) {
 	}
 
 	if err := ensureAdminToken(db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	if err := auth.EnsureSessionSecret(db); err != nil {
 		_ = db.Close()
 		return nil, err
 	}

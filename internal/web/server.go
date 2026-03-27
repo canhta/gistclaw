@@ -50,6 +50,8 @@ type layoutData struct {
 	CurrentPath string
 	Navigation  shellNavigation
 	Project     shellProjectLayout
+	ShellMode   string
+	MainClass   string
 }
 
 type shellProjectLayout struct {
@@ -96,7 +98,7 @@ func NewServer(opts Options) (*Server, error) {
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	handler := s.recoverMiddleware(s.requestLogger(s.onboardingMiddleware(s.adminSessionMiddleware(s.mux))))
+	handler := s.recoverMiddleware(s.requestLogger(s.authGate(s.onboardingMiddleware(s.mux))))
 	handler.ServeHTTP(w, r)
 }
 
@@ -114,6 +116,9 @@ func (s *Server) registerRoutes() {
 		http.Redirect(w, r, pageRecoverApprovals, http.StatusSeeOther)
 	})
 	s.mux.Handle("GET /assets/{path...}", http.StripPrefix("/assets/", http.FileServer(http.FS(staticAssetFS()))))
+	s.mux.HandleFunc("GET "+pageLogin, s.handleLogin)
+	s.mux.HandleFunc("POST "+pageLogin, s.handleLoginSubmit)
+	s.mux.HandleFunc("POST "+pageLogout, s.handleLogout)
 	if s.whatsAppWebhook != nil {
 		s.mux.Handle("GET /webhooks/whatsapp", s.whatsAppWebhook)
 		s.mux.Handle("POST /webhooks/whatsapp", s.whatsAppWebhook)
@@ -153,6 +158,10 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("POST "+pageRecoverApprovals+"/{id}/resolve", s.adminAuth(http.HandlerFunc(s.handleApprovalResolve)))
 	s.mux.HandleFunc("GET "+pageConfigureSettings, s.handleSettings)
 	s.mux.Handle("POST "+pageConfigureSettings, s.adminAuth(http.HandlerFunc(s.handleSettingsUpdate)))
+	s.mux.Handle("POST "+pageConfigureSettingsPassword, s.adminAuth(http.HandlerFunc(s.handleSettingsPasswordChange)))
+	s.mux.Handle("POST "+pageConfigureSettingsDevices+"/{id}/revoke", s.adminAuth(http.HandlerFunc(s.handleDeviceRevoke)))
+	s.mux.Handle("POST "+pageConfigureSettingsDevices+"/{id}/block", s.adminAuth(http.HandlerFunc(s.handleDeviceBlock)))
+	s.mux.Handle("POST "+pageConfigureSettingsDevices+"/{id}/unblock", s.adminAuth(http.HandlerFunc(s.handleDeviceUnblock)))
 	s.mux.HandleFunc("GET "+pageOperateStartTask, s.handleRunForm)
 	s.mux.Handle("POST "+pageOperateStartTask, s.adminAuth(http.HandlerFunc(s.handleRunSubmit)))
 	s.mux.Handle("POST /projects/activate", s.adminAuth(http.HandlerFunc(s.handleProjectActivate)))
@@ -168,28 +177,48 @@ func (s *Server) registerRoutes() {
 }
 
 func (s *Server) renderTemplate(w http.ResponseWriter, r *http.Request, title, bodyTemplate string, data any) {
-	s.renderTemplateStatus(w, r, http.StatusOK, title, bodyTemplate, data)
+	s.renderTemplateStatusMode(w, r, http.StatusOK, title, bodyTemplate, data, shellModeApp)
 }
 
 func (s *Server) renderTemplateStatus(w http.ResponseWriter, r *http.Request, status int, title, bodyTemplate string, data any) {
+	s.renderTemplateStatusMode(w, r, status, title, bodyTemplate, data, shellModeApp)
+}
+
+func (s *Server) renderAuthTemplate(w http.ResponseWriter, r *http.Request, title, bodyTemplate string, data any) {
+	s.renderTemplateStatusMode(w, r, http.StatusOK, title, bodyTemplate, data, shellModeAuth)
+}
+
+func (s *Server) renderAuthTemplateStatus(w http.ResponseWriter, r *http.Request, status int, title, bodyTemplate string, data any) {
+	s.renderTemplateStatusMode(w, r, status, title, bodyTemplate, data, shellModeAuth)
+}
+
+func (s *Server) renderTemplateStatusMode(w http.ResponseWriter, r *http.Request, status int, title, bodyTemplate string, data any, mode string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	var body bytes.Buffer
 	if err := s.templates.ExecuteTemplate(&body, bodyTemplate, data); err != nil {
 		http.Error(w, fmt.Sprintf("template render failed: %v", err), http.StatusInternalServerError)
 		return
 	}
-	projectLayout, err := s.projectLayoutData(r)
-	if err != nil {
-		http.Error(w, fmt.Sprintf("template render failed: %v", err), http.StatusInternalServerError)
-		return
+	projectLayout := shellProjectLayout{}
+	navigation := shellNavigation{}
+	if mode == shellModeApp {
+		var err error
+		projectLayout, err = s.projectLayoutData(r)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("template render failed: %v", err), http.StatusInternalServerError)
+			return
+		}
+		navigation = navigationForPath(r.URL.Path)
 	}
 	w.WriteHeader(status)
 	if err := s.templates.ExecuteTemplate(w, "layout", layoutData{
 		Title:       title,
 		Body:        template.HTML(body.String()),
 		CurrentPath: requestPathWithQuery(r),
-		Navigation:  navigationForPath(r.URL.Path),
+		Navigation:  navigation,
 		Project:     projectLayout,
+		ShellMode:   mode,
+		MainClass:   layoutMainClass(mode),
 	}); err != nil {
 		http.Error(w, fmt.Sprintf("template render failed: %v", err), http.StatusInternalServerError)
 	}
@@ -217,63 +246,6 @@ func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(w, r)
 	})
-}
-
-func (s *Server) adminAuth(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		adminToken := lookupSetting(s.db, "admin_token")
-		if adminToken == "" {
-			s.writeUnauthorized(w)
-			return
-		}
-
-		if s.authorizedByBearer(r, adminToken) {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		ok, trustedOrigin := s.authorizedByHostSession(r, adminToken)
-		if ok {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if !trustedOrigin {
-			s.writeForbidden(w)
-			return
-		}
-
-		s.writeUnauthorized(w)
-	})
-}
-
-func (s *Server) adminSessionMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if shouldIssueHostAdminCookie(r) {
-			if adminToken := lookupSetting(s.db, "admin_token"); adminToken != "" {
-				http.SetCookie(w, &http.Cookie{
-					Name:     hostAdminCookieName,
-					Value:    adminToken,
-					Path:     "/",
-					HttpOnly: true,
-					SameSite: http.SameSiteStrictMode,
-				})
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func shouldIssueHostAdminCookie(r *http.Request) bool {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		return false
-	}
-	if strings.HasPrefix(r.URL.Path, "/api/") || strings.HasPrefix(r.URL.Path, "/assets/") || strings.HasPrefix(r.URL.Path, "/webhooks/") {
-		return false
-	}
-	if strings.HasSuffix(r.URL.Path, "/events") {
-		return false
-	}
-	return true
 }
 
 func (s *Server) projectLayoutData(r *http.Request) (shellProjectLayout, error) {
@@ -315,17 +287,6 @@ func requestPathWithQuery(r *http.Request) string {
 
 func (s *Server) authorizedByBearer(r *http.Request, adminToken string) bool {
 	return r.Header.Get("Authorization") == "Bearer "+adminToken
-}
-
-func (s *Server) authorizedByHostSession(r *http.Request, adminToken string) (ok bool, trustedOrigin bool) {
-	cookie, err := r.Cookie(hostAdminCookieName)
-	if err != nil || cookie.Value != adminToken {
-		return false, true
-	}
-	if !sameOriginRequest(r) {
-		return false, false
-	}
-	return true, true
 }
 
 func sameOriginRequest(r *http.Request) bool {
@@ -378,6 +339,13 @@ func runIDFromRequest(r *http.Request) string {
 	parts := strings.Split(path, "/")
 	if len(parts) >= 2 && parts[0] == "runs" {
 		return parts[1]
+	}
+	return ""
+}
+
+func layoutMainClass(mode string) string {
+	if mode == shellModeAuth {
+		return "auth-main"
 	}
 	return ""
 }

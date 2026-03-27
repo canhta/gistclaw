@@ -291,7 +291,7 @@ func TestMemoryInspector(t *testing.T) {
 			strings.NewReader(form.Encode()))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-		h.server.ServeHTTP(rr, req)
+		h.rawServer.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusUnauthorized {
 			t.Fatalf("expected 401, got %d: %s", rr.Code, rr.Body.String())

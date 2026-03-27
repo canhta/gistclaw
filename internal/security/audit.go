@@ -76,7 +76,7 @@ func runAudit(input Input, deps auditDeps) Report {
 			Severity:    SeverityFail,
 			Title:       "Web UI is bound beyond loopback",
 			Detail:      fmt.Sprintf("web.listen_addr %q is reachable outside the local machine", cfg.Web.ListenAddr),
-			Remediation: "Bind the web UI to 127.0.0.1 or ::1 unless you have an explicit trusted local tunnel or proxy in front of it.",
+			Remediation: "Bind the web UI to 127.0.0.1 or ::1, put a trusted HTTPS reverse proxy in front of it for public access, and run `gistclaw auth set-password` before exposing the domain.",
 		})
 	}
 
