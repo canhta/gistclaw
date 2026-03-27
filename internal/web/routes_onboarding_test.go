@@ -260,7 +260,7 @@ func TestOnboardingStep3_RendersAccessibleTaskChooser(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		"<fieldset",
-		"<legend>Pick one preview task</legend>",
+		"<legend>Pick a Preview Task</legend>",
 		`type="radio"`,
 		`for="task-0"`,
 		`id="task-0"`,

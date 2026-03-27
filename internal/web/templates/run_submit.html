@@ -2,7 +2,7 @@
 <section class="page-header">
   <span class="page-eyebrow">Operate</span>
   <h1>Start Task</h1>
-  <p class="page-lede">Open a new run from the operator surface. This is the primary action for active work, not a peer destination in the navigation.</p>
+  <p class="page-lede">Describe the task you want to start.</p>
 </section>
 {{if .Error}}
   <section class="error">{{.Error}}</section>
@@ -11,10 +11,10 @@
   <form method="POST" action="/operate/start-task">
     <div class="field">
       <label for="task">Task</label>
-      <textarea id="task" name="task" rows="4" placeholder="Describe the task for the agent team...">{{.Task}}</textarea>
+      <textarea id="task" name="task" rows="4" placeholder="Describe what you want GistClaw to do...">{{.Task}}</textarea>
     </div>
     <div class="button-row">
-      <button class="btn btn-primary" type="submit" data-confirm="Start this run now?">Start Run</button>
+      <button class="btn btn-primary" type="submit" data-confirm="Start this task?">Start Task</button>
     </div>
   </form>
 </section>

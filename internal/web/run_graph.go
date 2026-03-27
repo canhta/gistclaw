@@ -217,7 +217,7 @@ func buildGraphEdges(nodes []runGraphNodeView) []runGraphEdgeView {
 
 func buildGraphLegend() []runGraphLegendItemView {
 	return []runGraphLegendItemView{
-		{Kind: "delegates", Label: "Delegated work", StatusClass: ""},
+		{Kind: "delegates", Label: "Agent handoff", StatusClass: ""},
 		{Kind: "reports", Label: "Reported back", StatusClass: "is-muted"},
 		{Kind: "blocked", Label: "Waiting on approval", StatusClass: "is-approval"},
 	}
@@ -282,12 +282,12 @@ func buildGraphLanes(nodes []runGraphNodeView, rootRunID string) []runGraphLaneV
 	}
 
 	laneOrder := []runGraphLaneView{
-		{ID: "coordination", Label: "Coordination"},
+		{ID: "coordination", Label: "Lead"},
 		{ID: "research", Label: "Research"},
 		{ID: "build", Label: "Build"},
 		{ID: "review", Label: "Review"},
 		{ID: "verify", Label: "Verify"},
-		{ID: "workers", Label: "Workers"},
+		{ID: "workers", Label: "Specialists"},
 	}
 
 	lanes := make([]runGraphLaneView, 0, len(laneOrder))
@@ -393,12 +393,12 @@ func graphBranchRootID(rootRunID, nodeID string, parentByID map[string]string) s
 
 func graphBranchLabel(node runGraphNodeView, rootRunID string) string {
 	if node.ID == rootRunID || node.BranchRootID == rootRunID || node.IsRoot {
-		return "Front session"
+		return "Lead agent"
 	}
 	if node.AgentID == "" {
-		return "Worker branch"
+		return "Specialist branch"
 	}
-	return fmt.Sprintf("%s branch", node.AgentID)
+	return fmt.Sprintf("%s agent", node.AgentID)
 }
 
 func graphDelegationEdge(node runGraphNodeView) (kind, label string) {

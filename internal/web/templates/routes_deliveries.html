@@ -2,20 +2,20 @@
 <section class="page-header">
   <span class="page-eyebrow">Recover</span>
   <h1>Routes &amp; Deliveries</h1>
-  <p class="page-lede">Recover broken flow, inspect route bindings, and retry outbound delivery from one intervention surface.</p>
+  <p class="page-lede">Route state, message delivery, and recovery tools.</p>
 </section>
 
 <section class="page-section">
   <div class="panel queue-strip">
     <div class="queue-strip-head">
       <div class="page-stack">
-        <span class="panel-kicker">Intervention board</span>
-        <h2 class="section-title">Recovery status strip</h2>
-        <p class="panel-note">Use this page to confirm whether messages are still flowing, whether any route is misbound, and whether queued deliveries need intervention.</p>
+        <span class="panel-kicker">Recovery</span>
+        <h2 class="section-title">Status Board</h2>
+        <p class="panel-note">Check what is connected, what is active, and what needs another try.</p>
       </div>
       <div class="metric-strip">
         <article class="metric-card">
-          <span class="metric-label">Connectors</span>
+          <span class="metric-label">Connected Sources</span>
           <span class="metric-value">{{.ConnectorCount}}</span>
         </article>
         <article class="metric-card is-active">
@@ -23,11 +23,11 @@
           <span class="metric-value">{{len .ActiveRoutes}}</span>
         </article>
         <article class="metric-card is-approval">
-          <span class="metric-label">Queued deliveries</span>
+          <span class="metric-label">Outgoing Messages</span>
           <span class="metric-value">{{len .Deliveries}}</span>
         </article>
         <article class="metric-card is-muted">
-          <span class="metric-label">Route history</span>
+          <span class="metric-label">Past Routes</span>
           <span class="metric-value">{{len .RouteHistory}}</span>
         </article>
       </div>
@@ -37,15 +37,15 @@
 
 <section class="page-section">
   <div class="panel filter-panel">
-  <span class="panel-kicker">Recovery filters</span>
+  <span class="panel-kicker">Filters</span>
   <form class="filter-grid" method="GET" action="/recover/routes-deliveries">
     <div class="field filter-search">
       <label for="recovery-query">Search</label>
       <input id="recovery-query" type="text" name="q" value="{{.Filters.Query}}" placeholder="Search routes or deliveries">
     </div>
     <div class="field">
-      <label for="recovery-connector-id">Connector ID</label>
-      <input id="recovery-connector-id" type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="Connector ID">
+      <label for="recovery-connector-id">Source</label>
+      <input id="recovery-connector-id" type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="telegram, whatsapp">
     </div>
     <label>
       Routes
@@ -82,13 +82,13 @@
 {{end}}
 
 <section class="panel">
-  <h2 class="section-title">Connector Health</h2>
+  <h2 class="section-title">Connected Sources</h2>
   {{if .RuntimeHealth}}
   <div class="grid-two">
     {{range .RuntimeHealth}}
     <article class="run-row is-active">
       <div class="row-title">{{.ConnectorID}}</div>
-      <div class="muted">runtime: <span class="mono">{{.StateLabel}}</span></div>
+      <div class="muted">state: <span class="mono">{{.StateLabel}}</span></div>
       <div class="muted">{{.Summary}}</div>
       {{if .CheckedAtLabel}}<div class="muted">checked: <span class="mono">{{.CheckedAtLabel}}</span></div>{{end}}
     </article>
@@ -110,21 +110,21 @@
   {{if not (or .Health .RuntimeHealth)}}
   <div class="empty-state is-compact">
     <span class="panel-kicker">Health</span>
-    <p class="empty-state-copy">No connector runtime state or delivery pressure is visible yet. Once external messages begin flowing, backlog and health state will appear here.</p>
+    <p class="empty-state-copy">No route or delivery activity is visible yet. Health details will appear here once messages start flowing.</p>
   </div>
   {{end}}
 </section>
 
 <section class="panel">
-  <h2 class="section-title">Route Directory</h2>
+  <h2 class="section-title">Active Routes</h2>
   {{if .ActiveRoutes}}
   <div class="desktop-table">
     <table class="table">
       <thead>
         <tr>
           <th>Route</th>
-          <th>Binding</th>
-          <th>Send</th>
+          <th>Conversation</th>
+          <th>Send Note</th>
           <th>Action</th>
         </tr>
       </thead>
@@ -143,13 +143,13 @@
           </td>
           <td>
             <form class="inline-form" method="POST" action="/recover/routes-deliveries/routes/{{.ID}}/messages">
-              <input type="text" name="body" placeholder="Message bound session">
-              <button class="btn btn-secondary" type="submit" data-confirm="Send this operator message into the bound session?">Send</button>
+              <input type="text" name="body" placeholder="Message this conversation">
+              <button class="btn btn-secondary" type="submit" data-confirm="Send this note?">Send Note</button>
             </form>
           </td>
           <td>
             <form class="inline-form" method="POST" action="/recover/routes-deliveries/routes/{{.ID}}/deactivate">
-              <button class="btn btn-danger" type="submit" data-confirm="Deactivate this route? External messages will stop flowing into the bound session.">Deactivate</button>
+              <button class="btn btn-danger" type="submit" data-confirm="Disconnect this route?">Disconnect</button>
             </form>
           </td>
         </tr>
@@ -168,7 +168,7 @@
       </div>
       <div class="directory-card-grid">
         <div class="directory-card-section">
-          <span class="directory-card-label">Binding</span>
+          <span class="directory-card-label">Conversation</span>
           <div class="mono"><a href="/operate/sessions/{{.SessionID}}">{{.SessionID}}</a></div>
           <div>{{.AgentID}} <span class="muted">({{.RoleLabel}})</span></div>
           <div class="muted mono">conversation: {{.ConversationID}}</div>
@@ -176,11 +176,11 @@
       </div>
       <div class="directory-card-actions">
         <form class="stack-sm" method="POST" action="/recover/routes-deliveries/routes/{{.ID}}/messages">
-          <input type="text" name="body" placeholder="Message bound session">
-          <button class="btn btn-secondary" type="submit" data-confirm="Send this operator message into the bound session?">Send</button>
+          <input type="text" name="body" placeholder="Message this conversation">
+          <button class="btn btn-secondary" type="submit" data-confirm="Send this note?">Send Note</button>
         </form>
         <form method="POST" action="/recover/routes-deliveries/routes/{{.ID}}/deactivate">
-          <button class="btn btn-danger" type="submit" data-confirm="Deactivate this route? External messages will stop flowing into the bound session.">Deactivate</button>
+          <button class="btn btn-danger" type="submit" data-confirm="Disconnect this route?">Disconnect</button>
         </form>
       </div>
     </article>
@@ -195,13 +195,13 @@
   {{else}}
   <div class="empty-state is-compact">
     <span class="panel-kicker">Routes</span>
-    <p class="empty-state-copy">No active route bindings match this filter. When sessions are bound to live connectors, the operator message and deactivate controls appear here.</p>
+    <p class="empty-state-copy">No active routes match this filter. Send and disconnect controls appear here once a conversation is linked to a route.</p>
   </div>
   {{end}}
 </section>
 
 <section class="panel">
-  <h2 class="section-title">Delivery Queue</h2>
+  <h2 class="section-title">Outgoing Messages</h2>
   {{if .Deliveries}}
   <div class="desktop-table">
     <table class="table">
@@ -232,7 +232,7 @@
           <td>
             {{if eq .Status "terminal"}}
             <form class="inline-form" method="POST" action="/recover/routes-deliveries/deliveries/{{.ID}}/retry">
-              <button class="btn btn-secondary" type="submit" data-confirm="Retry this terminal delivery now?">Retry</button>
+              <button class="btn btn-secondary" type="submit" data-confirm="Retry this delivery?">Retry</button>
             </form>
             {{else}}
             <span class="muted">No action</span>
@@ -267,7 +267,7 @@
       <div class="directory-card-actions">
         {{if eq .Status "terminal"}}
         <form method="POST" action="/recover/routes-deliveries/deliveries/{{.ID}}/retry">
-          <button class="btn btn-secondary" type="submit" data-confirm="Retry this terminal delivery now?">Retry</button>
+          <button class="btn btn-secondary" type="submit" data-confirm="Retry this delivery?">Retry</button>
         </form>
         {{else}}
         <span class="muted">No action</span>
@@ -285,13 +285,13 @@
   {{else}}
   <div class="empty-state is-compact">
     <span class="panel-kicker">Deliveries</span>
-    <p class="empty-state-copy">There are no queued or terminal deliveries in this slice. Retry controls only appear when a connector has already failed or stalled.</p>
+    <p class="empty-state-copy">No outgoing messages need help right now. Retry controls appear here after a delivery fails.</p>
   </div>
   {{end}}
 </section>
 
 <section class="panel">
-  <h2 class="section-title">Route History</h2>
+  <h2 class="section-title">Past Routes</h2>
   {{if .RouteHistory}}
   <div class="desktop-table">
     <table class="table">
@@ -366,7 +366,7 @@
   {{else}}
   <div class="empty-state is-compact">
     <span class="panel-kicker">History</span>
-    <p class="empty-state-copy">Inactive route history is empty right now. Past bindings will appear here once an operator closes or rotates them.</p>
+    <p class="empty-state-copy">No past routes yet. Closed or replaced routes will appear here.</p>
   </div>
   {{end}}
 </section>

@@ -35,11 +35,11 @@
       <span class="run-status {{.StatusClass}}" data-run-status-label>{{.StatusLabel}}</span>
     </article>
     <article class="run-command-cell">
-      <span class="run-command-label">Trigger</span>
+      <span class="run-command-label">Source</span>
       <span class="run-command-value">{{.TriggerLabel}}</span>
     </article>
     <article class="run-command-cell run-command-cell-wide">
-      <span class="run-command-label">Current state</span>
+      <span class="run-command-label">Attention</span>
       <span id="run-graph-headline" class="run-command-value">{{.StateLabel}}</span>
     </article>
     <article class="run-command-cell">
@@ -47,7 +47,7 @@
       <span id="run-started-at" class="run-command-value mono">{{.StartedAtLabel}}</span>
     </article>
     <article class="run-command-cell">
-      <span class="run-command-label">Updated</span>
+      <span class="run-command-label">Last Update</span>
       <span id="run-last-activity" class="run-command-value mono">{{.LastActivityLabel}}</span>
     </article>
     <article class="run-command-cell">
@@ -59,25 +59,25 @@
       <span id="run-token-summary" class="run-command-value mono">{{.TokenSummary}}</span>
     </article>
   </div>
-  <p id="run-live-status" class="run-live-note muted">Live updates enabled.</p>
+  <p id="run-live-status" class="run-live-note muted">Live updates on.</p>
 </section>
 
 <section class="page-section">
   <div class="panel run-primary-panel">
     <div class="run-primary-head">
       <div class="stack-sm">
-        <h2 class="section-title">Orchestration Map</h2>
-        <p class="panel-note">Map shows ownership and flow. Rail jumps to the branch that needs attention.</p>
+        <h2 class="section-title">Work Map</h2>
+        <p class="panel-note">See the lead task, agent handoffs, and anything blocked.</p>
       </div>
       <div class="graph-control-row">
-        <button class="btn btn-subtle btn-inline" type="button" data-graph-action="focus-active">Focus active path</button>
-        <button class="btn btn-subtle btn-inline" type="button" data-graph-action="expand-active">Expand active branches</button>
-        <button class="btn btn-subtle btn-inline" type="button" data-graph-action="collapse-settled">Collapse settled branches</button>
+        <button class="btn btn-subtle btn-inline" type="button" data-graph-action="focus-active">Focus Active</button>
+        <button class="btn btn-subtle btn-inline" type="button" data-graph-action="expand-active">Expand Active</button>
+        <button class="btn btn-subtle btn-inline" type="button" data-graph-action="collapse-settled">Collapse Finished</button>
       </div>
     </div>
     <div class="run-primary-board" data-run-primary-board>
       <section class="graph-stage-panel run-map-hero" data-run-map-hero>
-        <div class="panel-kicker">Topology map</div>
+        <div class="panel-kicker">Map</div>
         <div class="graph-legend">
           {{range .Graph.Legend}}
             <div class="graph-legend-item {{.StatusClass}}" data-edge-kind="{{.Kind}}">
@@ -89,8 +89,8 @@
         <div id="run-graph-diagram" class="graph-diagram" aria-label="Run collaboration diagram"></div>
       </section>
       <aside class="graph-stage-panel graph-stage-panel-board run-branch-rail" data-run-branch-rail>
-        <div class="panel-kicker">Branch rail</div>
-        <p class="panel-note">Active and blocked branches stay open. Settled work collapses.</p>
+        <div class="panel-kicker">Open Branches</div>
+        <p class="panel-note">Open work stays expanded. Finished work collapses.</p>
         <div id="run-graph-board" class="graph-board" data-graph-url="{{.GraphURL}}" data-node-detail-url-template="{{.NodeDetailURLTemplate}}">
           {{range .Graph.Lanes}}
             <section class="graph-lane" data-lane-id="{{.ID}}">
@@ -114,15 +114,15 @@
                           <div class="graph-node-head">
                             <div class="button-row">
                               <span class="run-status {{.StatusClass}}">{{.StatusLabel}}</span>
-                              {{if .IsRoot}}<span class="badge badge-muted">root</span>{{end}}
+                              {{if .IsRoot}}<span class="badge badge-muted">lead</span>{{end}}
                             </div>
-                            <button class="btn btn-subtle btn-inline" type="button" data-open-node-detail>Read more</button>
+                            <button class="btn btn-subtle btn-inline" type="button" data-open-node-detail>Details</button>
                           </div>
                           <div class="graph-node-title-row">
                             <div class="graph-node-title">{{.AgentID}}</div>
                             <div class="mono subtle">Run {{.ShortID}}</div>
                           </div>
-                          <div class="graph-node-objective structured-preview">{{if .ObjectivePreview}}{{.ObjectivePreview}}{{else}}No objective captured for this run.{{end}}</div>
+                          <div class="graph-node-objective structured-preview">{{if .ObjectivePreview}}{{.ObjectivePreview}}{{else}}No task text saved for this run.{{end}}</div>
                           <div class="graph-node-meta mono subtle">
                             {{if .TriggerLabel}}<span>{{.TriggerLabel}}</span>{{end}}
                             <span>{{.ExecutorLabel}}</span>
@@ -148,8 +148,8 @@
     <details class="panel run-disclosure run-outcome-panel" data-run-outcome>
       <summary class="run-disclosure-summary">
         <div class="stack-sm">
-          <h2 class="section-title">Run Outcome</h2>
-          <p class="panel-note">Turns and any live draft.</p>
+          <h2 class="section-title">Output</h2>
+          <p class="panel-note">Agent turns and any live draft.</p>
         </div>
         <div class="mono subtle"><span id="run-turn-count">{{.TurnCount}}</span> turn(s)</div>
       </summary>
@@ -160,19 +160,19 @@
             {{range .Turns}}
               <article class="run-row run-timeline-card is-success">
                 <div class="run-timeline-head">
-                  <div class="row-title">Completed turn</div>
+                  <div class="row-title">Completed reply</div>
                   <div class="mono subtle">{{.CreatedAtLabel}}</div>
                 </div>
                 <div class="structured-text">{{template "structured_text_blocks" .Structured}}</div>
               </article>
             {{end}}
           {{else}}
-            <p id="run-turns-empty" class="muted">No assistant output yet.</p>
+            <p id="run-turns-empty" class="muted">No output yet.</p>
           {{end}}
         </div>
         <article id="run-live-draft" class="run-row run-timeline-card is-active" hidden>
           <div class="run-timeline-head">
-            <div class="row-title">Streaming turn</div>
+            <div class="row-title">Live draft</div>
             <div class="mono subtle">live</div>
           </div>
           <pre id="run-live-text" class="run-output-text"></pre>
@@ -184,7 +184,7 @@
       <summary class="run-disclosure-summary">
         <div class="stack-sm">
           <h2 class="section-title">Timeline</h2>
-          <p class="panel-note">Event history.</p>
+          <p class="panel-note">What happened.</p>
         </div>
         <div class="mono subtle"><span id="run-event-count">{{.EventCount}}</span> event(s)</div>
       </summary>
@@ -201,7 +201,7 @@
             </article>
           {{end}}
         {{else}}
-          <p class="muted">No events recorded yet.</p>
+          <p class="muted">No events yet.</p>
         {{end}}
         </div>
       </div>
@@ -212,14 +212,14 @@
   <details class="panel run-disclosure run-contract" data-run-contract>
     <summary class="run-disclosure-summary run-contract-summary">
       <div class="stack-sm">
-        <h2 class="section-title">Run Contract</h2>
-        <p class="panel-note">Bound team and capabilities.</p>
+        <h2 class="section-title">Assigned Team</h2>
+        <p class="panel-note">Agents and capabilities used for this run.</p>
       </div>
-      <span class="mono subtle">Show bound team</span>
+      <span class="mono subtle">Show team</span>
     </summary>
     <div class="run-disclosure-body run-contract-body">
       <div class="snapshot-summary">
-        <span class="page-eyebrow">Bound Team</span>
+        <span class="page-eyebrow">Assigned Team</span>
         <div class="row-title">{{if .ExecutionSnapshot.TeamID}}{{.ExecutionSnapshot.TeamID}}{{else}}Unscoped run{{end}}</div>
       </div>
       {{if .ExecutionSnapshot.Agents}}
@@ -241,7 +241,7 @@
           {{end}}
         </div>
       {{else}}
-        <p class="muted">No execution snapshot was recorded for this run.</p>
+        <p class="muted">No team snapshot was saved for this run.</p>
       {{end}}
     </div>
   </details>
@@ -251,8 +251,8 @@
     <div class="run-node-modal-sticky">
       <div class="run-node-modal-head">
         <div class="stack-sm">
-          <span class="panel-kicker">Node inspector</span>
-          <div id="run-node-modal-title" class="row-title">Run node</div>
+          <span class="panel-kicker">Agent Detail</span>
+          <div id="run-node-modal-title" class="row-title">Agent detail</div>
           <div id="run-node-modal-subtitle" class="mono subtle"></div>
         </div>
         <button class="btn btn-subtle btn-inline" type="submit">Close</button>
@@ -698,7 +698,7 @@
       childSection.className = "structured-text";
       const childTitle = document.createElement("p");
       childTitle.className = "graph-node-fact-label";
-      childTitle.textContent = "Delegated children";
+      childTitle.textContent = "Delegated agents";
       childSection.appendChild(childTitle);
       const list = document.createElement("ul");
       list.className = "structured-list node-chain-list";
@@ -1002,7 +1002,7 @@
     activeNodeRunID = detail.id || "";
     applyGraphSelection(lastGraphSnapshot);
     if (nodeModalTitle) {
-      nodeModalTitle.textContent = detail.agent_id || "Run node";
+      nodeModalTitle.textContent = detail.agent_id || "Agent detail";
     }
     if (nodeModalSubtitle) {
       nodeModalSubtitle.textContent = `${detail.short_id || detail.id || ""} · ${detail.model_display || "not recorded"} · ${detail.token_summary || "0 in / 0 out"}`;
@@ -1493,7 +1493,7 @@
     button.type = "button";
     button.className = "btn btn-subtle btn-inline";
     button.dataset.openNodeDetail = "true";
-    button.textContent = "Read more";
+    button.textContent = "Details";
     return button;
   }
 
@@ -1572,7 +1572,7 @@
 
       const title = document.createElement("span");
       title.className = "graph-lane-title";
-      title.textContent = lane.label || "Workers";
+      title.textContent = lane.label || "Specialists";
       head.appendChild(title);
 
       const count = document.createElement("span");
@@ -1605,7 +1605,7 @@
 
         const branchTitle = document.createElement("span");
         branchTitle.className = "graph-branch-title";
-        branchTitle.textContent = branch.label || "Worker branch";
+        branchTitle.textContent = branch.label || "Specialist branch";
         summaryCopy.appendChild(branchTitle);
 
         const branchMeta = document.createElement("span");
@@ -1642,7 +1642,7 @@
           if (node.is_root) {
             const rootBadge = document.createElement("span");
             rootBadge.className = "badge badge-muted";
-            rootBadge.textContent = "root";
+            rootBadge.textContent = "lead";
             labels.appendChild(rootBadge);
           }
 
@@ -1653,14 +1653,14 @@
 
           const objective = document.createElement("div");
           objective.className = "graph-node-objective structured-preview";
-          objective.textContent = node.objective_preview || node.objective || "No objective captured for this run.";
+          objective.textContent = node.objective_preview || node.objective || "No task text saved for this run.";
           card.appendChild(objective);
 
           const meta = document.createElement("div");
           meta.className = "graph-node-meta mono subtle";
           for (const value of [
             node.trigger_label || "",
-            node.executor_label || "GistClaw agent",
+            node.executor_label || "GistClaw",
             node.token_summary || "0 in / 0 out",
             node.time_label || "not recorded",
           ]) {
@@ -1817,7 +1817,7 @@
     }
     const card = document.createElement("article");
     card.className = "run-row run-timeline-card is-success";
-    card.appendChild(timelineHead("Completed turn", formatTimestamp(occurredAt)));
+    card.appendChild(timelineHead("Completed reply", formatTimestamp(occurredAt)));
     const body = document.createElement("div");
     body.className = "structured-text";
     card.appendChild(body);
@@ -1967,7 +1967,7 @@
         liveDraft.hidden = false;
       }
       if (status) {
-        status.textContent = "Streaming assistant output...";
+        status.textContent = "Streaming output...";
       }
       return;
     }
@@ -1984,7 +1984,7 @@
       }
       clearDraft();
       if (status) {
-        status.textContent = "Latest turn completed.";
+        status.textContent = "Latest reply saved.";
       }
       return;
     }
@@ -1992,7 +1992,7 @@
     if (event.kind === "run_completed") {
       clearDraft();
       if (status) {
-        status.textContent = "Run completed.";
+        status.textContent = "Run finished.";
       }
       stopGraphPolling();
       source.close();
@@ -2011,7 +2011,7 @@
 
   source.onerror = () => {
     if (status) {
-      status.textContent = "Reconnecting to live updates...";
+      status.textContent = "Reconnecting...";
     }
   };
 })();

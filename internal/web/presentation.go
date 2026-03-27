@@ -40,35 +40,35 @@ func humanizeWebLabel(raw string) string {
 func sessionRoleLabel(role model.SessionRole) string {
 	switch role {
 	case model.SessionRoleFront:
-		return "Front"
+		return "Lead agent"
 	case model.SessionRoleWorker:
-		return "Worker"
+		return "Specialist agent"
 	default:
-		return humanizeWebLabel(string(role))
+		label := humanizeWebLabel(string(role))
+		if label == "" {
+			return ""
+		}
+		return label + " agent"
 	}
 }
 
 func sessionRoleSummaryLabel(role model.SessionRole) string {
 	switch role {
 	case model.SessionRoleFront:
-		return "Front session"
+		return "Lead agent"
 	case model.SessionRoleWorker:
-		return "Worker session"
+		return "Specialist agent"
 	default:
-		label := humanizeWebLabel(string(role))
-		if label == "" {
-			return ""
-		}
-		return label + " session"
+		return sessionRoleLabel(role)
 	}
 }
 
 func sessionMessageKindLabel(kind model.SessionMessageKind) string {
 	switch kind {
 	case model.MessageAnnounce:
-		return "Announcement"
+		return "Note"
 	case model.MessageAgentSend:
-		return "Agent Send"
+		return "Agent reply"
 	default:
 		return humanizeWebLabel(string(kind))
 	}
@@ -76,7 +76,7 @@ func sessionMessageKindLabel(kind model.SessionMessageKind) string {
 
 func sessionSenderLabel(senderSessionID string) string {
 	if strings.TrimSpace(senderSessionID) == "" {
-		return "Operator / Runtime"
+		return "You / GistClaw"
 	}
 	return senderSessionID
 }

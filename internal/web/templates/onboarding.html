@@ -2,7 +2,7 @@
 <section class="page-header">
   <span class="page-eyebrow">Onboarding</span>
   <h1>Choose Project</h1>
-  <p class="page-lede">We created a starter project for local work. Keep it, bind an existing repo, or create a new workspace elsewhere.</p>
+  <p class="page-lede">Pick the project GistClaw should work in.</p>
 </section>
 {{if .Error}}
 <p class="error">{{.Error}}</p>
@@ -12,12 +12,12 @@
   <div>
     <span class="panel-kicker">Starter project</span>
     <h2>{{if .ActiveProjectName}}{{.ActiveProjectName}}{{else}}starter project{{end}}</h2>
-    <p class="panel-note">Ready at <span class="mono">{{.ActiveWorkspaceRoot}}</span>. Use this if you want to start from a blank local project.</p>
+    <p class="panel-note">Ready at <span class="mono">{{.ActiveWorkspaceRoot}}</span>. Use it if you want to try GistClaw in a fresh local repo.</p>
   </div>
   <form method="POST" action="/onboarding">
     <input type="hidden" name="action" value="use_starter">
     <div class="button-row">
-      <button class="btn btn-secondary" type="submit" data-confirm="Use the starter project for this operator session?">Use Starter Project</button>
+      <button class="btn btn-secondary" type="submit" data-confirm="Use this starter project?">Use Starter Project</button>
     </div>
   </form>
 </section>
@@ -25,12 +25,12 @@
 <section class="panel">
   <form class="stack-md" method="POST" action="/onboarding">
     <div class="field">
-      <label for="workspace_root">Workspace Path</label>
+      <label for="workspace_root">Existing Repo Path</label>
       <input class="input-wide" type="text" id="workspace_root" name="workspace_root" placeholder="/home/you/projects/myrepo">
-      <p class="field-help">Path must exist on disk and contain a .git directory.</p>
+      <p class="field-help">It must already exist and include a <code>.git</code> directory.</p>
     </div>
     <div class="button-row">
-      <button class="btn btn-primary" type="submit" data-confirm="Bind this workspace for local operations?">Bind Workspace</button>
+      <button class="btn btn-primary" type="submit" data-confirm="Use this repo?">Use Repo</button>
     </div>
   </form>
 </section>
@@ -38,12 +38,12 @@
   <form class="stack-md" method="POST" action="/onboarding">
     <input type="hidden" name="action" value="create_new">
     <div class="field">
-      <label for="new_workspace_root">Create Project Elsewhere</label>
+      <label for="new_workspace_root">New Project Path</label>
       <input class="input-wide" type="text" id="new_workspace_root" name="new_workspace_root" placeholder="/home/you/projects/new-project">
-      <p class="field-help">Path may be new or an empty directory. GistClaw will create the workspace and make it active.</p>
+      <p class="field-help">It can be a new path or an empty directory. GistClaw will create it and make it active.</p>
     </div>
     <div class="button-row">
-      <button class="btn btn-secondary" type="submit" data-confirm="Create and activate this new project workspace?">Create Project</button>
+      <button class="btn btn-secondary" type="submit" data-confirm="Create this project?">Create Project</button>
     </div>
   </form>
 </section>
@@ -52,17 +52,18 @@
 {{define "onboarding_step2_body"}}
 <section class="page-header">
   <span class="page-eyebrow">Onboarding</span>
-  <h1>Repo Scan</h1>
+  <h1>Project Scan</h1>
+  <p class="page-lede">Here is what GistClaw found in this repo.</p>
 </section>
 <section class="panel stack-md">
-  <p>Signals detected in your workspace:</p>
+  <p>Signals detected in this repo:</p>
   <ul class="stack-sm">
   {{range .Candidates}}
     <li><strong>{{.Kind}}</strong>: {{.Description}} <span class="muted">({{.Signal}})</span></li>
   {{end}}
   </ul>
   <div class="button-row">
-    <a class="btn btn-secondary" href="/onboarding/step/3">Choose a Task</a>
+    <a class="btn btn-secondary" href="/onboarding/step/3">Choose Preview</a>
   </div>
 </section>
 {{end}}
@@ -70,7 +71,8 @@
 {{define "onboarding_step3_body"}}
 <section class="page-header">
   <span class="page-eyebrow">Onboarding</span>
-  <h1>Select Task</h1>
+  <h1>Choose Preview</h1>
+  <p class="page-lede">Start with a preview task. You can inspect the result before files change.</p>
 </section>
 {{if .Error}}
 <p class="error">{{.Error}}</p>
@@ -78,8 +80,8 @@
 <section class="panel">
   <form class="stack-md" method="POST" action="/onboarding/step/3">
     <fieldset class="stack-md">
-      <legend>Pick one preview task</legend>
-      <p class="field-help" id="task-choice-help">Start with a preview run so you can inspect the plan before any files change.</p>
+      <legend>Pick a Preview Task</legend>
+      <p class="field-help" id="task-choice-help">Start with a preview so you can inspect the result before files change.</p>
       <div class="choice-list" aria-describedby="task-choice-help">
       {{range $index, $candidate := .Candidates}}
       {{$taskID := printf "task-%d" $index}}
@@ -94,7 +96,7 @@
       </div>
     </fieldset>
     <div class="button-row">
-      <button class="btn btn-primary" type="submit" data-confirm="Start this preview run now?">Run Preview</button>
+      <button class="btn btn-primary" type="submit" data-confirm="Start this preview?">Start Preview</button>
     </div>
   </form>
 </section>
@@ -103,17 +105,17 @@
 {{define "onboarding_step4_body"}}
 <section class="page-header">
   <span class="page-eyebrow">Onboarding</span>
-  <h1>Preview Run</h1>
+  <h1>Preview Ready</h1>
 </section>
 <section class="panel stack-md">
   <p>Run ID: <span class="mono">{{.RunID}}</span></p>
-  <p class="muted">Previewing changes — no files will be modified.</p>
+  <p class="muted">Preview only. Files stay untouched.</p>
   <div class="button-row">
-    <a class="btn btn-secondary" href="/operate/runs/{{.RunID}}">View run timeline</a>
+    <a class="btn btn-secondary" href="/operate/runs/{{.RunID}}">Open Preview</a>
   </div>
   <hr class="divider">
-  <p>Connect Telegram to get updates on future runs &mdash;
-     <a href="/configure/settings">Configure in Settings</a>
+  <p>Want updates outside the browser? Connect Telegram in
+     <a href="/configure/settings">Settings</a>.
   </p>
 </section>
 {{end}}

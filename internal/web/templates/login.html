@@ -2,25 +2,25 @@
 <section class="auth-workbench">
   <div class="auth-context">
     <span class="page-eyebrow">Access</span>
-    <h1>Operator Access</h1>
-    <p class="page-lede">Unlock the local operator runtime for this browser. Device access is tracked after sign-in so you can review and block browsers from Settings.</p>
+    <h1>Browser Access</h1>
+    <p class="page-lede">Connect this browser to your local GistClaw workspace.</p>
     <div class="panel auth-context-panel stack-sm">
-      <span class="panel-kicker">Scope</span>
-      <p class="panel-note">This gate protects runs, recovery tools, machine settings, and project-level operator data behind one admin password.</p>
+      <span class="panel-kicker">Access</span>
+      <p class="panel-note">Use the admin password to open runs, approvals, and settings.</p>
     </div>
   </div>
 
   <div class="panel auth-panel stack-md">
     {{if .SetupRequired}}
       <span class="panel-kicker">Setup Required</span>
-      <h2>Local setup required</h2>
-      <p class="panel-note">Browser access stays locked until an operator sets the first password on the server.</p>
+      <h2>Finish setup</h2>
+      <p class="panel-note">Set a password on the host before this browser can sign in.</p>
       <div class="command-block"><code>gistclaw auth set-password</code></div>
-      <p class="muted">This is the safe default for a fresh public deployment.</p>
+      <p class="muted">This is the safe default for a fresh install.</p>
     {{else}}
       <span class="panel-kicker">Sign In</span>
-      <h2>Sign in to continue</h2>
-      <p class="panel-note">Use the single-admin password for this operator.</p>
+      <h2>Sign in</h2>
+      <p class="panel-note">Use the admin password for this GistClaw host.</p>
       {{if .Message}}
         <div class="{{.MessageClass}}">{{.Message}}</div>
       {{end}}

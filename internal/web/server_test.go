@@ -65,7 +65,7 @@ func TestRuns(t *testing.T) {
 		body := rr.Body.String()
 		for _, want := range []string{
 			"Runs",
-			"Live orchestration strip",
+			"Live Task Board",
 			`data-run-level="root" data-run-id="run-known"`,
 			`data-run-level="child" data-run-id="run-worker-review"`,
 			`data-run-level="child" data-run-id="run-worker-approval"`,
@@ -74,7 +74,7 @@ func TestRuns(t *testing.T) {
 			"run-known",
 			"run-worker-review",
 			"run-worker-approval",
-			"2 workers",
+			"2 sub-agents",
 			"gpt-5.4",
 			"10 in / 20 out",
 			"4 in / 6 out",
@@ -120,7 +120,7 @@ func TestRuns(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rr.Code)
 		}
-		for _, want := range []string{"Live orchestration strip", "No runs yet.", `href="/configure/team"`} {
+		for _, want := range []string{"Live Task Board", "No runs yet.", `href="/configure/team"`} {
 			if !strings.Contains(rr.Body.String(), want) {
 				t.Fatalf("expected empty state to contain %q, got:\n%s", want, rr.Body.String())
 			}
@@ -252,18 +252,18 @@ func TestRuns(t *testing.T) {
 		body := rr.Body.String()
 		for _, want := range []string{
 			"082b1c314823744cc779ece2f90e80e7",
-			"Run Contract",
+			"Assigned Team",
 			"Repo Task Team",
 			"assistant",
 			"workspace_write",
-			"Trigger",
-			"Chat",
-			"Current state",
+			"Source",
+			"GistClaw",
+			"Attention",
 			"Started",
-			"Updated",
+			"Last Update",
 			"Model",
 			"Tokens",
-			"Run Outcome",
+			"Output",
 			"Timeline",
 			"2026-03-25 08:00:00 UTC",
 			"2026-03-25 08:06:00 UTC",
@@ -294,7 +294,7 @@ func TestRuns(t *testing.T) {
 			`data-log-collapsed`,
 			`data-node-detail-url-template="/operate/runs/082b1c314823744cc779ece2f90e80e7/nodes/__RUN_ID__"`,
 			`data-open-node-detail`,
-			"Read more",
+			"Details",
 			`id="run-live-output"`,
 			`id="run-started-at"`,
 			`id="run-last-activity"`,
@@ -409,9 +409,9 @@ func TestRuns(t *testing.T) {
 
 		body := rr.Body.String()
 		for _, want := range []string{
-			"Orchestration Map",
-			"Branch rail",
-			"Topology map",
+			"Work Map",
+			"Open Branches",
+			"Map",
 			"Telegram",
 			"Codex CLI",
 			`data-branch-root-id=`,
@@ -497,9 +497,9 @@ func TestRuns(t *testing.T) {
 			`rememberBranchState()`,
 			`restoreBranchState(`,
 			`applyGraphSelection(`,
-			"Focus active path",
-			"Expand active branches",
-			"Collapse settled branches",
+			"Focus Active",
+			"Expand Active",
+			"Collapse Finished",
 		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
@@ -1200,8 +1200,8 @@ func TestApprovals(t *testing.T) {
 			`class="approval-filter-actions"`,
 			`class="field-label field-label-ghost"`,
 			`approval-card-actions`,
-			`data-confirm="Approve this approval ticket? This action resolves it immediately."`,
-			`data-confirm="Deny this approval ticket? This action resolves it immediately."`,
+			`data-confirm="Allow this change?"`,
+			`data-confirm="Deny this change?"`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected approvals page to contain %q:\n%s", want, body)
@@ -1243,7 +1243,7 @@ func TestApprovals(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rr.Code)
 		}
-		for _, want := range []string{"No approval work right now.", `href="/operate/runs"`} {
+		for _, want := range []string{"Nothing is waiting on your approval.", `href="/operate/runs"`} {
 			if !strings.Contains(rr.Body.String(), want) {
 				t.Fatalf("expected empty approvals state to contain %q, got:\n%s", want, rr.Body.String())
 			}
@@ -1307,11 +1307,11 @@ func TestSettings(t *testing.T) {
 	if !strings.Contains(rr.Body.String(), "Settings") {
 		t.Fatalf("expected settings page, got:\n%s", rr.Body.String())
 	}
-	if !strings.Contains(rr.Body.String(), "Team composition now lives in Configure &gt; Team.") {
-		t.Fatalf("expected settings page to use non-interactive team guidance, got:\n%s", rr.Body.String())
+	if !strings.Contains(rr.Body.String(), "Browser access, limits, and machine credentials.") {
+		t.Fatalf("expected settings page to use the new machine/browser copy, got:\n%s", rr.Body.String())
 	}
-	if strings.Contains(rr.Body.String(), `Team composition and agent collaboration defaults now live on the <a href="/configure/team">Team</a> page.`) {
-		t.Fatalf("expected settings page to avoid duplicate inline Team navigation, got:\n%s", rr.Body.String())
+	if strings.Contains(rr.Body.String(), "Team composition now lives in Configure &gt; Team.") {
+		t.Fatalf("expected settings page to drop the old team guidance, got:\n%s", rr.Body.String())
 	}
 }
 
@@ -1332,10 +1332,12 @@ func TestTeam(t *testing.T) {
 		for _, want := range []string{
 			"Team",
 			"Repo Task Team",
-			"Active Profile",
-			"Create Profile",
-			"Clone Profile",
-			"Delete Profile",
+			"Active Setup",
+			"Create Setup",
+			"Copy Setup",
+			"Delete Setup",
+			"Lead agent",
+			"Can Spawn Sub-Agents",
 			"assistant",
 			"patcher",
 			"reviewer",
@@ -1354,7 +1356,7 @@ func TestTeam(t *testing.T) {
 			`name="delete_profile_name"`,
 			`<option value="read_heavy"`,
 			`value="reviewer" checked`,
-			`Add Member`,
+			`Add Agent`,
 			`/configure/team/export`,
 			`name="import_file"`,
 			`type="hidden" name="agent_count" value="3"`,
@@ -1362,14 +1364,14 @@ func TestTeam(t *testing.T) {
 			`class="team-file-tools"`,
 			`class="team-primary-actions"`,
 			`class="team-utility-bar"`,
-			`data-confirm="Switch the active team profile?"`,
-			`data-confirm="Create this team profile from the shipped default?"`,
-			`data-confirm="Clone the selected profile into a new team profile?"`,
-			`data-confirm="Delete this inactive team profile?"`,
-			`data-confirm="Add a new team member to the editor?"`,
-			`data-confirm="Import this team file into the editor? Unsaved changes in the current editor will be replaced."`,
-			`data-confirm="Remove assistant from this team? This stays in the editor until you save."`,
-			`data-confirm="Save this team to the active workspace profile?"`,
+			`data-confirm="Use this setup?"`,
+			`data-confirm="Create this setup?"`,
+			`data-confirm="Copy this setup?"`,
+			`data-confirm="Delete this setup?"`,
+			`data-confirm="Add another agent?"`,
+			`data-confirm="Import this setup file? Unsaved edits will be replaced."`,
+			`data-confirm="Remove assistant from this setup? Save to apply the change."`,
+			`data-confirm="Save this setup?"`,
 		} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected body to contain %q:\n%s", want, body)
@@ -2214,7 +2216,7 @@ func TestSettingsUpdate(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rr.Code)
 		}
-		if !strings.Contains(rr.Body.String(), "advanced workspace override") {
+		if !strings.Contains(rr.Body.String(), "Advanced override.") {
 			t.Fatalf("expected advanced workspace override copy, got:\n%s", rr.Body.String())
 		}
 	})
@@ -3765,7 +3767,7 @@ func TestRoutesDeliveriesPage(t *testing.T) {
 			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 		}
 		body := rr.Body.String()
-		for _, want := range []string{"Routes &amp; Deliveries", "Connector Health", "Route Directory", "Delivery Queue", route.ID, run.SessionID, "telegram", "terminal"} {
+		for _, want := range []string{"Routes &amp; Deliveries", "Connected Sources", "Active Routes", "Outgoing Messages", route.ID, run.SessionID, "telegram", "terminal"} {
 			if !strings.Contains(body, want) {
 				t.Fatalf("expected routes and deliveries page to contain %q:\n%s", want, body)
 			}
@@ -3827,7 +3829,7 @@ func TestRoutesDeliveriesPage(t *testing.T) {
 			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 		}
 		body := rr.Body.String()
-		routePattern := regexp.MustCompile(regexp.QuoteMeta(route.ID) + `(?s).*?assistant.*?\(Front\)`)
+		routePattern := regexp.MustCompile(regexp.QuoteMeta(route.ID) + `(?s).*?assistant.*?\(Lead agent\)`)
 		if !routePattern.MatchString(body) {
 			t.Fatalf("expected route row to render a humanized role label:\n%s", body)
 		}
@@ -3879,7 +3881,7 @@ func TestRoutesDeliveriesPage(t *testing.T) {
 				t.Fatalf("expected filtered routes and deliveries page to contain %q:\n%s", want, body)
 			}
 		}
-		for _, unwanted := range []string{"chat-beta", "whatsapp", "thread-2"} {
+		for _, unwanted := range []string{"chat-beta", "thread-2"} {
 			if strings.Contains(body, unwanted) {
 				t.Fatalf("expected filtered routes and deliveries page to exclude %q:\n%s", unwanted, body)
 			}
@@ -4163,7 +4165,7 @@ func TestSessionPages(t *testing.T) {
 			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 		}
 		body := rr.Body.String()
-		workerPattern := regexp.MustCompile(regexp.QuoteMeta(worker.SessionID) + `(?s).*?researcher.*?Worker.*?Archived.*?2031-03-25 10:15:00 UTC`)
+		workerPattern := regexp.MustCompile(regexp.QuoteMeta(worker.SessionID) + `(?s).*?researcher.*?Specialist agent.*?Archived.*?2031-03-25 10:15:00 UTC`)
 		if !workerPattern.MatchString(body) {
 			t.Fatalf("expected worker session row to render humanized labels and timestamp:\n%s", body)
 		}
@@ -4186,7 +4188,7 @@ func TestSessionPages(t *testing.T) {
 			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 		}
 		body := rr.Body.String()
-		want := `<div class="session-summary-line"><span>researcher</span><span class="muted session-inline-meta">Worker</span></div>`
+		want := `<div class="session-summary-line"><span>researcher</span><span class="muted session-inline-meta">Specialist agent</span></div>`
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected worker agent summary to keep role inline with the primary row:\n%s", body)
 		}
@@ -4313,7 +4315,7 @@ func TestSessionPages(t *testing.T) {
 			"Inspect Telegram.",
 			"mock response",
 			route.ID,
-			"Announcement",
+			"Note",
 			`class="structured-text structured-html"`,
 			"<h2>Delivery plan</h2>",
 			"<li>Gather context</li>",

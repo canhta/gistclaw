@@ -60,12 +60,12 @@ func TestSummarizeRunBlocker(t *testing.T) {
 		want        string
 	}{
 		{name: "approval", queueStatus: "needs_approval", rows: rows, rootStatus: "active", childCount: 2, want: "patcher waiting on approval"},
-		{name: "failure without agent", queueStatus: "failed", rows: []runChildRow{{Status: "failed"}}, rootStatus: "active", childCount: 1, want: "Worker failed"},
-		{name: "active worker", queueStatus: "active", rows: []runChildRow{{Status: "active"}, {Status: "active"}}, rootStatus: "active", childCount: 2, want: "2 workers active"},
-		{name: "active coordinator", queueStatus: "active", rows: nil, rootStatus: "active", childCount: 0, want: "Coordinator active"},
-		{name: "pending workers", queueStatus: "pending", rows: []runChildRow{{Status: "pending"}}, rootStatus: "pending", childCount: 1, want: "1 worker queued"},
-		{name: "completed children", queueStatus: "completed", rows: []runChildRow{{Status: "completed"}, {Status: "completed"}}, rootStatus: "completed", childCount: 2, want: "2 workers settled"},
-		{name: "no children fallback", queueStatus: "completed", rows: nil, rootStatus: "completed", childCount: 0, want: "No delegated workers"},
+		{name: "failure without agent", queueStatus: "failed", rows: []runChildRow{{Status: "failed"}}, rootStatus: "active", childCount: 1, want: "Sub-agent failed"},
+		{name: "active worker", queueStatus: "active", rows: []runChildRow{{Status: "active"}, {Status: "active"}}, rootStatus: "active", childCount: 2, want: "2 sub-agents active"},
+		{name: "active coordinator", queueStatus: "active", rows: nil, rootStatus: "active", childCount: 0, want: "Lead agent active"},
+		{name: "pending workers", queueStatus: "pending", rows: []runChildRow{{Status: "pending"}}, rootStatus: "pending", childCount: 1, want: "1 sub-agent queued"},
+		{name: "completed children", queueStatus: "completed", rows: []runChildRow{{Status: "completed"}, {Status: "completed"}}, rootStatus: "completed", childCount: 2, want: "2 sub-agents settled"},
+		{name: "no children fallback", queueStatus: "completed", rows: nil, rootStatus: "completed", childCount: 0, want: "No sub-agents"},
 	}
 
 	for _, tc := range cases {
@@ -137,7 +137,7 @@ func TestBuildRunListClusters(t *testing.T) {
 	if cluster.Root.StartedAtExact != "2026-03-25 10:00:00 UTC" {
 		t.Fatalf("expected exact started-at timestamp for drill-down, got %q", cluster.Root.StartedAtExact)
 	}
-	if cluster.ChildCountLabel != "1 worker" {
+	if cluster.ChildCountLabel != "1 sub-agent" {
 		t.Fatalf("expected child count label, got %q", cluster.ChildCountLabel)
 	}
 	if cluster.BlockerLabel != "patcher waiting on approval" {
@@ -145,6 +145,111 @@ func TestBuildRunListClusters(t *testing.T) {
 	}
 	if len(cluster.Children) != 1 || cluster.Children[0].Depth != 1 {
 		t.Fatalf("expected one depth-1 child, got %#v", cluster.Children)
+	}
+}
+
+func TestBuildRunQueueStripUsesTaskFramedHeadlines(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name     string
+		clusters []runListClusterView
+		want     string
+	}{
+		{
+			name: "empty",
+			want: "No active work yet. Start a task to see progress here.",
+		},
+		{
+			name: "needs approval",
+			clusters: []runListClusterView{{
+				Root: runListItem{Status: "needs_approval"},
+			}},
+			want: "Some work is waiting on you.",
+		},
+		{
+			name: "active",
+			clusters: []runListClusterView{{
+				Root: runListItem{Status: "active"},
+				Children: []runListItem{
+					{Status: "completed"},
+				},
+			}},
+			want: "See what is running, waiting on you, or done.",
+		},
+		{
+			name: "settled",
+			clusters: []runListClusterView{{
+				Root: runListItem{Status: "completed"},
+			}},
+			want: "Recent work is settled.",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := buildRunQueueStrip(tc.clusters).Headline; got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
+	}
+}
+
+func TestRunGraphHeadlineUsesTaskLanguage(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		summary runGraphSummaryView
+		want    string
+	}{
+		{
+			name:    "approval",
+			summary: runGraphSummaryView{NeedsApproval: 1},
+			want:    "1 task waiting on you.",
+		},
+		{
+			name:    "active",
+			summary: runGraphSummaryView{Active: 2},
+			want:    "2 tasks in progress.",
+		},
+		{
+			name:    "pending",
+			summary: runGraphSummaryView{Pending: 1},
+			want:    "1 task queued to start.",
+		},
+		{
+			name:    "failed",
+			summary: runGraphSummaryView{Failed: 1},
+			want:    "1 task failed on this map.",
+		},
+		{
+			name:    "interrupted",
+			summary: runGraphSummaryView{Interrupted: 2},
+			want:    "2 tasks interrupted.",
+		},
+		{
+			name:    "completed",
+			summary: runGraphSummaryView{Completed: 3, Total: 3},
+			want:    "Everything on this map is done.",
+		},
+		{
+			name:    "fallback",
+			summary: runGraphSummaryView{},
+			want:    "Status available.",
+		},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := runGraphHeadline(tc.summary); got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
 	}
 }
 

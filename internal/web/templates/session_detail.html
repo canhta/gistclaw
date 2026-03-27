@@ -13,16 +13,16 @@
 {{end}}
 
 <section id="session-live-root" class="panel" data-session-id="{{.Session.ID}}" data-send-url="/api/sessions/{{.Session.ID}}/messages" data-active-run-id="{{.ActiveRunID}}">
-  <h2 class="section-title">Send Message</h2>
+  <h2 class="section-title">Send follow-up</h2>
   <form id="session-send-form" class="inline-form" method="POST" action="/operate/sessions/{{.Session.ID}}/messages">
-    <input id="session-send-input" type="text" name="body" placeholder="Send a message into this session">
-    <button class="btn btn-secondary" type="submit" data-confirm="Wake this session with a new operator message?">Wake Session</button>
+    <input id="session-send-input" type="text" name="body" placeholder="Message this agent">
+    <button class="btn btn-secondary" type="submit" data-confirm="Send this follow-up?">Send Follow-Up</button>
   </form>
-  <p id="session-live-status" class="muted">{{if .ActiveRunID}}Streaming active run.{{else}}Ready for the next message.{{end}}</p>
+  <p id="session-live-status" class="muted">{{if .ActiveRunID}}Reply in progress.{{else}}Ready for the next message.{{end}}</p>
 </section>
 
 <section class="panel">
-  <h2 class="section-title">Mailbox</h2>
+  <h2 class="section-title">Conversation</h2>
   <table class="table">
     <thead>
       <tr>
@@ -48,7 +48,7 @@
       {{end}}
       {{else}}
       <tr id="session-mailbox-empty">
-        <td colspan="3" class="muted">No mailbox messages.</td>
+        <td colspan="3" class="muted">No messages yet.</td>
       </tr>
       {{end}}
       <tr id="session-live-draft" hidden>
@@ -61,7 +61,7 @@
 </section>
 
 <section class="panel">
-  <h2 class="section-title">Route</h2>
+  <h2 class="section-title">External Route</h2>
   {{if .Route}}
   <div class="mono">{{.Route.ID}}</div>
   <div>{{.Route.ConnectorID}} / {{.Route.ExternalID}}</div>
@@ -72,12 +72,12 @@
   <div class="muted mono">deactivated: {{.Route.DeactivatedLabel}}</div>
   {{end}}
   {{else}}
-  <p class="muted">This session is not currently bound to an external route.</p>
+  <p class="muted">This conversation is only inside GistClaw right now.</p>
   {{end}}
 </section>
 
 <section class="panel">
-  <h2 class="section-title">Deliveries</h2>
+  <h2 class="section-title">Outgoing Messages</h2>
   {{if .Deliveries}}
   <table class="table">
     <thead>
@@ -102,10 +102,10 @@
         <td>
           {{if eq .Status "terminal"}}
           <form class="inline-form" method="POST" action="/operate/sessions/{{$.Session.ID}}/deliveries/{{.ID}}/retry">
-            <button class="btn btn-secondary" type="submit" data-confirm="Retry this session delivery now?">Retry</button>
+            <button class="btn btn-secondary" type="submit" data-confirm="Retry this delivery?">Retry</button>
           </form>
           {{else}}
-          <span class="muted">No action</span>
+          <span class="muted">In progress</span>
           {{end}}
         </td>
       </tr>
@@ -113,12 +113,12 @@
     </tbody>
   </table>
   {{else}}
-  <p class="muted">No outbound deliveries recorded for this session.</p>
+  <p class="muted">No outgoing messages recorded for this session.</p>
   {{end}}
 </section>
 
 <section class="panel">
-  <h2 class="section-title">Delivery Failures</h2>
+  <h2 class="section-title">Message Failures</h2>
   {{if .DeliveryFailures}}
   <table class="table">
     <thead>
@@ -238,7 +238,7 @@
       sender.textContent = senderSessionID;
     } else {
       sender.className = "muted";
-      sender.textContent = "Operator / Runtime";
+      sender.textContent = "You / GistClaw";
     }
     senderCell.appendChild(sender);
     row.appendChild(senderCell);
@@ -290,7 +290,7 @@
         if (draftRow) {
           draftRow.hidden = false;
         }
-        setStatus("Streaming assistant output...");
+        setStatus("Reply in progress.");
         return;
       }
 
@@ -302,13 +302,13 @@
           appendMailboxRow(content, "assistant", sessionID, runID);
         }
         clearDraft();
-        setStatus("Latest turn completed.");
+        setStatus("Latest reply saved.");
         return;
       }
 
       if (event.kind === "run_completed") {
         clearDraft();
-        setStatus("Session reply delivered.");
+        setStatus("Reply delivered.");
         closeStream();
         return;
       }

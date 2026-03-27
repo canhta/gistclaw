@@ -2,7 +2,7 @@
 <section class="page-header">
   <span class="page-eyebrow">Configure</span>
   <h1>Settings</h1>
-  <p class="page-lede">Manage browser access first, then adjust machine-level operator settings. Project switching stays in the shell; this page keeps the advanced workspace override and runtime limits.</p>
+  <p class="page-lede">Browser access, limits, and machine credentials.</p>
 </section>
 {{if .AccessError}}
   <section class="error">{{.AccessError}}</section>
@@ -18,8 +18,8 @@
     <div class="panel-head">
       <div class="stack-sm">
         <span class="panel-kicker">Access</span>
-        <h2>Access &amp; Devices</h2>
-        <p class="panel-note">This browser login protects the operator surface. Device access is tracked here so you can rotate the password and revoke or block devices without touching machine credentials.</p>
+        <h2>Browser Access</h2>
+        <p class="panel-note">Manage the browser password and signed-in devices here.</p>
       </div>
       <form method="POST" action="/logout">
         <button class="btn btn-secondary" type="submit" data-confirm="Sign out of this browser now?">Sign Out</button>
@@ -44,13 +44,13 @@
           <input type="password" id="confirm_password" name="confirm_password" autocomplete="new-password">
         </div>
         <div class="button-row">
-          <button class="btn btn-primary" type="submit" data-confirm="Update the operator password and sign out other devices?">Update Password</button>
+          <button class="btn btn-primary" type="submit" data-confirm="Update the password and sign out other browsers?">Update Password</button>
         </div>
       </form>
     </section>
 
     <section class="stack-md">
-      <h3 class="section-title">Current Device</h3>
+      <h3 class="section-title">This Browser</h3>
       {{if .CurrentDevice}}
         {{template "settings_device_row" .CurrentDevice}}
       {{else}}
@@ -61,7 +61,7 @@
     </section>
 
     <section class="stack-md">
-      <h3 class="section-title">Other Active Devices</h3>
+      <h3 class="section-title">Other Signed-In Browsers</h3>
       {{if .OtherActiveDevices}}
         <div class="device-ledger">
           {{range .OtherActiveDevices}}
@@ -76,7 +76,7 @@
     </section>
 
     <section class="stack-md">
-      <h3 class="section-title">Blocked Devices</h3>
+      <h3 class="section-title">Blocked Browsers</h3>
       {{if .BlockedDevices}}
         <div class="device-ledger">
           {{range .BlockedDevices}}
@@ -97,17 +97,17 @@
     <div class="stack-sm">
       <span class="panel-kicker">Machine</span>
       <h2>Machine Settings</h2>
-      <p class="panel-note">Team composition now lives in Configure &gt; Team. Use these controls for the advanced workspace override, cost limits, and machine credentials that stay outside the browser login.</p>
+      <p class="panel-note">Use these settings for project path overrides, budgets, and machine credentials.</p>
     </div>
 
     <form method="POST" action="/configure/settings">
       <div class="field">
-        <label for="workspace_root">Workspace Root</label>
+        <label for="workspace_root">Project Path Override</label>
         <input type="text" id="workspace_root" name="workspace_root" value="{{.WorkspaceRoot}}">
-        <span class="field-help">advanced workspace override</span>
+        <span class="field-help">Advanced override.</span>
       </div>
       <div class="field">
-        <label for="per_run_token_budget">Per-Run Token Budget</label>
+        <label for="per_run_token_budget">Per-Task Token Budget</label>
         <input type="number" id="per_run_token_budget" name="per_run_token_budget" value="{{.PerRunTokenBudget}}" min="0">
         <span class="field-help">tokens (0 = unlimited)</span>
       </div>
@@ -117,22 +117,22 @@
         <span class="field-help">0 = unlimited &mdash; rolling 24-hour usage: ${{printf "%.4f" .RollingCostUSD}}</span>
       </div>
       <div class="button-row">
-        <button class="btn btn-primary" type="submit" data-confirm="Save these workspace settings?">Save</button>
+        <button class="btn btn-primary" type="submit" data-confirm="Save these settings?">Save</button>
       </div>
     </form>
 
     <hr class="divider">
 
     <div class="stack-sm">
-      <label>Admin Token</label>
+      <label>Automation Token</label>
       <div class="mono">{{.AdminToken}}</div>
-      <p class="muted">Keep this for machine/API automation. Use <code>gistclaw inspect token</code> to retrieve the full token.</p>
+      <p class="muted">Use this for machine or API access. Run <code>gistclaw inspect token</code> to retrieve the full token.</p>
     </div>
 
     <hr class="divider">
 
     <div class="stack-sm">
-      <label>Telegram Bot Token</label>
+      <label>Telegram Token</label>
       {{if .TelegramToken}}
       <div class="mono">{{.TelegramToken}}</div>
       {{else}}
@@ -143,7 +143,7 @@
           <input class="input-wide" type="password" name="telegram_bot_token" placeholder="Paste new token to update" autocomplete="off">
         </div>
         <div class="button-row">
-          <button class="btn btn-secondary" type="submit" data-confirm="Update the Telegram bot token?">Update Telegram Token</button>
+          <button class="btn btn-secondary" type="submit" data-confirm="Update the Telegram token?">Update Telegram Token</button>
         </div>
       </form>
     </div>

@@ -2,7 +2,7 @@
 <section class="page-header">
   <span class="page-eyebrow">Configure</span>
   <h1>Team</h1>
-  <p class="page-lede">Configure the active agent team profile for future runs. Select the profile first, then edit the agents, roles, and collaboration edges bound to that profile.</p>
+  <p class="page-lede">Choose the agents, roles, and handoffs used for new work.</p>
 </section>
 {{if .Error}}
   <section class="error">{{.Error}}</section>
@@ -13,38 +13,38 @@
 <section class="panel team-summary">
   <div class="team-summary-head">
     <div class="team-summary-intro">
-      <span class="panel-kicker">Profile control</span>
-      <span class="field-label">Active Profile</span>
-      <p class="muted">Choose which team profile shapes future runs before editing the agent cards below. Creating or cloning a profile selects it immediately.</p>
+      <span class="panel-kicker">Setups</span>
+      <span class="field-label">Active Setup</span>
+      <p class="muted">Choose the setup used for new work. Creating or copying a setup selects it right away.</p>
     </div>
   </div>
   <div class="team-summary-grid">
     <form class="page-stack" method="POST" action="/configure/team">
       <input type="hidden" name="intent" value="select_profile">
       <div class="field">
-        <label for="active_profile">Active Profile</label>
+        <label for="active_profile">Active Setup</label>
         <select id="active_profile" name="active_profile">
           {{range .ProfileOptions}}
             <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
           {{end}}
         </select>
       </div>
-      <button class="btn btn-secondary" type="submit" data-confirm="Switch the active team profile?">Use Profile</button>
+      <button class="btn btn-secondary" type="submit" data-confirm="Use this setup?">Use Setup</button>
     </form>
 
     <form class="page-stack" method="POST" action="/configure/team">
       <input type="hidden" name="intent" value="create_profile">
       <div class="field">
-        <label for="create_profile_name">Create Profile</label>
+        <label for="create_profile_name">Create Setup</label>
         <input id="create_profile_name" name="create_profile_name" type="text" placeholder="review">
       </div>
-      <button class="btn btn-secondary" type="submit" data-confirm="Create this team profile from the shipped default?">Create Profile</button>
+      <button class="btn btn-secondary" type="submit" data-confirm="Create this setup?">Create Setup</button>
     </form>
 
     <form class="page-stack" method="POST" action="/configure/team">
       <input type="hidden" name="intent" value="clone_profile">
       <div class="field">
-        <label for="clone_source_profile">Clone Profile</label>
+        <label for="clone_source_profile">Copy Setup</label>
         <select id="clone_source_profile" name="clone_source_profile">
           {{range .CloneSourceOptions}}
             <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
@@ -52,16 +52,16 @@
         </select>
       </div>
       <div class="field">
-        <label for="clone_profile_name">Clone Name</label>
+        <label for="clone_profile_name">Copy Name</label>
         <input id="clone_profile_name" name="clone_profile_name" type="text" placeholder="review-copy">
       </div>
-      <button class="btn btn-secondary" type="submit" data-confirm="Clone the selected profile into a new team profile?">Clone Profile</button>
+      <button class="btn btn-secondary" type="submit" data-confirm="Copy this setup?">Copy Setup</button>
     </form>
 
     <form class="page-stack" method="POST" action="/configure/team">
       <input type="hidden" name="intent" value="delete_profile">
       <div class="field">
-        <label for="delete_profile_name">Delete Profile</label>
+        <label for="delete_profile_name">Delete Setup</label>
         <select id="delete_profile_name" name="delete_profile_name">
           {{if .DeleteProfileOptions}}
             {{range .DeleteProfileOptions}}
@@ -72,7 +72,7 @@
           {{end}}
         </select>
       </div>
-      <button class="btn btn-danger" type="submit"{{if not .DeleteProfileOptions}} disabled{{end}} data-confirm="Delete this inactive team profile?">Delete Profile</button>
+      <button class="btn btn-danger" type="submit"{{if not .DeleteProfileOptions}} disabled{{end}} data-confirm="Delete this setup?">Delete Setup</button>
     </form>
   </div>
 </section>
@@ -81,9 +81,9 @@
   <section class="panel team-summary">
     <div class="team-summary-head">
       <div class="team-summary-intro">
-        <span class="panel-kicker">Editable runtime copy</span>
-        <span class="field-label">Team File</span>
-        <p class="muted">Import or export the editable team definition without mixing those file operations into the primary editing actions.</p>
+        <span class="panel-kicker">Setup File</span>
+        <span class="field-label">Import / Export</span>
+        <p class="muted">Import or export the editable setup without mixing file actions into the main editor.</p>
       </div>
       <div class="team-file-tools">
         <a class="btn btn-ghost" href="/configure/team/export">Export YAML</a>
@@ -91,18 +91,18 @@
           <label for="import_file">Import YAML</label>
           <div class="team-import-row">
             <input class="input-file" id="import_file" name="import_file" type="file" accept=".yaml,.yml,text/yaml,application/yaml">
-            <button class="btn btn-secondary" type="submit" name="intent" value="import" data-confirm="Import this team file into the editor? Unsaved changes in the current editor will be replaced.">Import</button>
+            <button class="btn btn-secondary" type="submit" name="intent" value="import" data-confirm="Import this setup file? Unsaved edits will be replaced.">Import</button>
           </div>
         </div>
       </div>
     </div>
     <div class="team-summary-grid">
       <div class="field">
-        <label for="name">Team Name</label>
+        <label for="name">Setup Name</label>
         <input id="name" name="name" type="text" value="{{.Name}}">
       </div>
       <div class="field">
-        <label for="front_agent">Front Agent</label>
+        <label for="front_agent">Lead agent</label>
         <select id="front_agent" name="front_agent">
           {{range .Agents}}
             <option value="{{.ID}}"{{if .IsFront}} selected{{end}}>{{.ID}}</option>
@@ -112,12 +112,12 @@
     </div>
     <div class="team-utility-bar">
       <div class="team-utility-copy">
-        <span class="field-label">Workspace Runtime Copy</span>
-        <p class="muted">Saving writes the editable team for this workspace into <code>{{.ProfileSavePath}}</code>. Historical runs keep their own bound execution snapshot.</p>
+        <span class="field-label">Saved File</span>
+        <p class="muted">Saving writes this setup to <code>{{.ProfileSavePath}}</code>. Past runs keep their own team snapshot.</p>
       </div>
       <div class="team-primary-actions">
-        <button class="btn btn-secondary" type="submit" name="intent" value="add_member" data-confirm="Add a new team member to the editor?">Add Member</button>
-        <button class="btn btn-primary" type="submit" name="intent" value="save" data-confirm="Save this team to the active workspace profile?">Save Team</button>
+        <button class="btn btn-secondary" type="submit" name="intent" value="add_member" data-confirm="Add another agent?">Add Agent</button>
+        <button class="btn btn-primary" type="submit" name="intent" value="save" data-confirm="Save this setup?">Save Setup</button>
       </div>
     </div>
   </section>
@@ -129,18 +129,18 @@
         <div class="team-agent-head">
           <div>
             <div class="team-agent-name">{{.ID}}</div>
-            <div class="mono subtle">{{if .IsFront}}front agent{{else}}specialist agent{{end}}</div>
+            <div class="mono subtle">{{if .IsFront}}lead agent{{else}}specialist agent{{end}}</div>
           </div>
           <div class="team-card-actions">
-            {{if .IsFront}}<span class="badge">front</span>{{else}}<span class="badge badge-muted">specialist</span>{{end}}
-            <button class="btn btn-danger btn-compact" type="submit" name="intent" value="remove_member:{{.Index}}" data-confirm="Remove {{.ID}} from this team? This stays in the editor until you save.">
+            {{if .IsFront}}<span class="badge">lead</span>{{else}}<span class="badge badge-muted">specialist</span>{{end}}
+            <button class="btn btn-danger btn-compact" type="submit" name="intent" value="remove_member:{{.Index}}" data-confirm="Remove {{.ID}} from this setup? Save to apply the change.">
               Remove
             </button>
           </div>
         </div>
         <div class="team-card-meta">
-          <span class="panel-kicker">Soul</span>
-          <span class="field-label">Soul File</span>
+          <span class="panel-kicker">Instructions</span>
+          <span class="field-label">Instructions File</span>
           <span class="mono subtle">{{.SoulFile}}</span>
         </div>
         <input type="hidden" name="agent_{{.Index}}_soul_file" value="{{.SoulFile}}">
@@ -155,7 +155,7 @@
             <input id="agent_{{.Index}}_role" name="agent_{{.Index}}_role" type="text" value="{{.Role}}">
           </div>
           <div class="field">
-            <label for="agent_{{.Index}}_tool_posture">Tool Posture</label>
+            <label for="agent_{{.Index}}_tool_posture">Tool Access</label>
             <select id="agent_{{.Index}}_tool_posture" name="agent_{{.Index}}_tool_posture">
               {{range .ToolPostureOptions}}
                 <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
@@ -164,7 +164,7 @@
           </div>
           <div class="field team-link-group">
             <span class="panel-kicker">Delegation</span>
-            <span class="field-label">Can Spawn</span>
+            <span class="field-label">Can Spawn Sub-Agents</span>
             <div class="choice-chip-grid">
               {{if .CanSpawnOptions}}
                 {{range .CanSpawnOptions}}

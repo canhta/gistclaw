@@ -419,9 +419,9 @@ func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 
 func formatWorkerCount(count int) string {
 	if count == 1 {
-		return "1 worker"
+		return "1 sub-agent"
 	}
-	return fmt.Sprintf("%d workers", count)
+	return fmt.Sprintf("%d sub-agents", count)
 }
 
 func humanizeRunStatus(status string) string {
@@ -448,13 +448,13 @@ func buildRunQueueStrip(clusters []runListClusterView) runQueueStripView {
 
 	switch {
 	case view.Summary.Total == 0:
-		view.Headline = "No live collaboration yet. Start a task to spin up the queue, graph, and recovery surface."
+		view.Headline = "No active work yet. Start a task to see progress here."
 	case view.RecoveryRuns > 0:
-		view.Headline = "Recovery work is visible in the queue. Review blocked or interrupted runs before starting new work."
+		view.Headline = "Some work is waiting on you."
 	case view.Summary.Active > 0 || view.Summary.Pending > 0:
-		view.Headline = "The queue is active. Root runs, delegated workers, and completion states are visible in one strip."
+		view.Headline = "See what is running, waiting on you, or done."
 	default:
-		view.Headline = "Recent work is settled. Use this strip to scan collaboration shape before opening a run detail."
+		view.Headline = "Recent work is settled."
 	}
 
 	return view
@@ -1161,7 +1161,7 @@ func buildExecutionSnapshotView(teamID string, raw []byte) runExecutionSnapshotV
 }
 
 func runDetailRootSummary(graph runGraphView) (objectiveText, modelDisplay, tokenSummary string) {
-	objectiveText = "No objective captured for this run."
+	objectiveText = "No task text saved for this run."
 	modelDisplay = "not recorded"
 	tokenSummary = "0 in / 0 out"
 	for _, node := range graph.Nodes {
@@ -1236,7 +1236,7 @@ func loadRunGraphTriggerLabel(ctx context.Context, db *store.DB, nodes []runGrap
 		}
 	}
 	if rootSessionID == "" {
-		return "Chat", nil
+		return "GistClaw", nil
 	}
 
 	svc := sessions.NewService(db, nil)
@@ -1246,7 +1246,7 @@ func loadRunGraphTriggerLabel(ctx context.Context, db *store.DB, nodes []runGrap
 	}
 	if !errors.Is(err, sessions.ErrSessionRouteNotFound) {
 		if errors.Is(err, sessions.ErrSessionNotFound) {
-			return "Chat", nil
+			return "GistClaw", nil
 		}
 		return "", fmt.Errorf("load run graph trigger: %w", err)
 	}
@@ -1254,21 +1254,21 @@ func loadRunGraphTriggerLabel(ctx context.Context, db *store.DB, nodes []runGrap
 	session, sessionErr := svc.LoadSession(ctx, rootSessionID)
 	if sessionErr != nil {
 		if errors.Is(sessionErr, sessions.ErrSessionNotFound) {
-			return "Chat", nil
+			return "GistClaw", nil
 		}
 		return "", fmt.Errorf("load run graph trigger session: %w", sessionErr)
 	}
 	if session.Role == model.SessionRoleFront {
-		return "Chat", nil
+		return "GistClaw", nil
 	}
-	return "Unbound", nil
+	return "Inside GistClaw", nil
 }
 
 func loadRunGraphExecutorLabels(ctx context.Context, db *sql.DB, nodes []runGraphNodeView) (map[string]string, error) {
 	labels := make(map[string]string, len(nodes))
 	runIDs := make([]string, 0, len(nodes))
 	for _, node := range nodes {
-		labels[node.ID] = "GistClaw agent"
+		labels[node.ID] = "GistClaw"
 		runIDs = append(runIDs, node.ID)
 	}
 	if len(runIDs) == 0 {
@@ -1346,7 +1346,7 @@ func executorLabelFromToolCall(toolName string, inputJSON, outputJSON []byte) st
 func humanizeTriggerLabel(connectorID string) string {
 	switch strings.ToLower(strings.TrimSpace(connectorID)) {
 	case "", "chat", "web", "local":
-		return "Chat"
+		return "GistClaw"
 	case "telegram":
 		return "Telegram"
 	case "whatsapp":
@@ -1354,7 +1354,7 @@ func humanizeTriggerLabel(connectorID string) string {
 	default:
 		normalized := strings.ReplaceAll(strings.TrimSpace(connectorID), "_", " ")
 		if normalized == "" {
-			return "Chat"
+			return "GistClaw"
 		}
 		return strings.ToUpper(normalized[:1]) + normalized[1:]
 	}
@@ -1388,7 +1388,7 @@ func runDetailTriggerLabel(graph runGraphView) string {
 			return node.TriggerLabel
 		}
 	}
-	return "Chat"
+	return "GistClaw"
 }
 
 type runListRequest struct {
@@ -1698,17 +1698,17 @@ func summarizeRunBlocker(queueStatus string, descendants []runChildRow, rootStat
 				if child.AgentID != "" {
 					return child.AgentID + " waiting on approval"
 				}
-				return "Worker waiting on approval"
+				return "Sub-agent waiting on approval"
 			}
 		}
-		return "Worker waiting on approval"
+		return "Sub-agent waiting on approval"
 	case "failed":
 		for _, child := range descendants {
 			if child.Status == "failed" {
 				if child.AgentID != "" {
 					return child.AgentID + " failed"
 				}
-				return "Worker failed"
+				return "Sub-agent failed"
 			}
 		}
 		return "Run failed"
@@ -1718,7 +1718,7 @@ func summarizeRunBlocker(queueStatus string, descendants []runChildRow, rootStat
 				if child.AgentID != "" {
 					return child.AgentID + " interrupted"
 				}
-				return "Worker interrupted"
+				return "Sub-agent interrupted"
 			}
 		}
 		return "Run interrupted"
@@ -1727,7 +1727,7 @@ func summarizeRunBlocker(queueStatus string, descendants []runChildRow, rootStat
 			return formatWorkerCount(count) + " active"
 		}
 		if rootStatus == "active" {
-			return "Coordinator active"
+			return "Lead agent active"
 		}
 	case "pending":
 		if count := countRunStatus(descendants, "pending"); count > 0 {
@@ -1738,12 +1738,12 @@ func summarizeRunBlocker(queueStatus string, descendants []runChildRow, rootStat
 		if childCount > 0 {
 			return formatWorkerCount(childCount) + " settled"
 		}
-		return "No delegated workers"
+		return "No sub-agents"
 	}
 	if childCount > 0 {
 		return formatWorkerCount(childCount) + " visible"
 	}
-	return "No delegated workers"
+	return "No sub-agents"
 }
 
 func countRunStatus(rows []runChildRow, want string) int {
@@ -2035,20 +2035,27 @@ func writeReplayDelta(w http.ResponseWriter, flusher http.Flusher, evt model.Rep
 func runGraphHeadline(summary runGraphSummaryView) string {
 	switch {
 	case summary.NeedsApproval > 0:
-		return fmt.Sprintf("%d run(s) waiting on approval.", summary.NeedsApproval)
+		return fmt.Sprintf("%s waiting on you.", formatTaskCount(summary.NeedsApproval))
 	case summary.Active > 0:
-		return fmt.Sprintf("%d run(s) actively working.", summary.Active)
+		return fmt.Sprintf("%s in progress.", formatTaskCount(summary.Active))
 	case summary.Pending > 0:
-		return fmt.Sprintf("%d run(s) queued to start.", summary.Pending)
+		return fmt.Sprintf("%s queued to start.", formatTaskCount(summary.Pending))
 	case summary.Failed > 0:
-		return fmt.Sprintf("%d run(s) failed in this execution graph.", summary.Failed)
+		return fmt.Sprintf("%s failed on this map.", formatTaskCount(summary.Failed))
 	case summary.Interrupted > 0:
-		return fmt.Sprintf("%d run(s) were interrupted.", summary.Interrupted)
+		return fmt.Sprintf("%s interrupted.", formatTaskCount(summary.Interrupted))
 	case summary.Completed == summary.Total && summary.Total > 0:
-		return "All visible runs completed."
+		return "Everything on this map is done."
 	default:
-		return "Graph status is available."
+		return "Status available."
 	}
+}
+
+func formatTaskCount(count int) string {
+	if count == 1 {
+		return "1 task"
+	}
+	return fmt.Sprintf("%d tasks", count)
 }
 
 func runStatusClass(status string) string {

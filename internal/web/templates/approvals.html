@@ -2,19 +2,19 @@
 <section class="page-header">
   <span class="page-eyebrow">Recover</span>
   <h1>Approvals</h1>
-  <p class="page-lede">Review pending, expired, and resolved approval tickets in one directory. Filters and paging keep the queue explainable under load.</p>
+  <p class="page-lede">Actions waiting for your approval.</p>
 </section>
 {{if .Error}}
   <section class="error">{{.Error}}</section>
 {{end}}
 <section class="page-section">
   <div class="panel filter-panel">
-    <span class="panel-kicker">Decision queue</span>
+    <span class="panel-kicker">Filters</span>
     <form class="approval-filter-rail" method="GET" action="/recover/approvals">
       <div class="approval-filter-grid">
         <div class="field approval-filter-search">
           <label for="approval-query">Search</label>
-          <input id="approval-query" type="text" name="q" value="{{.Filters.Query}}" placeholder="Search ticket, run, tool, or path">
+          <input id="approval-query" type="text" name="q" value="{{.Filters.Query}}" placeholder="Search approval, task, tool, or path">
         </div>
         <div class="field">
           <label for="approval-status">Status</label>
@@ -54,7 +54,7 @@
       <div>
         <strong>{{.ToolName}}</strong>{{if .TargetPath}} &mdash; {{.TargetPath}}{{end}}
       </div>
-      <div class="muted mono">run: {{.RunID}}</div>
+      <div class="muted mono">task: {{.RunID}}</div>
       <div class="button-row approval-card-meta">
         <span class="run-status {{.StatusClass}}">{{.StatusLabel}}</span>
         {{if .ResolvedBy}}
@@ -66,8 +66,8 @@
       </div>
       {{if eq .Status "pending"}}
         <form class="button-row approval-card-actions" method="POST" action="/recover/approvals/{{.ID}}/resolve">
-          <button class="btn btn-primary" type="submit" name="decision" value="approved" data-confirm="Approve this approval ticket? This action resolves it immediately.">Approve</button>
-          <button class="btn btn-danger" type="submit" name="decision" value="denied" data-confirm="Deny this approval ticket? This action resolves it immediately.">Deny</button>
+          <button class="btn btn-primary" type="submit" name="decision" value="approved" data-confirm="Allow this change?">Allow</button>
+          <button class="btn btn-danger" type="submit" name="decision" value="denied" data-confirm="Deny this change?">Deny</button>
         </form>
       {{end}}
     </article>
@@ -83,11 +83,11 @@
 {{end}}
 {{else}}
 <section class="panel empty-state">
-  <span class="panel-kicker">Recovery</span>
-  <h2 class="section-title">No approval work right now.</h2>
-  <p class="empty-state-copy">There are no risky workspace actions waiting on an operator decision in this view. When a run reaches a protected boundary, the ticket will appear here first.</p>
+  <span class="panel-kicker">Approvals</span>
+  <h2 class="section-title">Nothing is waiting on your approval.</h2>
+  <p class="empty-state-copy">New approval requests will show up here when a task reaches a protected step.</p>
   <div class="empty-state-actions">
-    <a class="btn btn-secondary" href="/operate/runs">Review Runs</a>
+    <a class="btn btn-secondary" href="/operate/runs">View Tasks</a>
     <a class="btn btn-ghost" href="/recover/routes-deliveries">Open Routes &amp; Deliveries</a>
   </div>
 </section>

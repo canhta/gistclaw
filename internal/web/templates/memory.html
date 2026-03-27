@@ -2,17 +2,17 @@
 <section class="page-header">
   <span class="page-eyebrow">Configure</span>
   <h1>Memory</h1>
-  <p class="page-lede">Edit remembered facts that shape future assistant behavior without mixing them into runtime recovery screens.</p>
+  <p class="page-lede">Saved memory that guides future work.</p>
 </section>
 
 {{if .Confirm}}
 <section class="page-section">
   <div class="panel stack-sm">
-    <p>Forget this fact?</p>
+    <p>Forget this memory?</p>
     <div class="mono">{{.Confirm.Content}}</div>
     <form class="button-row" method="POST" action="/configure/memory/{{.Confirm.ID}}/forget">
       <input type="hidden" name="confirm" value="yes">
-      <button class="btn btn-danger" type="submit" data-confirm="Forget this memory item permanently?">Yes, forget it</button>
+      <button class="btn btn-danger" type="submit" data-confirm="Forget this memory?">Forget Memory</button>
       <a class="btn btn-ghost" href="/configure/memory">Cancel</a>
     </form>
   </div>
@@ -23,23 +23,23 @@
   <div class="panel">
   <form class="inline-form" method="GET" action="/configure/memory">
     <div class="field">
-      <label for="q">search</label>
-      <input type="text" id="q" name="q" value="{{.Filter.Query}}" placeholder="search memory content">
+      <label for="q">Search Memory</label>
+      <input type="text" id="q" name="q" value="{{.Filter.Query}}" placeholder="Search saved memory">
     </div>
     <div class="field">
-      <label for="scope">scope</label>
+      <label for="scope">Scope</label>
       <select id="scope" name="scope">
-        <option value=""{{if eq .Filter.Scope ""}} selected{{end}}>all</option>
-        <option value="local"{{if eq .Filter.Scope "local"}} selected{{end}}>local</option>
-        <option value="team"{{if eq .Filter.Scope "team"}} selected{{end}}>team</option>
+        <option value=""{{if eq .Filter.Scope ""}} selected{{end}}>All</option>
+        <option value="local"{{if eq .Filter.Scope "local"}} selected{{end}}>Local</option>
+        <option value="team"{{if eq .Filter.Scope "team"}} selected{{end}}>Team</option>
       </select>
     </div>
     <div class="field">
-      <label for="agent_id">agent_id</label>
-      <input type="text" id="agent_id" name="agent_id" value="{{.Filter.AgentID}}" placeholder="filter by agent">
+      <label for="agent_id">Agent</label>
+      <input type="text" id="agent_id" name="agent_id" value="{{.Filter.AgentID}}" placeholder="Filter by agent">
     </div>
     <div class="field">
-      <label for="limit">page size</label>
+      <label for="limit">Page Size</label>
       <select id="limit" name="limit">
         <option value="10" {{if eq .Filter.Limit 10}}selected{{end}}>10</option>
         <option value="20" {{if eq .Filter.Limit 20}}selected{{end}}>20</option>
@@ -62,7 +62,7 @@
       <thead>
         <tr>
           <th>ID</th>
-          <th>Content</th>
+          <th>Memory</th>
           <th>Scope</th>
           <th>Source</th>
           <th>Agent</th>
@@ -80,11 +80,11 @@
           <td>
             <div class="button-row">
             <form class="inline-form" method="POST" action="/configure/memory/{{.ID}}/forget">
-              <button class="btn btn-danger btn-compact" type="submit" data-confirm="Forget this memory item permanently?">Forget</button>
+              <button class="btn btn-danger btn-compact" type="submit" data-confirm="Forget this memory?">Forget</button>
             </form>
             <form class="inline-form" method="POST" action="/configure/memory/{{.ID}}/edit">
               <input type="text" name="value" value="{{.Content}}">
-              <button class="btn btn-secondary btn-compact" type="submit" data-confirm="Save this memory edit?">Save</button>
+              <button class="btn btn-secondary btn-compact" type="submit" data-confirm="Save this edit?">Save</button>
             </form>
             </div>
           </td>
@@ -97,7 +97,7 @@
     {{range .Facts}}
     <article class="directory-card">
       <div class="directory-card-section">
-        <span class="directory-card-label">Memory Item</span>
+        <span class="directory-card-label">Memory</span>
         <div class="mono">{{.ID}}</div>
         <div>{{.Content}}</div>
       </div>
@@ -117,11 +117,11 @@
       </div>
       <div class="directory-card-actions">
         <form method="POST" action="/configure/memory/{{.ID}}/forget">
-          <button class="btn btn-danger btn-compact" type="submit" data-confirm="Forget this memory item permanently?">Forget</button>
+          <button class="btn btn-danger btn-compact" type="submit" data-confirm="Forget this memory?">Forget</button>
         </form>
         <form class="stack-sm" method="POST" action="/configure/memory/{{.ID}}/edit">
           <input type="text" name="value" value="{{.Content}}">
-          <button class="btn btn-secondary btn-compact" type="submit" data-confirm="Save this memory edit?">Save</button>
+          <button class="btn btn-secondary btn-compact" type="submit" data-confirm="Save this edit?">Save</button>
         </form>
       </div>
     </article>
@@ -137,7 +137,7 @@
 </section>
 {{else}}
 <section class="panel">
-  <p class="muted">No memory facts found.</p>
+  <p class="muted">No memory saved yet.</p>
 </section>
 {{end}}
 {{end}}

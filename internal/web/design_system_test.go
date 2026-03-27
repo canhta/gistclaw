@@ -161,42 +161,42 @@ func TestCriticalTemplatesDefineConfirmationMessages(t *testing.T) {
 
 	cases := map[string][]string{
 		"approvals.html": {
-			`data-confirm="Approve this approval ticket? This action resolves it immediately."`,
-			`data-confirm="Deny this approval ticket? This action resolves it immediately."`,
+			`data-confirm="Allow this change?"`,
+			`data-confirm="Deny this change?"`,
 		},
 		"routes_deliveries.html": {
-			`data-confirm="Send this operator message into the bound session?"`,
-			`data-confirm="Deactivate this route? External messages will stop flowing into the bound session."`,
-			`data-confirm="Retry this terminal delivery now?"`,
+			`data-confirm="Send this note?"`,
+			`data-confirm="Disconnect this route?"`,
+			`data-confirm="Retry this delivery?"`,
 		},
 		"memory.html": {
-			`data-confirm="Forget this memory item permanently?"`,
-			`data-confirm="Save this memory edit?"`,
+			`data-confirm="Forget this memory?"`,
+			`data-confirm="Save this edit?"`,
 		},
 		"onboarding.html": {
-			`data-confirm="Bind this workspace for local operations?"`,
-			`data-confirm="Start this preview run now?"`,
+			`data-confirm="Use this repo?"`,
+			`data-confirm="Start this preview?"`,
 		},
 		"run_submit.html": {
-			`data-confirm="Start this run now?"`,
+			`data-confirm="Start this task?"`,
 		},
 		"session_detail.html": {
-			`data-confirm="Wake this session with a new operator message?"`,
-			`data-confirm="Retry this session delivery now?"`,
+			`data-confirm="Send this follow-up?"`,
+			`data-confirm="Retry this delivery?"`,
 		},
 		"settings.html": {
-			`data-confirm="Save these workspace settings?"`,
-			`data-confirm="Update the Telegram bot token?"`,
+			`data-confirm="Save these settings?"`,
+			`data-confirm="Update the Telegram token?"`,
 		},
 		"team.html": {
-			`data-confirm="Switch the active team profile?"`,
-			`data-confirm="Create this team profile from the shipped default?"`,
-			`data-confirm="Clone the selected profile into a new team profile?"`,
-			`data-confirm="Delete this inactive team profile?"`,
-			`data-confirm="Add a new team member to the editor?"`,
-			`data-confirm="Import this team file into the editor? Unsaved changes in the current editor will be replaced."`,
-			`data-confirm="Remove {{.ID}} from this team? This stays in the editor until you save."`,
-			`data-confirm="Save this team to the active workspace profile?"`,
+			`data-confirm="Use this setup?"`,
+			`data-confirm="Create this setup?"`,
+			`data-confirm="Copy this setup?"`,
+			`data-confirm="Delete this setup?"`,
+			`data-confirm="Add another agent?"`,
+			`data-confirm="Import this setup file? Unsaved edits will be replaced."`,
+			`data-confirm="Remove {{.ID}} from this setup? Save to apply the change."`,
+			`data-confirm="Save this setup?"`,
 		},
 	}
 
@@ -214,6 +214,168 @@ func TestCriticalTemplatesDefineConfirmationMessages(t *testing.T) {
 			for _, want := range wants {
 				if !strings.Contains(content, want) {
 					t.Fatalf("expected %s to contain %q", name, want)
+				}
+			}
+		})
+	}
+}
+
+func TestTemplatesUseTaskFramedCopy(t *testing.T) {
+	t.Parallel()
+
+	type copyExpectations struct {
+		wants    []string
+		unwanted []string
+	}
+
+	cases := map[string]copyExpectations{
+		"login.html": {
+			wants: []string{
+				"Connect this browser to your local GistClaw workspace.",
+				"Use the admin password to open runs, approvals, and settings.",
+			},
+			unwanted: []string{
+				"Unlock the local operator runtime for this browser.",
+			},
+		},
+		"onboarding.html": {
+			wants: []string{
+				"Pick the project GistClaw should work in.",
+				"Start with a preview task. You can inspect the result before files change.",
+				"Preview only. Files stay untouched.",
+			},
+			unwanted: []string{
+				"bind an existing repo",
+			},
+		},
+		"runs.html": {
+			wants: []string{
+				"Recent work, blockers, and finished tasks for this project.",
+				"See what is running, waiting on you, or done.",
+			},
+			unwanted: []string{
+				"The operational queue for recent runs.",
+			},
+		},
+		"run_detail.html": {
+			wants: []string{
+				"Source",
+				"Attention",
+				"Assigned Team",
+			},
+			unwanted: []string{
+				"Current state",
+				"Run Contract",
+			},
+		},
+		"run_submit.html": {
+			wants: []string{
+				"Describe the task you want to start.",
+				"Start Task",
+			},
+			unwanted: []string{
+				"Open a new run from the operator surface.",
+			},
+		},
+		"sessions.html": {
+			wants: []string{
+				"Active agent conversations for this project.",
+				"Lead agent",
+				"Specialist agent",
+			},
+			unwanted: []string{
+				"assistant front session",
+			},
+		},
+		"session_detail.html": {
+			wants: []string{
+				"Send follow-up",
+				"This conversation is only inside GistClaw right now.",
+				"Message Failures",
+			},
+			unwanted: []string{
+				"Wake Session",
+				"Delivery Failures",
+			},
+		},
+		"team.html": {
+			wants: []string{
+				"Choose the agents, roles, and handoffs used for new work.",
+				"Lead agent",
+				"Save Setup",
+			},
+			unwanted: []string{
+				"agent team profile",
+				"Editable runtime copy",
+				"Workspace Runtime Copy",
+			},
+		},
+		"memory.html": {
+			wants: []string{
+				"Saved memory that guides future work.",
+				"Search Memory",
+				"No memory saved yet.",
+			},
+			unwanted: []string{
+				"runtime recovery screens",
+				"No memory facts found.",
+			},
+		},
+		"settings.html": {
+			wants: []string{
+				"Browser access, limits, and machine credentials.",
+				"Other Signed-In Browsers",
+				"Telegram Token",
+			},
+			unwanted: []string{
+				"operator settings",
+			},
+		},
+		"approvals.html": {
+			wants: []string{
+				"Actions waiting for your approval.",
+				"Nothing is waiting on your approval.",
+			},
+			unwanted: []string{
+				"approval tickets",
+			},
+		},
+		"routes_deliveries.html": {
+			wants: []string{
+				"Route state, message delivery, and recovery tools.",
+				"Active Routes",
+				"Outgoing Messages",
+			},
+			unwanted: []string{
+				"bound session",
+				"intervention surface",
+				"Route Directory",
+				"Delivery Queue",
+			},
+		},
+	}
+
+	for name, tc := range cases {
+		name := name
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			body, err := os.ReadFile(templatePath(t, name))
+			if err != nil {
+				t.Fatalf("read template: %v", err)
+			}
+			content := string(body)
+
+			for _, want := range tc.wants {
+				if !strings.Contains(content, want) {
+					t.Fatalf("expected %s to contain %q", name, want)
+				}
+			}
+
+			for _, unwanted := range tc.unwanted {
+				if strings.Contains(content, unwanted) {
+					t.Fatalf("expected %s to avoid %q", name, unwanted)
 				}
 			}
 		})

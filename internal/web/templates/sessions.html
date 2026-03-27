@@ -2,19 +2,19 @@
 <section class="page-header">
   <span class="page-eyebrow">Operate</span>
   <h1>Sessions</h1>
-  <p class="page-lede">Browse the assistant front session and any spawned worker sessions currently stored in the runtime.</p>
+  <p class="page-lede">Active agent conversations for this project.</p>
 </section>
 
 <section class="page-section">
   <div class="panel filter-panel">
-  <span class="panel-kicker">Session filters</span>
+  <span class="panel-kicker">Filters</span>
   <form class="page-stack" method="GET" action="/operate/sessions">
     <div class="field">
       <label for="session-query">Search</label>
-      <input id="session-query" type="text" name="q" value="{{.Filters.Query}}" placeholder="Search sessions or routes">
+      <input id="session-query" type="text" name="q" value="{{.Filters.Query}}" placeholder="Search conversations or routes">
     </div>
     <div class="field">
-      <label for="session-agent-id">Agent ID</label>
+      <label for="session-agent-id">Agent</label>
       <input id="session-agent-id" type="text" name="agent_id" value="{{.Filters.AgentID}}" placeholder="Agent ID">
     </div>
     <div class="session-filter-grid">
@@ -22,8 +22,8 @@
         <label for="session-role">Role</label>
         <select id="session-role" name="role">
           <option value="" {{if eq .Filters.Role ""}}selected{{end}}>All</option>
-          <option value="front" {{if eq .Filters.Role "front"}}selected{{end}}>Front</option>
-          <option value="worker" {{if eq .Filters.Role "worker"}}selected{{end}}>Worker</option>
+          <option value="front" {{if eq .Filters.Role "front"}}selected{{end}}>Lead agent</option>
+          <option value="worker" {{if eq .Filters.Role "worker"}}selected{{end}}>Specialist agent</option>
         </select>
       </div>
       <div class="field">
@@ -36,12 +36,12 @@
       </div>
     </div>
     <div class="field">
-      <label for="session-connector-id">Connector ID</label>
-      <input id="session-connector-id" type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="Connector ID">
+      <label for="session-connector-id">Route</label>
+      <input id="session-connector-id" type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="telegram, whatsapp">
     </div>
     <div class="session-filter-footer">
       <fieldset class="filter-cluster">
-        <legend class="filter-legend">Binding</legend>
+        <legend class="filter-legend">Route</legend>
         <div class="segmented-control">
           <label class="segmented-option">
             <input type="radio" name="binding" value="any" {{if or (eq .Filters.Binding "") (eq .Filters.Binding "any")}}checked{{end}}>
@@ -81,11 +81,11 @@
   <div class="desktop-table">
     <table class="table">
       <thead>
-        <tr>
-          <th>Session</th>
+          <tr>
+          <th>Conversation</th>
           <th>Agent</th>
           <th>Status</th>
-          <th>Links</th>
+          <th>Open</th>
         </tr>
       </thead>
       <tbody>
@@ -103,7 +103,7 @@
             <div class="muted mono">{{.UpdatedAtLabel}}</div>
           </td>
           <td>
-            <a href="/operate/sessions/{{.ID}}">Open detail</a>
+            <a href="/operate/sessions/{{.ID}}">Open</a>
           </td>
         </tr>
         {{end}}
@@ -114,7 +114,7 @@
     {{range .Sessions}}
     <article class="directory-card">
       <div class="directory-card-section">
-        <span class="directory-card-label">Session</span>
+        <span class="directory-card-label">Conversation</span>
         <div class="mono"><a href="/operate/sessions/{{.ID}}">{{.ID}}</a></div>
         <div class="muted mono">conversation: {{.ConversationID}}</div>
       </div>
@@ -130,7 +130,7 @@
         </div>
       </div>
       <div class="directory-card-actions">
-        <a href="/operate/sessions/{{.ID}}">Open detail</a>
+        <a href="/operate/sessions/{{.ID}}">Open</a>
       </div>
     </article>
     {{end}}
@@ -142,7 +142,7 @@
   </div>
   {{end}}
   {{else}}
-  <p class="muted">No sessions yet.</p>
+  <p class="muted">No conversations yet.</p>
   {{end}}
   </div>
 </section>

@@ -23,7 +23,7 @@ func TestAuthLoginPageShowsSetupRequiredWhenPasswordMissing(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
 	body := rr.Body.String()
-	for _, want := range []string{"Local setup required", "gistclaw auth set-password"} {
+	for _, want := range []string{"Setup Required", "Finish setup", "gistclaw auth set-password"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected login page to contain %q, got:\n%s", want, body)
 		}
@@ -137,7 +137,7 @@ func TestAuthSettingsPageShowsAccessAndDevicesBoard(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
 	body := rr.Body.String()
-	for _, want := range []string{"Access &amp; Devices", "Current Device", "Other Active Devices", "Machine Settings"} {
+	for _, want := range []string{"Browser Access", "This Browser", "Other Signed-In Browsers", "Machine Settings"} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected settings page to contain %q, got:\n%s", want, body)
 		}
