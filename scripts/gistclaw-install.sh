@@ -132,6 +132,12 @@ ensure_owned_dir() {
 	chown -R gistclaw:gistclaw "${path}"
 }
 
+same_path() {
+	left_dir=$(cd "$(dirname "$1")" && pwd -P)
+	right_dir=$(cd "$(dirname "$2")" && pwd -P)
+	[ "${left_dir}/$(basename "$1")" = "${right_dir}/$(basename "$2")" ]
+}
+
 config_web_listen_addr() {
 	awk '
 		$1 == "web:" {
@@ -187,7 +193,9 @@ chmod +x "${RELEASE_DIR}/gistclaw"
 ln -snf "${RELEASE_DIR}/gistclaw" "${BIN_LINK}"
 
 if [ -n "${CONFIG_FILE}" ]; then
-	cp "${CONFIG_FILE}" "${CONFIG_PATH}"
+	if ! same_path "${CONFIG_FILE}" "${CONFIG_PATH}"; then
+		cp "${CONFIG_FILE}" "${CONFIG_PATH}"
+	fi
 else
 	cat > "${CONFIG_PATH}" <<EOF
 provider:

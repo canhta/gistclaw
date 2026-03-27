@@ -279,6 +279,60 @@ EOF
 	assert_contains "$log_dir/systemctl.log" "start gistclaw"
 }
 
+run_config_file_in_place_happy_path() {
+	local tmp
+	tmp="$(mktemp -d)"
+	trap 'rm -rf "$tmp"' RETURN
+
+	local fixture_dir="$tmp/fixtures"
+	local stub_dir="$tmp/stubs"
+	local log_dir="$tmp/logs"
+	local root_dir="$tmp/root"
+	local version="v0.1.0"
+	local source_cfg="$root_dir/etc/gistclaw/config.yaml"
+	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir/etc/gistclaw"
+	: > "$log_dir/systemctl.log"
+	: > "$log_dir/apt.log"
+	: > "$log_dir/users.log"
+	: > "$log_dir/ownership.log"
+	setup_fixture_repo "$fixture_dir" "$version"
+	setup_stub_bin "$stub_dir" "$fixture_dir" "$log_dir"
+
+	cat > "$source_cfg" <<EOF
+# in-place operator-managed config
+provider:
+  name: openai
+  api_key: sk-test
+database_path: $root_dir/srv/data/runtime.db
+workspace_root: $root_dir/srv/projects
+web:
+  listen_addr: 127.0.0.1:8080
+EOF
+
+	PATH="$stub_dir:$PATH" \
+	GISTCLAW_ALLOW_NON_ROOT=1 \
+	GISTCLAW_ARCH=amd64 \
+	GISTCLAW_VERSION="$version" \
+	GISTCLAW_BASE_URL="https://example.invalid/$version" \
+	GISTCLAW_RELEASES_DIR="$root_dir/opt/gistclaw/releases" \
+	GISTCLAW_BIN_LINK="$root_dir/usr/local/bin/gistclaw" \
+	GISTCLAW_ETC_DIR="$root_dir/etc/gistclaw" \
+	GISTCLAW_SYSTEMD_DIR="$root_dir/etc/systemd/system" \
+	GISTCLAW_VAR_DIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_DOWNLOAD_DIR="$tmp/downloads" \
+	GISTCLAW_FAKE_WORKDIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_FAKE_STATE_DIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_FAKE_DATABASE_DIR="$root_dir/srv/data" \
+	GISTCLAW_FAKE_WORKSPACE_ROOT="$root_dir/srv/projects" \
+	bash "$INSTALLER" --config-file "$source_cfg" >/dev/null
+
+	assert_files_equal "$source_cfg" "$root_dir/etc/gistclaw/config.yaml"
+	assert_contains "$log_dir/ownership.log" "chown root:gistclaw $root_dir/etc/gistclaw/config.yaml"
+	assert_contains "$log_dir/systemctl.log" "enable gistclaw"
+	assert_contains "$log_dir/systemctl.log" "is-active --quiet gistclaw"
+	assert_contains "$log_dir/systemctl.log" "start gistclaw"
+}
+
 run_active_service_restart_case() {
 	local tmp
 	tmp="$(mktemp -d)"
@@ -673,6 +727,7 @@ EOF
 
 run_happy_path
 run_config_file_happy_path
+run_config_file_in_place_happy_path
 run_active_service_restart_case
 run_missing_provider_case
 run_missing_config_file_case
