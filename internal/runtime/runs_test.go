@@ -1092,6 +1092,110 @@ func TestRunEngine_PassesAuthorityIntoToolInvocationContext(t *testing.T) {
 	}
 }
 
+func TestRunEngine_UsesPersistedAuthoritySettingsByDefault(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	tool := &authorityAwareTool{}
+	reg.Register(tool)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				ToolCalls: []model.ToolCallRequest{
+					{ID: "call-authority-defaults", ToolName: tool.Name(), InputJSON: []byte(`{}`)},
+				},
+				StopReason: "tool_calls",
+			},
+			{Content: "done", StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO settings (key, value, updated_at) VALUES
+		 ('approval_mode', 'auto_approve', datetime('now')),
+		 ('host_access_mode', 'elevated', datetime('now'))`,
+	); err != nil {
+		t.Fatalf("insert authority settings: %v", err)
+	}
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-authority-defaults",
+		AgentID:        "agent-a",
+		Objective:      "use tool",
+		CWD:            t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	env, err := authority.DecodeEnvelope(run.AuthorityJSON)
+	if err != nil {
+		t.Fatalf("DecodeEnvelope: %v", err)
+	}
+	if env.HostAccessMode != authority.HostAccessModeElevated {
+		t.Fatalf("run host access mode = %q, want %q", env.HostAccessMode, authority.HostAccessModeElevated)
+	}
+	if env.ApprovalMode != authority.ApprovalModeAutoApprove {
+		t.Fatalf("run approval mode = %q, want %q", env.ApprovalMode, authority.ApprovalModeAutoApprove)
+	}
+	if tool.env.HostAccessMode != authority.HostAccessModeElevated {
+		t.Fatalf("tool host access mode = %q, want %q", tool.env.HostAccessMode, authority.HostAccessModeElevated)
+	}
+	if tool.env.ApprovalMode != authority.ApprovalModeAutoApprove {
+		t.Fatalf("tool approval mode = %q, want %q", tool.env.ApprovalMode, authority.ApprovalModeAutoApprove)
+	}
+}
+
+func TestRunEngine_ChildRunInheritsParentAuthority(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+
+	rawAuthority, err := json.Marshal(authority.Envelope{
+		ApprovalMode:   authority.ApprovalModePrompt,
+		HostAccessMode: authority.HostAccessModeElevated,
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	parent, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-authority-inherit",
+		AgentID:        "assistant",
+		Objective:      "coordinate",
+		CWD:            t.TempDir(),
+		AuthorityJSON:  rawAuthority,
+	})
+	if err != nil {
+		t.Fatalf("Start parent failed: %v", err)
+	}
+
+	childID := generateID()
+	if err := rt.createRun(context.Background(), childID, parent.ID, StartRun{
+		ConversationID: parent.ConversationID,
+		AgentID:        "worker",
+		Objective:      "inspect files",
+		CWD:            parent.CWD,
+	}); err != nil {
+		t.Fatalf("create child run: %v", err)
+	}
+
+	child, err := rt.loadRun(context.Background(), childID)
+	if err != nil {
+		t.Fatalf("load child run: %v", err)
+	}
+
+	env, err := authority.DecodeEnvelope(child.AuthorityJSON)
+	if err != nil {
+		t.Fatalf("DecodeEnvelope: %v", err)
+	}
+	if env.ApprovalMode != authority.ApprovalModePrompt {
+		t.Fatalf("child approval mode = %q, want %q", env.ApprovalMode, authority.ApprovalModePrompt)
+	}
+	if env.HostAccessMode != authority.HostAccessModeElevated {
+		t.Fatalf("child host access mode = %q, want %q", env.HostAccessMode, authority.HostAccessModeElevated)
+	}
+}
+
 func TestRunEngine_EmitsTurnDeltasToEventSink(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	sink := &recordingReplaySink{}

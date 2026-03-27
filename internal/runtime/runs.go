@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -344,7 +343,6 @@ func (r *Runtime) finishRunStart(ctx context.Context, runID, parentRunID string,
 
 func (r *Runtime) prepareStartRun(ctx context.Context, parentRunID string, cmd StartRun) (StartRun, error) {
 	cmd.CWD = normalizePrimaryPath(cmd.CWD)
-	cmd.AuthorityJSON = normalizeRuntimeAuthorityJSON(cmd.AuthorityJSON)
 	if cmd.ProjectID == "" && cmd.CWD != "" {
 		project, err := RegisterProjectPath(ctx, r.store, cmd.CWD, "", "runtime")
 		if err != nil {
@@ -384,6 +382,9 @@ func (r *Runtime) prepareStartRun(ctx context.Context, parentRunID string, cmd S
 			if cmd.TeamID == "" {
 				cmd.TeamID = parent.TeamID
 			}
+			if len(cmd.AuthorityJSON) == 0 {
+				cmd.AuthorityJSON = append([]byte(nil), parent.AuthorityJSON...)
+			}
 		default:
 			snapshot, rawSnapshot, err := r.executionSnapshotForContext(ctx)
 			if err != nil {
@@ -404,11 +405,23 @@ func (r *Runtime) prepareStartRun(ctx context.Context, parentRunID string, cmd S
 		}
 		cmd.TeamID = snapshot.TeamID
 	}
+	authorityJSON, err := r.resolveRuntimeAuthorityJSON(ctx, cmd.AuthorityJSON)
+	if err != nil {
+		return StartRun{}, fmt.Errorf("prepare run start: resolve authority: %w", err)
+	}
+	cmd.AuthorityJSON = authorityJSON
 	return cmd, nil
 }
 
 func (r *Runtime) prepareRunStart(ctx context.Context, parentRunID string, cmd StartRun) error {
 	if err := r.budget.CheckDailyCap(ctx, cmd.AccountID); err != nil {
+		return err
+	}
+	runAuthority, err := authority.DecodeEnvelope(cmd.AuthorityJSON)
+	if err != nil {
+		return fmt.Errorf("prepare run start: decode authority: %w", err)
+	}
+	if err := r.enforceConversationAuthority(ctx, cmd.ConversationID, runAuthority); err != nil {
 		return err
 	}
 	if parentRunID == "" {
@@ -1892,13 +1905,6 @@ func (r *Runtime) UpdateSettings(ctx context.Context, updates map[string]string)
 		return err
 	}
 	return nil
-}
-
-func normalizeRuntimeAuthorityJSON(raw []byte) []byte {
-	if len(bytes.TrimSpace(raw)) == 0 {
-		return []byte("{}")
-	}
-	return append([]byte(nil), raw...)
 }
 
 func generateID() string {

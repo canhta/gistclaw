@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -756,6 +757,61 @@ func TestRuntime_ReceiveInboundMessageReusesBoundFrontSessionWithConnectorProven
 	}
 	if history[3].Kind != model.MessageAssistant || history[3].Body != "Telegram follow-up." {
 		t.Fatalf("expected assistant follow-up reply, got kind=%q body=%q", history[3].Kind, history[3].Body)
+	}
+}
+
+func TestRuntime_ReceiveInboundMessageRejectsRemoteConnectorWithAutoApproveElevated(t *testing.T) {
+	rt, db := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "unsafe", StopReason: "end_turn"},
+	})
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO settings (key, value, updated_at) VALUES
+		 ('approval_mode', 'auto_approve', datetime('now')),
+		 ('host_access_mode', 'elevated', datetime('now'))`,
+	); err != nil {
+		t.Fatalf("insert authority settings: %v", err)
+	}
+
+	_, err := rt.ReceiveInboundMessage(context.Background(), InboundMessageCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		FrontAgentID:    "assistant",
+		Body:            "Inspect the repo.",
+		SourceMessageID: "tg-1",
+		CWD:             t.TempDir(),
+	})
+	if err == nil {
+		t.Fatal("expected remote connector run to be rejected")
+	}
+	if !strings.Contains(err.Error(), "auto_approve") || !strings.Contains(err.Error(), "elevated") {
+		t.Fatalf("expected auto_approve + elevated rejection, got %v", err)
+	}
+
+	run, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Inspect the repo.",
+		CWD:           t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("expected local web front session to be allowed, got %v", err)
+	}
+
+	env, err := authority.DecodeEnvelope(run.AuthorityJSON)
+	if err != nil {
+		t.Fatalf("DecodeEnvelope: %v", err)
+	}
+	if env.ApprovalMode != authority.ApprovalModeAutoApprove || env.HostAccessMode != authority.HostAccessModeElevated {
+		t.Fatalf("web run authority = %+v, want auto_approve + elevated", env)
 	}
 }
 
