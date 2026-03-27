@@ -1,8 +1,11 @@
 package protocol
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -22,6 +25,43 @@ func TestLoginWithCredentialsRejectsInvalidCredentials(t *testing.T) {
 func TestLoginWithCredentialsSeedsCookieJar(t *testing.T) {
 	t.Parallel()
 
+	oldTransport := defaultHTTPTransport
+	defaultHTTPTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Host == "wpa.chat.zalo.me" && req.URL.Path == "/api/login/getLoginInfo":
+			key, err := deriveEncryptKey(req.URL.Query().Get("zcid_ext"), req.URL.Query().Get("zcid"))
+			if err != nil {
+				t.Fatalf("deriveEncryptKey: %v", err)
+			}
+
+			payload, err := json.Marshal(Response[*LoginInfo]{
+				Data: &LoginInfo{
+					UID:          "uid-123",
+					ZPWEnk:       "sek-123",
+					ZpwWebsocket: []string{"wss://ws.chat.zalo.me/socket"},
+					ZpwServiceMapV3: ZpwServiceMapV3{
+						GroupPoll: []string{"https://tt-group-poll-wpa.chat.zalo.me/api"},
+					},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Marshal login payload: %v", err)
+			}
+			encrypted, err := EncodeAESCBC([]byte(key), string(payload), false)
+			if err != nil {
+				t.Fatalf("EncodeAESCBC: %v", err)
+			}
+			escaped := url.PathEscape(encrypted)
+			return jsonHTTPResponse(t, Response[*string]{Data: &escaped}), nil
+		case req.URL.Host == "wpa.chat.zalo.me" && req.URL.Path == "/api/login/getServerInfo":
+			return rawHTTPResponse(t, `{"data":{"setttings":{"features":{"socket":{"ping_interval":5,"retries":{"main":{"times":[1,2]}}}}}}}`), nil
+		default:
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.String())
+			return nil, nil
+		}
+	})
+	t.Cleanup(func() { defaultHTTPTransport = oldTransport })
+
 	lang := "vi"
 	sess, err := LoginWithCredentials(context.Background(), Credentials{
 		IMEI:      "imei-123",
@@ -35,6 +75,15 @@ func TestLoginWithCredentialsSeedsCookieJar(t *testing.T) {
 	if sess.Language != lang {
 		t.Fatalf("expected language %q, got %q", lang, sess.Language)
 	}
+	if sess.UID != "uid-123" {
+		t.Fatalf("expected uid-123, got %q", sess.UID)
+	}
+	if sess.SecretKey != "sek-123" {
+		t.Fatalf("expected secret key sek-123, got %q", sess.SecretKey)
+	}
+	if sess.LoginInfo == nil || sess.Settings == nil {
+		t.Fatalf("expected hydrated session metadata, got %+v", sess)
+	}
 
 	base := &url.URL{Scheme: "https", Host: "chat.zalo.me"}
 	cookies := sess.CookieJar.Cookies(base)
@@ -43,6 +92,12 @@ func TestLoginWithCredentialsSeedsCookieJar(t *testing.T) {
 	}
 	if cookies[0].Name != "zpw_sek" && cookies[1].Name != "zpw_sek" {
 		t.Fatalf("expected zpw_sek cookie in jar, got %+v", cookies)
+	}
+
+	groupPoll := &url.URL{Scheme: "https", Host: "tt-group-poll-wpa.chat.zalo.me"}
+	groupCookies := sess.CookieJar.Cookies(groupPoll)
+	if len(groupCookies) == 0 {
+		t.Fatalf("expected service-map cookies on group poll host, got %+v", groupCookies)
 	}
 }
 
@@ -89,4 +144,32 @@ func containsCookie(header, want string) bool {
 		}
 	}
 	return false
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func jsonHTTPResponse(t *testing.T, payload any) *http.Response {
+	t.Helper()
+
+	data, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("Marshal JSON payload: %v", err)
+	}
+	return rawHTTPResponse(t, string(data))
+}
+
+func rawHTTPResponse(t *testing.T, body string) *http.Response {
+	t.Helper()
+
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": []string{"application/json"},
+		},
+		Body: io.NopCloser(bytes.NewBufferString(body)),
+	}
 }

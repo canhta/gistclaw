@@ -3,7 +3,6 @@ package protocol
 import (
 	"context"
 	"crypto/md5"
-	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"net/http"
@@ -11,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -25,6 +26,7 @@ const (
 )
 
 var DefaultBaseURL = url.URL{Scheme: "https", Host: "chat.zalo.me"}
+var defaultHTTPTransport http.RoundTripper = http.DefaultTransport
 
 type Credentials struct {
 	IMEI      string  `json:"imei"`
@@ -60,8 +62,9 @@ func NewSession() *Session {
 		Language:  DefaultLanguage,
 		CookieJar: jar,
 		Client: &http.Client{
-			Jar:     jar,
-			Timeout: 60 * time.Second,
+			Jar:       jar,
+			Transport: defaultHTTPTransport,
+			Timeout:   60 * time.Second,
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				if len(via) >= MaxRedirects {
 					return fmt.Errorf("zalo personal protocol: too many redirects")
@@ -73,9 +76,7 @@ func NewSession() *Session {
 }
 
 func GenerateIMEI(userAgent string) string {
-	buf := make([]byte, 16)
-	_, _ = rand.Read(buf)
-	u := hex.EncodeToString(buf)
+	u := uuid.New().String()
 	hash := md5.Sum([]byte(userAgent))
 	return u + "-" + hex.EncodeToString(hash[:])
 }
@@ -98,6 +99,24 @@ func LoginWithCredentials(ctx context.Context, creds Credentials) (*Session, err
 		sess.Language = strings.TrimSpace(*creds.Language)
 	}
 	BuildCookieJarFromHeader(sess.CookieJar, &DefaultBaseURL, sess.Cookie)
+
+	loginInfo, err := fetchLoginInfo(ctx, sess)
+	if err != nil {
+		return nil, fmt.Errorf("zalo personal protocol: login: %w", err)
+	}
+	serverInfo, err := fetchServerInfo(ctx, sess)
+	if err != nil {
+		return nil, fmt.Errorf("zalo personal protocol: server info: %w", err)
+	}
+	if loginInfo == nil || serverInfo == nil || serverInfo.Settings == nil {
+		return nil, fmt.Errorf("zalo personal protocol: login failed (empty response)")
+	}
+
+	sess.UID = loginInfo.UID
+	sess.SecretKey = loginInfo.ZPWEnk
+	sess.LoginInfo = loginInfo
+	sess.Settings = serverInfo.Settings
+	seedServiceMapCookies(sess, sess.Cookie)
 	return sess, nil
 }
 
@@ -139,4 +158,35 @@ func parseCookieHeader(cookieHeader, host string) []*http.Cookie {
 		})
 	}
 	return cookies
+}
+
+func seedServiceMapCookies(sess *Session, cookieHeader string) {
+	if sess == nil || sess.LoginInfo == nil || sess.CookieJar == nil {
+		return
+	}
+
+	serviceURLs := make([]string, 0, 16)
+	serviceURLs = append(serviceURLs, sess.LoginInfo.ZpwServiceMapV3.Chat...)
+	serviceURLs = append(serviceURLs, sess.LoginInfo.ZpwServiceMapV3.Group...)
+	serviceURLs = append(serviceURLs, sess.LoginInfo.ZpwServiceMapV3.File...)
+	serviceURLs = append(serviceURLs, sess.LoginInfo.ZpwServiceMapV3.Profile...)
+	serviceURLs = append(serviceURLs, sess.LoginInfo.ZpwServiceMapV3.GroupPoll...)
+
+	seen := make(map[string]struct{}, len(serviceURLs))
+	for _, rawURL := range serviceURLs {
+		if strings.TrimSpace(rawURL) == "" {
+			continue
+		}
+		parsed, err := url.Parse(rawURL)
+		if err != nil || parsed.Host == "" {
+			continue
+		}
+		hostURL := &url.URL{Scheme: parsed.Scheme, Host: parsed.Host}
+		key := hostURL.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		BuildCookieJarFromHeader(sess.CookieJar, hostURL, cookieHeader)
+	}
 }
