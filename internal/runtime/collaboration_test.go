@@ -354,7 +354,7 @@ func TestRuntime_InspectConversationReportsActiveRunAndPendingApprovals(t *testi
 	}
 }
 
-func TestRuntime_StartFrontSessionIncludesWorkspaceContextInProviderInstructions(t *testing.T) {
+func TestRuntime_StartFrontSessionIncludesDirectoryContextInProviderInstructions(t *testing.T) {
 	db, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -372,12 +372,12 @@ func TestRuntime_StartFrontSessionIncludesWorkspaceContextInProviderInstructions
 	}, nil)
 	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
 
-	workspaceRoot := t.TempDir()
+	projectPath := t.TempDir()
 	for path, body := range map[string]string{
 		"README.md": "# Front Session Repo\n",
 		"go.mod":    "module example.com/front\n\ngo 1.24\n",
 	} {
-		abs := filepath.Join(workspaceRoot, path)
+		abs := filepath.Join(projectPath, path)
 		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 			t.Fatalf("mkdir %s: %v", abs, err)
 		}
@@ -395,7 +395,7 @@ func TestRuntime_StartFrontSessionIncludesWorkspaceContextInProviderInstructions
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "review the repo",
-		CWD:           workspaceRoot,
+		CWD:           projectPath,
 	}); err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
 	}
