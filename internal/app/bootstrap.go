@@ -109,6 +109,7 @@ func Bootstrap(cfg Config) (*App, error) {
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
 		Spawn: rt.SpawnTool,
 	})
+	rt.SetStorageRoot(cfg.StorageRoot)
 	rt.SetTeamDir(teamDir)
 	if teamDir != "" {
 		snapshot, err := teams.LoadExecutionSnapshot(teamDir)

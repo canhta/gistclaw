@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	runtimepkg "github.com/canhta/gistclaw/internal/runtime"
 	"github.com/canhta/gistclaw/internal/teams"
 )
 
@@ -278,7 +279,11 @@ func TestBootstrap_UsesStorageOwnedTeamDirForEdits(t *testing.T) {
 		t.Fatalf("update runtime team: %v", err)
 	}
 
-	storageCfg, err := teams.LoadConfig(filepath.Join(storageRoot, "teams", "default"))
+	project, err := runtimepkg.ActiveProject(context.Background(), app.db)
+	if err != nil {
+		t.Fatalf("load active project: %v", err)
+	}
+	storageCfg, err := teams.LoadConfig(filepath.Join(storageRoot, "projects", project.ID, "teams", "default"))
 	if err != nil {
 		t.Fatalf("reload storage team: %v", err)
 	}

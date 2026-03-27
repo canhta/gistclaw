@@ -32,16 +32,16 @@ func NormalizeProfileName(name string) (string, error) {
 	return name, nil
 }
 
-func ProfilesRoot(workspaceRoot string) string {
-	return filepath.Join(workspaceRoot, ".gistclaw", "teams")
+func ProfilesRoot(profilesRoot string) string {
+	return profilesRoot
 }
 
-func ProfileDir(workspaceRoot, profile string) string {
-	return filepath.Join(ProfilesRoot(workspaceRoot), profile)
+func ProfileDir(profilesRoot, profile string) string {
+	return filepath.Join(ProfilesRoot(profilesRoot), profile)
 }
 
-func ListProfiles(workspaceRoot string) ([]Profile, error) {
-	entries, err := os.ReadDir(ProfilesRoot(workspaceRoot))
+func ListProfiles(profilesRoot string) ([]Profile, error) {
+	entries, err := os.ReadDir(ProfilesRoot(profilesRoot))
 	if os.IsNotExist(err) {
 		return nil, nil
 	}
@@ -58,7 +58,7 @@ func ListProfiles(workspaceRoot string) ([]Profile, error) {
 		if err != nil {
 			continue
 		}
-		path := ProfileDir(workspaceRoot, name)
+		path := ProfileDir(profilesRoot, name)
 		if _, err := os.Stat(filepath.Join(path, "team.yaml")); err != nil {
 			continue
 		}
@@ -71,12 +71,12 @@ func ListProfiles(workspaceRoot string) ([]Profile, error) {
 	return profiles, nil
 }
 
-func CreateProfile(workspaceRoot, profile string) error {
+func CreateProfile(profilesRoot, profile string) error {
 	name, err := NormalizeProfileName(profile)
 	if err != nil {
 		return err
 	}
-	dstDir := ProfileDir(workspaceRoot, name)
+	dstDir := ProfileDir(profilesRoot, name)
 	if _, err := os.Stat(dstDir); err == nil {
 		return fmt.Errorf("team: profile %q already exists", name)
 	} else if !os.IsNotExist(err) {
@@ -88,15 +88,15 @@ func CreateProfile(workspaceRoot, profile string) error {
 	return nil
 }
 
-func CloneProfile(workspaceRoot, srcProfile, dstProfile string) error {
+func CloneProfile(profilesRoot, srcProfile, dstProfile string) error {
 	srcName, err := NormalizeProfileName(srcProfile)
 	if err != nil {
 		return err
 	}
-	return CloneProfileFromDir(workspaceRoot, ProfileDir(workspaceRoot, srcName), dstProfile)
+	return CloneProfileFromDir(profilesRoot, ProfileDir(profilesRoot, srcName), dstProfile)
 }
 
-func CloneProfileFromDir(workspaceRoot, srcDir, dstProfile string) error {
+func CloneProfileFromDir(profilesRoot, srcDir, dstProfile string) error {
 	dstName, err := NormalizeProfileName(dstProfile)
 	if err != nil {
 		return err
@@ -106,7 +106,7 @@ func CloneProfileFromDir(workspaceRoot, srcDir, dstProfile string) error {
 		return fmt.Errorf("team: source profile not found")
 	}
 
-	dstDir := ProfileDir(workspaceRoot, dstName)
+	dstDir := ProfileDir(profilesRoot, dstName)
 	if _, err := os.Stat(dstDir); err == nil {
 		return fmt.Errorf("team: profile %q already exists", dstName)
 	} else if !os.IsNotExist(err) {
@@ -119,12 +119,12 @@ func CloneProfileFromDir(workspaceRoot, srcDir, dstProfile string) error {
 	return nil
 }
 
-func DeleteProfile(workspaceRoot, profile string) error {
+func DeleteProfile(profilesRoot, profile string) error {
 	name, err := NormalizeProfileName(profile)
 	if err != nil {
 		return err
 	}
-	if err := os.RemoveAll(ProfileDir(workspaceRoot, name)); err != nil {
+	if err := os.RemoveAll(ProfileDir(profilesRoot, name)); err != nil {
 		return fmt.Errorf("team: delete profile %q: %w", name, err)
 	}
 	return nil

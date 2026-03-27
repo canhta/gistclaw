@@ -919,11 +919,11 @@ func TestSessionsProjectScoping(t *testing.T) {
 		}
 	})
 
-	t.Run("team page follows active project workspace", func(t *testing.T) {
+	t.Run("team page follows active project storage", func(t *testing.T) {
 		h := newServerHarness(t)
 		otherRoot := t.TempDir()
 		otherProjectID := h.insertProject(t, "seo-test", otherRoot)
-		writeTestFile(t, filepath.Join(otherRoot, ".gistclaw", "teams", "default", "team.yaml"), `
+		writeTestFile(t, filepath.Join(h.storageRoot, "projects", otherProjectID, "teams", "default", "team.yaml"), `
 name: SEO Task Team
 front_agent: assistant
 agents:
@@ -932,7 +932,7 @@ agents:
     role: coordinator
     tool_posture: read_heavy
 `)
-		writeTestFile(t, filepath.Join(otherRoot, ".gistclaw", "teams", "default", "assistant.soul.yaml"), "role: coordinator\ntool_posture: read_heavy\n")
+		writeTestFile(t, filepath.Join(h.storageRoot, "projects", otherProjectID, "teams", "default", "assistant.soul.yaml"), "role: coordinator\ntool_posture: read_heavy\n")
 		if err := runtime.SetActiveProject(context.Background(), h.db, otherProjectID); err != nil {
 			t.Fatalf("set active project: %v", err)
 		}
@@ -1399,10 +1399,10 @@ func TestTeam(t *testing.T) {
 		h := newServerHarness(t)
 		cookie := hostAdminSessionCookie(t, h, "/configure/team")
 
-		if err := teams.CreateProfile(h.workspaceRoot, "review"); err != nil {
+		if err := teams.CreateProfile(h.projectProfilesRoot(), "review"); err != nil {
 			t.Fatalf("CreateProfile: %v", err)
 		}
-		reviewDir := teams.ProfileDir(h.workspaceRoot, "review")
+		reviewDir := teams.ProfileDir(h.projectProfilesRoot(), "review")
 		cfg, err := teams.LoadConfig(reviewDir)
 		if err != nil {
 			t.Fatalf("LoadConfig review: %v", err)
@@ -1466,7 +1466,7 @@ func TestTeam(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if _, err := os.Stat(filepath.Join(teams.ProfileDir(h.workspaceRoot, "review"), "team.yaml")); err != nil {
+		if _, err := os.Stat(filepath.Join(teams.ProfileDir(h.projectProfilesRoot(), "review"), "team.yaml")); err != nil {
 			t.Fatalf("expected new profile team.yaml: %v", err)
 		}
 		profile, err := h.rt.ActiveTeamProfile(context.Background())
@@ -1500,7 +1500,7 @@ func TestTeam(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		cloned, err := teams.LoadConfig(teams.ProfileDir(h.workspaceRoot, "review"))
+		cloned, err := teams.LoadConfig(teams.ProfileDir(h.projectProfilesRoot(), "review"))
 		if err != nil {
 			t.Fatalf("LoadConfig cloned profile: %v", err)
 		}
@@ -1520,7 +1520,7 @@ func TestTeam(t *testing.T) {
 		h := newServerHarness(t)
 		cookie := hostAdminSessionCookie(t, h, "/configure/team")
 
-		if err := teams.CreateProfile(h.workspaceRoot, "review"); err != nil {
+		if err := teams.CreateProfile(h.projectProfilesRoot(), "review"); err != nil {
 			t.Fatalf("CreateProfile: %v", err)
 		}
 
@@ -1541,7 +1541,7 @@ func TestTeam(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if _, err := os.Stat(teams.ProfileDir(h.workspaceRoot, "review")); !os.IsNotExist(err) {
+		if _, err := os.Stat(teams.ProfileDir(h.projectProfilesRoot(), "review")); !os.IsNotExist(err) {
 			t.Fatalf("expected deleted profile dir to be removed, err=%v", err)
 		}
 	})
@@ -1593,7 +1593,7 @@ func TestTeam(t *testing.T) {
 			t.Fatalf("expected redirect to /configure/team, got %q", rr.Header().Get("Location"))
 		}
 
-		specData, err := os.ReadFile(filepath.Join(h.teamDir, "team.yaml"))
+		specData, err := os.ReadFile(filepath.Join(h.projectProfileDir("default"), "team.yaml"))
 		if err != nil {
 			t.Fatalf("read team file: %v", err)
 		}
@@ -4478,6 +4478,14 @@ type testServer struct {
 	adminToken string
 }
 
+func (h *serverHarness) projectProfilesRoot() string {
+	return filepath.Join(h.storageRoot, "projects", h.activeProjectID, "teams")
+}
+
+func (h *serverHarness) projectProfileDir(profile string) string {
+	return filepath.Join(h.projectProfilesRoot(), profile)
+}
+
 func (s *testServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	req := r.Clone(r.Context())
 	if req.Header.Get("X-Gistclaw-Test-No-Auto-Auth") == "" && req.Header.Get("Authorization") == "" {
@@ -4591,6 +4599,7 @@ func newServerHarnessWithProviderAndConnectorHealth(t *testing.T, prov runtime.P
 		rt.WaitAsync()
 		_ = db.Close()
 	})
+	rt.SetStorageRoot(storageRoot)
 	rt.SetTeamDir(teamDir)
 	snapshot, err := teams.LoadExecutionSnapshot(teamDir)
 	if err != nil {
@@ -4671,6 +4680,7 @@ func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, e
 		rt.WaitAsync()
 		_ = db.Close()
 	})
+	rt.SetStorageRoot(storageRoot)
 	rt.SetTeamDir(teamDir)
 	snapshot, err := teams.LoadExecutionSnapshot(teamDir)
 	if err != nil {

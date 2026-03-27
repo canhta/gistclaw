@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/teams"
@@ -15,25 +16,41 @@ func (r *Runtime) SetTeamDir(teamDir string) {
 	r.teamDir = teamDir
 }
 
+func (r *Runtime) TeamConfigPath(ctx context.Context) (string, error) {
+	teamDir, err := r.resolveTeamDir(ctx)
+	if err != nil {
+		return "", fmt.Errorf("runtime: resolve team dir: %w", err)
+	}
+	if teamDir == "" {
+		return "", fmt.Errorf("runtime: team dir not configured")
+	}
+	return filepath.Join(teamDir, "team.yaml"), nil
+}
+
 func (r *Runtime) resolveTeamDir(ctx context.Context) (string, error) {
+	projectTeamDir, err := r.activeProjectTeamDir(ctx)
+	if err != nil {
+		return "", err
+	}
+	if projectTeamDir != "" {
+		return projectTeamDir, nil
+	}
+	return r.teamDir, nil
+}
+
+func (r *Runtime) activeProjectTeamDir(ctx context.Context) (string, error) {
 	project, err := ActiveProject(ctx, r.store)
 	if err != nil {
 		return "", err
 	}
-	if project.PrimaryPath != "" {
-		profile, err := ActiveProjectTeamProfile(ctx, r.store)
-		if err != nil {
-			return "", err
-		}
-		teamDir := teams.ProfileDir(project.PrimaryPath, profile)
-		if _, statErr := os.Stat(filepath.Join(teamDir, "team.yaml")); statErr == nil {
-			return teamDir, nil
-		}
-		if profile != teams.DefaultProfileName {
-			return teamDir, nil
-		}
+	if strings.TrimSpace(project.ID) == "" || strings.TrimSpace(r.storageRoot) == "" {
+		return "", nil
 	}
-	return r.teamDir, nil
+	profile, err := ActiveProjectTeamProfile(ctx, r.store)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(r.storageRoot, "projects", project.ID, "teams", profile), nil
 }
 
 func (r *Runtime) resolveReadableTeamDir(ctx context.Context) (string, error) {
@@ -46,6 +63,17 @@ func (r *Runtime) resolveReadableTeamDir(ctx context.Context) (string, error) {
 	}
 	if _, statErr := os.Stat(filepath.Join(teamDir, "team.yaml")); statErr == nil {
 		return teamDir, nil
+	}
+	if teamDir != "" {
+		profile, profileErr := ActiveProjectTeamProfile(ctx, r.store)
+		if profileErr != nil {
+			return "", profileErr
+		}
+		if profile == teams.DefaultProfileName && r.teamDir != "" {
+			if _, statErr := os.Stat(filepath.Join(r.teamDir, "team.yaml")); statErr == nil {
+				return r.teamDir, nil
+			}
+		}
 	}
 	if teamDir != r.teamDir {
 		return teamDir, nil

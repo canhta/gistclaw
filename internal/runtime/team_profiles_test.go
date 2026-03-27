@@ -14,15 +14,16 @@ func TestRuntime_TeamConfigUsesActiveProfileForProject(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	ctx := context.Background()
+	storageRoot := t.TempDir()
+	rt.SetStorageRoot(storageRoot)
 
 	workspaceRoot := t.TempDir()
-	writeRuntimeTeamProfile(t, workspaceRoot, "default", "Default Team")
-	writeRuntimeTeamProfile(t, workspaceRoot, "review", "Review Team")
-
 	project, err := ActivateProjectPath(ctx, db, workspaceRoot, "alpha", "operator")
 	if err != nil {
 		t.Fatalf("activate project: %v", err)
 	}
+	writeRuntimeStoredTeamProfile(t, storageRoot, project.ID, "default", "Default Team")
+	writeRuntimeStoredTeamProfile(t, storageRoot, project.ID, "review", "Review Team")
 	if err := SetActiveProject(ctx, db, project.ID); err != nil {
 		t.Fatalf("set active project: %v", err)
 	}
@@ -43,15 +44,16 @@ func TestRuntime_ChangingActiveProfileOnlyAffectsFutureRuns(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	ctx := context.Background()
+	storageRoot := t.TempDir()
+	rt.SetStorageRoot(storageRoot)
 
 	workspaceRoot := t.TempDir()
-	writeRuntimeTeamProfile(t, workspaceRoot, "default", "Default Team")
-	writeRuntimeTeamProfile(t, workspaceRoot, "review", "Review Team")
-
 	project, err := ActivateProjectPath(ctx, db, workspaceRoot, "alpha", "operator")
 	if err != nil {
 		t.Fatalf("activate project: %v", err)
 	}
+	writeRuntimeStoredTeamProfile(t, storageRoot, project.ID, "default", "Default Team")
+	writeRuntimeStoredTeamProfile(t, storageRoot, project.ID, "review", "Review Team")
 	if err := SetActiveProject(ctx, db, project.ID); err != nil {
 		t.Fatalf("set active project: %v", err)
 	}
@@ -60,7 +62,7 @@ func TestRuntime_ChangingActiveProfileOnlyAffectsFutureRuns(t *testing.T) {
 		ConversationID: "conv-team-default",
 		AgentID:        "assistant",
 		Objective:      "use default team",
-		CWD:  workspaceRoot,
+		CWD:            workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("prepareStartRun default: %v", err)
@@ -74,7 +76,7 @@ func TestRuntime_ChangingActiveProfileOnlyAffectsFutureRuns(t *testing.T) {
 		ConversationID: "conv-team-review",
 		AgentID:        "assistant",
 		Objective:      "use review team",
-		CWD:  workspaceRoot,
+		CWD:            workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("prepareStartRun review: %v", err)
@@ -100,10 +102,11 @@ func TestRuntime_TeamProfileManagementMethods(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	ctx := context.Background()
+	storageRoot := t.TempDir()
+	rt.SetStorageRoot(storageRoot)
 
-	fallbackRoot := t.TempDir()
-	writeRuntimeTeamProfile(t, fallbackRoot, "default", "Fallback Team")
-	rt.SetTeamDir(filepath.Join(fallbackRoot, ".gistclaw", "teams", "default"))
+	writeRuntimeGlobalTeamProfile(t, storageRoot, "default", "Fallback Team")
+	rt.SetTeamDir(filepath.Join(storageRoot, "teams", "default"))
 
 	workspaceRoot := t.TempDir()
 	project, err := ActivateProjectPath(ctx, db, workspaceRoot, "alpha", "operator")
@@ -134,10 +137,10 @@ func TestRuntime_TeamProfileManagementMethods(t *testing.T) {
 		t.Fatalf("ListTeamProfiles: %v", err)
 	}
 	if len(profiles) != 2 {
-		t.Fatalf("expected 2 workspace-managed profiles, got %d", len(profiles))
+		t.Fatalf("expected 2 storage-managed profiles, got %d", len(profiles))
 	}
 
-	cloned, err := teams.LoadConfig(teams.ProfileDir(workspaceRoot, "ops"))
+	cloned, err := teams.LoadConfig(filepath.Join(storageRoot, "projects", project.ID, "teams", "ops"))
 	if err != nil {
 		t.Fatalf("LoadConfig cloned profile: %v", err)
 	}
@@ -159,7 +162,7 @@ func TestRuntime_TeamProfileManagementMethods(t *testing.T) {
 	if err := rt.DeleteTeamProfile(ctx, "ops"); err != nil {
 		t.Fatalf("DeleteTeamProfile: %v", err)
 	}
-	if _, err := os.Stat(teams.ProfileDir(workspaceRoot, "ops")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(storageRoot, "projects", project.ID, "teams", "ops")); !os.IsNotExist(err) {
 		t.Fatalf("expected deleted profile dir to be removed, err=%v", err)
 	}
 }
@@ -168,10 +171,9 @@ func TestRuntime_DeleteTeamProfileRejectsActiveProfile(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	ctx := context.Background()
+	rt.SetStorageRoot(t.TempDir())
 
 	workspaceRoot := t.TempDir()
-	writeRuntimeTeamProfile(t, workspaceRoot, "default", "Default Team")
-
 	project, err := ActivateProjectPath(ctx, db, workspaceRoot, "alpha", "operator")
 	if err != nil {
 		t.Fatalf("activate project: %v", err)
@@ -185,10 +187,23 @@ func TestRuntime_DeleteTeamProfileRejectsActiveProfile(t *testing.T) {
 	}
 }
 
-func writeRuntimeTeamProfile(t *testing.T, workspaceRoot, profile, name string) {
+func writeRuntimeStoredTeamProfile(t *testing.T, storageRoot, projectID, profile, name string) {
 	t.Helper()
 
-	teamDir := filepath.Join(workspaceRoot, ".gistclaw", "teams", profile)
+	teamDir := filepath.Join(storageRoot, "projects", projectID, "teams", profile)
+	writeRuntimeTeamSpec(t, teamDir, name)
+}
+
+func writeRuntimeGlobalTeamProfile(t *testing.T, storageRoot, profile, name string) {
+	t.Helper()
+
+	teamDir := filepath.Join(storageRoot, "teams", profile)
+	writeRuntimeTeamSpec(t, teamDir, name)
+}
+
+func writeRuntimeTeamSpec(t *testing.T, teamDir, name string) {
+	t.Helper()
+
 	if err := os.MkdirAll(teamDir, 0o755); err != nil {
 		t.Fatalf("mkdir runtime team dir: %v", err)
 	}

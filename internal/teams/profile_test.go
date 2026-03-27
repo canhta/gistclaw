@@ -7,13 +7,13 @@ import (
 )
 
 func TestProfiles_CreateProfileSeedsShippedDefault(t *testing.T) {
-	workspaceRoot := t.TempDir()
+	profilesRoot := t.TempDir()
 
-	if err := CreateProfile(workspaceRoot, "review"); err != nil {
+	if err := CreateProfile(profilesRoot, "review"); err != nil {
 		t.Fatalf("CreateProfile: %v", err)
 	}
 
-	cfg, err := LoadConfig(ProfileDir(workspaceRoot, "review"))
+	cfg, err := LoadConfig(filepath.Join(profilesRoot, "review"))
 	if err != nil {
 		t.Fatalf("LoadConfig: %v", err)
 	}
@@ -23,8 +23,8 @@ func TestProfiles_CreateProfileSeedsShippedDefault(t *testing.T) {
 }
 
 func TestProfiles_CloneProfileCopiesSourceFiles(t *testing.T) {
-	workspaceRoot := t.TempDir()
-	sourceDir := ProfileDir(workspaceRoot, "review")
+	profilesRoot := t.TempDir()
+	sourceDir := filepath.Join(profilesRoot, "review")
 	writeTeamFile(t, filepath.Join(sourceDir, "team.yaml"), `
 name: Review Team
 front_agent: assistant
@@ -36,11 +36,11 @@ agents:
 `)
 	writeTeamFile(t, filepath.Join(sourceDir, "assistant.soul.yaml"), "role: reviewer\ntool_posture: read_heavy\n")
 
-	if err := CloneProfile(workspaceRoot, "review", "ops"); err != nil {
+	if err := CloneProfile(profilesRoot, "review", "ops"); err != nil {
 		t.Fatalf("CloneProfile: %v", err)
 	}
 
-	cfg, err := LoadConfig(ProfileDir(workspaceRoot, "ops"))
+	cfg, err := LoadConfig(filepath.Join(profilesRoot, "ops"))
 	if err != nil {
 		t.Fatalf("LoadConfig clone: %v", err)
 	}
@@ -50,9 +50,9 @@ agents:
 }
 
 func TestProfiles_ListProfilesReturnsSortedNames(t *testing.T) {
-	workspaceRoot := t.TempDir()
+	profilesRoot := t.TempDir()
 	for _, profile := range []string{"review", "default", "ops"} {
-		profileDir := ProfileDir(workspaceRoot, profile)
+		profileDir := filepath.Join(profilesRoot, profile)
 		writeTeamFile(t, filepath.Join(profileDir, "team.yaml"), `
 name: `+profile+`
 front_agent: assistant
@@ -65,7 +65,7 @@ agents:
 		writeTeamFile(t, filepath.Join(profileDir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: read_heavy\n")
 	}
 
-	profiles, err := ListProfiles(workspaceRoot)
+	profiles, err := ListProfiles(profilesRoot)
 	if err != nil {
 		t.Fatalf("ListProfiles: %v", err)
 	}
@@ -81,8 +81,8 @@ agents:
 }
 
 func TestProfiles_DeleteProfileRemovesDirectory(t *testing.T) {
-	workspaceRoot := t.TempDir()
-	profileDir := ProfileDir(workspaceRoot, "review")
+	profilesRoot := t.TempDir()
+	profileDir := filepath.Join(profilesRoot, "review")
 	writeTeamFile(t, filepath.Join(profileDir, "team.yaml"), `
 name: Review Team
 front_agent: assistant
@@ -94,7 +94,7 @@ agents:
 `)
 	writeTeamFile(t, filepath.Join(profileDir, "assistant.soul.yaml"), "role: reviewer\ntool_posture: read_heavy\n")
 
-	if err := DeleteProfile(workspaceRoot, "review"); err != nil {
+	if err := DeleteProfile(profilesRoot, "review"); err != nil {
 		t.Fatalf("DeleteProfile: %v", err)
 	}
 	if _, err := os.Stat(profileDir); !os.IsNotExist(err) {

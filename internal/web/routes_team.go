@@ -48,9 +48,10 @@ type teamOption struct {
 }
 
 type teamPageState struct {
-	Config        teams.Config
-	ActiveProfile string
-	Profiles      []teams.Profile
+	Config          teams.Config
+	ActiveProfile   string
+	Profiles        []teams.Profile
+	ProfileSavePath string
 }
 
 func (s *Server) handleTeam(w http.ResponseWriter, r *http.Request) {
@@ -262,10 +263,15 @@ func (s *Server) loadTeamPageState(ctx context.Context) (teamPageState, error) {
 	if err != nil {
 		return teamPageState{}, err
 	}
+	savePath, err := s.rt.TeamConfigPath(ctx)
+	if err != nil {
+		return teamPageState{}, err
+	}
 	return teamPageState{
-		Config:        cfg,
-		ActiveProfile: activeProfile,
-		Profiles:      profiles,
+		Config:          cfg,
+		ActiveProfile:   activeProfile,
+		Profiles:        profiles,
+		ProfileSavePath: savePath,
 	}, nil
 }
 
@@ -298,7 +304,7 @@ func newTeamPageData(state teamPageState, errMsg, notice string) teamPageData {
 		ProfileOptions:       buildProfileOptions(state.Profiles, activeProfile, true),
 		CloneSourceOptions:   buildProfileOptions(state.Profiles, activeProfile, true),
 		DeleteProfileOptions: buildProfileOptions(state.Profiles, activeProfile, false),
-		ProfileSavePath:      fmt.Sprintf(".gistclaw/teams/%s", activeProfile),
+		ProfileSavePath:      state.ProfileSavePath,
 		Name:                 cfg.Name,
 		FrontAgent:           cfg.FrontAgent,
 		Agents:               make([]teamAgentCardData, 0, len(cfg.Agents)),

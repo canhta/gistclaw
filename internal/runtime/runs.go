@@ -168,6 +168,7 @@ type Runtime struct {
 	contextWindowSize   int
 	contexts            ContextAssembler
 	teamDir             string
+	storageRoot         string
 	defaultSnapshot     model.ExecutionSnapshot
 	defaultSnapshotJSON []byte
 	asyncCtx            context.Context
@@ -204,6 +205,10 @@ func New(
 // Memory exposes the memory store so callers (e.g. web layer) can read facts.
 func (r *Runtime) Memory() *memory.Store {
 	return r.memory
+}
+
+func (r *Runtime) SetStorageRoot(storageRoot string) {
+	r.storageRoot = strings.TrimSpace(storageRoot)
 }
 
 func (r *Runtime) SetDefaultExecutionSnapshot(snapshot model.ExecutionSnapshot) error {

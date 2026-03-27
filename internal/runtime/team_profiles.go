@@ -76,11 +76,11 @@ func (r *Runtime) ActiveTeamProfile(ctx context.Context) (string, error) {
 }
 
 func (r *Runtime) ListTeamProfiles(ctx context.Context) ([]teams.Profile, error) {
-	projectPath, err := r.activeProjectPrimaryPath(ctx)
+	profilesRoot, err := r.activeProjectProfilesRoot(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return teams.ListProfiles(projectPath)
+	return teams.ListProfiles(profilesRoot)
 }
 
 func (r *Runtime) SelectTeamProfile(ctx context.Context, profile string) error {
@@ -95,15 +95,15 @@ func (r *Runtime) SelectTeamProfile(ctx context.Context, profile string) error {
 }
 
 func (r *Runtime) CreateTeamProfile(ctx context.Context, profile string) error {
-	projectPath, err := r.activeProjectPrimaryPath(ctx)
+	profilesRoot, err := r.activeProjectProfilesRoot(ctx)
 	if err != nil {
 		return err
 	}
-	return teams.CreateProfile(projectPath, profile)
+	return teams.CreateProfile(profilesRoot, profile)
 }
 
 func (r *Runtime) CloneTeamProfile(ctx context.Context, sourceProfile, newProfile string) error {
-	projectPath, err := r.activeProjectPrimaryPath(ctx)
+	profilesRoot, err := r.activeProjectProfilesRoot(ctx)
 	if err != nil {
 		return err
 	}
@@ -111,11 +111,11 @@ func (r *Runtime) CloneTeamProfile(ctx context.Context, sourceProfile, newProfil
 	if err != nil {
 		return fmt.Errorf("runtime: invalid source team profile: %w", err)
 	}
-	sourceDir, err := r.cloneSourceDir(ctx, sourceProfile, projectPath)
+	sourceDir, err := r.cloneSourceDir(ctx, sourceProfile, profilesRoot)
 	if err != nil {
 		return err
 	}
-	return teams.CloneProfileFromDir(projectPath, sourceDir, newProfile)
+	return teams.CloneProfileFromDir(profilesRoot, sourceDir, newProfile)
 }
 
 func (r *Runtime) DeleteTeamProfile(ctx context.Context, profile string) error {
@@ -131,26 +131,29 @@ func (r *Runtime) DeleteTeamProfile(ctx context.Context, profile string) error {
 		return fmt.Errorf("runtime: choose another active profile before deleting %s", profile)
 	}
 
-	projectPath, err := r.activeProjectPrimaryPath(ctx)
+	profilesRoot, err := r.activeProjectProfilesRoot(ctx)
 	if err != nil {
 		return err
 	}
-	return teams.DeleteProfile(projectPath, profile)
+	return teams.DeleteProfile(profilesRoot, profile)
 }
 
-func (r *Runtime) activeProjectPrimaryPath(ctx context.Context) (string, error) {
+func (r *Runtime) activeProjectProfilesRoot(ctx context.Context) (string, error) {
 	project, err := ActiveProject(ctx, r.store)
 	if err != nil {
 		return "", err
 	}
-	if strings.TrimSpace(project.PrimaryPath) == "" {
-		return "", fmt.Errorf("runtime: active project path not configured")
+	if strings.TrimSpace(project.ID) == "" {
+		return "", fmt.Errorf("runtime: active project is required")
 	}
-	return project.PrimaryPath, nil
+	if strings.TrimSpace(r.storageRoot) == "" {
+		return "", fmt.Errorf("runtime: storage root not configured")
+	}
+	return filepath.Join(r.storageRoot, "projects", project.ID, "teams"), nil
 }
 
-func (r *Runtime) cloneSourceDir(ctx context.Context, profile, projectPath string) (string, error) {
-	sourceDir := teams.ProfileDir(projectPath, profile)
+func (r *Runtime) cloneSourceDir(ctx context.Context, profile, profilesRoot string) (string, error) {
+	sourceDir := teams.ProfileDir(profilesRoot, profile)
 	if _, err := os.Stat(filepath.Join(sourceDir, "team.yaml")); err == nil {
 		return sourceDir, nil
 	}
