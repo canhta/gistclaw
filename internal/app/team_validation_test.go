@@ -57,7 +57,7 @@ func bootstrapWithTeamDir(t *testing.T, teamDir string) error {
 	return err
 }
 
-func workspaceRootWithDefaultTeam(t *testing.T) string {
+func storageRootWithDefaultTeam(t *testing.T) string {
 	t.Helper()
 
 	root := t.TempDir()
@@ -160,12 +160,13 @@ agents:
 	}
 }
 
-// TestTeamValidation_EmptyTeamDir verifies Bootstrap skips validation when
-// TeamDir is not configured (backward-compatible default).
+// TestTeamValidation_EmptyTeamDir verifies Bootstrap seeds the default team when
+// TeamDir is not configured.
 func TestTeamValidation_EmptyTeamDir(t *testing.T) {
 	cfg := Config{
 		DatabasePath: ":memory:",
 		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 		TeamDir:      "", // not configured
 	}
 	a, err := Bootstrap(cfg)
@@ -177,23 +178,23 @@ func TestTeamValidation_EmptyTeamDir(t *testing.T) {
 	}
 }
 
-func TestResolveTeamDir_UsesWorkspaceDefaultWhenPresent(t *testing.T) {
-	workspaceRoot := workspaceRootWithDefaultTeam(t)
-	cfg := Config{WorkspaceRoot: workspaceRoot}
+func TestResolveTeamDir_UsesStorageDefaultWhenPresent(t *testing.T) {
+	storageRoot := storageRootWithDefaultTeam(t)
+	cfg := Config{StorageRoot: storageRoot}
 
 	got := resolveTeamDir(cfg)
-	want := filepath.Join(workspaceRoot, ".gistclaw", "teams", "default")
+	want := filepath.Join(storageRoot, "teams", "default")
 	if got != want {
 		t.Fatalf("expected resolved team dir %q, got %q", want, got)
 	}
 }
 
-func TestBootstrap_SeedsWorkspaceOwnedTeamDirFromWorkspaceDefault(t *testing.T) {
-	workspaceRoot := workspaceRootWithDefaultTeam(t)
+func TestBootstrap_UsesStorageOwnedTeamDirWhenPresent(t *testing.T) {
+	storageRoot := storageRootWithDefaultTeam(t)
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: workspaceRoot,
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  storageRoot,
 	}
 
 	app, err := Bootstrap(cfg)
@@ -202,32 +203,32 @@ func TestBootstrap_SeedsWorkspaceOwnedTeamDirFromWorkspaceDefault(t *testing.T) 
 	}
 	t.Cleanup(func() { _ = app.db.Close() })
 
-	workspaceTeamDir := filepath.Join(workspaceRoot, ".gistclaw", "teams", "default")
+	storageTeamDir := filepath.Join(storageRoot, "teams", "default")
 	for _, name := range []string{"team.yaml", "assistant.soul.yaml", "patcher.soul.yaml"} {
-		if _, err := os.Stat(filepath.Join(workspaceTeamDir, name)); err != nil {
-			t.Fatalf("expected workspace-owned team file %q to exist: %v", name, err)
+		if _, err := os.Stat(filepath.Join(storageTeamDir, name)); err != nil {
+			t.Fatalf("expected storage-owned team file %q to exist: %v", name, err)
 		}
 	}
 
-	sourceCfg, err := teams.LoadConfig(filepath.Join(workspaceRoot, "teams", "default"))
+	sourceCfg, err := teams.LoadConfig(storageTeamDir)
 	if err != nil {
-		t.Fatalf("load source team: %v", err)
+		t.Fatalf("load storage team: %v", err)
 	}
 	runtimeCfg, err := app.runtime.TeamConfig(context.Background())
 	if err != nil {
 		t.Fatalf("load runtime team: %v", err)
 	}
 	if runtimeCfg.Name != sourceCfg.Name || runtimeCfg.FrontAgent != sourceCfg.FrontAgent {
-		t.Fatalf("expected workspace-owned team copy to match source, got %+v want %+v", runtimeCfg, sourceCfg)
+		t.Fatalf("expected storage-owned team to match runtime config, got %+v want %+v", runtimeCfg, sourceCfg)
 	}
 }
 
-func TestBootstrap_SeedsWorkspaceOwnedTeamDirFromShippedDefaultWhenWorkspaceIsEmpty(t *testing.T) {
-	workspaceRoot := t.TempDir()
+func TestBootstrap_SeedsStorageOwnedTeamDirFromShippedDefaultWhenStorageIsEmpty(t *testing.T) {
+	storageRoot := t.TempDir()
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: workspaceRoot,
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  storageRoot,
 	}
 
 	app, err := Bootstrap(cfg)
@@ -236,10 +237,10 @@ func TestBootstrap_SeedsWorkspaceOwnedTeamDirFromShippedDefaultWhenWorkspaceIsEm
 	}
 	t.Cleanup(func() { _ = app.db.Close() })
 
-	workspaceTeamDir := filepath.Join(workspaceRoot, ".gistclaw", "teams", "default")
+	storageTeamDir := filepath.Join(storageRoot, "teams", "default")
 	for _, name := range []string{"team.yaml", "coordinator.soul.yaml", "patcher.soul.yaml"} {
-		if _, err := os.Stat(filepath.Join(workspaceTeamDir, name)); err != nil {
-			t.Fatalf("expected workspace-owned team file %q to exist: %v", name, err)
+		if _, err := os.Stat(filepath.Join(storageTeamDir, name)); err != nil {
+			t.Fatalf("expected storage-owned team file %q to exist: %v", name, err)
 		}
 	}
 
@@ -248,16 +249,16 @@ func TestBootstrap_SeedsWorkspaceOwnedTeamDirFromShippedDefaultWhenWorkspaceIsEm
 		t.Fatalf("load runtime team: %v", err)
 	}
 	if runtimeCfg.Name == "" {
-		t.Fatal("expected empty workspace to receive shipped default team")
+		t.Fatal("expected empty storage root to receive shipped default team")
 	}
 }
 
-func TestBootstrap_UsesWorkspaceOwnedTeamDirForEdits(t *testing.T) {
-	workspaceRoot := workspaceRootWithDefaultTeam(t)
+func TestBootstrap_UsesStorageOwnedTeamDirForEdits(t *testing.T) {
+	storageRoot := storageRootWithDefaultTeam(t)
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: workspaceRoot,
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  storageRoot,
 	}
 
 	app, err := Bootstrap(cfg)
@@ -277,26 +278,15 @@ func TestBootstrap_UsesWorkspaceOwnedTeamDirForEdits(t *testing.T) {
 		t.Fatalf("update runtime team: %v", err)
 	}
 
-	sourceCfg, err := teams.LoadConfig(filepath.Join(workspaceRoot, "teams", "default"))
+	storageCfg, err := teams.LoadConfig(filepath.Join(storageRoot, "teams", "default"))
 	if err != nil {
-		t.Fatalf("reload source team: %v", err)
+		t.Fatalf("reload storage team: %v", err)
 	}
-	if sourceCfg.Name != "default" {
-		t.Fatalf("expected checked-in workspace team to stay unchanged, got %q", sourceCfg.Name)
+	if storageCfg.Name != "Workspace Operators" {
+		t.Fatalf("expected storage-owned team to receive edit, got %q", storageCfg.Name)
 	}
-	if sourceCfg.Agents[0].Role != "assistant" {
-		t.Fatalf("expected checked-in workspace soul to stay unchanged, got %q", sourceCfg.Agents[0].Role)
-	}
-
-	workspaceCfg, err := teams.LoadConfig(filepath.Join(workspaceRoot, ".gistclaw", "teams", "default"))
-	if err != nil {
-		t.Fatalf("reload workspace-owned team: %v", err)
-	}
-	if workspaceCfg.Name != "Workspace Operators" {
-		t.Fatalf("expected workspace-owned team to receive edit, got %q", workspaceCfg.Name)
-	}
-	if workspaceCfg.Agents[0].Role != "workspace owner" {
-		t.Fatalf("expected workspace-owned soul edit, got %q", workspaceCfg.Agents[0].Role)
+	if storageCfg.Agents[0].Role != "workspace owner" {
+		t.Fatalf("expected storage-owned soul edit, got %q", storageCfg.Agents[0].Role)
 	}
 }
 

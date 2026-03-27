@@ -28,13 +28,17 @@ func findModuleRoot(t *testing.T) string {
 }
 
 // makeValidConfig writes a minimal valid config.yaml and returns the path.
-func makeValidConfig(t *testing.T, dbPath, workspaceRoot string) string {
+func makeValidConfig(t *testing.T, dbPath, storageRoot string) string {
 	t.Helper()
 	cfgDir := t.TempDir()
 	cfgPath := filepath.Join(cfgDir, "config.yaml")
-	content := "provider:\n  name: anthropic\n  api_key: sk-test\ndatabase_path: " + dbPath + "\nworkspace_root: " + workspaceRoot + "\n"
+	content := "provider:\n  name: anthropic\n  api_key: sk-test\ndatabase_path: " + dbPath + "\nstorage_root: " + storageRoot + "\n"
 	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("write config: %v", err)
 	}
 	return cfgPath
+}
+
+func testOptions(configPath string) globalOptions {
+	return globalOptions{ConfigPath: configPath}
 }

@@ -4,24 +4,28 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/tools"
 	"go.yaml.in/yaml/v4"
 )
 
 type Config struct {
-	WorkspaceRoot string               `yaml:"workspace_root"`
-	StateDir      string               `yaml:"state_dir"`
-	DatabasePath  string               `yaml:"database_path"`
-	TeamDir       string               `yaml:"team_dir"`
-	Provider      ProviderConfig       `yaml:"provider"`
-	Research      tools.ResearchConfig `yaml:"research"`
-	MCP           tools.MCPOptions     `yaml:"mcp"`
-	Telegram      TelegramConfig       `yaml:"telegram"`
-	WhatsApp      WhatsAppConfig       `yaml:"whatsapp"`
-	Web           WebConfig            `yaml:"web"`
-	AdminToken    string               `yaml:"-"`
+	StorageRoot    string                   `yaml:"storage_root"`
+	StateDir       string                   `yaml:"state_dir"`
+	DatabasePath   string                   `yaml:"database_path"`
+	TeamDir        string                   `yaml:"team_dir"`
+	ApprovalMode   authority.ApprovalMode   `yaml:"approval_mode"`
+	HostAccessMode authority.HostAccessMode `yaml:"host_access_mode"`
+	Provider       ProviderConfig           `yaml:"provider"`
+	Research       tools.ResearchConfig     `yaml:"research"`
+	MCP            tools.MCPOptions         `yaml:"mcp"`
+	Telegram       TelegramConfig           `yaml:"telegram"`
+	WhatsApp       WhatsAppConfig           `yaml:"whatsapp"`
+	Web            WebConfig                `yaml:"web"`
+	AdminToken     string                   `yaml:"-"`
 }
 
 type ProviderConfig struct {
@@ -94,13 +98,13 @@ func LoadInstallConfig(path string) (Config, error) {
 		return Config{}, err
 	}
 	databasePathProvided := cfg.DatabasePath != ""
-	workspaceRootProvided := cfg.WorkspaceRoot != ""
+	storageRootProvided := strings.TrimSpace(cfg.StorageRoot) != ""
 	cfg.applyDefaults(SystemdWorkingDirectory)
 	if !databasePathProvided {
 		return Config{}, fmt.Errorf("config validation: database_path is required for install config")
 	}
-	if !workspaceRootProvided {
-		return Config{}, fmt.Errorf("config validation: workspace_root is required for install config")
+	if !storageRootProvided {
+		return Config{}, fmt.Errorf("config validation: storage_root is required for install config")
 	}
 	if err := cfg.validateForInstall(); err != nil {
 		return Config{}, err
@@ -123,6 +127,9 @@ func (c *Config) validateForInstall() error {
 }
 
 func (c *Config) validateCommon() error {
+	if strings.TrimSpace(c.StorageRoot) == "" {
+		return fmt.Errorf("config validation: storage_root is required")
+	}
 	if c.Provider.Name == "" {
 		return fmt.Errorf("config validation: provider name is required")
 	}
@@ -148,25 +155,33 @@ func (c *Config) validateCommon() error {
 	if err := validateMCPConfig(c.MCP); err != nil {
 		return err
 	}
+	if c.ApprovalMode != "" &&
+		c.ApprovalMode != authority.ApprovalModePrompt &&
+		c.ApprovalMode != authority.ApprovalModeAutoApprove {
+		return fmt.Errorf("config validation: unknown approval_mode %q", c.ApprovalMode)
+	}
+	if c.HostAccessMode != "" &&
+		c.HostAccessMode != authority.HostAccessModeStandard &&
+		c.HostAccessMode != authority.HostAccessModeElevated {
+		return fmt.Errorf("config validation: unknown host_access_mode %q", c.HostAccessMode)
+	}
 
 	return nil
 }
 
 func (c *Config) validateRuntimePaths() error {
-	if c.WorkspaceRoot != "" {
-		info, err := os.Stat(c.WorkspaceRoot)
-		if err != nil {
-			return fmt.Errorf("config validation: workspace_root %q: %w", c.WorkspaceRoot, err)
-		}
-		if !info.IsDir() {
-			return fmt.Errorf("config validation: workspace_root %q is not a directory", c.WorkspaceRoot)
-		}
+	info, err := os.Stat(c.StorageRoot)
+	if err != nil {
+		return fmt.Errorf("config validation: storage_root %q: %w", c.StorageRoot, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("config validation: storage_root %q is not a directory", c.StorageRoot)
 	}
 	return nil
 }
 
 func (c *Config) validateInstallPaths() error {
-	if err := validateInstallDirectory("workspace_root", c.WorkspaceRoot); err != nil {
+	if err := validateInstallDirectory("storage_root", c.StorageRoot); err != nil {
 		return err
 	}
 	if err := validateInstallDirectory("state_dir", c.StateDir); err != nil {
@@ -185,6 +200,12 @@ func (c *Config) applyDefaults(defaultStateDir string) {
 
 	if c.DatabasePath == "" {
 		c.DatabasePath = filepath.Join(c.StateDir, "runtime.db")
+	}
+	if c.ApprovalMode == "" {
+		c.ApprovalMode = authority.ApprovalModePrompt
+	}
+	if c.HostAccessMode == "" {
+		c.HostAccessMode = authority.HostAccessModeStandard
 	}
 	if c.Provider.Name == "openai" && c.Provider.WireAPI == "" {
 		c.Provider.WireAPI = "chat_completions"

@@ -25,6 +25,7 @@ type Options struct {
 	Replay          *replay.Service
 	Broadcaster     *SSEBroadcaster
 	Runtime         *runtime.Runtime
+	StorageRoot     string
 	WhatsAppWebhook http.Handler
 	ConnectorHealth connectorHealthSource
 }
@@ -34,6 +35,7 @@ type Server struct {
 	replay          *replay.Service
 	broadcaster     *SSEBroadcaster
 	rt              *runtime.Runtime
+	storageRoot     string
 	whatsAppWebhook http.Handler
 	connectorHealth connectorHealthSource
 	templates       *template.Template
@@ -55,9 +57,9 @@ type layoutData struct {
 }
 
 type shellProjectLayout struct {
-	ActiveName          string
-	ActiveWorkspaceRoot string
-	Options             []shellProjectOption
+	ActiveName        string
+	ActiveProjectPath string
+	Options           []shellProjectOption
 }
 
 type shellProjectOption struct {
@@ -87,6 +89,7 @@ func NewServer(opts Options) (*Server, error) {
 		replay:          opts.Replay,
 		broadcaster:     opts.Broadcaster,
 		rt:              opts.Runtime,
+		storageRoot:     opts.StorageRoot,
 		whatsAppWebhook: opts.WhatsAppWebhook,
 		connectorHealth: opts.ConnectorHealth,
 		templates:       tpls,
@@ -259,8 +262,8 @@ func (s *Server) projectLayoutData(r *http.Request) (shellProjectLayout, error) 
 	}
 
 	layout := shellProjectLayout{
-		ActiveName:          project.Name,
-		ActiveWorkspaceRoot: project.PrimaryPath,
+		ActiveName:        project.Name,
+		ActiveProjectPath: project.PrimaryPath,
 	}
 	for _, candidate := range projects {
 		if candidate.ID == "" {

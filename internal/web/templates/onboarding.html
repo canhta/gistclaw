@@ -7,12 +7,12 @@
 {{if .Error}}
 <p class="error">{{.Error}}</p>
 {{end}}
-{{if .ActiveWorkspaceRoot}}
+{{if .ActiveProjectPath}}
 <section class="panel stack-md">
   <div>
     <span class="panel-kicker">Starter project</span>
     <h2>{{if .ActiveProjectName}}{{.ActiveProjectName}}{{else}}starter project{{end}}</h2>
-    <p class="panel-note">Ready at <span class="mono">{{.ActiveWorkspaceRoot}}</span>. Use it if you want to try GistClaw in a fresh local repo.</p>
+    <p class="panel-note">Ready at <span class="mono">{{.ActiveProjectPath}}</span>. Use it if you want to try GistClaw in a fresh local repo.</p>
   </div>
   <form method="POST" action="/onboarding">
     <input type="hidden" name="action" value="use_starter">
@@ -25,8 +25,8 @@
 <section class="panel">
   <form class="stack-md" method="POST" action="/onboarding">
     <div class="field">
-      <label for="workspace_root">Existing Repo Path</label>
-      <input class="input-wide" type="text" id="workspace_root" name="workspace_root" placeholder="/home/you/projects/myrepo">
+      <label for="project_path">Existing Repo Path</label>
+      <input class="input-wide" type="text" id="project_path" name="project_path" placeholder="/home/you/projects/myrepo">
       <p class="field-help">It must already exist and include a <code>.git</code> directory.</p>
     </div>
     <div class="button-row">
@@ -38,8 +38,8 @@
   <form class="stack-md" method="POST" action="/onboarding">
     <input type="hidden" name="action" value="create_new">
     <div class="field">
-      <label for="new_workspace_root">New Project Path</label>
-      <input class="input-wide" type="text" id="new_workspace_root" name="new_workspace_root" placeholder="/home/you/projects/new-project">
+      <label for="new_project_path">New Project Path</label>
+      <input class="input-wide" type="text" id="new_project_path" name="new_project_path" placeholder="/home/you/projects/new-project">
       <p class="field-help">It can be a new path or an empty directory. GistClaw will create it and make it active.</p>
     </div>
     <div class="button-row">

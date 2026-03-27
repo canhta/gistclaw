@@ -44,7 +44,6 @@ func (a *App) RunTask(ctx context.Context, objective string) (model.Run, error) 
 		ConversationID: conv.ID,
 		AgentID:        "cli-operator",
 		Objective:      objective,
-		CWD:            a.cfg.WorkspaceRoot,
 		AccountID:      "local",
 	})
 }

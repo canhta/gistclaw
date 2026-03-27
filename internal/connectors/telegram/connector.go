@@ -37,11 +37,10 @@ func NewConnector(
 	cs *conversations.ConversationStore,
 	rt ConnectorRuntime,
 	defaultAgentID string,
-	workspaceRoot string,
 ) *Connector {
 	health := newHealthState(nil)
 	outbound := NewOutboundDispatcher(token, db, cs, health)
-	inbound := NewInboundDispatcher(rt, defaultAgentID, workspaceRoot)
+	inbound := NewInboundDispatcher(rt, defaultAgentID)
 	connector := &Connector{
 		outbound:      outbound,
 		sender:        outbound,

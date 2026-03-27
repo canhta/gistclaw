@@ -77,7 +77,6 @@ func Bootstrap(cfg Config) (*App, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	cfg.WorkspaceRoot = project.PrimaryPath
 
 	teamDir, err := prepareTeamDir(cfg)
 	if err != nil {
@@ -155,6 +154,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		Replay:          rp,
 		Broadcaster:     broadcaster,
 		Runtime:         rt,
+		StorageRoot:     cfg.StorageRoot,
 		WhatsAppWebhook: buildWhatsAppWebhook(cfg, db, convStore, rt, whatsappHealth),
 		ConnectorHealth: application,
 	})
@@ -173,10 +173,10 @@ func resolveTeamDir(cfg Config) string {
 	if cfg.TeamDir != "" {
 		return cfg.TeamDir
 	}
-	if cfg.WorkspaceRoot == "" {
+	if cfg.StorageRoot == "" {
 		return ""
 	}
-	return filepath.Join(cfg.WorkspaceRoot, ".gistclaw", "teams", "default")
+	return filepath.Join(cfg.StorageRoot, "teams", "default")
 }
 
 func prepareTeamDir(cfg Config) (string, error) {
@@ -187,36 +187,17 @@ func prepareTeamDir(cfg Config) (string, error) {
 
 	if info, err := os.Stat(teamDir); err == nil {
 		if !info.IsDir() {
-			return "", fmt.Errorf("bootstrap: workspace team dir %q is not a directory", teamDir)
+			return "", fmt.Errorf("bootstrap: storage team dir %q is not a directory", teamDir)
 		}
 		return teamDir, nil
 	} else if !os.IsNotExist(err) {
-		return "", fmt.Errorf("bootstrap: stat workspace team dir: %w", err)
-	}
-
-	sourceDir := filepath.Join(cfg.WorkspaceRoot, "teams", "default")
-	info, err := os.Stat(sourceDir)
-	if err == nil {
-		if !info.IsDir() {
-			return "", fmt.Errorf("bootstrap: source team dir %q is not a directory", sourceDir)
-		}
-		if err := copyDirectory(sourceDir, teamDir); err != nil {
-			return "", fmt.Errorf("bootstrap: seed workspace team dir: %w", err)
-		}
-		return teamDir, nil
-	}
-	if !os.IsNotExist(err) {
-		return "", fmt.Errorf("bootstrap: stat source team dir: %w", err)
+		return "", fmt.Errorf("bootstrap: stat storage team dir: %w", err)
 	}
 
 	if err := copyFS(shippedteams.Default(), teamDir); err != nil {
 		return "", fmt.Errorf("bootstrap: seed shipped team dir: %w", err)
 	}
 	return teamDir, nil
-}
-
-func copyDirectory(srcDir, dstDir string) error {
-	return copyFS(os.DirFS(srcDir), dstDir)
 }
 
 func copyFS(src fs.FS, dstDir string) error {
@@ -292,6 +273,12 @@ func ensureAdminToken(db *store.DB) error {
 }
 
 func seedOperatorSettings(db *store.DB, cfg Config) error {
+	if err := insertSettingIfMissing(db, "approval_mode", string(cfg.ApprovalMode)); err != nil {
+		return fmt.Errorf("bootstrap: seed approval_mode: %w", err)
+	}
+	if err := insertSettingIfMissing(db, "host_access_mode", string(cfg.HostAccessMode)); err != nil {
+		return fmt.Errorf("bootstrap: seed host_access_mode: %w", err)
+	}
 	if err := insertSettingIfMissing(db, "telegram_bot_token", cfg.Telegram.BotToken); err != nil {
 		return fmt.Errorf("bootstrap: seed telegram_bot_token: %w", err)
 	}
@@ -348,13 +335,6 @@ func ensureProjectState(ctx context.Context, db *store.DB, cfg Config) (model.Pr
 			return model.Project{}, fmt.Errorf("bootstrap: sync active project: %w", err)
 		}
 		return activeProject, nil
-	}
-	if cfg.WorkspaceRoot != "" {
-		project, err := runtime.ActivateProjectPath(ctx, db, cfg.WorkspaceRoot, "", "config")
-		if err != nil {
-			return model.Project{}, fmt.Errorf("bootstrap: activate configured project path: %w", err)
-		}
-		return project, nil
 	}
 	project, err := createStarterProject(ctx, db)
 	if err != nil {
@@ -495,7 +475,6 @@ func buildConnectors(
 			cs,
 			rt,
 			cfg.Telegram.AgentID,
-			cfg.WorkspaceRoot,
 		))
 	}
 	if cfg.WhatsApp.PhoneNumberID != "" && cfg.WhatsApp.AccessToken != "" {
@@ -530,7 +509,6 @@ func buildWhatsAppWebhook(
 	return whatsappconnector.NewWebhookHandler(
 		cfg.WhatsApp.VerifyToken,
 		cfg.WhatsApp.AgentID,
-		cfg.WorkspaceRoot,
 		rt,
 		sender,
 		health,

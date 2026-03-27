@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/canhta/gistclaw/internal/app"
 	"github.com/canhta/gistclaw/internal/scheduler"
 )
 
@@ -34,13 +33,13 @@ Add flags:
   --disabled
 `
 
-func runSchedule(configPath string, args []string, stdout, stderr io.Writer) int {
+func runSchedule(opts globalOptions, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, scheduleUsage)
 		return 1
 	}
 
-	application, err := loadApp(configPath)
+	application, err := loadApp(opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
 		return 1
@@ -419,10 +418,6 @@ func formatTime(ts time.Time) string {
 		return ""
 	}
 	return ts.UTC().Format(time.RFC3339)
-}
-
-func loadScheduleApp(configPath string) (*app.App, error) {
-	return loadApp(configPath)
 }
 
 func stringPtr(value string) *string {

@@ -16,7 +16,7 @@ var (
 	authReadPassword = func(fd int) ([]byte, error) { return term.ReadPassword(fd) }
 )
 
-func runAuth(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func runAuth(opts globalOptions, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "Usage: gistclaw auth set-password [--password-stdin]")
 		return 1
@@ -24,14 +24,14 @@ func runAuth(configPath string, args []string, stdin io.Reader, stdout, stderr i
 
 	switch args[0] {
 	case "set-password":
-		return runAuthSetPassword(configPath, args[1:], stdin, stdout, stderr)
+		return runAuthSetPassword(opts, args[1:], stdin, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown auth subcommand: %s\n", args[0])
 		return 1
 	}
 }
 
-func runAuthSetPassword(configPath string, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func runAuthSetPassword(opts globalOptions, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	usePasswordStdin := false
 	for _, arg := range args {
 		switch arg {
@@ -49,7 +49,7 @@ func runAuthSetPassword(configPath string, args []string, stdin io.Reader, stdou
 		return 1
 	}
 
-	application, err := loadApp(configPath)
+	application, err := loadApp(opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
 		return 1

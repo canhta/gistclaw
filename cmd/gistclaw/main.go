@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/canhta/gistclaw/internal/app"
+	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/store"
 )
 
@@ -25,7 +26,7 @@ Subcommands:
   version    Print release/build metadata
   inspect    Inspect daemon state
   security   Run deployment security audit
-  doctor     Run health checks (config, database, provider, workspace, storage, scheduler)
+  doctor     Run health checks (config, database, provider, storage_root, storage, scheduler)
   backup     Back up the SQLite database to a timestamped .db.bak file
   export     Export runs, receipts, and approvals to a JSON file
   schedule   Manage scheduled tasks
@@ -39,9 +40,17 @@ Inspect subcommands:
   inspect token            Print admin token from settings table
 
 Flags:
-  -h, --help         Show this help message
-  -c, --config PATH  Use an explicit config file
+  -h, --help                          Show this help message
+  -c, --config PATH                   Use an explicit config file
+  --dangerously-skip-permissions      Auto-approve mutating operations
+  --elevated-host-access              Allow sensitive host access
 `
+
+type globalOptions struct {
+	ConfigPath     string
+	ApprovalMode   authority.ApprovalMode
+	HostAccessMode authority.HostAccessMode
+}
 
 func main() {
 	os.Exit(runWithInput(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
@@ -57,7 +66,7 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		return 1
 	}
 
-	configPath, args, err := parseConfigPath(args)
+	opts, args, err := parseGlobalOptions(args)
 	if err != nil {
 		fmt.Fprintf(stderr, "%v\n", err)
 		return 1
@@ -68,33 +77,33 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		fmt.Fprint(stdout, usage)
 		return 0
 	case "auth":
-		return runAuth(configPath, args[1:], stdin, stdout, stderr)
+		return runAuth(opts, args[1:], stdin, stdout, stderr)
 	case "serve":
-		return runServe(configPath, stdout, stderr)
+		return runServe(opts, stdout, stderr)
 	case "run":
-		return runTask(configPath, args[1:], stdout, stderr)
+		return runTask(opts, args[1:], stdout, stderr)
 	case "version":
 		return runVersion(stdout, stderr)
 	case "inspect":
-		return runInspect(configPath, args[1:], stdout, stderr)
+		return runInspect(opts, args[1:], stdout, stderr)
 	case "security":
-		return runSecurity(configPath, args[1:], stdout, stderr)
+		return runSecurity(opts, args[1:], stdout, stderr)
 	case "doctor":
-		return runDoctor(configPath, stdout, stderr)
+		return runDoctor(opts, stdout, stderr)
 	case "backup":
 		return runBackup(args[1:], stdout, stderr)
 	case "export":
 		return runExport(args[1:], stdout, stderr)
 	case "schedule":
-		return runSchedule(configPath, args[1:], stdout, stderr)
+		return runSchedule(opts, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command: %s\n\n%s", args[0], usage)
 		return 1
 	}
 }
 
-func runServe(configPath string, stdout, stderr io.Writer) int {
-	application, err := loadPreparedApp(configPath)
+func runServe(opts globalOptions, stdout, stderr io.Writer) int {
+	application, err := loadPreparedApp(opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
 		return 1
@@ -112,14 +121,14 @@ func runServe(configPath string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runTask(configPath string, args []string, stdout, stderr io.Writer) int {
+func runTask(opts globalOptions, args []string, stdout, stderr io.Writer) int {
 	objective := strings.TrimSpace(strings.Join(args, " "))
 	if objective == "" {
 		fmt.Fprintln(stderr, "Usage: gistclaw run [--config path] <objective>")
 		return 1
 	}
 
-	application, err := loadPreparedApp(configPath)
+	application, err := loadPreparedApp(opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
 		return 1
@@ -136,7 +145,7 @@ func runTask(configPath string, args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runInspect(configPath string, args []string, stdout, stderr io.Writer) int {
+func runInspect(opts globalOptions, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprint(stderr, "Usage: gistclaw inspect <subcommand>\n\nSubcommands:\n  status        Show active runs, interrupted runs, approvals, and storage health\n  runs          List all runs with status\n  replay        Print replay for a run\n  config-paths  Print installer-owned directories for a config file\n  systemd-unit  Print the canonical systemd service unit\n  token         Print admin token\n")
 		return 1
@@ -144,20 +153,20 @@ func runInspect(configPath string, args []string, stdout, stderr io.Writer) int 
 
 	switch args[0] {
 	case "config-paths":
-		cfg, err := app.LoadInstallConfig(configPath)
+		cfg, err := app.LoadInstallConfig(opts.ConfigPath)
 		if err != nil {
 			fmt.Fprintf(stderr, "inspect config-paths failed: %v\n", err)
 			return 1
 		}
 		fmt.Fprintf(stdout, "state_dir: %s\n", cfg.StateDir)
 		fmt.Fprintf(stdout, "database_dir: %s\n", filepath.Dir(cfg.DatabasePath))
-		fmt.Fprintf(stdout, "workspace_root: %s\n", cfg.WorkspaceRoot)
+		fmt.Fprintf(stdout, "storage_root: %s\n", cfg.StorageRoot)
 		return 0
 	case "systemd-unit":
 		fmt.Fprint(stdout, app.RenderSystemdUnit(systemdBinaryPath(), systemdConfigPath()))
 		return 0
 	case "status":
-		application, err := loadApp(configPath)
+		application, err := loadApp(opts)
 		if err != nil {
 			fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
 			return 1
@@ -181,7 +190,7 @@ func runInspect(configPath string, args []string, stdout, stderr io.Writer) int 
 		}
 		return 0
 	case "runs":
-		application, err := loadApp(configPath)
+		application, err := loadApp(opts)
 		if err != nil {
 			fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
 			return 1
@@ -197,7 +206,7 @@ func runInspect(configPath string, args []string, stdout, stderr io.Writer) int 
 		}
 		return 0
 	case "replay":
-		application, err := loadApp(configPath)
+		application, err := loadApp(opts)
 		if err != nil {
 			fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
 			return 1
@@ -218,7 +227,7 @@ func runInspect(configPath string, args []string, stdout, stderr io.Writer) int 
 		}
 		return 0
 	case "token":
-		application, err := loadApp(configPath)
+		application, err := loadApp(opts)
 		if err != nil {
 			fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
 			return 1
@@ -237,32 +246,36 @@ func runInspect(configPath string, args []string, stdout, stderr io.Writer) int 
 	}
 }
 
-func parseConfigPath(args []string) (string, []string, error) {
-	configPath := os.Getenv("GISTCLAW_CONFIG")
+func parseGlobalOptions(args []string) (globalOptions, []string, error) {
+	opts := globalOptions{ConfigPath: os.Getenv("GISTCLAW_CONFIG")}
 	rest := make([]string, 0, len(args))
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "-c", "--config":
 			if i+1 >= len(args) {
-				return "", nil, fmt.Errorf("missing value for %s", args[i])
+				return globalOptions{}, nil, fmt.Errorf("missing value for %s", args[i])
 			}
-			configPath = args[i+1]
+			opts.ConfigPath = args[i+1]
 			i++
+		case "--dangerously-skip-permissions":
+			opts.ApprovalMode = authority.ApprovalModeAutoApprove
+		case "--elevated-host-access":
+			opts.HostAccessMode = authority.HostAccessModeElevated
 		default:
 			rest = append(rest, args[i])
 		}
 	}
 
-	if configPath == "" {
-		configPath = app.DefaultConfigPath()
+	if opts.ConfigPath == "" {
+		opts.ConfigPath = app.DefaultConfigPath()
 	}
 
-	return configPath, rest, nil
+	return opts, rest, nil
 }
 
-func loadApp(configPath string) (*app.App, error) {
-	cfg, err := app.LoadConfig(configPath)
+func loadApp(opts globalOptions) (*app.App, error) {
+	cfg, err := loadConfigWithOverrides(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -274,8 +287,8 @@ func loadApp(configPath string) (*app.App, error) {
 	return application, nil
 }
 
-func loadPreparedApp(configPath string) (*app.App, error) {
-	application, err := loadApp(configPath)
+func loadPreparedApp(opts globalOptions) (*app.App, error) {
+	application, err := loadApp(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -284,6 +297,36 @@ func loadPreparedApp(configPath string) (*app.App, error) {
 		return nil, err
 	}
 	return application, nil
+}
+
+func loadConfigWithOverrides(opts globalOptions) (app.Config, error) {
+	cfg, err := app.LoadConfig(opts.ConfigPath)
+	if err != nil {
+		return app.Config{}, err
+	}
+	applyConfigOverrides(&cfg, opts)
+	return cfg, nil
+}
+
+func loadConfigRawWithOverrides(opts globalOptions) (app.Config, error) {
+	cfg, err := app.LoadConfigRaw(opts.ConfigPath)
+	if err != nil {
+		return app.Config{}, err
+	}
+	applyConfigOverrides(&cfg, opts)
+	return cfg, nil
+}
+
+func applyConfigOverrides(cfg *app.Config, opts globalOptions) {
+	if cfg == nil {
+		return
+	}
+	if opts.ApprovalMode != "" {
+		cfg.ApprovalMode = opts.ApprovalMode
+	}
+	if opts.HostAccessMode != "" {
+		cfg.HostAccessMode = opts.HostAccessMode
+	}
 }
 
 func joinStorageWarnings(warnings []store.HealthWarning) string {

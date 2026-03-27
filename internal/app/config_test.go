@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/tools"
 )
@@ -23,7 +24,7 @@ func TestConfig_DefaultPath(t *testing.T) {
 	}
 }
 
-func TestConfig_OptionalWorkspaceRoot(t *testing.T) {
+func TestConfig_RequiresStorageRoot(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(cfgPath, []byte(`
@@ -39,11 +40,44 @@ provider:
 	}
 
 	cfg, err := LoadConfig(cfgPath)
-	if err != nil {
-		t.Fatalf("unexpected error for missing workspace_root: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "storage_root") {
+		t.Fatalf("expected storage_root error, got %v", err)
 	}
-	if cfg.WorkspaceRoot != "" {
-		t.Fatalf("expected empty workspace_root, got %q", cfg.WorkspaceRoot)
+	if cfg.StateDir != "" {
+		t.Fatalf("expected zero config on load failure, got %#v", cfg)
+	}
+}
+
+func TestConfig_DefaultPermissionModes(t *testing.T) {
+	dir := t.TempDir()
+	storageRoot := filepath.Join(dir, "storage")
+	if err := os.Mkdir(storageRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cfgPath := filepath.Join(dir, "config.yaml")
+	err := os.WriteFile(cfgPath, []byte(`
+storage_root: `+storageRoot+`
+provider:
+  name: anthropic
+  api_key: sk-test-1234
+  models:
+    cheap: claude-3-haiku
+    strong: claude-sonnet-4-20250514
+`), 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("unexpected error for default permission modes: %v", err)
+	}
+	if cfg.ApprovalMode != authority.ApprovalModePrompt {
+		t.Fatalf("expected default approval_mode %q, got %q", authority.ApprovalModePrompt, cfg.ApprovalMode)
+	}
+	if cfg.HostAccessMode != authority.HostAccessModeStandard {
+		t.Fatalf("expected default host_access_mode %q, got %q", authority.HostAccessModeStandard, cfg.HostAccessMode)
 	}
 	if cfg.StateDir == "" {
 		t.Fatal("expected StateDir to have a default value")
@@ -52,14 +86,14 @@ provider:
 
 func TestConfig_MissingAPIKey(t *testing.T) {
 	dir := t.TempDir()
-	wsDir := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(wsDir, 0o755); err != nil {
+	storageRoot := filepath.Join(dir, "storage")
+	if err := os.Mkdir(storageRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	cfgPath := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(cfgPath, []byte(`
-workspace_root: `+wsDir+`
+storage_root: `+storageRoot+`
 provider:
   name: anthropic
   models:
@@ -81,14 +115,14 @@ provider:
 
 func TestConfig_UnknownProvider(t *testing.T) {
 	dir := t.TempDir()
-	wsDir := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(wsDir, 0o755); err != nil {
+	storageRoot := filepath.Join(dir, "storage")
+	if err := os.Mkdir(storageRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	cfgPath := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(cfgPath, []byte(`
-workspace_root: `+wsDir+`
+storage_root: `+storageRoot+`
 provider:
   name: cohere
   api_key: sk-test-1234
@@ -111,14 +145,16 @@ provider:
 
 func TestConfig_ValidConfig(t *testing.T) {
 	dir := t.TempDir()
-	wsDir := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(wsDir, 0o755); err != nil {
+	storageRoot := filepath.Join(dir, "storage")
+	if err := os.Mkdir(storageRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	cfgPath := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(cfgPath, []byte(`
-workspace_root: `+wsDir+`
+storage_root: `+storageRoot+`
+approval_mode: auto_approve
+host_access_mode: elevated
 provider:
   name: anthropic
   api_key: sk-test-1234
@@ -134,8 +170,14 @@ provider:
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.WorkspaceRoot != wsDir {
-		t.Fatalf("expected workspace_root %q, got %q", wsDir, cfg.WorkspaceRoot)
+	if cfg.StorageRoot != storageRoot {
+		t.Fatalf("expected storage_root %q, got %q", storageRoot, cfg.StorageRoot)
+	}
+	if cfg.ApprovalMode != authority.ApprovalModeAutoApprove {
+		t.Fatalf("expected approval_mode %q, got %q", authority.ApprovalModeAutoApprove, cfg.ApprovalMode)
+	}
+	if cfg.HostAccessMode != authority.HostAccessModeElevated {
+		t.Fatalf("expected host_access_mode %q, got %q", authority.HostAccessModeElevated, cfg.HostAccessMode)
 	}
 	if cfg.Provider.Name != "anthropic" {
 		t.Fatalf("expected provider name %q, got %q", "anthropic", cfg.Provider.Name)
@@ -159,14 +201,14 @@ provider:
 
 func TestConfig_OpenAIWireAPI(t *testing.T) {
 	dir := t.TempDir()
-	wsDir := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(wsDir, 0o755); err != nil {
+	storageRoot := filepath.Join(dir, "storage")
+	if err := os.Mkdir(storageRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	cfgPath := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(cfgPath, []byte(`
-workspace_root: `+wsDir+`
+storage_root: `+storageRoot+`
 provider:
   name: openai
   api_key: sk-test-1234
@@ -217,13 +259,13 @@ func TestLoadInstallConfig_AllowsMissingOwnedPaths(t *testing.T) {
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "config.yaml")
 	dbPath := filepath.Join(dir, "srv", "data", "runtime.db")
-	workspaceRoot := filepath.Join(dir, "srv", "projects")
+	storageRoot := filepath.Join(dir, "srv", "storage")
 	err := os.WriteFile(cfgPath, []byte(`
 provider:
   name: openai
   api_key: sk-test-1234
 database_path: `+dbPath+`
-workspace_root: `+workspaceRoot+`
+storage_root: `+storageRoot+`
 `), 0o644)
 	if err != nil {
 		t.Fatal(err)
@@ -236,15 +278,15 @@ workspace_root: `+workspaceRoot+`
 	if cfg.DatabasePath != dbPath {
 		t.Fatalf("expected database_path %q, got %q", dbPath, cfg.DatabasePath)
 	}
-	if cfg.WorkspaceRoot != workspaceRoot {
-		t.Fatalf("expected workspace_root %q, got %q", workspaceRoot, cfg.WorkspaceRoot)
+	if cfg.StorageRoot != storageRoot {
+		t.Fatalf("expected storage_root %q, got %q", storageRoot, cfg.StorageRoot)
 	}
 }
 
-func TestLoadInstallConfig_RejectsWorkspaceFile(t *testing.T) {
+func TestLoadInstallConfig_RejectsStorageRootFile(t *testing.T) {
 	dir := t.TempDir()
-	workspaceFile := filepath.Join(dir, "workspace-file")
-	if err := os.WriteFile(workspaceFile, []byte("not-a-dir"), 0o644); err != nil {
+	storageFile := filepath.Join(dir, "storage-file")
+	if err := os.WriteFile(storageFile, []byte("not-a-dir"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	cfgPath := filepath.Join(dir, "config.yaml")
@@ -253,28 +295,28 @@ provider:
   name: openai
   api_key: sk-test-1234
 database_path: `+filepath.Join(dir, "runtime.db")+`
-workspace_root: `+workspaceFile+`
+storage_root: `+storageFile+`
 `), 0o644)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	_, err = LoadInstallConfig(cfgPath)
-	if err == nil || !strings.Contains(err.Error(), "workspace_root") {
-		t.Fatalf("expected workspace_root install validation error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "storage_root") {
+		t.Fatalf("expected storage_root install validation error, got %v", err)
 	}
 }
 
 func TestConfig_UnknownResearchProvider(t *testing.T) {
 	dir := t.TempDir()
-	wsDir := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(wsDir, 0o755); err != nil {
+	storageRoot := filepath.Join(dir, "storage")
+	if err := os.Mkdir(storageRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	cfgPath := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(cfgPath, []byte(`
-workspace_root: `+wsDir+`
+storage_root: `+storageRoot+`
 provider:
   name: anthropic
   api_key: sk-test-1234
@@ -294,14 +336,14 @@ research:
 
 func TestConfig_ResearchProviderRequiresAPIKey(t *testing.T) {
 	dir := t.TempDir()
-	wsDir := filepath.Join(dir, "workspace")
-	if err := os.Mkdir(wsDir, 0o755); err != nil {
+	storageRoot := filepath.Join(dir, "storage")
+	if err := os.Mkdir(storageRoot, 0o755); err != nil {
 		t.Fatal(err)
 	}
 
 	cfgPath := filepath.Join(dir, "config.yaml")
 	err := os.WriteFile(cfgPath, []byte(`
-workspace_root: `+wsDir+`
+storage_root: `+storageRoot+`
 provider:
   name: anthropic
   api_key: sk-test-1234
@@ -320,7 +362,7 @@ research:
 
 func TestConfig_RejectsUnknownMCPTransport(t *testing.T) {
 	cfg := Config{
-		WorkspaceRoot: t.TempDir(),
+		StorageRoot: t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -343,7 +385,7 @@ func TestConfig_RejectsUnknownMCPTransport(t *testing.T) {
 
 func TestConfig_RejectsDuplicateMCPAliases(t *testing.T) {
 	cfg := Config{
-		WorkspaceRoot: t.TempDir(),
+		StorageRoot: t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -370,7 +412,7 @@ func TestConfig_RejectsDuplicateMCPAliases(t *testing.T) {
 
 func TestConfig_RejectsHighRiskMCPTool(t *testing.T) {
 	cfg := Config{
-		WorkspaceRoot: t.TempDir(),
+		StorageRoot: t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -391,5 +433,35 @@ func TestConfig_RejectsHighRiskMCPTool(t *testing.T) {
 
 	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "risk") {
 		t.Fatalf("expected risk validation error, got %v", err)
+	}
+}
+
+func TestConfig_RejectsUnknownApprovalMode(t *testing.T) {
+	cfg := Config{
+		StorageRoot:  t.TempDir(),
+		ApprovalMode: authority.ApprovalMode("skip_all"),
+		Provider: ProviderConfig{
+			Name:   "anthropic",
+			APIKey: "sk-test",
+		},
+	}
+
+	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "approval_mode") {
+		t.Fatalf("expected approval_mode validation error, got %v", err)
+	}
+}
+
+func TestConfig_RejectsUnknownHostAccessMode(t *testing.T) {
+	cfg := Config{
+		StorageRoot:    t.TempDir(),
+		HostAccessMode: authority.HostAccessMode("god_mode"),
+		Provider: ProviderConfig{
+			Name:   "anthropic",
+			APIKey: "sk-test",
+		},
+	}
+
+	if err := cfg.validate(); err == nil || !strings.Contains(err.Error(), "host_access_mode") {
+		t.Fatalf("expected host_access_mode validation error, got %v", err)
 	}
 }

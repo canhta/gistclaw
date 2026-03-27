@@ -221,17 +221,20 @@ func TestMigrate_UsesHostExecutionSchema(t *testing.T) {
 	assertTableOmitsColumns(t, db, "schedules", "workspace_root")
 
 	for _, key := range []string{"storage_root", "approval_mode", "host_access_mode"} {
-		var value string
-		if err := db.db.QueryRow(`SELECT value FROM settings WHERE key = ?`, key).Scan(&value); err != nil {
-			if err == sql.ErrNoRows {
-				t.Fatalf("expected settings key %q to exist", key)
-			}
-			t.Fatalf("select settings %q: %v", key, err)
-		}
-		if value == "" {
-			t.Fatalf("expected settings key %q to have a non-empty value", key)
+		if hasSettingKey(t, db, key) {
+			t.Fatalf("expected settings key %q to be config-owned and absent from migration defaults", key)
 		}
 	}
+}
+
+func hasSettingKey(t *testing.T, db *DB, key string) bool {
+	t.Helper()
+
+	var count int
+	if err := db.db.QueryRow(`SELECT COUNT(*) FROM settings WHERE key = ?`, key).Scan(&count); err != nil {
+		t.Fatalf("count settings %q: %v", key, err)
+	}
+	return count > 0
 }
 
 func assertTableHasColumns(t *testing.T, db *DB, tableName string, columns ...string) {

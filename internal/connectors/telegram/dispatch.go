@@ -30,17 +30,14 @@ type InboundMessageReceiver interface {
 type InboundDispatcher struct {
 	rt             InboundMessageReceiver
 	defaultAgentID string
-	workspaceRoot  string
 }
 
 // NewInboundDispatcher creates a dispatcher that routes inbound envelopes to rt.ReceiveInboundMessage().
 // defaultAgentID is the agent assigned to new runs (e.g. "coordinator").
-// workspaceRoot is passed through to StartRun; may be empty if read from settings.
-func NewInboundDispatcher(rt InboundMessageReceiver, defaultAgentID, workspaceRoot string) *InboundDispatcher {
+func NewInboundDispatcher(rt InboundMessageReceiver, defaultAgentID string) *InboundDispatcher {
 	return &InboundDispatcher{
 		rt:             rt,
 		defaultAgentID: defaultAgentID,
-		workspaceRoot:  workspaceRoot,
 	}
 }
 
@@ -61,7 +58,6 @@ func (d *InboundDispatcher) Dispatch(ctx context.Context, env model.Envelope) er
 		FrontAgentID:    d.defaultAgentID,
 		Body:            env.Text,
 		SourceMessageID: env.MessageID,
-		CWD:             d.workspaceRoot,
 	})
 	if err != nil {
 		return fmt.Errorf("telegram: inbound dispatch: receive inbound message: %w", err)

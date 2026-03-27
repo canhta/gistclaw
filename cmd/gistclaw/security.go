@@ -5,17 +5,16 @@ import (
 	"io"
 	"strings"
 
-	"github.com/canhta/gistclaw/internal/app"
 	securitypkg "github.com/canhta/gistclaw/internal/security"
 )
 
-func runSecurity(configPath string, args []string, stdout, stderr io.Writer) int {
+func runSecurity(opts globalOptions, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 || args[0] != "audit" {
 		fmt.Fprintln(stderr, "Usage: gistclaw security audit")
 		return 1
 	}
 
-	cfg, err := app.LoadConfigRaw(configPath)
+	cfg, err := loadConfigRawWithOverrides(opts)
 	if err != nil {
 		fmt.Fprintf(stdout, "FAIL config.invalid  %v\n", err)
 		return 1

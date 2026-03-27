@@ -90,7 +90,7 @@ func TestConnector_StartDispatchesInboundAndDrainsOutbound(t *testing.T) {
 		t.Fatalf("seed outbound intent: %v", err)
 	}
 
-	connector := NewConnector("testtoken", db, cs, starter, "assistant", "")
+	connector := NewConnector("testtoken", db, cs, starter, "assistant")
 	connector.outbound.bot.apiBase = srv.URL + "/bot"
 	connector.drainInterval = 10 * time.Millisecond
 
@@ -153,7 +153,7 @@ func TestConnector_StartPublishesTelegramCommandMenu(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	connector := NewConnector("testtoken", db, cs, starter, "assistant", "")
+	connector := NewConnector("testtoken", db, cs, starter, "assistant")
 	connector.outbound.bot.apiBase = srv.URL + "/bot"
 
 	ctx, cancel := context.WithTimeout(context.Background(), 80*time.Millisecond)

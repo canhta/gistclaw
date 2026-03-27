@@ -5,14 +5,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/canhta/gistclaw/internal/runtime"
 	"github.com/canhta/gistclaw/internal/scheduler"
 )
 
 func TestApp_ScheduleLifecycleMethods(t *testing.T) {
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -38,8 +39,12 @@ func TestApp_ScheduleLifecycleMethods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSchedule returned error: %v", err)
 	}
-	if created.CWD != app.cfg.WorkspaceRoot {
-		t.Fatalf("CreateSchedule cwd = %q, want %q", created.CWD, app.cfg.WorkspaceRoot)
+	project, err := runtime.ActiveProject(context.Background(), app.db)
+	if err != nil {
+		t.Fatalf("ActiveProject returned error: %v", err)
+	}
+	if created.CWD != project.PrimaryPath {
+		t.Fatalf("CreateSchedule cwd = %q, want %q", created.CWD, project.PrimaryPath)
 	}
 
 	listed, err := app.ListSchedules(context.Background())
@@ -111,9 +116,9 @@ func TestApp_ScheduleLifecycleMethods(t *testing.T) {
 
 func TestApp_ScheduleStatusReturnsNextWakeAndCounts(t *testing.T) {
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",

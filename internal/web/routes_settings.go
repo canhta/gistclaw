@@ -7,10 +7,13 @@ import (
 	"time"
 
 	authpkg "github.com/canhta/gistclaw/internal/auth"
+	"github.com/canhta/gistclaw/internal/authority"
 )
 
 type settingsPageData struct {
-	WorkspaceRoot      string
+	StorageRoot        string
+	ApprovalMode       string
+	HostAccessMode     string
 	AdminToken         string // masked for display only
 	PerRunTokenBudget  string
 	DailyCostCapUSD    string
@@ -40,11 +43,19 @@ type settingsDeviceRow struct {
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	data := settingsPageData{
-		WorkspaceRoot:     lookupSetting(s.db, "workspace_root"),
+		StorageRoot:       s.storageRoot,
+		ApprovalMode:      lookupSetting(s.db, "approval_mode"),
+		HostAccessMode:    lookupSetting(s.db, "host_access_mode"),
 		PerRunTokenBudget: lookupSetting(s.db, "per_run_token_budget"),
 		DailyCostCapUSD:   lookupSetting(s.db, "daily_cost_cap_usd"),
 		AccessError:       strings.TrimSpace(r.URL.Query().Get("access_error")),
 		AccessNotice:      strings.TrimSpace(r.URL.Query().Get("access_notice")),
+	}
+	if data.ApprovalMode == "" {
+		data.ApprovalMode = string(authority.ApprovalModePrompt)
+	}
+	if data.HostAccessMode == "" {
+		data.HostAccessMode = string(authority.HostAccessModeStandard)
 	}
 
 	// Read rolling 24-hour cost from receipts.
@@ -89,7 +100,35 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updates := make(map[string]string)
-	for _, key := range []string{"workspace_root", "per_run_token_budget", "daily_cost_cap_usd", "telegram_bot_token"} {
+	if value := strings.TrimSpace(r.FormValue("approval_mode")); value != "" {
+		switch value {
+		case string(authority.ApprovalModePrompt), string(authority.ApprovalModeAutoApprove):
+			updates["approval_mode"] = value
+		default:
+			s.renderTemplate(w, r, "Settings", "settings_body", settingsPageData{
+				StorageRoot:    s.storageRoot,
+				ApprovalMode:   lookupSetting(s.db, "approval_mode"),
+				HostAccessMode: lookupSetting(s.db, "host_access_mode"),
+				Error:          "approval mode is invalid",
+			})
+			return
+		}
+	}
+	if value := strings.TrimSpace(r.FormValue("host_access_mode")); value != "" {
+		switch value {
+		case string(authority.HostAccessModeStandard), string(authority.HostAccessModeElevated):
+			updates["host_access_mode"] = value
+		default:
+			s.renderTemplate(w, r, "Settings", "settings_body", settingsPageData{
+				StorageRoot:    s.storageRoot,
+				ApprovalMode:   lookupSetting(s.db, "approval_mode"),
+				HostAccessMode: lookupSetting(s.db, "host_access_mode"),
+				Error:          "host access mode is invalid",
+			})
+			return
+		}
+	}
+	for _, key := range []string{"per_run_token_budget", "daily_cost_cap_usd", "telegram_bot_token"} {
 		if v := strings.TrimSpace(r.FormValue(key)); v != "" {
 			updates[key] = v
 		}

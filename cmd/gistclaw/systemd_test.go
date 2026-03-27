@@ -44,7 +44,7 @@ provider:
   base_url: https://example.invalid/v1
   wire_api: chat_completions
 database_path: /srv/gistclaw/data/runtime.db
-workspace_root: /srv/gistclaw/projects
+storage_root: /srv/gistclaw/storage
 `
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
@@ -59,7 +59,7 @@ workspace_root: /srv/gistclaw/projects
 	for _, want := range []string{
 		"state_dir: /var/lib/gistclaw",
 		"database_dir: /srv/gistclaw/data",
-		"workspace_root: /srv/gistclaw/projects",
+		"storage_root: /srv/gistclaw/storage",
 	} {
 		if !strings.Contains(stdout.String(), want) {
 			t.Fatalf("config-paths output missing %q:\n%s", want, stdout.String())
@@ -76,7 +76,7 @@ func TestRun_InspectConfigPaths_FailsOnInvalidConfig(t *testing.T) {
 	cfg := `
 provider:
   name: openai
-workspace_root: /srv/gistclaw/projects
+storage_root: /srv/gistclaw/storage
 `
 	if err := os.WriteFile(cfgPath, []byte(cfg), 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)

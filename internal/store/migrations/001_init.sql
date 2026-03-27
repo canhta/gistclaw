@@ -213,10 +213,7 @@ CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at_revoked_at
 INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES
     ('per_run_token_budget', '50000',  datetime('now')),
     ('per_run_cost_cap_usd', '0.50',   datetime('now')),
-    ('daily_cost_cap_usd',   '5.00',   datetime('now')),
-    ('storage_root',         '.gistclaw', datetime('now')),
-    ('approval_mode',        'prompt', datetime('now')),
-    ('host_access_mode',     'standard', datetime('now'));
+    ('daily_cost_cap_usd',   '5.00',   datetime('now'));
 
 CREATE TABLE IF NOT EXISTS run_summaries (
     id TEXT PRIMARY KEY,

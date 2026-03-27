@@ -291,7 +291,7 @@ func TestTemplatesUseTaskFramedCopy(t *testing.T) {
 	cases := map[string]copyExpectations{
 		"login.html": {
 			wants: []string{
-				"Connect this browser to your local GistClaw workspace.",
+				"Connect this browser to your local GistClaw machine.",
 				"Use the admin password to open runs, approvals, and settings.",
 			},
 			unwanted: []string{

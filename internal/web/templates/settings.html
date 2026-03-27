@@ -97,14 +97,29 @@
     <div class="stack-sm">
       <span class="panel-kicker">Machine</span>
       <h2>Machine Settings</h2>
-      <p class="panel-note">Use these settings for project path overrides, budgets, and machine credentials.</p>
+      <p class="panel-note">Use these settings for storage, permission posture, budgets, and machine credentials.</p>
     </div>
 
     <form method="POST" action="/configure/settings">
       <div class="field">
-        <label for="workspace_root">Project Path Override</label>
-        <input type="text" id="workspace_root" name="workspace_root" value="{{.WorkspaceRoot}}">
-        <span class="field-help">Advanced override.</span>
+        <label for="storage_root">Storage Root</label>
+        <input type="text" id="storage_root" name="storage_root" value="{{.StorageRoot}}" readonly>
+        <span class="field-help">Configured in <code>config.yaml</code>. GistClaw stores logs, memory, approvals, and artifacts here.</span>
+      </div>
+      <div class="field">
+        <label for="approval_mode">Approval Mode</label>
+        <select id="approval_mode" name="approval_mode">
+          <option value="prompt" {{if eq .ApprovalMode "prompt"}}selected{{end}}>Prompt before mutating work</option>
+          <option value="auto_approve" {{if eq .ApprovalMode "auto_approve"}}selected{{end}}>Auto-approve mutating work</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="host_access_mode">Host Access Mode</label>
+        <select id="host_access_mode" name="host_access_mode">
+          <option value="standard" {{if eq .HostAccessMode "standard"}}selected{{end}}>Standard host access</option>
+          <option value="elevated" {{if eq .HostAccessMode "elevated"}}selected{{end}}>Elevated host access</option>
+        </select>
+        <span class="field-help">Standard blocks sensitive paths. Elevated allows them, subject to approval mode.</span>
       </div>
       <div class="field">
         <label for="per_run_token_budget">Per-Task Token Budget</label>

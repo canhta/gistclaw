@@ -21,7 +21,7 @@ import (
 
 // runDoctor runs operator health checks and prints a structured report.
 // Exits 0 if all checks are PASS or WARN; exits 1 if any check is FAIL.
-func runDoctor(configPath string, stdout, stderr io.Writer) int {
+func runDoctor(opts globalOptions, stdout, stderr io.Writer) int {
 	type check struct {
 		name   string
 		status string // PASS, FAIL, WARN, SKIP
@@ -32,7 +32,7 @@ func runDoctor(configPath string, stdout, stderr io.Writer) int {
 	anyFail := false
 
 	// 1. Config file parses without error.
-	cfg, cfgErr := app.LoadConfigRaw(configPath)
+	cfg, cfgErr := loadConfigRawWithOverrides(opts)
 	if cfgErr != nil {
 		checks = append(checks, check{name: "config", status: "FAIL", detail: cfgErr.Error()})
 		for _, c := range checks {
@@ -40,7 +40,7 @@ func runDoctor(configPath string, stdout, stderr io.Writer) int {
 		}
 		return 1
 	}
-	checks = append(checks, check{name: "config", status: "PASS", detail: configPath})
+	checks = append(checks, check{name: "config", status: "PASS", detail: opts.ConfigPath})
 	auditReport := securitypkg.RunAudit(securitypkg.Input{
 		Config:            cfg,
 		AdminTokenPresent: true,
@@ -77,12 +77,12 @@ func runDoctor(configPath string, stdout, stderr io.Writer) int {
 		checks = append(checks, check{name: "provider", status: "PASS", detail: name})
 	}
 
-	// 4. Workspace root exists and is writable.
-	if findingDetails := joinFindingDetails(findingsBySubject(auditReport, "workspace")); findingDetails != "" {
-		checks = append(checks, check{name: "workspace", status: "FAIL", detail: findingDetails})
+	// 4. Storage root exists and is writable.
+	if findingDetails := joinFindingDetails(findingsBySubject(auditReport, "storage_root")); findingDetails != "" {
+		checks = append(checks, check{name: "storage_root", status: "FAIL", detail: findingDetails})
 		anyFail = true
 	} else {
-		checks = append(checks, check{name: "workspace", status: "PASS", detail: cfg.WorkspaceRoot})
+		checks = append(checks, check{name: "storage_root", status: "PASS", detail: cfg.StorageRoot})
 	}
 
 	// 5. Research and MCP config safety.

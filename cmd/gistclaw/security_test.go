@@ -16,7 +16,7 @@ func TestRunSecurityAudit_PrintsFindingsAndFailsOnUnsafeConfig(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "config.yaml")
 	content := strings.Join([]string{
 		"database_path: " + dbPath,
-		"workspace_root: " + workspaceRoot,
+		"storage_root: " + workspaceRoot,
 		"web:",
 		"  listen_addr: 0.0.0.0:8080",
 		"provider:",
@@ -38,7 +38,7 @@ func TestRunSecurityAudit_PrintsFindingsAndFailsOnUnsafeConfig(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := runSecurity(cfgPath, []string{"audit"}, &stdout, &stderr)
+	code := runSecurity(testOptions(cfgPath), []string{"audit"}, &stdout, &stderr)
 	if code == 0 {
 		t.Fatal("expected non-zero exit for unsafe config")
 	}
@@ -70,7 +70,7 @@ func TestRunSecurityAudit_PassesWhenConfigIsSafe(t *testing.T) {
 	}
 
 	var stdout, stderr bytes.Buffer
-	code := runSecurity(cfgPath, []string{"audit"}, &stdout, &stderr)
+	code := runSecurity(testOptions(cfgPath), []string{"audit"}, &stdout, &stderr)
 	if code != 0 {
 		t.Fatalf("expected zero exit code, got %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
 	}

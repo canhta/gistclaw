@@ -100,16 +100,16 @@ func TestRun_InspectUnknownSubcommandStillFails(t *testing.T) {
 	}
 }
 
-func TestParseConfigPath_UsesEnvOverride(t *testing.T) {
+func TestParseGlobalOptions_UsesEnvOverride(t *testing.T) {
 	cfgPath, _ := writeCLIConfig(t)
 	t.Setenv("GISTCLAW_CONFIG", cfgPath)
 
-	got, args, err := parseConfigPath([]string{"inspect", "status"})
+	opts, args, err := parseGlobalOptions([]string{"inspect", "status"})
 	if err != nil {
-		t.Fatalf("parseConfigPath failed: %v", err)
+		t.Fatalf("parseGlobalOptions failed: %v", err)
 	}
-	if got != cfgPath {
-		t.Fatalf("expected config path %q, got %q", cfgPath, got)
+	if opts.ConfigPath != cfgPath {
+		t.Fatalf("expected config path %q, got %q", cfgPath, opts.ConfigPath)
 	}
 	if len(args) != 2 || args[0] != "inspect" || args[1] != "status" {
 		t.Fatalf("unexpected remaining args: %#v", args)
@@ -118,7 +118,7 @@ func TestParseConfigPath_UsesEnvOverride(t *testing.T) {
 
 func TestLoadApp_InvalidConfig(t *testing.T) {
 	path := t.TempDir() + "/missing.yaml"
-	if _, err := loadApp(path); err == nil {
+	if _, err := loadApp(testOptions(path)); err == nil {
 		t.Fatal("expected loadApp to fail for missing config")
 	}
 }
@@ -126,7 +126,7 @@ func TestLoadApp_InvalidConfig(t *testing.T) {
 func TestLoadPreparedApp_PreparesInterruptedRuns(t *testing.T) {
 	cfgPath, dbPath := writeCLIConfig(t)
 
-	application, err := loadPreparedApp(cfgPath)
+	application, err := loadPreparedApp(testOptions(cfgPath))
 	if err != nil {
 		t.Fatalf("initial loadPreparedApp failed: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestLoadPreparedApp_PreparesInterruptedRuns(t *testing.T) {
 		t.Fatalf("insert stale run: %v", err)
 	}
 
-	application, err = loadPreparedApp(cfgPath)
+	application, err = loadPreparedApp(testOptions(cfgPath))
 	if err != nil {
 		t.Fatalf("second loadPreparedApp failed: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestLoadPreparedApp_PreparesInterruptedRuns(t *testing.T) {
 func TestRun_InspectDoesNotInterruptActiveRuns(t *testing.T) {
 	cfgPath, dbPath := writeCLIConfig(t)
 
-	application, err := loadApp(cfgPath)
+	application, err := loadApp(testOptions(cfgPath))
 	if err != nil {
 		t.Fatalf("loadApp failed: %v", err)
 	}

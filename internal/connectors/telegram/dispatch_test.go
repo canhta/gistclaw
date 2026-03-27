@@ -36,7 +36,7 @@ func setupDispatchDB(t *testing.T) (*store.DB, *conversations.ConversationStore)
 
 func TestInboundDispatcher_DispatchesEnvelopeToRuntime(t *testing.T) {
 	ingress := &stubIngress{}
-	dispatcher := NewInboundDispatcher(ingress, "assistant", "")
+	dispatcher := NewInboundDispatcher(ingress, "assistant")
 
 	env := model.Envelope{
 		ConnectorID:    "telegram",
@@ -81,7 +81,7 @@ func TestInboundDispatcher_DispatchesEnvelopeToRuntime(t *testing.T) {
 
 func TestInboundDispatcher_EmptyTextIsRejected(t *testing.T) {
 	ingress := &stubIngress{}
-	dispatcher := NewInboundDispatcher(ingress, "assistant", "")
+	dispatcher := NewInboundDispatcher(ingress, "assistant")
 
 	env := model.Envelope{
 		ConnectorID: "telegram",

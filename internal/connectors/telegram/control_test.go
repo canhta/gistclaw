@@ -92,7 +92,7 @@ func newTelegramControlConnector(t *testing.T, rt *stubTelegramRuntime) *Connect
 	t.Cleanup(func() { _ = db.Close() })
 
 	cs := conversations.NewConversationStore(db)
-	return NewConnector("test-token", db, cs, rt, "assistant", "")
+	return NewConnector("test-token", db, cs, rt, "assistant")
 }
 
 func TestConnector_HandleEnvelopeRoutesHelpToNativeReply(t *testing.T) {

@@ -13,7 +13,7 @@ func TestRunAudit(t *testing.T) {
 	workspaceRoot := t.TempDir()
 
 	baseConfig := app.Config{
-		WorkspaceRoot: workspaceRoot,
+		StorageRoot: workspaceRoot,
 		Provider: app.ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -42,7 +42,7 @@ func TestRunAudit(t *testing.T) {
 		{
 			name: "exposed web bind",
 			cfg: app.Config{
-				WorkspaceRoot: workspaceRoot,
+				StorageRoot: workspaceRoot,
 				Provider: app.ProviderConfig{
 					Name:   "anthropic",
 					APIKey: "sk-test",
@@ -66,7 +66,7 @@ func TestRunAudit(t *testing.T) {
 		{
 			name: "invalid research provider",
 			cfg: app.Config{
-				WorkspaceRoot: workspaceRoot,
+				StorageRoot: workspaceRoot,
 				Provider: app.ProviderConfig{
 					Name:   "anthropic",
 					APIKey: "sk-test",
@@ -86,7 +86,7 @@ func TestRunAudit(t *testing.T) {
 		{
 			name: "enabled mcp tool missing binary",
 			cfg: app.Config{
-				WorkspaceRoot: workspaceRoot,
+				StorageRoot: workspaceRoot,
 				Provider: app.ProviderConfig{
 					Name:   "anthropic",
 					APIKey: "sk-test",
@@ -119,7 +119,7 @@ func TestRunAudit(t *testing.T) {
 		{
 			name: "incomplete whatsapp config",
 			cfg: app.Config{
-				WorkspaceRoot: workspaceRoot,
+				StorageRoot: workspaceRoot,
 				Provider: app.ProviderConfig{
 					Name:   "anthropic",
 					APIKey: "sk-test",

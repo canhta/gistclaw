@@ -118,7 +118,7 @@ func TestOnboardingStep1_RendersWhenStarterProjectExists(t *testing.T) {
 // re-renders step 1 with an inline error.
 func TestOnboardingStep1_PathNotExist(t *testing.T) {
 	h := newServerHarnessNoWorkspace(t)
-	form := url.Values{"workspace_root": {"/this/path/does/not/exist/ever"}}
+	form := url.Values{"project_path": {"/this/path/does/not/exist/ever"}}
 	req := httptest.NewRequest(http.MethodPost, "/onboarding", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -133,7 +133,7 @@ func TestOnboardingStep1_PathNotExist(t *testing.T) {
 func TestOnboardingStep1_NotAGitRepo(t *testing.T) {
 	h := newServerHarnessNoWorkspace(t)
 	dir := t.TempDir() // exists, but no .git
-	form := url.Values{"workspace_root": {dir}}
+	form := url.Values{"project_path": {dir}}
 	req := httptest.NewRequest(http.MethodPost, "/onboarding", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -151,7 +151,7 @@ func TestOnboardingStep1_NotAGitRepo(t *testing.T) {
 func TestOnboardingStep1_ValidGitRepo(t *testing.T) {
 	h := newServerHarnessNoWorkspace(t)
 	dir := makeGitRepo(t)
-	form := url.Values{"workspace_root": {dir}}
+	form := url.Values{"project_path": {dir}}
 	req := httptest.NewRequest(http.MethodPost, "/onboarding", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()
@@ -403,7 +403,7 @@ func TestOnboardingStep1_NotWritable(t *testing.T) {
 		t.Skip("cannot chmod temp dir (may be root):", err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
-	form := url.Values{"workspace_root": {dir}}
+	form := url.Values{"project_path": {dir}}
 	req := httptest.NewRequest(http.MethodPost, "/onboarding", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	w := httptest.NewRecorder()

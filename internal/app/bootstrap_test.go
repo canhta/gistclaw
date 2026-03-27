@@ -136,7 +136,9 @@ func TestSeedOperatorSettings(t *testing.T) {
 		defer db.Close()
 
 		cfg := Config{
-			WorkspaceRoot: "/tmp/gistclaw-workspace",
+			StorageRoot:    "/tmp/gistclaw-storage",
+			ApprovalMode:   "auto_approve",
+			HostAccessMode: "elevated",
 			Telegram: TelegramConfig{
 				BotToken: "telegram-token",
 			},
@@ -145,8 +147,14 @@ func TestSeedOperatorSettings(t *testing.T) {
 			t.Fatalf("seedOperatorSettings: %v", err)
 		}
 
-		if workspaceRoot := lookupDBSetting(db, "workspace_root"); workspaceRoot != "" {
-			t.Fatalf("expected seedOperatorSettings to leave workspace_root unset, got %q", workspaceRoot)
+		if storageRoot := lookupDBSetting(db, "storage_root"); storageRoot != "" {
+			t.Fatalf("expected seedOperatorSettings to leave storage_root unset, got %q", storageRoot)
+		}
+		if approvalMode := lookupDBSetting(db, "approval_mode"); approvalMode != string(cfg.ApprovalMode) {
+			t.Fatalf("expected approval_mode %q, got %q", cfg.ApprovalMode, approvalMode)
+		}
+		if hostAccessMode := lookupDBSetting(db, "host_access_mode"); hostAccessMode != string(cfg.HostAccessMode) {
+			t.Fatalf("expected host_access_mode %q, got %q", cfg.HostAccessMode, hostAccessMode)
 		}
 
 		var telegramToken string
@@ -167,14 +175,18 @@ func TestSeedOperatorSettings(t *testing.T) {
 
 		if _, err := db.RawDB().Exec(
 			`INSERT INTO settings (key, value, updated_at) VALUES
-			 ('workspace_root', '/tmp/operator-workspace', datetime('now')),
-			 ('telegram_bot_token', 'operator-token', datetime('now'))`,
+			 ('approval_mode', 'prompt', datetime('now')),
+			 ('host_access_mode', 'standard', datetime('now')),
+			 ('telegram_bot_token', 'operator-token', datetime('now'))
+			 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 		); err != nil {
 			t.Fatalf("seed existing settings: %v", err)
 		}
 
 		cfg := Config{
-			WorkspaceRoot: "/tmp/config-workspace",
+			StorageRoot:    "/tmp/config-storage",
+			ApprovalMode:   "auto_approve",
+			HostAccessMode: "elevated",
 			Telegram: TelegramConfig{
 				BotToken: "config-token",
 			},
@@ -183,9 +195,13 @@ func TestSeedOperatorSettings(t *testing.T) {
 			t.Fatalf("seedOperatorSettings: %v", err)
 		}
 
-		workspaceRoot := lookupDBSetting(db, "workspace_root")
-		if workspaceRoot != "/tmp/operator-workspace" {
-			t.Fatalf("expected existing workspace_root to be preserved, got %q", workspaceRoot)
+		approvalMode := lookupDBSetting(db, "approval_mode")
+		if approvalMode != "prompt" {
+			t.Fatalf("expected existing approval_mode to be preserved, got %q", approvalMode)
+		}
+		hostAccessMode := lookupDBSetting(db, "host_access_mode")
+		if hostAccessMode != "standard" {
+			t.Fatalf("expected existing host_access_mode to be preserved, got %q", hostAccessMode)
 		}
 
 		var telegramToken string
@@ -205,6 +221,7 @@ func TestBootstrap_CreatesStarterProjectAndLeavesOnboardingIncomplete(t *testing
 	cfg := Config{
 		DatabasePath: ":memory:",
 		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 	}
 
 	app, err := Bootstrap(cfg)
@@ -265,6 +282,7 @@ func TestBootstrap_SeedsStarterProjectWithShippedDefaultTeam(t *testing.T) {
 	cfg := Config{
 		DatabasePath: ":memory:",
 		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 	}
 
 	app, err := Bootstrap(cfg)
@@ -284,10 +302,10 @@ func TestBootstrap_SeedsStarterProjectWithShippedDefaultTeam(t *testing.T) {
 		t.Fatalf("query starter project path: %v", err)
 	}
 
-	workspaceTeamDir := filepath.Join(primaryPath, ".gistclaw", "teams", "default")
+	storageTeamDir := filepath.Join(cfg.StorageRoot, "teams", "default")
 	for _, name := range []string{"team.yaml", "coordinator.soul.yaml", "patcher.soul.yaml"} {
-		if _, err := os.Stat(filepath.Join(workspaceTeamDir, name)); err != nil {
-			t.Fatalf("expected starter workspace team file %q to exist: %v", name, err)
+		if _, err := os.Stat(filepath.Join(storageTeamDir, name)); err != nil {
+			t.Fatalf("expected starter storage team file %q to exist: %v", name, err)
 		}
 	}
 
@@ -319,9 +337,9 @@ func TestBootstrap_AppliesSavedBudgetSettingsToRuntime(t *testing.T) {
 	}
 
 	app, err := Bootstrap(Config{
-		DatabasePath:  dbPath,
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: dbPath,
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Bootstrap: %v", err)
@@ -345,57 +363,26 @@ func TestBootstrap_AppliesSavedBudgetSettingsToRuntime(t *testing.T) {
 	}
 }
 
-func TestEnsureProjectState_UsesConfiguredPathWhenNoActiveProjectExists(t *testing.T) {
+func TestEnsureProjectState_CreatesStarterProjectWhenNoActiveProjectExists(t *testing.T) {
 	db, err := storeWiring(Config{DatabasePath: ":memory:"})
 	if err != nil {
 		t.Fatalf("storeWiring: %v", err)
 	}
 	defer db.Close()
 
-	workspaceRoot := t.TempDir()
-	project, err := ensureProjectState(context.Background(), db, Config{WorkspaceRoot: workspaceRoot})
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	project, err := ensureProjectState(context.Background(), db, Config{StorageRoot: t.TempDir()})
 	if err != nil {
 		t.Fatalf("ensureProjectState: %v", err)
 	}
-	if project.PrimaryPath != workspaceRoot {
-		t.Fatalf("expected configured primary_path %q, got %q", workspaceRoot, project.PrimaryPath)
+	wantPrefix := filepath.Join(home, ".gistclaw", "projects") + string(os.PathSeparator)
+	if !strings.HasPrefix(project.PrimaryPath, wantPrefix) {
+		t.Fatalf("expected starter primary_path under %q, got %q", wantPrefix, project.PrimaryPath)
 	}
 	if lookupDBSetting(db, "active_project_id") == "" {
-		t.Fatal("expected configured project path to become the active project")
-	}
-}
-
-func TestBootstrap_ConfiguredPathMarksOnboardingComplete(t *testing.T) {
-	workspaceRoot := t.TempDir()
-	app, err := Bootstrap(Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: workspaceRoot,
-		Provider: ProviderConfig{
-			Name:   "anthropic",
-			APIKey: "sk-test",
-		},
-	})
-	if err != nil {
-		t.Fatalf("Bootstrap: %v", err)
-	}
-	t.Cleanup(func() {
-		app.runtime.WaitAsync()
-		if app.toolCloser != nil {
-			_ = app.toolCloser.Close()
-		}
-		_ = app.db.Close()
-	})
-
-	project, err := runtime.ActiveProject(context.Background(), app.db)
-	if err != nil {
-		t.Fatalf("ActiveProject: %v", err)
-	}
-	if project.PrimaryPath != workspaceRoot {
-		t.Fatalf("expected active project primary_path %q, got %q", workspaceRoot, project.PrimaryPath)
-	}
-	if completed := lookupDBSetting(app.db, "onboarding_completed_at"); completed == "" {
-		t.Fatal("expected configured project path bootstrap to mark onboarding complete")
+		t.Fatal("expected starter project to become the active project")
 	}
 }
 
@@ -420,6 +407,7 @@ func TestBootstrap_StoredNonStarterProjectMarksOnboardingComplete(t *testing.T) 
 	app, err := Bootstrap(Config{
 		DatabasePath: dbPath,
 		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -441,7 +429,7 @@ func TestBootstrap_StoredNonStarterProjectMarksOnboardingComplete(t *testing.T) 
 	}
 }
 
-func TestEnsureProjectState_PrefersStoredActiveProjectOverConfigPath(t *testing.T) {
+func TestEnsureProjectState_PrefersStoredActiveProject(t *testing.T) {
 	db, err := storeWiring(Config{DatabasePath: ":memory:"})
 	if err != nil {
 		t.Fatalf("storeWiring: %v", err)
@@ -454,8 +442,7 @@ func TestEnsureProjectState_PrefersStoredActiveProjectOverConfigPath(t *testing.
 		t.Fatalf("ActivateProjectPath: %v", err)
 	}
 
-	configRoot := t.TempDir()
-	project, err := ensureProjectState(context.Background(), db, Config{WorkspaceRoot: configRoot})
+	project, err := ensureProjectState(context.Background(), db, Config{StorageRoot: t.TempDir()})
 	if err != nil {
 		t.Fatalf("ensureProjectState: %v", err)
 	}
@@ -484,9 +471,9 @@ func TestGenerateStarterProjectName_IncludesEntropySuffix(t *testing.T) {
 
 func TestBootstrap_WiresSchedulerAndLeavesDeferredConnectorsUnwired(t *testing.T) {
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -508,9 +495,9 @@ func TestBootstrap_WiresSchedulerAndLeavesDeferredConnectorsUnwired(t *testing.T
 
 func TestBootstrap_WiresTelegramConnectorWhenConfigured(t *testing.T) {
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -535,9 +522,9 @@ func TestBootstrap_WiresTelegramConnectorWhenConfigured(t *testing.T) {
 
 func TestBootstrap_WiresWhatsAppConnectorWhenConfigured(t *testing.T) {
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",

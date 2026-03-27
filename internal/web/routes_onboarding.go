@@ -20,9 +20,9 @@ type TaskCandidate struct {
 }
 
 type onboardingStep1Data struct {
-	Error               string
-	ActiveProjectName   string
-	ActiveWorkspaceRoot string
+	Error             string
+	ActiveProjectName string
+	ActiveProjectPath string
 }
 
 type onboardingStep3Data struct {
@@ -151,7 +151,7 @@ func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
 	s.renderOnboardingStep1(w, r, http.StatusOK, "")
 }
 
-// handleOnboardingStep1Submit validates and persists the submitted workspace path.
+// handleOnboardingStep1Submit validates and persists the submitted project path.
 func (s *Server) handleOnboardingStep1Submit(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -170,37 +170,37 @@ func (s *Server) handleOnboardingStep1Submit(w http.ResponseWriter, r *http.Requ
 			return
 		}
 	case "create_new":
-		workspaceRoot := strings.TrimSpace(r.FormValue("new_workspace_root"))
-		if workspaceRoot == "" {
+		projectPath := strings.TrimSpace(r.FormValue("new_project_path"))
+		if projectPath == "" {
 			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, "new project path is required")
 			return
 		}
-		if errMsg := validateNewWorkspacePath(workspaceRoot); errMsg != "" {
+		if errMsg := validateNewProjectPath(projectPath); errMsg != "" {
 			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, errMsg)
 			return
 		}
-		if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
+		if err := os.MkdirAll(projectPath, 0o755); err != nil {
 			http.Error(w, "failed to create project directory", http.StatusInternalServerError)
 			return
 		}
-		if _, err := runtime.ActivateProjectPath(r.Context(), s.db, workspaceRoot, "", "operator"); err != nil {
+		if _, err := runtime.ActivateProjectPath(r.Context(), s.db, projectPath, "", "operator"); err != nil {
 			http.Error(w, "failed to save project", http.StatusInternalServerError)
 			return
 		}
 	default:
-		workspaceRoot := strings.TrimSpace(r.FormValue("workspace_root"))
-		if workspaceRoot == "" {
-			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, "workspace path is required")
+		projectPath := strings.TrimSpace(r.FormValue("project_path"))
+		if projectPath == "" {
+			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, "project path is required")
 			return
 		}
 
-		if errMsg := validateWorkspacePath(workspaceRoot); errMsg != "" {
+		if errMsg := validateProjectPath(projectPath); errMsg != "" {
 			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, errMsg)
 			return
 		}
 
-		if _, err := runtime.ActivateProjectPath(r.Context(), s.db, workspaceRoot, "", "operator"); err != nil {
-			http.Error(w, "failed to save workspace", http.StatusInternalServerError)
+		if _, err := runtime.ActivateProjectPath(r.Context(), s.db, projectPath, "", "operator"); err != nil {
+			http.Error(w, "failed to save project", http.StatusInternalServerError)
 			return
 		}
 	}
@@ -212,9 +212,9 @@ func (s *Server) handleOnboardingStep1Submit(w http.ResponseWriter, r *http.Requ
 	http.Redirect(w, r, "/onboarding/step/2", http.StatusSeeOther)
 }
 
-// validateWorkspacePath checks that path exists, is a git repo, and is writable.
+// validateProjectPath checks that path exists, is a git repo, and is writable.
 // Returns an empty string on success, or a human-readable error message.
-func validateWorkspacePath(path string) string {
+func validateProjectPath(path string) string {
 	info, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -238,7 +238,7 @@ func validateWorkspacePath(path string) string {
 	return ""
 }
 
-func validateNewWorkspacePath(path string) string {
+func validateNewProjectPath(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return "new project path is required"
@@ -361,9 +361,9 @@ func (s *Server) renderOnboardingStep1(w http.ResponseWriter, r *http.Request, s
 		return
 	}
 	s.renderTemplateStatus(w, r, status, "Choose Project", "onboarding_step1_body", onboardingStep1Data{
-		Error:               errMsg,
-		ActiveProjectName:   project.Name,
-		ActiveWorkspaceRoot: project.PrimaryPath,
+		Error:             errMsg,
+		ActiveProjectName: project.Name,
+		ActiveProjectPath: project.PrimaryPath,
 	})
 }
 

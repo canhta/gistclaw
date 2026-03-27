@@ -220,9 +220,9 @@ func TestConfiguredConnectorHealth_UsesRecentPersistedSnapshot(t *testing.T) {
 	}
 
 	cfg := Config{
-		DatabasePath:  dbPath,
-		StateDir:      filepath.Dir(dbPath),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: dbPath,
+		StateDir:     filepath.Dir(dbPath),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "openai",
 			APIKey: "sk-test",
@@ -274,9 +274,9 @@ func TestConfiguredConnectorHealth_IgnoresStalePersistedSnapshot(t *testing.T) {
 	}
 
 	cfg := Config{
-		DatabasePath:  dbPath,
-		StateDir:      filepath.Dir(dbPath),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: dbPath,
+		StateDir:     filepath.Dir(dbPath),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "openai",
 			APIKey: "sk-test",
@@ -329,9 +329,9 @@ func setupCommandApp(t *testing.T) *App {
 	startMockAnthropicServer(t)
 
 	cfg := Config{
-		DatabasePath:  filepath.Join(t.TempDir(), "state", "runtime.db"),
-		StateDir:      filepath.Join(t.TempDir(), "state"),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: filepath.Join(t.TempDir(), "state", "runtime.db"),
+		StateDir:     filepath.Join(t.TempDir(), "state"),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",

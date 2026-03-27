@@ -53,12 +53,12 @@ type runListItem struct {
 }
 
 type runsPageData struct {
-	Clusters            []runListClusterView
-	Filters             runListFilters
-	Paging              pageLinks
-	QueueStrip          runQueueStripView
-	ActiveProjectName   string
-	ActiveWorkspaceRoot string
+	Clusters          []runListClusterView
+	Filters           runListFilters
+	Paging            pageLinks
+	QueueStrip        runQueueStripView
+	ActiveProjectName string
+	ActiveProjectPath string
 }
 
 type runQueueStripView struct {
@@ -408,12 +408,12 @@ func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	clusters := buildRunListClusters(rootRows, descendants)
 	s.renderTemplate(w, r, "Runs", "runs_body", runsPageData{
-		Clusters:            clusters,
-		Filters:             runListFilters{Query: filter.Query, Status: filter.Status, Limit: filter.Limit, Scope: filter.Scope},
-		Paging:              paging,
-		QueueStrip:          buildRunQueueStrip(clusters),
-		ActiveProjectName:   activeProject.Name,
-		ActiveWorkspaceRoot: activeProject.PrimaryPath,
+		Clusters:          clusters,
+		Filters:           runListFilters{Query: filter.Query, Status: filter.Status, Limit: filter.Limit, Scope: filter.Scope},
+		Paging:            paging,
+		QueueStrip:        buildRunQueueStrip(clusters),
+		ActiveProjectName: activeProject.Name,
+		ActiveProjectPath: activeProject.PrimaryPath,
 	})
 }
 

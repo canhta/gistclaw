@@ -39,9 +39,9 @@ func (c *stubConnector) Drain(context.Context) error {
 
 func TestLifecycle_StartsAndStopsCleanly(t *testing.T) {
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -79,9 +79,9 @@ func TestLifecycle_StartsAndStopsCleanly(t *testing.T) {
 
 func TestLifecycle_SIGINTTriggersShutdown(t *testing.T) {
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -115,9 +115,9 @@ func TestLifecycle_SIGINTTriggersShutdown(t *testing.T) {
 
 func TestLifecycle_StartRunsWiredConnectors(t *testing.T) {
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -158,9 +158,9 @@ func TestLifecycle_StartRunsWiredConnectors(t *testing.T) {
 
 func TestLifecycle_StartServesWebUI(t *testing.T) {
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -195,13 +195,18 @@ func TestLifecycle_StartServesWebUI(t *testing.T) {
 		t.Fatal("expected web listener address to be published")
 	}
 
-	resp, err := http.Get("http://" + addr + "/operate/runs")
+	client := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := client.Get("http://" + addr + "/operate/runs")
 	if err != nil {
 		t.Fatalf("GET /operate/runs failed: %v", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("expected 200 from /operate/runs, got %d", resp.StatusCode)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("expected 303 from /operate/runs while onboarding is pending, got %d", resp.StatusCode)
 	}
 
 	cancel()
@@ -218,9 +223,9 @@ func TestLifecycle_StartServesWebUI(t *testing.T) {
 
 func TestLifecycle_StartDoesNotRepeatPrepareSideEffects(t *testing.T) {
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -269,9 +274,9 @@ func TestLifecycle_StartDoesNotRepeatPrepareSideEffects(t *testing.T) {
 
 func TestLifecycle_StartRecoversConnectorFailureWithinBudget(t *testing.T) {
 	cfg := Config{
-		DatabasePath:  ":memory:",
-		StateDir:      t.TempDir(),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",
@@ -313,9 +318,9 @@ func TestLifecycle_StartRecoversConnectorFailureWithinBudget(t *testing.T) {
 
 func TestLifecycle_StartPersistsConnectorHealthSnapshots(t *testing.T) {
 	cfg := Config{
-		DatabasePath:  filepath.Join(t.TempDir(), "state", "runtime.db"),
-		StateDir:      filepath.Join(t.TempDir(), "state"),
-		WorkspaceRoot: t.TempDir(),
+		DatabasePath: filepath.Join(t.TempDir(), "state", "runtime.db"),
+		StateDir:     filepath.Join(t.TempDir(), "state"),
+		StorageRoot:  t.TempDir(),
 		Provider: ProviderConfig{
 			Name:   "anthropic",
 			APIKey: "sk-test",

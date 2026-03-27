@@ -26,19 +26,17 @@ type MessageSender interface {
 }
 
 type WebhookHandler struct {
-	verifyToken   string
-	defaultAgent  string
-	workspaceRoot string
-	rt            ConnectorRuntime
-	sender        MessageSender
-	commands      *controlconnector.Dispatcher
-	health        *HealthState
+	verifyToken  string
+	defaultAgent string
+	rt           ConnectorRuntime
+	sender       MessageSender
+	commands     *controlconnector.Dispatcher
+	health       *HealthState
 }
 
 func NewWebhookHandler(
 	verifyToken string,
 	defaultAgent string,
-	workspaceRoot string,
 	rt ConnectorRuntime,
 	sender MessageSender,
 	health *HealthState,
@@ -47,13 +45,12 @@ func NewWebhookHandler(
 		health = NewHealthState(nil)
 	}
 	return &WebhookHandler{
-		verifyToken:   verifyToken,
-		defaultAgent:  defaultAgent,
-		workspaceRoot: workspaceRoot,
-		rt:            rt,
-		sender:        sender,
-		commands:      controlconnector.NewDispatcher(rt),
-		health:        health,
+		verifyToken:  verifyToken,
+		defaultAgent: defaultAgent,
+		rt:           rt,
+		sender:       sender,
+		commands:     controlconnector.NewDispatcher(rt),
+		health:       health,
 	}
 }
 
@@ -130,7 +127,6 @@ func (h *WebhookHandler) handleEnvelope(ctx context.Context, env model.Envelope)
 		FrontAgentID:    h.defaultAgent,
 		Body:            env.Text,
 		SourceMessageID: env.MessageID,
-		CWD:             h.workspaceRoot,
 	})
 	return err
 }

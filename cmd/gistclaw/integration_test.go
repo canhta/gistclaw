@@ -228,7 +228,7 @@ func writeCLIConfigWithListenAddr(t *testing.T, listenAddr string) (string, stri
 	dbPath := filepath.Join(dir, "state", "runtime.db")
 	cfgPath := filepath.Join(dir, "config.yaml")
 	cfg := fmt.Sprintf(
-		"workspace_root: %q\ndatabase_path: %q\nweb:\n  listen_addr: %q\nprovider:\n  name: anthropic\n  api_key: sk-test\n",
+		"storage_root: %q\ndatabase_path: %q\nweb:\n  listen_addr: %q\nprovider:\n  name: anthropic\n  api_key: sk-test\n",
 		workspaceRoot,
 		dbPath,
 		listenAddr,
@@ -268,7 +268,12 @@ func fieldValue(t *testing.T, output, key string) string {
 func waitForServeReady(t *testing.T, listenAddr string, output *lockedBuffer) {
 	t.Helper()
 
-	client := &http.Client{Timeout: 200 * time.Millisecond}
+	client := &http.Client{
+		Timeout: 200 * time.Millisecond,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	deadline := time.Now().Add(20 * time.Second)
 	url := "http://" + listenAddr + "/"
 	for time.Now().Before(deadline) {

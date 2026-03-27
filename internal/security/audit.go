@@ -80,7 +80,7 @@ func runAudit(input Input, deps auditDeps) Report {
 		})
 	}
 
-	auditWorkspace(&report, cfg)
+	auditStorageRoot(&report, cfg)
 	auditProvider(&report, cfg.Provider)
 	auditResearch(&report, cfg.Research)
 	auditMCP(&report, cfg.MCP, deps)
@@ -93,52 +93,52 @@ func (r *Report) add(finding Finding) {
 	r.Findings = append(r.Findings, finding)
 }
 
-func auditWorkspace(report *Report, cfg app.Config) {
-	if strings.TrimSpace(cfg.WorkspaceRoot) == "" {
+func auditStorageRoot(report *Report, cfg app.Config) {
+	if strings.TrimSpace(cfg.StorageRoot) == "" {
 		report.add(Finding{
-			ID:          "workspace.root.missing",
-			Subject:     "workspace",
+			ID:          "storage_root.missing",
+			Subject:     "storage_root",
 			Severity:    SeverityFail,
-			Title:       "Workspace root missing",
-			Detail:      "workspace_root is not configured",
-			Remediation: "Set workspace_root to the repo or projects directory GistClaw should operate on.",
+			Title:       "Storage root missing",
+			Detail:      "storage_root is not configured",
+			Remediation: "Set storage_root to a GistClaw-owned directory for logs, memory, approvals, and artifacts.",
 		})
 		return
 	}
 
-	info, err := os.Stat(cfg.WorkspaceRoot)
+	info, err := os.Stat(cfg.StorageRoot)
 	if err != nil {
 		report.add(Finding{
-			ID:          "workspace.root.not_found",
-			Subject:     "workspace",
+			ID:          "storage_root.not_found",
+			Subject:     "storage_root",
 			Severity:    SeverityFail,
-			Title:       "Workspace root not found",
-			Detail:      fmt.Sprintf("workspace_root %q could not be read: %v", cfg.WorkspaceRoot, err),
-			Remediation: "Point workspace_root at an existing directory that the operator account can access.",
+			Title:       "Storage root not found",
+			Detail:      fmt.Sprintf("storage_root %q could not be read: %v", cfg.StorageRoot, err),
+			Remediation: "Point storage_root at an existing directory that the operator account can access.",
 		})
 		return
 	}
 	if !info.IsDir() {
 		report.add(Finding{
-			ID:          "workspace.root.not_directory",
-			Subject:     "workspace",
+			ID:          "storage_root.not_directory",
+			Subject:     "storage_root",
 			Severity:    SeverityFail,
-			Title:       "Workspace root is not a directory",
-			Detail:      fmt.Sprintf("workspace_root %q is not a directory", cfg.WorkspaceRoot),
-			Remediation: "Set workspace_root to a directory path instead of a file path.",
+			Title:       "Storage root is not a directory",
+			Detail:      fmt.Sprintf("storage_root %q is not a directory", cfg.StorageRoot),
+			Remediation: "Set storage_root to a directory path instead of a file path.",
 		})
 		return
 	}
 
-	tmp, err := os.CreateTemp(cfg.WorkspaceRoot, ".gistclaw-security-*")
+	tmp, err := os.CreateTemp(cfg.StorageRoot, ".gistclaw-security-*")
 	if err != nil {
 		report.add(Finding{
-			ID:          "workspace.root.not_writable",
-			Subject:     "workspace",
+			ID:          "storage_root.not_writable",
+			Subject:     "storage_root",
 			Severity:    SeverityFail,
-			Title:       "Workspace root is not writable",
-			Detail:      fmt.Sprintf("workspace_root %q is not writable: %v", cfg.WorkspaceRoot, err),
-			Remediation: "Grant the operator account write access to workspace_root before using runtime tools there.",
+			Title:       "Storage root is not writable",
+			Detail:      fmt.Sprintf("storage_root %q is not writable: %v", cfg.StorageRoot, err),
+			Remediation: "Grant the operator account write access to storage_root before running GistClaw there.",
 		})
 		return
 	}

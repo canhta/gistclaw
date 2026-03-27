@@ -2178,12 +2178,12 @@ func TestApprovalsResolve(t *testing.T) {
 }
 
 func TestSettingsUpdate(t *testing.T) {
-	t.Run("update workspace root redirects to settings", func(t *testing.T) {
+	t.Run("update permission settings redirects to settings", func(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/configure/settings",
-			strings.NewReader("workspace_root=%2Ftmp%2Fworkspace"))
+			strings.NewReader("approval_mode=auto_approve&host_access_mode=elevated"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -2214,7 +2214,7 @@ func TestSettingsUpdate(t *testing.T) {
 		}
 	})
 
-	t.Run("settings page demotes workspace editing to advanced override copy", func(t *testing.T) {
+	t.Run("settings page shows storage root and permission controls", func(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
@@ -2225,8 +2225,11 @@ func TestSettingsUpdate(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rr.Code)
 		}
-		if !strings.Contains(rr.Body.String(), "Advanced override.") {
-			t.Fatalf("expected advanced workspace override copy, got:\n%s", rr.Body.String())
+		body := rr.Body.String()
+		for _, want := range []string{"Storage Root", "Approval Mode", "Host Access Mode"} {
+			if !strings.Contains(body, want) {
+				t.Fatalf("expected settings page copy %q, got:\n%s", want, body)
+			}
 		}
 	})
 }
@@ -4468,6 +4471,7 @@ type serverHarness struct {
 	adminToken      string
 	activeProjectID string
 	teamDir         string
+	storageRoot     string
 	workspaceRoot   string
 }
 
@@ -4556,6 +4560,7 @@ func newServerHarnessWithProviderAndConnectorHealth(t *testing.T, prov runtime.P
 	}
 
 	adminToken := "test-admin-token"
+	storageRoot := t.TempDir()
 	workspaceRoot := t.TempDir()
 	teamDir := writeTeamFixture(t)
 	const activeProjectID = "proj-primary"
@@ -4602,6 +4607,7 @@ func newServerHarnessWithProviderAndConnectorHealth(t *testing.T, prov runtime.P
 		Replay:          replay.NewService(db),
 		Broadcaster:     broadcaster,
 		Runtime:         rt,
+		StorageRoot:     storageRoot,
 		ConnectorHealth: source,
 	})
 	if err != nil {
@@ -4617,6 +4623,7 @@ func newServerHarnessWithProviderAndConnectorHealth(t *testing.T, prov runtime.P
 		adminToken:      adminToken,
 		activeProjectID: activeProjectID,
 		teamDir:         teamDir,
+		storageRoot:     storageRoot,
 		workspaceRoot:   workspaceRoot,
 	}
 }
@@ -4633,6 +4640,7 @@ func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, e
 	}
 
 	adminToken := "test-admin-token"
+	storageRoot := t.TempDir()
 	workspaceRoot := t.TempDir()
 	teamDir := writeTeamFixture(t)
 	const activeProjectID = "proj-primary"
@@ -4679,6 +4687,7 @@ func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, e
 		Replay:      replay.NewService(db),
 		Broadcaster: broadcaster,
 		Runtime:     rt,
+		StorageRoot: storageRoot,
 	})
 	if err != nil {
 		t.Fatalf("new server: %v", err)
@@ -4693,6 +4702,7 @@ func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, e
 		adminToken:      adminToken,
 		activeProjectID: activeProjectID,
 		teamDir:         teamDir,
+		storageRoot:     storageRoot,
 		workspaceRoot:   workspaceRoot,
 	}
 }
