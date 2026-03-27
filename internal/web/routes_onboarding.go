@@ -33,12 +33,12 @@ type onboardingStep3Data struct {
 
 // scanRepoSignals reads the local filesystem of the candidate project path and produces
 // a heuristic list of task candidates. It makes no model calls.
-func scanRepoSignals(workspaceRoot string) []TaskCandidate {
+func scanRepoSignals(projectPath string) []TaskCandidate {
 	var candidates []TaskCandidate
 
-	entries, err := os.ReadDir(workspaceRoot)
+	entries, err := os.ReadDir(projectPath)
 	if err != nil {
-		return fallbackTrio(workspaceRoot)
+		return fallbackTrio(projectPath)
 	}
 
 	// Heuristic 1 (explain): directories named after known subsystems.
@@ -95,7 +95,7 @@ func scanRepoSignals(workspaceRoot string) []TaskCandidate {
 			continue
 		}
 		testName := base + "_test" + ext
-		if _, err := os.Stat(filepath.Join(workspaceRoot, testName)); os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(projectPath, testName)); os.IsNotExist(err) {
 			candidates = append(candidates, TaskCandidate{
 				Kind:        "improve",
 				Description: fmt.Sprintf("Find the safest next improvement in %s", e.Name()),
@@ -110,7 +110,7 @@ func scanRepoSignals(workspaceRoot string) []TaskCandidate {
 	for _, c := range candidates {
 		types[c.Kind] = true
 	}
-	for _, fb := range fallbackTrio(workspaceRoot) {
+	for _, fb := range fallbackTrio(projectPath) {
 		if !types[fb.Kind] {
 			candidates = append(candidates, fb)
 			types[fb.Kind] = true
@@ -120,8 +120,8 @@ func scanRepoSignals(workspaceRoot string) []TaskCandidate {
 	return candidates
 }
 
-func fallbackTrio(workspaceRoot string) []TaskCandidate {
-	dir := filepath.Base(workspaceRoot)
+func fallbackTrio(projectPath string) []TaskCandidate {
+	dir := filepath.Base(projectPath)
 	return []TaskCandidate{
 		{
 			Kind:        "explain",

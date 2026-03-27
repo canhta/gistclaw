@@ -29,7 +29,7 @@ Free collaboration does not imply free authority.
 
 The runtime keeps strict control over:
 
-- workspace mutation
+- host and project mutation
 - outbound delivery
 - approvals
 - memory scope escalation

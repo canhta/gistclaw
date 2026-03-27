@@ -369,14 +369,14 @@ func createStarterProject(ctx context.Context, db *store.DB) (model.Project, err
 		if err != nil {
 			return model.Project{}, fmt.Errorf("bootstrap: generate starter project name: %w", err)
 		}
-		workspaceRoot := filepath.Join(projectsRoot, name)
-		if err := os.Mkdir(workspaceRoot, 0o755); err != nil {
+		projectPath := filepath.Join(projectsRoot, name)
+		if err := os.Mkdir(projectPath, 0o755); err != nil {
 			if os.IsExist(err) {
 				continue
 			}
-			return model.Project{}, fmt.Errorf("bootstrap: create starter workspace: %w", err)
+			return model.Project{}, fmt.Errorf("bootstrap: create starter project path: %w", err)
 		}
-		project, err := runtime.ActivateProjectPath(ctx, db, workspaceRoot, name, "starter")
+		project, err := runtime.ActivateProjectPath(ctx, db, projectPath, name, "starter")
 		if err != nil {
 			return model.Project{}, fmt.Errorf("bootstrap: activate starter project: %w", err)
 		}
