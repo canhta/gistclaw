@@ -33,7 +33,7 @@ This document is the source of truth for what the repository ships today: packag
 - `gistclaw serve` starts the daemon and local web host.
 - `gistclaw version` prints the running release/build metadata.
 - `gistclaw auth set-password` bootstraps or resets the built-in browser password.
-- `gistclaw auth zalo-personal login` and `gistclaw auth zalo-personal logout` manage optional Zalo Personal credentials through a CLI QR flow.
+- `gistclaw auth zalo-personal login`, `gistclaw auth zalo-personal logout`, and `gistclaw auth zalo-personal contacts` manage optional Zalo Personal credentials, CLI QR auth, and DM target lookup.
 - `gistclaw run` submits a task directly from the CLI.
 - `gistclaw inspect` reports status, runs, replay, the canonical `systemd` unit, the admin token through `inspect token`, and storage health for the current database.
 - `gistclaw security audit` reports deployment-risk findings for the current config and runtime posture.
@@ -61,7 +61,7 @@ This document is the source of truth for what the repository ships today: packag
 
 - Telegram is wired through long polling, DM-focused control commands, chat-native approval/blocked-state replies, inline approval buttons, and command fallback that resume pending runs from the same DM.
 - WhatsApp is wired through a webhook handler plus outbound delivery.
-- Zalo Personal is wired through CLI-driven QR authentication, stored SQLite credentials, DM-only inbound and outbound delivery, connector health reporting, and an unofficial reverse-engineered protocol implementation.
+- Zalo Personal is wired through CLI-driven QR authentication, stored SQLite credentials, DM-only inbound and outbound delivery, friend-list lookup for DM targets, connector health reporting, and an unofficial reverse-engineered protocol implementation.
 - Connector helper packages also exist for control-plane delivery plumbing and SMTP email, while bootstrap currently wires Telegram, WhatsApp, and optional Zalo Personal for live runtime use.
 
 ## Extension Seams

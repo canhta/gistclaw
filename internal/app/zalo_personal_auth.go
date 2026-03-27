@@ -11,6 +11,17 @@ type ZaloPersonalQRLoginRunner interface {
 	LoginQR(ctx context.Context, qrCallback func([]byte)) (zalopersonal.StoredCredentials, error)
 }
 
+type ZaloPersonalFriend struct {
+	UserID      string
+	DisplayName string
+	ZaloName    string
+	Avatar      string
+}
+
+type ZaloPersonalFriendsReader interface {
+	ListFriends(ctx context.Context, creds zalopersonal.StoredCredentials) ([]ZaloPersonalFriend, error)
+}
+
 func (a *App) ZaloPersonalStoredCredentials(ctx context.Context) (zalopersonal.StoredCredentials, bool, error) {
 	if a == nil || a.db == nil {
 		return zalopersonal.StoredCredentials{}, false, fmt.Errorf("zalo personal credentials: db is required")
@@ -44,4 +55,27 @@ func (a *App) ClearZaloPersonalCredentials(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+func (a *App) ListZaloPersonalFriends(ctx context.Context, reader ZaloPersonalFriendsReader) ([]ZaloPersonalFriend, error) {
+	if a == nil || a.db == nil {
+		return nil, fmt.Errorf("zalo personal contacts: db is required")
+	}
+	if reader == nil {
+		return nil, fmt.Errorf("zalo personal contacts: reader is required")
+	}
+
+	creds, ok, err := zalopersonal.LoadStoredCredentials(ctx, a.db)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("zalo personal contacts: not authenticated")
+	}
+
+	friends, err := reader.ListFriends(ctx, creds)
+	if err != nil {
+		return nil, fmt.Errorf("zalo personal contacts: %w", err)
+	}
+	return friends, nil
 }

@@ -19,7 +19,8 @@ var (
 const authUsage = `Usage:
   gistclaw auth set-password [--password-stdin]
   gistclaw auth zalo-personal login
-  gistclaw auth zalo-personal logout`
+  gistclaw auth zalo-personal logout
+  gistclaw auth zalo-personal contacts`
 
 func runAuth(opts globalOptions, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {

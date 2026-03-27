@@ -29,6 +29,24 @@ func (s *stubZaloPersonalQRRunner) LoginQR(ctx context.Context, qrCallback func(
 	return s.creds, nil
 }
 
+type stubZaloPersonalFriendsReader struct {
+	friends   []ZaloPersonalFriend
+	err       error
+	calls     int
+	lastCtx   context.Context
+	lastCreds zalopersonal.StoredCredentials
+}
+
+func (s *stubZaloPersonalFriendsReader) ListFriends(ctx context.Context, creds zalopersonal.StoredCredentials) ([]ZaloPersonalFriend, error) {
+	s.calls++
+	s.lastCtx = ctx
+	s.lastCreds = creds
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.friends, nil
+}
+
 func TestApp_ZaloPersonalAuth(t *testing.T) {
 	ctx := context.Background()
 
@@ -113,6 +131,53 @@ func TestApp_ZaloPersonalAuth(t *testing.T) {
 		}
 		if ok {
 			t.Fatal("expected no stored credentials after clear")
+		}
+	})
+
+	t.Run("list friends uses stored credentials", func(t *testing.T) {
+		app := setupCommandApp(t)
+		creds := zalopersonal.StoredCredentials{
+			AccountID:   "123456789",
+			DisplayName: "Canh",
+			IMEI:        "imei-123",
+			Cookie:      "cookie=value",
+			UserAgent:   "Mozilla/5.0",
+			Language:    "vi",
+		}
+		if err := zalopersonal.SaveStoredCredentials(ctx, app.db, creds); err != nil {
+			t.Fatalf("SaveStoredCredentials: %v", err)
+		}
+		reader := &stubZaloPersonalFriendsReader{
+			friends: []ZaloPersonalFriend{
+				{UserID: "user-1", DisplayName: "An"},
+				{UserID: "user-2", DisplayName: "Bao"},
+			},
+		}
+
+		got, err := app.ListZaloPersonalFriends(ctx, reader)
+		if err != nil {
+			t.Fatalf("ListZaloPersonalFriends: %v", err)
+		}
+		if reader.calls != 1 {
+			t.Fatalf("expected reader to be called once, got %d", reader.calls)
+		}
+		if reader.lastCreds != creds {
+			t.Fatalf("expected creds %+v, got %+v", creds, reader.lastCreds)
+		}
+		if len(got) != 2 || got[0].UserID != "user-1" || got[1].UserID != "user-2" {
+			t.Fatalf("unexpected friends: %+v", got)
+		}
+	})
+
+	t.Run("list friends without stored credentials fails", func(t *testing.T) {
+		app := setupCommandApp(t)
+		reader := &stubZaloPersonalFriendsReader{}
+
+		if _, err := app.ListZaloPersonalFriends(ctx, reader); err == nil {
+			t.Fatal("expected ListZaloPersonalFriends to fail without stored credentials")
+		}
+		if reader.calls != 0 {
+			t.Fatalf("expected reader to stay unused, got %d calls", reader.calls)
 		}
 	})
 }

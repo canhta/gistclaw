@@ -18,7 +18,7 @@ Today the repo already ships a working daemon, CLI, local web control plane, rep
 - `gistclaw serve` starts the daemon and local web host.
 - `gistclaw version` prints the installed release identity.
 - `gistclaw auth set-password` bootstraps or rotates the built-in browser login for VPS operators.
-- `gistclaw auth zalo-personal login` and `gistclaw auth zalo-personal logout` manage optional Zalo Personal connector credentials through a CLI-driven QR flow.
+- `gistclaw auth zalo-personal login`, `gistclaw auth zalo-personal logout`, and `gistclaw auth zalo-personal contacts` manage optional Zalo Personal connector credentials and DM target lookup through the CLI.
 - `gistclaw run`, `inspect`, `security audit`, `schedule`, `doctor`, `backup`, and `export` cover the operator CLI.
 - `gistclaw inspect systemd-unit` prints the canonical service file used by the Ubuntu installer.
 - `gistclaw inspect token` prints the admin token stored in the runtime settings table.
@@ -67,6 +67,7 @@ Create `~/.config/gistclaw/config.yaml` using the minimal example in [CONTRIBUTI
 gistclaw serve
 gistclaw auth set-password
 gistclaw auth zalo-personal login
+gistclaw auth zalo-personal contacts
 gistclaw run "fix the failing tests"
 gistclaw inspect status
 gistclaw inspect replay <run_id>

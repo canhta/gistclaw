@@ -32,6 +32,20 @@ func (s *stubAuthZaloPersonalRunner) LoginQR(_ context.Context, qrCallback func(
 	return s.creds, nil
 }
 
+type stubAuthZaloPersonalFriendsReader struct {
+	friends []app.ZaloPersonalFriend
+	err     error
+	calls   int
+}
+
+func (s *stubAuthZaloPersonalFriendsReader) ListFriends(_ context.Context, _ zalopersonal.StoredCredentials) ([]app.ZaloPersonalFriend, error) {
+	s.calls++
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.friends, nil
+}
+
 func TestRun_AuthZaloPersonalLoginWritesQRFileAndStoresCredentials(t *testing.T) {
 	startMockAnthropicServer(t)
 	cfgPath, dbPath, stateDir := writeZaloPersonalCLIConfig(t)
@@ -147,6 +161,62 @@ func TestRun_AuthZaloPersonalLogoutClearsCredentials(t *testing.T) {
 	}
 }
 
+func TestRun_AuthZaloPersonalContactsPrintsFriendIDs(t *testing.T) {
+	startMockAnthropicServer(t)
+	cfgPath, dbPath, _ := writeZaloPersonalCLIConfig(t)
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	if err := zalopersonal.SaveStoredCredentials(context.Background(), db, zalopersonal.StoredCredentials{
+		AccountID: "123456789",
+		IMEI:      "imei-123",
+		Cookie:    "zpw_sek=abc123",
+		UserAgent: "Mozilla/5.0",
+		Language:  "vi",
+	}); err != nil {
+		t.Fatalf("SaveStoredCredentials: %v", err)
+	}
+	_ = db.Close()
+
+	reader := &stubAuthZaloPersonalFriendsReader{
+		friends: []app.ZaloPersonalFriend{
+			{UserID: "user-2", DisplayName: "Bao"},
+			{UserID: "user-1", DisplayName: "An"},
+		},
+	}
+	oldReaderFactory := newZaloPersonalFriendsReader
+	newZaloPersonalFriendsReader = func() app.ZaloPersonalFriendsReader { return reader }
+	t.Cleanup(func() { newZaloPersonalFriendsReader = oldReaderFactory })
+
+	var stdout, stderr bytes.Buffer
+	code := runWithInput(
+		[]string{"auth", "--config", cfgPath, "zalo-personal", "contacts"},
+		bytes.NewReader(nil),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("auth zalo-personal contacts failed with code %d:\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if reader.calls != 1 {
+		t.Fatalf("expected contacts reader to be called once, got %d", reader.calls)
+	}
+	for _, want := range []string{
+		"user_id\tdisplay_name",
+		"user-1\tAn",
+		"user-2\tBao",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("expected %q in stdout, got:\n%s", want, stdout.String())
+		}
+	}
+}
+
 func TestRun_AuthZaloPersonalInvalidSubcommandShowsUsage(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := runWithInput(
@@ -158,7 +228,7 @@ func TestRun_AuthZaloPersonalInvalidSubcommandShowsUsage(t *testing.T) {
 	if code == 0 {
 		t.Fatal("expected invalid subcommand to fail")
 	}
-	if !strings.Contains(stderr.String(), "Usage: gistclaw auth zalo-personal <login|logout>") {
+	if !strings.Contains(stderr.String(), "Usage: gistclaw auth zalo-personal <login|logout|contacts>") {
 		t.Fatalf("expected zalo-personal usage, got:\n%s", stderr.String())
 	}
 }
