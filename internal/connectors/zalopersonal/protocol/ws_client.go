@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -78,4 +79,15 @@ func (c *WSClient) Close(code int, reason string) {
 	defer c.mu.Unlock()
 	_ = c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason))
 	_ = c.conn.Close()
+}
+
+func parseWSCloseError(err error) *DisconnectError {
+	var closeErr *websocket.CloseError
+	if errors.As(err, &closeErr) {
+		return &DisconnectError{Code: closeErr.Code, Reason: closeErr.Text}
+	}
+	if err == nil {
+		return nil
+	}
+	return &DisconnectError{Code: 1006, Reason: err.Error()}
 }

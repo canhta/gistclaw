@@ -17,9 +17,32 @@ import (
 )
 
 const (
-	msgBufferSize = 64
-	minEncDataLen = 48
+	CloseCodeDuplicate = 3000
+	msgBufferSize      = 64
+	minEncDataLen      = 48
+	stableThreshold    = 60 * time.Second
 )
+
+type DisconnectError struct {
+	Code   int
+	Reason string
+}
+
+func (e *DisconnectError) Error() string {
+	if e == nil {
+		return "zalo personal protocol: disconnected"
+	}
+	if e.Reason == "" {
+		return fmt.Sprintf("zalo personal protocol: disconnected (%d)", e.Code)
+	}
+	return fmt.Sprintf("zalo personal protocol: disconnected (%d): %s", e.Code, e.Reason)
+}
+
+type retryState struct {
+	count int
+	max   int
+	times []int
+}
 
 type wsClient interface {
 	ReadMessage(ctx context.Context) ([]byte, error)
@@ -32,15 +55,21 @@ type wsDialFunc func(ctx context.Context, wsURL string, headers http.Header, jar
 type Listener struct {
 	mu sync.RWMutex
 
-	sess   *Session
-	wsURL  string
-	dialWS wsDialFunc
-	client wsClient
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	sess        *Session
+	wsURLs      []string
+	wsURL       string
+	rotateCount int
+	dialWS      wsDialFunc
+	client      wsClient
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
 
-	cipherKey  string
-	pingCancel context.CancelFunc
+	cipherKey    string
+	pingCancel   context.CancelFunc
+	connectedAt  time.Time
+	retryStates  map[string]*retryState
+	stopped      bool
+	retryBackoff func(ctx context.Context, delay time.Duration) error
 
 	messageCh      chan Message
 	errorCh        chan error
@@ -53,10 +82,15 @@ func NewListener(sess *Session) (*Listener, error) {
 	}
 
 	return &Listener{
-		sess:  sess,
-		wsURL: buildWSURL(sess, sess.LoginInfo.ZpwWebsocket[0]),
+		sess:        sess,
+		wsURLs:      append([]string(nil), sess.LoginInfo.ZpwWebsocket...),
+		wsURL:       buildWSURL(sess, sess.LoginInfo.ZpwWebsocket[0]),
+		retryStates: buildListenerRetryStates(sess.Settings),
 		dialWS: func(ctx context.Context, wsURL string, headers http.Header, jar http.CookieJar) (wsClient, error) {
 			return DialWS(ctx, wsURL, headers, jar)
+		},
+		retryBackoff: func(ctx context.Context, delay time.Duration) error {
+			return sleepContext(ctx, delay)
 		},
 		messageCh:      make(chan Message, msgBufferSize),
 		errorCh:        make(chan error, 16),
@@ -79,21 +113,13 @@ func (ln *Listener) Start(ctx context.Context) error {
 	}
 
 	lctx, cancel := context.WithCancel(ctx)
-	headers := http.Header{}
-	headers.Set("Accept-Language", "en-US,en;q=0.9")
-	headers.Set("Cache-Control", "no-cache")
-	headers.Set("Origin", DefaultBaseURL.String())
-	headers.Set("Pragma", "no-cache")
-	headers.Set("User-Agent", ln.sess.UserAgent)
-
-	client, err := ln.dialWS(lctx, ln.wsURL, headers, ln.sess.CookieJar)
-	if err != nil {
+	ln.stopped = false
+	ln.cancel = cancel
+	if err := ln.connect(lctx); err != nil {
 		cancel()
+		ln.cancel = nil
 		return err
 	}
-
-	ln.client = client
-	ln.cancel = cancel
 	ln.wg.Add(1)
 	go ln.run(lctx)
 	return nil
@@ -104,6 +130,7 @@ func (ln *Listener) Stop() {
 	cancel := ln.cancel
 	client := ln.client
 	pingCancel := ln.pingCancel
+	ln.stopped = true
 	ln.client = nil
 	ln.cancel = nil
 	ln.pingCancel = nil
@@ -141,16 +168,23 @@ func (ln *Listener) run(ctx context.Context) {
 			if ctx.Err() != nil {
 				return
 			}
-			emit(ctx, ln.disconnectedCh, err)
+			if ln.handleDisconnect(ctx, parseWSCloseError(err)) {
+				continue
+			}
 			return
 		}
-		ln.handleFrame(ctx, data)
+		if err := ln.handleFrame(ctx, data); err != nil {
+			if ln.handleDisconnect(ctx, err) {
+				continue
+			}
+			return
+		}
 	}
 }
 
-func (ln *Listener) handleFrame(ctx context.Context, data []byte) {
+func (ln *Listener) handleFrame(ctx context.Context, data []byte) error {
 	if len(data) < 4 {
-		return
+		return nil
 	}
 
 	version := data[0]
@@ -165,7 +199,7 @@ func (ln *Listener) handleFrame(ctx context.Context, data []byte) {
 	}
 	if err := json.Unmarshal(body, &envelope); err != nil {
 		emit(ctx, ln.errorCh, fmt.Errorf("zalo personal protocol: parse ws frame: %w", err))
-		return
+		return nil
 	}
 
 	switch fmt.Sprintf("%d_%d_%d", version, cmd, subCmd) {
@@ -174,8 +208,12 @@ func (ln *Listener) handleFrame(ctx context.Context, data []byte) {
 	case "1_501_0":
 		ln.handleUserMessages(ctx, envelope.Data, envelope.Encrypt)
 	case "1_3000_0":
-		emit(ctx, ln.disconnectedCh, fmt.Errorf("zalo personal protocol: duplicate session"))
+		return &DisconnectError{
+			Code:   CloseCodeDuplicate,
+			Reason: "duplicate session",
+		}
 	}
+	return nil
 }
 
 func (ln *Listener) handleCipherKey(ctx context.Context, key *string) {
@@ -338,6 +376,164 @@ func (ln *Listener) sendPing(ctx context.Context) {
 
 func buildWSURL(sess *Session, base string) string {
 	return makeURL(sess, base, map[string]any{"t": time.Now().UnixMilli()}, true)
+}
+
+func (ln *Listener) connect(ctx context.Context) error {
+	headers := http.Header{}
+	headers.Set("Accept-Language", "en-US,en;q=0.9")
+	headers.Set("Cache-Control", "no-cache")
+	headers.Set("Origin", DefaultBaseURL.String())
+	headers.Set("Pragma", "no-cache")
+	headers.Set("User-Agent", ln.sess.UserAgent)
+
+	client, err := ln.dialWS(ctx, ln.wsURL, headers, ln.sess.CookieJar)
+	if err != nil {
+		return err
+	}
+
+	ln.client = client
+	ln.connectedAt = time.Now().UTC()
+	return nil
+}
+
+func (ln *Listener) handleDisconnect(ctx context.Context, err error) bool {
+	if err == nil {
+		return false
+	}
+
+	disconnect, ok := err.(*DisconnectError)
+	if !ok {
+		disconnect = &DisconnectError{Code: 1006, Reason: err.Error()}
+	}
+
+	wasStable := !ln.connectedAt.IsZero() && time.Since(ln.connectedAt) > stableThreshold
+	ln.resetAfterDisconnect()
+	emit(ctx, ln.errorCh, error(disconnect))
+
+	if disconnect.Code == CloseCodeDuplicate {
+		emit(ctx, ln.disconnectedCh, error(disconnect))
+		return false
+	}
+
+	if wasStable {
+		ln.resetRetryCounters()
+	}
+
+	delay, ok := ln.canRetry(disconnect.Code)
+	if !ok {
+		emit(ctx, ln.disconnectedCh, error(disconnect))
+		return false
+	}
+
+	ln.tryRotateEndpoint(disconnect.Code)
+	if err := ln.retryBackoff(ctx, time.Duration(delay)*time.Millisecond); err != nil {
+		return false
+	}
+	if err := ln.connect(ctx); err != nil {
+		emit(ctx, ln.disconnectedCh, error(parseWSCloseError(err)))
+		return false
+	}
+	return true
+}
+
+func (ln *Listener) resetAfterDisconnect() {
+	ln.mu.Lock()
+	defer ln.mu.Unlock()
+	if ln.pingCancel != nil {
+		ln.pingCancel()
+		ln.pingCancel = nil
+	}
+	if ln.client != nil {
+		ln.client.Close(1000, "")
+		ln.client = nil
+	}
+	ln.cipherKey = ""
+	ln.connectedAt = time.Time{}
+}
+
+func (ln *Listener) resetRetryCounters() {
+	ln.mu.Lock()
+	defer ln.mu.Unlock()
+	for _, state := range ln.retryStates {
+		state.count = 0
+	}
+	ln.rotateCount = 0
+	if len(ln.wsURLs) > 0 {
+		ln.wsURL = buildWSURL(ln.sess, ln.wsURLs[0])
+	}
+}
+
+func (ln *Listener) canRetry(code int) (int, bool) {
+	ln.mu.Lock()
+	defer ln.mu.Unlock()
+
+	state, ok := ln.retryStates[fmt.Sprint(code)]
+	if !ok || state == nil || state.max == 0 || len(state.times) == 0 {
+		return 0, false
+	}
+	if state.count >= state.max {
+		return 0, false
+	}
+
+	index := state.count
+	state.count++
+	delay := state.times[len(state.times)-1]
+	if index < len(state.times) {
+		delay = state.times[index]
+	}
+	return delay, true
+}
+
+func (ln *Listener) tryRotateEndpoint(code int) {
+	ln.mu.Lock()
+	defer ln.mu.Unlock()
+
+	if ln.sess == nil || ln.sess.Settings == nil {
+		return
+	}
+	if ln.rotateCount >= len(ln.wsURLs)-1 {
+		return
+	}
+	for _, candidate := range ln.sess.Settings.Features.Socket.RotateErrorCodes {
+		if candidate != code {
+			continue
+		}
+		ln.rotateCount++
+		ln.wsURL = buildWSURL(ln.sess, ln.wsURLs[ln.rotateCount])
+		return
+	}
+}
+
+func buildListenerRetryStates(settings *Settings) map[string]*retryState {
+	states := make(map[string]*retryState, 8)
+	if settings == nil {
+		return states
+	}
+	for reason, cfg := range settings.Features.Socket.Retries {
+		maxRetries := 0
+		if cfg.Max != nil {
+			maxRetries = *cfg.Max
+		}
+		if len(cfg.Times) == 0 {
+			continue
+		}
+		states[reason] = &retryState{max: maxRetries, times: append([]int(nil), cfg.Times...)}
+	}
+	return states
+}
+
+func sleepContext(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func emit[T any](ctx context.Context, ch chan T, value T) {

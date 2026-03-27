@@ -2,6 +2,7 @@ package zalopersonal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -41,6 +42,7 @@ type Connector struct {
 	newListener            func(sess *listenerSession) (SessionListener, error)
 	credentialPollInterval time.Duration
 	reconnectDelay         time.Duration
+	duplicateSessionDelay  time.Duration
 }
 
 const maxTextChunkBytes = 2000
@@ -51,6 +53,7 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 		health:                 NewHealthState(),
 		credentialPollInterval: 5 * time.Second,
 		reconnectDelay:         2 * time.Second,
+		duplicateSessionDelay:  60 * time.Second,
 	}
 	connector.outbound = NewOutboundDispatcher(connector, db, cs)
 	connector.login = func(ctx context.Context, creds StoredCredentials) (*listenerSession, error) {
@@ -163,14 +166,28 @@ func (c *Connector) Start(ctx context.Context) error {
 			if err == context.Canceled || err == context.DeadlineExceeded {
 				return err
 			}
-			c.health.markDisconnected(err.Error())
-			if err := sleepContext(ctx, c.reconnectDelay); err != nil {
+			delay := c.reconnectDelay
+			if isDuplicateSessionError(err) {
+				c.health.markDisconnected("duplicate session; waiting to retry")
+				delay = c.duplicateSessionDelay
+			} else {
+				c.health.markDisconnected(err.Error())
+			}
+			if err := sleepContext(ctx, delay); err != nil {
 				return err
 			}
 			continue
 		}
 		listener.Stop()
 	}
+}
+
+func isDuplicateSessionError(err error) bool {
+	var disconnect *protocol.DisconnectError
+	if !errors.As(err, &disconnect) {
+		return false
+	}
+	return disconnect.Code == protocol.CloseCodeDuplicate
 }
 
 func (c *Connector) Notify(ctx context.Context, chatID string, delta model.ReplayDelta, dedupeKey string) error {

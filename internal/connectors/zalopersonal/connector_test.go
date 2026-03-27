@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/canhta/gistclaw/internal/connectors/zalopersonal/protocol"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime"
@@ -266,6 +267,80 @@ func TestConnectorStart(t *testing.T) {
 		}
 		if listenerCalls.Load() < 2 {
 			t.Fatalf("expected listener to be recreated, got %d calls", listenerCalls.Load())
+		}
+		if err := <-errCh; err != context.Canceled && err != context.DeadlineExceeded {
+			t.Fatalf("expected context shutdown, got %v", err)
+		}
+	})
+
+	t.Run("duplicate session waits on dedicated backoff before reconnect", func(t *testing.T) {
+		db := setupZaloOutboundDB(t)
+		cs := conversations.NewConversationStore(db)
+		rt := &stubInboundRuntime{}
+		if err := SaveStoredCredentials(context.Background(), db, StoredCredentials{
+			AccountID: "acct-1",
+			IMEI:      "imei-123",
+			Cookie:    "zpw_sek=abc123",
+			UserAgent: "Mozilla/5.0",
+		}); err != nil {
+			t.Fatalf("SaveStoredCredentials: %v", err)
+		}
+
+		first := newStubSessionListener()
+		first.onStart = func() {
+			first.disconnected <- &protocol.DisconnectError{
+				Code:   protocol.CloseCodeDuplicate,
+				Reason: "another client is active",
+			}
+		}
+		second := newStubSessionListener()
+
+		var loginCalls atomic.Int32
+		var listenerCalls atomic.Int32
+		connector := NewConnector(db, cs, rt, "assistant")
+		connector.reconnectDelay = 5 * time.Millisecond
+		connector.duplicateSessionDelay = 40 * time.Millisecond
+		connector.login = func(ctx context.Context, creds StoredCredentials) (*listenerSession, error) {
+			loginCalls.Add(1)
+			return &listenerSession{AccountID: creds.AccountID}, nil
+		}
+		connector.newListener = func(*listenerSession) (SessionListener, error) {
+			n := listenerCalls.Add(1)
+			if n == 1 {
+				return first, nil
+			}
+			return second, nil
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+		defer cancel()
+
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- connector.Start(ctx)
+		}()
+
+		time.Sleep(15 * time.Millisecond)
+		if loginCalls.Load() != 1 {
+			t.Fatalf("expected duplicate session to avoid immediate reconnect, got %d logins", loginCalls.Load())
+		}
+
+		snapshot := connector.ConnectorHealthSnapshot()
+		if !strings.Contains(snapshot.Summary, "duplicate session") {
+			t.Fatalf("expected duplicate session summary, got %#v", snapshot)
+		}
+
+		deadline := time.Now().Add(80 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			if loginCalls.Load() >= 2 && listenerCalls.Load() >= 2 {
+				cancel()
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+
+		if loginCalls.Load() < 2 {
+			t.Fatalf("expected reconnect after duplicate-session backoff, got %d logins", loginCalls.Load())
 		}
 		if err := <-errCh; err != context.Canceled && err != context.DeadlineExceeded {
 			t.Fatalf("expected context shutdown, got %v", err)

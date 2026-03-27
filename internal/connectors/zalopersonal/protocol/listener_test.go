@@ -11,16 +11,20 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 type stubWSClient struct {
 	reads  chan []byte
+	errors chan error
 	writes chan []byte
 }
 
 func newStubWSClient() *stubWSClient {
 	return &stubWSClient{
 		reads:  make(chan []byte, 8),
+		errors: make(chan error, 8),
 		writes: make(chan []byte, 8),
 	}
 }
@@ -29,6 +33,8 @@ func (c *stubWSClient) ReadMessage(ctx context.Context) ([]byte, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
+	case err := <-c.errors:
+		return nil, err
 	case msg, ok := <-c.reads:
 		if !ok {
 			return nil, io.EOF
@@ -168,6 +174,88 @@ func TestNewListenerRejectsMissingWSURL(t *testing.T) {
 	_, err := NewListener(&Session{})
 	if err == nil {
 		t.Fatal("expected missing websocket URL error")
+	}
+}
+
+func TestListenerRetriesTransientDisconnectAndRotatesEndpoint(t *testing.T) {
+	t.Parallel()
+
+	cipherKey := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	sess := sessWithWSSettings(cipherKey)
+	sess.LoginInfo = &LoginInfo{
+		ZpwWebsocket: []string{
+			"wss://ws-1.example.test/socket",
+			"wss://ws-2.example.test/socket",
+		},
+	}
+	maxRetries := 1
+	sess.Settings.Features.Socket.Retries = map[string]SocketRetryConfig{
+		"1006": {
+			Max:   &maxRetries,
+			Times: []int{1},
+		},
+	}
+	sess.Settings.Features.Socket.RotateErrorCodes = []int{1006}
+
+	ln, err := NewListener(sess)
+	if err != nil {
+		t.Fatalf("NewListener: %v", err)
+	}
+
+	first := newStubWSClient()
+	second := newStubWSClient()
+	dialed := make([]string, 0, 2)
+	ln.dialWS = func(_ context.Context, wsURL string, _ http.Header, _ http.CookieJar) (wsClient, error) {
+		dialed = append(dialed, wsURL)
+		if len(dialed) == 1 {
+			return first, nil
+		}
+		return second, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := ln.Start(ctx); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer ln.Stop()
+
+	first.errors <- &websocket.CloseError{Code: 1006, Text: "transient disconnect"}
+	second.reads <- makeFrame(1, 1, 1, map[string]any{"key": cipherKey})
+	second.reads <- makeFrame(1, 501, 0, map[string]any{
+		"encrypt": 3,
+		"data": encryptWSData(t, cipherKey, map[string]any{
+			"data": map[string]any{
+				"msgs": []map[string]any{
+					{
+						"msgId":   "msg-rotated",
+						"uidFrom": "user-2",
+						"idTo":    "acct-1",
+						"content": "after retry",
+					},
+				},
+			},
+		}),
+	})
+
+	select {
+	case raw := <-ln.Messages():
+		msg, ok := raw.(UserMessage)
+		if !ok {
+			t.Fatalf("expected UserMessage, got %T", raw)
+		}
+		if msg.MessageID() != "msg-rotated" {
+			t.Fatalf("expected retried message, got %q", msg.MessageID())
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for retried listener message")
+	}
+
+	if len(dialed) < 2 {
+		t.Fatalf("expected listener to dial twice, got %d dials", len(dialed))
+	}
+	if dialed[0] == dialed[1] {
+		t.Fatalf("expected endpoint rotation, got identical URLs %q", dialed[0])
 	}
 }
 
