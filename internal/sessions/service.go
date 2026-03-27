@@ -29,7 +29,6 @@ var ErrOutboundIntentNotFound = fmt.Errorf("sessions: outbound intent not found"
 type OpenFrontSession struct {
 	ConversationID string
 	AgentID        string
-	WorkspaceRoot  string
 }
 
 type SpawnWorkerSession struct {
@@ -50,31 +49,28 @@ type BindFollowUp struct {
 }
 
 type DeliveryQueueFilter struct {
-	ProjectID     string
-	WorkspaceRoot string
-	ConnectorID   string
-	SessionID     string
-	Status        string
-	Query         string
-	Cursor        string
-	Direction     string
-	Limit         int
+	ProjectID   string
+	ConnectorID string
+	SessionID   string
+	Status      string
+	Query       string
+	Cursor      string
+	Direction   string
+	Limit       int
 }
 
 type RouteListFilter struct {
-	ProjectID     string
-	WorkspaceRoot string
-	ConnectorID   string
-	Status        string
-	Query         string
-	Cursor        string
-	Direction     string
-	Limit         int
+	ProjectID   string
+	ConnectorID string
+	Status      string
+	Query       string
+	Cursor      string
+	Direction   string
+	Limit       int
 }
 
 type SessionListFilter struct {
 	ProjectID      string
-	WorkspaceRoot  string
 	ConversationID string
 	AgentID        string
 	Role           string

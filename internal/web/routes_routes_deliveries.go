@@ -215,17 +215,15 @@ func (s *Server) loadRoutesDeliveriesPageData(r *http.Request) (routesDeliveries
 		return routesDeliveriesPageData{}, errors.New("failed to load active project")
 	}
 	baseRouteFilter := sessions.RouteListFilter{
-		ProjectID:     activeProject.ID,
-		WorkspaceRoot: activeProject.PrimaryPath,
-		ConnectorID:   filters.ConnectorID,
-		Query:         filters.Query,
+		ProjectID:   activeProject.ID,
+		ConnectorID: filters.ConnectorID,
+		Query:       filters.Query,
 	}
 	baseDeliveryFilter := sessions.DeliveryQueueFilter{
-		ProjectID:     activeProject.ID,
-		WorkspaceRoot: activeProject.PrimaryPath,
-		ConnectorID:   filters.ConnectorID,
-		Status:        filters.DeliveryStatus,
-		Query:         filters.Query,
+		ProjectID:   activeProject.ID,
+		ConnectorID: filters.ConnectorID,
+		Status:      filters.DeliveryStatus,
+		Query:       filters.Query,
 	}
 
 	health, err := s.rt.ConnectorDeliveryHealth(r.Context())

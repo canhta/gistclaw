@@ -34,7 +34,6 @@ func openFrontSession(t *testing.T, svc *Service) model.Session {
 	sess, err := svc.OpenFrontSession(context.Background(), OpenFrontSession{
 		ConversationID: "conv-1",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession failed: %v", err)
@@ -48,7 +47,6 @@ func TestService_OpenFrontSession(t *testing.T) {
 	sess, err := svc.OpenFrontSession(context.Background(), OpenFrontSession{
 		ConversationID: "conv-1",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -336,7 +334,6 @@ func TestService_ListConnectorDeliveryHealth(t *testing.T) {
 	frontWhatsApp, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-whatsapp",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession whatsapp failed: %v", err)
@@ -414,7 +411,6 @@ func TestService_ListDeliveryQueue(t *testing.T) {
 	frontWhatsApp, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-whatsapp",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession whatsapp failed: %v", err)
@@ -478,7 +474,6 @@ func TestService_ListDeliveryQueueAppliesQueryAndAllStatus(t *testing.T) {
 	frontWhatsApp, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-whatsapp",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession whatsapp failed: %v", err)
@@ -538,7 +533,6 @@ func TestService_ListRoutes(t *testing.T) {
 	frontWhatsApp, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-whatsapp",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession whatsapp failed: %v", err)
@@ -591,7 +585,6 @@ func TestService_ListRoutesAppliesQueryFilter(t *testing.T) {
 	frontWhatsApp, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-whatsapp",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession whatsapp failed: %v", err)
@@ -744,7 +737,6 @@ func TestService_ListSessionsOrdersByLatestActivityAcrossConversations(t *testin
 	first, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-1",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession first failed: %v", err)
@@ -752,7 +744,6 @@ func TestService_ListSessionsOrdersByLatestActivityAcrossConversations(t *testin
 	second, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-2",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession second failed: %v", err)
@@ -797,7 +788,6 @@ func TestService_ListSessionsAppliesDirectoryFilters(t *testing.T) {
 	frontTelegram, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-telegram",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession telegram failed: %v", err)
@@ -815,7 +805,6 @@ func TestService_ListSessionsAppliesDirectoryFilters(t *testing.T) {
 	frontArchive, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-archive",
 		AgentID:        "archivist",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession archive failed: %v", err)
@@ -891,7 +880,6 @@ func TestService_ListSessionsPageSupportsCursorPagination(t *testing.T) {
 	first, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-1",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession first failed: %v", err)
@@ -899,7 +887,6 @@ func TestService_ListSessionsPageSupportsCursorPagination(t *testing.T) {
 	second, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-2",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession second failed: %v", err)
@@ -907,7 +894,6 @@ func TestService_ListSessionsPageSupportsCursorPagination(t *testing.T) {
 	third, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-3",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession third failed: %v", err)
@@ -981,7 +967,6 @@ func TestService_ListRoutesPageSupportsCursorPagination(t *testing.T) {
 	frontOne, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-1",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession first failed: %v", err)
@@ -989,7 +974,6 @@ func TestService_ListRoutesPageSupportsCursorPagination(t *testing.T) {
 	frontTwo, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-2",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession second failed: %v", err)
@@ -997,7 +981,6 @@ func TestService_ListRoutesPageSupportsCursorPagination(t *testing.T) {
 	frontThree, err := svc.OpenFrontSession(ctx, OpenFrontSession{
 		ConversationID: "conv-3",
 		AgentID:        "assistant",
-		WorkspaceRoot:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("OpenFrontSession third failed: %v", err)
