@@ -43,4 +43,4 @@ coder_exec_rules:
   - use coder_exec with backend codex when the delegated task asks for Codex CLI or needs larger generated code changes
   - let coder_exec own the codex argv contract instead of assembling codex exec flags inside the prompt
   - if coder_exec cannot run, report the blocker clearly so the coordinator can choose another path
-notes: single-use approval tickets; fingerprint is sha256(tool_name:args_json:target_path)
+notes: single-use approval tickets; fingerprint is sha256(tool_name:args_json:binding_json)

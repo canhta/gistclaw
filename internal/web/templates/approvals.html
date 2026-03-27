@@ -52,7 +52,7 @@
     <article class="run-row {{.StatusClass}} approval-card">
       <div class="mono">{{.ID}}</div>
       <div>
-        <strong>{{.ToolName}}</strong>{{if .TargetPath}} &mdash; {{.TargetPath}}{{end}}
+        <strong>{{.ToolName}}</strong>{{if .BindingSummary}} &mdash; {{.BindingSummary}}{{end}}
       </div>
       <div class="muted mono">task: {{.RunID}}</div>
       <div class="button-row approval-card-meta">

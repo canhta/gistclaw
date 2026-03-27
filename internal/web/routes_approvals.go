@@ -18,7 +18,7 @@ type approvalItem struct {
 	ID              string
 	RunID           string
 	ToolName        string
-	TargetPath      string
+	BindingSummary  string
 	Status          string
 	StatusLabel     string
 	StatusClass     string
@@ -64,7 +64,7 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to load approvals", http.StatusInternalServerError)
 			return
 		}
-		item.TargetPath = approvalDisplayTarget(bindingJSON)
+		item.BindingSummary = approvalBindingSummary(bindingJSON)
 		item.StatusLabel = humanizeWebLabel(item.Status)
 		item.StatusClass = approvalStatusClass(item.Status)
 		if resolvedAt.Valid {

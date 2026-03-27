@@ -170,7 +170,7 @@ type runNodeDetailView struct {
 type runNodeApprovalView struct {
 	ID               string `json:"id"`
 	ToolName         string `json:"tool_name"`
-	TargetPath       string `json:"target_path,omitempty"`
+	BindingSummary   string `json:"binding_summary,omitempty"`
 	Reason           string `json:"reason,omitempty"`
 	Status           string `json:"status"`
 	StatusLabel      string `json:"status_label"`
@@ -884,10 +884,10 @@ func buildRunNodeApprovalView(approvals []runApprovalRecord, events []model.Even
 	}
 
 	metadata := make(map[string]struct {
-		ToolName   string
-		TargetPath string
-		Reason     string
-		CreatedAt  time.Time
+		ToolName       string
+		BindingSummary string
+		Reason         string
+		CreatedAt      time.Time
 	}, len(approvals))
 	for _, evt := range events {
 		if evt.Kind != "approval_requested" {
@@ -896,7 +896,6 @@ func buildRunNodeApprovalView(approvals []runApprovalRecord, events []model.Even
 		var payload struct {
 			ApprovalID  string          `json:"approval_id"`
 			ToolName    string          `json:"tool_name"`
-			TargetPath  string          `json:"target_path"`
 			BindingJSON json.RawMessage `json:"binding_json"`
 			Reason      string          `json:"reason"`
 		}
@@ -907,15 +906,15 @@ func buildRunNodeApprovalView(approvals []runApprovalRecord, events []model.Even
 			continue
 		}
 		metadata[payload.ApprovalID] = struct {
-			ToolName   string
-			TargetPath string
-			Reason     string
-			CreatedAt  time.Time
+			ToolName       string
+			BindingSummary string
+			Reason         string
+			CreatedAt      time.Time
 		}{
-			ToolName:   strings.TrimSpace(payload.ToolName),
-			TargetPath: firstNonEmpty(strings.TrimSpace(payload.TargetPath), approvalDisplayTarget(payload.BindingJSON)),
-			Reason:     strings.TrimSpace(payload.Reason),
-			CreatedAt:  evt.CreatedAt.UTC(),
+			ToolName:       strings.TrimSpace(payload.ToolName),
+			BindingSummary: approvalBindingSummary(payload.BindingJSON),
+			Reason:         strings.TrimSpace(payload.Reason),
+			CreatedAt:      evt.CreatedAt.UTC(),
 		}
 	}
 
@@ -928,15 +927,15 @@ func buildRunNodeApprovalView(approvals []runApprovalRecord, events []model.Even
 	}
 
 	view := &runNodeApprovalView{
-		ID:          selected.ID,
-		ToolName:    strings.TrimSpace(selected.ToolName),
-		TargetPath:  approvalDisplayTarget(selected.BindingJSON),
-		Status:      strings.TrimSpace(selected.Status),
-		StatusLabel: strings.TrimSpace(strings.ReplaceAll(selected.Status, "_", " ")),
-		StatusClass: approvalStatusClass(selected.Status),
-		ResolveURL:  approvalResolvePath(selected.ID),
-		ViewURL:     pageRecoverApprovals + "?q=" + url.QueryEscape(selected.ID),
-		CanResolve:  selected.Status == "pending",
+		ID:             selected.ID,
+		ToolName:       strings.TrimSpace(selected.ToolName),
+		BindingSummary: approvalBindingSummary(selected.BindingJSON),
+		Status:         strings.TrimSpace(selected.Status),
+		StatusLabel:    strings.TrimSpace(strings.ReplaceAll(selected.Status, "_", " ")),
+		StatusClass:    approvalStatusClass(selected.Status),
+		ResolveURL:     approvalResolvePath(selected.ID),
+		ViewURL:        pageRecoverApprovals + "?q=" + url.QueryEscape(selected.ID),
+		CanResolve:     selected.Status == "pending",
 	}
 	if requestedAt := parseRunListTimestamp(selected.CreatedAt); !requestedAt.IsZero() {
 		view.RequestedAtLabel = formatRunTimestamp(requestedAt)
@@ -949,8 +948,8 @@ func buildRunNodeApprovalView(approvals []runApprovalRecord, events []model.Even
 		if view.ToolName == "" {
 			view.ToolName = meta.ToolName
 		}
-		if view.TargetPath == "" {
-			view.TargetPath = meta.TargetPath
+		if view.BindingSummary == "" {
+			view.BindingSummary = meta.BindingSummary
 		}
 		view.Reason = meta.Reason
 		if !meta.CreatedAt.IsZero() {

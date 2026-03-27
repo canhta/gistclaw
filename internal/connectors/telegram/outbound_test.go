@@ -268,7 +268,7 @@ func TestOutbound_ApprovalRequestedEventDelivers(t *testing.T) {
 	if err := dispatcher.Notify(context.Background(), "445", model.ReplayDelta{
 		RunID:       "run-approval",
 		Kind:        "approval_requested",
-		PayloadJSON: []byte(`{"approval_id":"ticket-1","tool_name":"shell_exec","target_path":"openclaw-sim/index.html"}`),
+		PayloadJSON: []byte(`{"approval_id":"ticket-1","tool_name":"shell_exec","binding_json":{"tool_name":"shell_exec","operands":["openclaw-sim/index.html"],"mutating":true}}`),
 	}, "run-approval-key"); err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
@@ -279,6 +279,9 @@ func TestOutbound_ApprovalRequestedEventDelivers(t *testing.T) {
 	got, _ := messageText.Load().(string)
 	if !strings.Contains(strings.ToLower(got), "approval") {
 		t.Fatalf("expected approval message text, got %q", got)
+	}
+	if !strings.Contains(got, "openclaw-sim/index.html") {
+		t.Fatalf("expected binding summary in approval message, got %q", got)
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/canhta/gistclaw/internal/authority"
@@ -42,13 +41,13 @@ type exportReceipt struct {
 }
 
 type exportApproval struct {
-	ID         string     `json:"id"`
-	RunID      string     `json:"run_id"`
-	ToolName   string     `json:"tool_name"`
-	TargetPath string     `json:"target_path"`
-	Status     string     `json:"status"`
-	CreatedAt  time.Time  `json:"created_at"`
-	ResolvedAt *time.Time `json:"resolved_at,omitempty"`
+	ID             string     `json:"id"`
+	RunID          string     `json:"run_id"`
+	ToolName       string     `json:"tool_name"`
+	BindingSummary string     `json:"binding_summary"`
+	Status         string     `json:"status"`
+	CreatedAt      time.Time  `json:"created_at"`
+	ResolvedAt     *time.Time `json:"resolved_at,omitempty"`
 }
 
 // runExport exports projected entities (runs, receipts, approvals) to a JSON file.
@@ -131,7 +130,7 @@ func runExport(args []string, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "export: scan approval: %v\n", err)
 			return 1
 		}
-		a.TargetPath = exportApprovalTarget(bindingJSON)
+		a.BindingSummary = authority.BindingSummaryJSON(bindingJSON)
 		if resolvedAt.Valid {
 			t := resolvedAt.Time
 			a.ResolvedAt = &t
@@ -165,30 +164,4 @@ func runExport(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "exported to %s (runs=%d receipts=%d approvals=%d)\n",
 		outPath, len(env.Runs), len(env.Receipts), len(env.Approvals))
 	return 0
-}
-
-func exportApprovalTarget(bindingJSON []byte) string {
-	var binding authority.Binding
-	if err := json.Unmarshal(bindingJSON, &binding); err != nil {
-		return ""
-	}
-	for _, operand := range binding.Operands {
-		if strings.TrimSpace(operand) != "" {
-			return strings.TrimSpace(operand)
-		}
-	}
-	if strings.TrimSpace(binding.CWD) != "" {
-		return strings.TrimSpace(binding.CWD)
-	}
-	for _, root := range binding.WriteRoots {
-		if strings.TrimSpace(root) != "" {
-			return strings.TrimSpace(root)
-		}
-	}
-	for _, root := range binding.ReadRoots {
-		if strings.TrimSpace(root) != "" {
-			return strings.TrimSpace(root)
-		}
-	}
-	return ""
 }

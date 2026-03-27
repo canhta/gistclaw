@@ -777,7 +777,7 @@ func TestRuns(t *testing.T) {
 			"conv-node-approval",
 			"run-child-approval-node",
 			"approval_requested",
-			[]byte(`{"approval_id":"`+approvalID+`","tool_call_id":"call-coder-approval","tool_name":"coder_exec","target_path":"`+h.workspaceRoot+`/openclaw-launch-coder-final","reason":"Need confirmation before writing files into the project workspace."}`),
+			[]byte(`{"approval_id":"`+approvalID+`","tool_call_id":"call-coder-approval","tool_name":"coder_exec","binding_json":{"tool_name":"coder_exec","operands":["`+h.workspaceRoot+`/openclaw-launch-coder-final"],"mutating":true},"reason":"Need confirmation before writing files into the project workspace."}`),
 			"2026-03-25 08:07:00",
 		)
 
@@ -796,7 +796,7 @@ func TestRuns(t *testing.T) {
 			Approval   struct {
 				ID               string `json:"id"`
 				ToolName         string `json:"tool_name"`
-				TargetPath       string `json:"target_path"`
+				BindingSummary   string `json:"binding_summary"`
 				Reason           string `json:"reason"`
 				Status           string `json:"status"`
 				StatusLabel      string `json:"status_label"`
@@ -820,8 +820,8 @@ func TestRuns(t *testing.T) {
 		if resp.Approval.ToolName != "coder_exec" || resp.Approval.Status != "pending" || !resp.Approval.CanResolve {
 			t.Fatalf("expected actionable pending approval, got %+v", resp.Approval)
 		}
-		if resp.Approval.TargetPath != h.workspaceRoot+"/openclaw-launch-coder-final" {
-			t.Fatalf("expected target path, got %+v", resp.Approval)
+		if resp.Approval.BindingSummary != h.workspaceRoot+"/openclaw-launch-coder-final" {
+			t.Fatalf("expected binding summary, got %+v", resp.Approval)
 		}
 		if resp.Approval.Reason != "Need confirmation before writing files into the project workspace." {
 			t.Fatalf("expected approval reason, got %+v", resp.Approval)

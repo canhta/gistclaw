@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/canhta/gistclaw/internal/authority"
 	deliveryconnector "github.com/canhta/gistclaw/internal/connectors/delivery"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
@@ -388,8 +389,8 @@ func buildMessage(delta model.ReplayDelta) string {
 
 func buildApprovalMessage(delta model.ReplayDelta) string {
 	var payload struct {
-		ToolName   string `json:"tool_name"`
-		TargetPath string `json:"target_path"`
+		ToolName    string          `json:"tool_name"`
+		BindingJSON json.RawMessage `json:"binding_json"`
 	}
 	_ = json.Unmarshal(delta.PayloadJSON, &payload)
 
@@ -397,8 +398,8 @@ func buildApprovalMessage(delta model.ReplayDelta) string {
 	if strings.TrimSpace(payload.ToolName) != "" {
 		message += " for " + payload.ToolName
 	}
-	if strings.TrimSpace(payload.TargetPath) != "" {
-		message += " (" + payload.TargetPath + ")"
+	if summary := authority.BindingSummaryJSON(payload.BindingJSON); strings.TrimSpace(summary) != "" {
+		message += " (" + summary + ")"
 	}
 	return message + ". Review it in the web UI."
 }

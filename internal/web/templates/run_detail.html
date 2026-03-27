@@ -637,8 +637,8 @@
       title.className = "row-title";
       title.textContent = approval.can_resolve ? `Approval needed for ${approval.tool_name || "tool"}` : `${humanizeLabel(approval.status || "approval")} approval`;
       copy.appendChild(title);
-      if (approval.target_path) {
-        copy.appendChild(metricRow("Target", approval.target_path));
+      if (approval.binding_summary) {
+        copy.appendChild(metricRow("Scope", approval.binding_summary));
       }
       if (approval.reason) {
         const reason = document.createElement("p");
@@ -765,10 +765,10 @@
         note.className = "node-inline-note";
         note.textContent = detail.approval.reason;
         nodeModalFooterCopy.appendChild(note);
-      } else if (detail.approval.target_path) {
+      } else if (detail.approval.binding_summary) {
         const note = document.createElement("p");
         note.className = "node-inline-note mono";
-        note.textContent = detail.approval.target_path;
+        note.textContent = detail.approval.binding_summary;
         nodeModalFooterCopy.appendChild(note);
       }
     }
