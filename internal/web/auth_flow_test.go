@@ -177,6 +177,25 @@ func TestAuthLoginReasonMessages(t *testing.T) {
 	}
 }
 
+func TestAuthInvalidPasswordRendersInlineErrorWithoutUnauthorizedStatus(t *testing.T) {
+	h := newServerHarness(t)
+	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Date(2026, time.March, 27, 7, 45, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("SetPassword: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/login", strings.NewReader(url.Values{"password": {"wrong-pass"}}.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	h.rawServer.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200 for inline login error, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(rr.Body.String(), "Password did not match. Try again.") {
+		t.Fatalf("expected inline password error, got:\n%s", rr.Body.String())
+	}
+}
+
 func TestAuthPasswordChangeRotatesBrowserPassword(t *testing.T) {
 	h := newServerHarness(t)
 	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Date(2026, time.March, 27, 7, 50, 0, 0, time.UTC)); err != nil {
@@ -228,8 +247,11 @@ func TestAuthPasswordChangeRotatesBrowserPassword(t *testing.T) {
 	oldLoginReq := httptest.NewRequest(http.MethodPost, "http://localhost/login", strings.NewReader(url.Values{"password": {"secret-pass"}}.Encode()))
 	oldLoginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	h.rawServer.ServeHTTP(oldLoginResp, oldLoginReq)
-	if oldLoginResp.Code != http.StatusUnauthorized {
+	if oldLoginResp.Code != http.StatusOK {
 		t.Fatalf("expected old password to fail, got %d", oldLoginResp.Code)
+	}
+	if !strings.Contains(oldLoginResp.Body.String(), "Password did not match. Try again.") {
+		t.Fatalf("expected inline password error, got:\n%s", oldLoginResp.Body.String())
 	}
 
 	newLoginResp := httptest.NewRecorder()

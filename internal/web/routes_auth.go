@@ -58,9 +58,6 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "failed to load login state", http.StatusInternalServerError)
 			return
 		}
-		if status < http.StatusBadRequest {
-			status = http.StatusUnauthorized
-		}
 		s.renderAuthTemplateStatus(w, r, status, "Login", "login_body", data)
 		return
 	}
@@ -213,7 +210,7 @@ func (s *Server) loginPageData(r *http.Request, explicitMessage string) (loginPa
 	if explicitMessage != "" {
 		data.Message = explicitMessage
 		data.MessageClass = "error"
-		return data, http.StatusUnauthorized, nil
+		return data, http.StatusOK, nil
 	}
 
 	switch r.URL.Query().Get("reason") {
