@@ -155,7 +155,11 @@ func TestConnector_HandleEnvelopeRoutesStatusToNativeReply(t *testing.T) {
 				Objective: "review the repo",
 				Status:    model.RunStatusActive,
 			},
-			PendingApprovals: 1,
+			ActiveGate: model.ConversationGate{
+				ID:    "gate-1",
+				Title: "Approval required for shell_exec",
+			},
+			PendingGateCount: 1,
 		},
 	}
 	connector := newTelegramControlConnector(t, rt)
@@ -179,7 +183,7 @@ func TestConnector_HandleEnvelopeRoutesStatusToNativeReply(t *testing.T) {
 		t.Fatalf("expected 1 native reply, got %d", sender.sentCount())
 	}
 	reply := sender.first().text
-	for _, want := range []string{"Active run", "run-acti", "review the repo", "1 pending approval"} {
+	for _, want := range []string{"Active run", "run-acti", "review the repo", "Waiting for your reply", "Approval required for shell_exec", "1 pending decision"} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("expected status reply to include %q, got:\n%s", want, reply)
 		}

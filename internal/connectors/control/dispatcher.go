@@ -112,11 +112,17 @@ func formatConversationStatus(languageHint string, status runtime.ConversationSt
 		}))
 	}
 
-	if status.PendingApprovals == 1 {
+	if strings.TrimSpace(status.ActiveGate.Title) != "" {
+		lines = append(lines, i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlStatusActiveGate, map[string]string{
+			"title": status.ActiveGate.Title,
+		}))
+	}
+
+	if status.PendingGateCount == 1 {
 		lines = append(lines, i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlStatusPendingOne, nil))
-	} else if status.PendingApprovals > 1 {
+	} else if status.PendingGateCount > 1 {
 		lines = append(lines, i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlStatusPendingMany, map[string]string{
-			"count": fmt.Sprintf("%d", status.PendingApprovals),
+			"count": fmt.Sprintf("%d", status.PendingGateCount),
 		}))
 	}
 

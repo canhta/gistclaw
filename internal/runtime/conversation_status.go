@@ -10,11 +10,12 @@ import (
 )
 
 type ConversationStatus struct {
-	Exists           bool
-	ConversationID   string
-	ActiveRun        model.Run
-	LatestRootRun    model.Run
-	PendingApprovals int
+	Exists          bool
+	ConversationID  string
+	ActiveRun       model.Run
+	LatestRootRun   model.Run
+	ActiveGate      model.ConversationGate
+	PendingGateCount int
 }
 
 type ConversationResetOutcome string
@@ -64,15 +65,22 @@ func (r *Runtime) InspectConversation(ctx context.Context, key conversations.Con
 		return ConversationStatus{}, err
 	}
 
+	status.ActiveGate, err = r.loadActiveConversationGate(ctx, conv.ID)
+	if err != nil && err != sql.ErrNoRows {
+		return ConversationStatus{}, fmt.Errorf("inspect conversation gate: %w", err)
+	}
+	if err == sql.ErrNoRows {
+		status.ActiveGate = model.ConversationGate{}
+	}
+
 	err = r.store.RawDB().QueryRowContext(ctx, `
 		SELECT count(*)
-		FROM approvals
-		INNER JOIN runs ON runs.id = approvals.run_id
-		WHERE runs.conversation_id = ? AND approvals.status = 'pending'`,
+		FROM conversation_gates
+		WHERE conversation_id = ? AND status = 'pending'`,
 		conv.ID,
-	).Scan(&status.PendingApprovals)
+	).Scan(&status.PendingGateCount)
 	if err != nil {
-		return ConversationStatus{}, fmt.Errorf("inspect conversation approvals: %w", err)
+		return ConversationStatus{}, fmt.Errorf("inspect conversation gate count: %w", err)
 	}
 
 	return status, nil

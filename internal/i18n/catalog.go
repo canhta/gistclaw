@@ -36,6 +36,7 @@ const (
 	MessageControlStatusActiveRun      MessageID = "control.status.active_run"
 	MessageControlStatusNoActiveRun    MessageID = "control.status.no_active_run"
 	MessageControlStatusLastRun        MessageID = "control.status.last_run"
+	MessageControlStatusActiveGate     MessageID = "control.status.active_gate"
 	MessageControlStatusPendingOne     MessageID = "control.status.pending_one"
 	MessageControlStatusPendingMany    MessageID = "control.status.pending_many"
 	MessageControlStatusNoObjective    MessageID = "control.status.no_objective"
@@ -72,8 +73,9 @@ var DefaultCatalog = Catalog{
 		MessageControlStatusActiveRun:      "Active run {run_id} is working on: {objective}",
 		MessageControlStatusNoActiveRun:    "No active run for this chat.",
 		MessageControlStatusLastRun:        "Last run {run_id} finished with status {status}: {objective}",
-		MessageControlStatusPendingOne:     "1 pending approval is waiting for a reply in this chat.",
-		MessageControlStatusPendingMany:    "{count} pending approvals are waiting for replies in this chat.",
+		MessageControlStatusActiveGate:     "Waiting for your reply: {title}",
+		MessageControlStatusPendingOne:     "1 pending decision is waiting for a reply in this chat.",
+		MessageControlStatusPendingMany:    "{count} pending decisions are waiting for replies in this chat.",
 		MessageControlStatusNoObjective:    "no objective recorded",
 		MessageControlResetMissing:         "Nothing to reset for this chat.",
 		MessageControlResetBusy:            "This chat has an active run right now. Retry /reset in a moment.",
@@ -104,8 +106,9 @@ var DefaultCatalog = Catalog{
 		MessageControlStatusActiveRun:      "Tiến trình đang chạy {run_id} đang xử lý: {objective}",
 		MessageControlStatusNoActiveRun:    "Chat này hiện không có tiến trình đang chạy.",
 		MessageControlStatusLastRun:        "Tiến trình gần nhất {run_id} kết thúc với trạng thái {status}: {objective}",
-		MessageControlStatusPendingOne:     "Có 1 yêu cầu phê duyệt đang chờ phản hồi trong chat này.",
-		MessageControlStatusPendingMany:    "Có {count} yêu cầu phê duyệt đang chờ phản hồi trong chat này.",
+		MessageControlStatusActiveGate:     "Đang chờ bạn trả lời: {title}",
+		MessageControlStatusPendingOne:     "Có 1 quyết định đang chờ phản hồi trong chat này.",
+		MessageControlStatusPendingMany:    "Có {count} quyết định đang chờ phản hồi trong chat này.",
 		MessageControlStatusNoObjective:    "chưa có mục tiêu nào được ghi lại",
 		MessageControlResetMissing:         "Chat này không có gì để đặt lại.",
 		MessageControlResetBusy:            "Chat này đang có một tiến trình hoạt động. Hãy thử /reset lại sau.",

@@ -330,7 +330,7 @@ func TestRuntime_InspectConversationReturnsMissingWhenConversationDoesNotExist(t
 	}
 }
 
-func TestRuntime_InspectConversationReportsActiveRunAndPendingApprovals(t *testing.T) {
+func TestRuntime_InspectConversationReportsActiveRunAndPendingGateSummary(t *testing.T) {
 	rt, db := newCollaborationRuntime(t, nil)
 	ctx := context.Background()
 
@@ -361,6 +361,15 @@ func TestRuntime_InspectConversationReportsActiveRunAndPendingApprovals(t *testi
 	if err != nil {
 		t.Fatalf("insert approval: %v", err)
 	}
+	_, err = db.RawDB().ExecContext(ctx, `
+		INSERT INTO conversation_gates
+		 (id, conversation_id, run_id, session_id, kind, status, approval_id, title, body, options_json, metadata_json, language_hint, created_at)
+		VALUES ('gate-1', ?, 'run-active', 'session-front', 'approval', 'pending', 'approval-1', 'Approval required for shell_exec', 'Blocked action: touch created.txt.', '[]', '{}', 'en', datetime('now'))`,
+		conv.ID,
+	)
+	if err != nil {
+		t.Fatalf("insert conversation gate: %v", err)
+	}
 
 	status, err := rt.InspectConversation(ctx, key)
 	if err != nil {
@@ -375,8 +384,14 @@ func TestRuntime_InspectConversationReportsActiveRunAndPendingApprovals(t *testi
 	if status.LatestRootRun.ID != "run-active" {
 		t.Fatalf("expected latest root run run-active, got %q", status.LatestRootRun.ID)
 	}
-	if status.PendingApprovals != 1 {
-		t.Fatalf("expected 1 pending approval, got %d", status.PendingApprovals)
+	if status.PendingGateCount != 1 {
+		t.Fatalf("expected 1 pending gate, got %d", status.PendingGateCount)
+	}
+	if status.ActiveGate.ID != "gate-1" {
+		t.Fatalf("expected active gate gate-1, got %q", status.ActiveGate.ID)
+	}
+	if status.ActiveGate.Title != "Approval required for shell_exec" {
+		t.Fatalf("expected active gate title to be loaded, got %q", status.ActiveGate.Title)
 	}
 }
 

@@ -79,10 +79,14 @@ func TestDispatcherDispatch(t *testing.T) {
 					Objective: "review the repo",
 					Status:    model.RunStatusActive,
 				},
-				PendingApprovals: 2,
+				ActiveGate: model.ConversationGate{
+					ID:    "gate-1",
+					Title: "Approval required for shell_exec",
+				},
+				PendingGateCount: 2,
 			},
 			wantHandled:  true,
-			wantContains: []string{"Active run", "run-acti", "2 pending approvals"},
+			wantContains: []string{"Active run", "run-acti", "Waiting for your reply", "Approval required for shell_exec", "2 pending decisions"},
 			wantKey: conversations.ConversationKey{
 				ConnectorID: "whatsapp",
 				AccountID:   "acct-2",
@@ -109,10 +113,14 @@ func TestDispatcherDispatch(t *testing.T) {
 					Objective: "review the repo",
 					Status:    model.RunStatusActive,
 				},
-				PendingApprovals: 2,
+				ActiveGate: model.ConversationGate{
+					ID:    "gate-1",
+					Title: "Approval required for shell_exec",
+				},
+				PendingGateCount: 2,
 			},
 			wantHandled:  true,
-			wantContains: []string{"Tiến trình đang chạy", "run-acti", "2 yêu cầu phê duyệt"},
+			wantContains: []string{"Tiến trình đang chạy", "run-acti", "Đang chờ bạn trả lời", "Approval required for shell_exec", "2 quyết định đang chờ"},
 			wantKey: conversations.ConversationKey{
 				ConnectorID: "telegram",
 				AccountID:   "acct-2",
