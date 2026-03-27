@@ -32,9 +32,9 @@ const (
 type CapabilitySet map[Capability]bool
 
 type Envelope struct {
-	ApprovalMode   ApprovalMode
-	HostAccessMode HostAccessMode
-	Capabilities   CapabilitySet
+	ApprovalMode   ApprovalMode   `json:"approval_mode,omitempty"`
+	HostAccessMode HostAccessMode `json:"host_access_mode,omitempty"`
+	Capabilities   CapabilitySet  `json:"capabilities,omitempty"`
 }
 
 func NormalizeEnvelope(env Envelope) Envelope {

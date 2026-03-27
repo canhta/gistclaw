@@ -1,6 +1,9 @@
 package authority
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestDecodeEnvelope_NormalizesDefaults(t *testing.T) {
 	tests := []struct {
@@ -18,7 +21,7 @@ func TestDecodeEnvelope_NormalizesDefaults(t *testing.T) {
 		},
 		{
 			name: "partial payload fills missing defaults",
-			raw:  []byte(`{"ApprovalMode":"auto_approve"}`),
+			raw:  []byte(`{"approval_mode":"auto_approve"}`),
 			want: Envelope{
 				ApprovalMode:   ApprovalModeAutoApprove,
 				HostAccessMode: HostAccessModeStandard,
@@ -36,5 +39,18 @@ func TestDecodeEnvelope_NormalizesDefaults(t *testing.T) {
 				t.Fatalf("DecodeEnvelope() = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestEnvelope_MarshalUsesStableWireKeys(t *testing.T) {
+	raw, err := json.Marshal(Envelope{
+		ApprovalMode:   ApprovalModeAutoApprove,
+		HostAccessMode: HostAccessModeElevated,
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if string(raw) != `{"approval_mode":"auto_approve","host_access_mode":"elevated"}` {
+		t.Fatalf("marshal envelope = %s", raw)
 	}
 }
