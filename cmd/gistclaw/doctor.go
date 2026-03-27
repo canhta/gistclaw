@@ -147,6 +147,9 @@ func runDoctor(configPath string, stdout, stderr io.Writer) int {
 				if snapshot.State == model.ConnectorHealthHealthy {
 					status = "PASS"
 				}
+				if snapshot.State == model.ConnectorHealthUnknown {
+					status = "SKIP"
+				}
 				detail := snapshot.Summary
 				if detail == "" {
 					detail = string(snapshot.State)

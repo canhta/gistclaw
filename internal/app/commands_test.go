@@ -296,7 +296,7 @@ func TestConfiguredConnectorHealth_IgnoresStalePersistedSnapshot(t *testing.T) {
 	if snapshots[0].ConnectorID != "telegram" {
 		t.Fatalf("expected telegram snapshot, got %+v", snapshots[0])
 	}
-	if snapshots[0].State != model.ConnectorHealthDegraded || snapshots[0].Summary != "no successful poll yet" {
+	if snapshots[0].State != model.ConnectorHealthUnknown || snapshots[0].Summary != "awaiting first poll" {
 		t.Fatalf("expected fallback connector snapshot, got %+v", snapshots[0])
 	}
 }

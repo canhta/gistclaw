@@ -10,6 +10,7 @@ import (
 type healthState struct {
 	now        func() time.Time
 	staleAfter time.Duration
+	startedAt  time.Time
 
 	mu                 sync.Mutex
 	lastPollSuccess    time.Time
@@ -25,6 +26,7 @@ func newHealthState(now func() time.Time) *healthState {
 	return &healthState{
 		now:        func() time.Time { return now().UTC() },
 		staleAfter: 5 * time.Minute,
+		startedAt:  now().UTC(),
 	}
 }
 
@@ -69,8 +71,14 @@ func (h *healthState) snapshot() model.ConnectorHealthSnapshot {
 		snapshot.Summary = h.lastFailureSummary
 		snapshot.RestartSuggested = true
 	case h.lastPollSuccess.IsZero():
-		snapshot.State = model.ConnectorHealthDegraded
-		snapshot.Summary = "no successful poll yet"
+		if now.Sub(h.startedAt) <= h.staleAfter {
+			snapshot.State = model.ConnectorHealthUnknown
+			snapshot.Summary = "awaiting first poll"
+		} else {
+			snapshot.State = model.ConnectorHealthDegraded
+			snapshot.Summary = "no successful poll yet"
+			snapshot.RestartSuggested = true
+		}
 	case now.Sub(h.lastPollSuccess) > h.staleAfter:
 		snapshot.State = model.ConnectorHealthDegraded
 		snapshot.Summary = "poll loop stale"

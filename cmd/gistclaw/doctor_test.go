@@ -62,6 +62,9 @@ func TestDoctor_PrintsConnectorHealthSummary(t *testing.T) {
 			t.Fatalf("expected %q in doctor output:\n%s", want, output)
 		}
 	}
+	if !strings.Contains(output, "connector:whatsapp SKIP") {
+		t.Fatalf("expected unknown connector health to render as SKIP, got:\n%s", output)
+	}
 }
 
 func TestDoctor_MissingWorkspaceFails(t *testing.T) {
