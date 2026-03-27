@@ -9,6 +9,7 @@ import (
 	"time"
 
 	authpkg "github.com/canhta/gistclaw/internal/auth"
+	"github.com/canhta/gistclaw/internal/connectors/zalopersonal"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -167,9 +168,35 @@ func ConfiguredConnectorHealth(ctx context.Context, cfg Config, db *store.DB) ([
 	for i := range snapshots {
 		if snapshot, ok := persisted[snapshots[i].ConnectorID]; ok {
 			snapshots[i] = snapshot
+			continue
+		}
+		if snapshot, ok, err := fallbackConfiguredConnectorHealth(ctx, db, snapshots[i]); err != nil {
+			return nil, err
+		} else if ok {
+			snapshots[i] = snapshot
 		}
 	}
 	return snapshots, nil
+}
+
+func fallbackConfiguredConnectorHealth(ctx context.Context, db *store.DB, snapshot model.ConnectorHealthSnapshot) (model.ConnectorHealthSnapshot, bool, error) {
+	if snapshot.ConnectorID != "zalo_personal" {
+		return model.ConnectorHealthSnapshot{}, false, nil
+	}
+
+	_, ok, err := zalopersonal.LoadStoredCredentials(ctx, db)
+	if err != nil {
+		return model.ConnectorHealthSnapshot{}, false, fmt.Errorf("connector health: load zalo personal credentials: %w", err)
+	}
+	if !ok {
+		return model.ConnectorHealthSnapshot{}, false, nil
+	}
+
+	snapshot.State = model.ConnectorHealthUnknown
+	snapshot.Summary = "credentials stored"
+	snapshot.CheckedAt = time.Now().UTC()
+	snapshot.RestartSuggested = false
+	return snapshot, true, nil
 }
 
 func collectConnectorHealthSnapshots(connectors []model.Connector) []model.ConnectorHealthSnapshot {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	authpkg "github.com/canhta/gistclaw/internal/auth"
+	"github.com/canhta/gistclaw/internal/connectors/zalopersonal"
 	"github.com/canhta/gistclaw/internal/model"
 )
 
@@ -334,6 +335,59 @@ func TestConfiguredConnectorHealth_IncludesZaloPersonalWhenEnabled(t *testing.T)
 	}
 	if snapshots[0].State != model.ConnectorHealthUnknown {
 		t.Fatalf("expected unknown cold-start snapshot, got %+v", snapshots[0])
+	}
+}
+
+func TestConfiguredConnectorHealth_UsesStoredZaloCredentialsBeforeFirstDaemonStart(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "state", "runtime.db")
+	db, err := storeWiring(Config{DatabasePath: dbPath})
+	if err != nil {
+		t.Fatalf("storeWiring failed: %v", err)
+	}
+	defer db.Close()
+
+	if err := zalopersonal.SaveStoredCredentials(context.Background(), db, zalopersonal.StoredCredentials{
+		AccountID:   "zalo-account",
+		DisplayName: "Zalo User",
+		IMEI:        "imei-123",
+		Cookie:      "cookie=abc",
+		UserAgent:   "gistclaw-test",
+		Language:    "vi",
+	}); err != nil {
+		t.Fatalf("SaveStoredCredentials: %v", err)
+	}
+
+	cfg := Config{
+		DatabasePath: dbPath,
+		StateDir:     filepath.Dir(dbPath),
+		StorageRoot:  t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "openai",
+			APIKey: "sk-test",
+		},
+		ZaloPersonal: ZaloPersonalConfig{
+			Enabled: true,
+		},
+	}
+
+	snapshots, err := ConfiguredConnectorHealth(context.Background(), cfg, db)
+	if err != nil {
+		t.Fatalf("ConfiguredConnectorHealth failed: %v", err)
+	}
+	if len(snapshots) != 1 {
+		t.Fatalf("expected 1 connector snapshot, got %d", len(snapshots))
+	}
+	if snapshots[0].ConnectorID != "zalo_personal" {
+		t.Fatalf("expected zalo_personal snapshot, got %+v", snapshots[0])
+	}
+	if snapshots[0].State != model.ConnectorHealthUnknown {
+		t.Fatalf("expected unknown connector state, got %+v", snapshots[0])
+	}
+	if snapshots[0].Summary != "credentials stored" {
+		t.Fatalf("expected stored credentials summary, got %+v", snapshots[0])
+	}
+	if snapshots[0].CheckedAt.IsZero() {
+		t.Fatalf("expected stored credentials summary to set checked timestamp, got %+v", snapshots[0])
 	}
 }
 

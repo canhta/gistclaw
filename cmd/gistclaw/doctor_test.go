@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/canhta/gistclaw/internal/connectors/zalopersonal"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/scheduler"
 	"github.com/canhta/gistclaw/internal/store"
@@ -135,6 +136,65 @@ func TestDoctor_PrintsZaloPersonalConnectorHealthAndSecurityWarning(t *testing.T
 	}
 	if strings.Contains(output, "awaiting first authentication") {
 		t.Fatalf("expected persisted connector health to override cold-start summary, got:\n%s", output)
+	}
+}
+
+func TestDoctor_PrintsStoredZaloCredentialsBeforeFirstDaemonStart(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	exec.Command("git", "init", workspaceRoot).Run()
+	dbPath := filepath.Join(t.TempDir(), "gistclaw.db")
+
+	cfgDir := t.TempDir()
+	cfgPath := filepath.Join(cfgDir, "config.yaml")
+	content := strings.Join([]string{
+		"database_path: " + dbPath,
+		"storage_root: " + workspaceRoot,
+		"provider:",
+		"  name: openai",
+		"  api_key: sk-test",
+		"zalo_personal:",
+		"  enabled: true",
+		"",
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	if err := zalopersonal.SaveStoredCredentials(context.Background(), db, zalopersonal.StoredCredentials{
+		AccountID:   "zalo-account",
+		DisplayName: "Zalo User",
+		IMEI:        "imei-123",
+		Cookie:      "cookie=abc",
+		UserAgent:   "gistclaw-test",
+		Language:    "vi",
+	}); err != nil {
+		t.Fatalf("SaveStoredCredentials: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runDoctor(testOptions(cfgPath), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected zero exit code, got %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	output := stdout.String()
+	for _, want := range []string{
+		"connector:zalo_personal",
+		"credentials stored",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in doctor output:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "awaiting first authentication") {
+		t.Fatalf("expected stored credentials to override cold-start summary, got:\n%s", output)
 	}
 }
 
