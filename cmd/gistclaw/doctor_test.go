@@ -293,10 +293,10 @@ func TestDoctor_WarnsOnBrokenSchedulerState(t *testing.T) {
 	s := scheduler.NewStore(db)
 	ctx := context.Background()
 	invalidSchedule, err := s.CreateSchedule(ctx, scheduler.CreateScheduleInput{
-		ID:            "sched-invalid",
-		Name:          "Invalid cron",
-		Objective:     "Inspect invalid cron state",
-		WorkspaceRoot: workspaceRoot,
+		ID:        "sched-invalid",
+		Name:      "Invalid cron",
+		Objective: "Inspect invalid cron state",
+		CWD:       workspaceRoot,
 		Spec: scheduler.ScheduleSpec{
 			Kind:     scheduler.ScheduleKindCron,
 			CronExpr: "0 * * * *",
@@ -308,10 +308,10 @@ func TestDoctor_WarnsOnBrokenSchedulerState(t *testing.T) {
 		t.Fatalf("CreateSchedule invalid seed: %v", err)
 	}
 	stuckSchedule, err := s.CreateSchedule(ctx, scheduler.CreateScheduleInput{
-		ID:            "sched-stuck",
-		Name:          "Stuck dispatch",
-		Objective:     "Inspect stuck dispatch state",
-		WorkspaceRoot: workspaceRoot,
+		ID:        "sched-stuck",
+		Name:      "Stuck dispatch",
+		Objective: "Inspect stuck dispatch state",
+		CWD:       workspaceRoot,
 		Spec: scheduler.ScheduleSpec{
 			Kind: scheduler.ScheduleKindAt,
 			At:   "2030-01-02T00:00:00Z",
@@ -322,10 +322,10 @@ func TestDoctor_WarnsOnBrokenSchedulerState(t *testing.T) {
 		t.Fatalf("CreateSchedule stuck seed: %v", err)
 	}
 	missingSchedule, err := s.CreateSchedule(ctx, scheduler.CreateScheduleInput{
-		ID:            "sched-missing-next",
-		Name:          "Missing next run",
-		Objective:     "Inspect missing next run state",
-		WorkspaceRoot: workspaceRoot,
+		ID:        "sched-missing-next",
+		Name:      "Missing next run",
+		Objective: "Inspect missing next run state",
+		CWD:       workspaceRoot,
 		Spec: scheduler.ScheduleSpec{
 			Kind: scheduler.ScheduleKindAt,
 			At:   "2030-01-03T00:00:00Z",

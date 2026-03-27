@@ -57,12 +57,14 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 	approvalRows := make([]approvalListRow, 0, filter.Limit+1)
 	for rows.Next() {
 		var item approvalItem
+		var bindingJSON []byte
 		var createdAt string
 		var resolvedAt sql.NullTime
-		if err := rows.Scan(&item.ID, &item.RunID, &item.ToolName, &item.TargetPath, &item.Status, &item.ResolvedBy, &item.CreatedAt, &resolvedAt, &createdAt); err != nil {
+		if err := rows.Scan(&item.ID, &item.RunID, &item.ToolName, &bindingJSON, &item.Status, &item.ResolvedBy, &item.CreatedAt, &resolvedAt, &createdAt); err != nil {
 			http.Error(w, "failed to load approvals", http.StatusInternalServerError)
 			return
 		}
+		item.TargetPath = approvalDisplayTarget(bindingJSON)
 		item.StatusLabel = humanizeWebLabel(item.Status)
 		item.StatusClass = approvalStatusClass(item.Status)
 		if resolvedAt.Valid {
@@ -196,7 +198,7 @@ func approvalListFilterFromRequest(r *http.Request) approvalListRequest {
 
 func buildApprovalListQuery(filter approvalListRequest, activeProject model.Project) (string, []any, error) {
 	var query strings.Builder
-	query.WriteString(`SELECT approvals.id, approvals.run_id, approvals.tool_name, COALESCE(approvals.target_path, ''), approvals.status, COALESCE(approvals.resolved_by, ''), approvals.created_at, approvals.resolved_at, approvals.created_at
+	query.WriteString(`SELECT approvals.id, approvals.run_id, approvals.tool_name, approvals.binding_json, approvals.status, COALESCE(approvals.resolved_by, ''), approvals.created_at, approvals.resolved_at, approvals.created_at
 	 FROM approvals
 	 JOIN runs ON runs.id = approvals.run_id`)
 
@@ -207,7 +209,7 @@ func buildApprovalListQuery(filter approvalListRequest, activeProject model.Proj
 	args = append(args, scopeArgs...)
 	if filter.Query != "" {
 		like := "%" + filter.Query + "%"
-		clauses = append(clauses, "(approvals.id LIKE ? OR approvals.run_id LIKE ? OR approvals.tool_name LIKE ? OR COALESCE(approvals.target_path, '') LIKE ?)")
+		clauses = append(clauses, "(approvals.id LIKE ? OR approvals.run_id LIKE ? OR approvals.tool_name LIKE ? OR CAST(approvals.binding_json AS TEXT) LIKE ?)")
 		args = append(args, like, like, like, like)
 	}
 	switch filter.Status {

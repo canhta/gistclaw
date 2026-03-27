@@ -27,7 +27,7 @@ Subcommands:
 Add flags:
   --name TEXT
   --objective TEXT
-  --workspace-root PATH
+  --cwd PATH
   --at RFC3339
   --every DURATION --start-at RFC3339
   --cron EXPR [--timezone IANA]
@@ -186,12 +186,12 @@ func parseScheduleAddArgs(args []string) (scheduler.CreateScheduleInput, error) 
 				return scheduler.CreateScheduleInput{}, err
 			}
 			input.Objective = value
-		case "--workspace-root":
+		case "--cwd":
 			value, err := scheduleFlagValue(args, &i)
 			if err != nil {
 				return scheduler.CreateScheduleInput{}, err
 			}
-			input.WorkspaceRoot = value
+			input.CWD = value
 		case "--at":
 			value, err := scheduleFlagValue(args, &i)
 			if err != nil {
@@ -264,12 +264,12 @@ func parseScheduleUpdateArgs(args []string) (scheduler.UpdateScheduleInput, erro
 				return scheduler.UpdateScheduleInput{}, err
 			}
 			patch.Objective = stringPtr(value)
-		case "--workspace-root":
+		case "--cwd":
 			value, err := scheduleFlagValue(args, &i)
 			if err != nil {
 				return scheduler.UpdateScheduleInput{}, err
 			}
-			patch.WorkspaceRoot = stringPtr(value)
+			patch.CWD = stringPtr(value)
 		case "--at":
 			value, err := scheduleFlagValue(args, &i)
 			if err != nil {
@@ -312,7 +312,7 @@ func parseScheduleUpdateArgs(args []string) (scheduler.UpdateScheduleInput, erro
 	if ok {
 		patch.Spec = &spec
 	}
-	if patch.Name == nil && patch.Objective == nil && patch.WorkspaceRoot == nil && patch.Spec == nil {
+	if patch.Name == nil && patch.Objective == nil && patch.CWD == nil && patch.Spec == nil {
 		return scheduler.UpdateScheduleInput{}, fmt.Errorf("at least one update flag is required")
 	}
 	return patch, nil
@@ -400,7 +400,8 @@ func printSchedule(w io.Writer, schedule scheduler.Schedule) {
 	fmt.Fprintf(w, "schedule_id: %s\n", schedule.ID)
 	fmt.Fprintf(w, "name: %s\n", schedule.Name)
 	fmt.Fprintf(w, "objective: %s\n", schedule.Objective)
-	fmt.Fprintf(w, "workspace_root: %s\n", schedule.WorkspaceRoot)
+	fmt.Fprintf(w, "project_id: %s\n", schedule.ProjectID)
+	fmt.Fprintf(w, "cwd: %s\n", schedule.CWD)
 	fmt.Fprintf(w, "enabled: %t\n", schedule.Enabled)
 	fmt.Fprintf(w, "kind: %s\n", schedule.Spec.Kind)
 	fmt.Fprintf(w, "at: %s\n", schedule.Spec.At)

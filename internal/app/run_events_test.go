@@ -71,7 +71,7 @@ func TestConnectorRouteNotifier_EmitsTurnDeltasToBoundConnector(t *testing.T) {
 	}
 	if _, err := db.RawDB().Exec(
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, session_id, objective, workspace_root, status, created_at, updated_at)
+		 (id, conversation_id, agent_id, session_id, objective, cwd, status, created_at, updated_at)
 		 VALUES ('run-1', ?, 'assistant', 'session-front', 'reply', ?, 'active', datetime('now'), datetime('now'))`,
 		conv.ID, t.TempDir(),
 	); err != nil {
@@ -141,7 +141,7 @@ func TestConnectorRouteNotifier_RoutesWorkerApprovalRequestsToFrontBinding(t *te
 	}
 	if _, err := db.RawDB().Exec(
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, session_id, parent_run_id, objective, workspace_root, status, created_at, updated_at)
+		 (id, conversation_id, agent_id, session_id, parent_run_id, objective, cwd, status, created_at, updated_at)
 		 VALUES ('run-front', ?, 'assistant', 'session-front', NULL, 'coordinate', ?, 'active', datetime('now'), datetime('now')),
 		        ('run-worker', ?, 'patcher', 'session-worker', 'run-front', 'patch', ?, 'needs_approval', datetime('now'), datetime('now'))`,
 		conv.ID, t.TempDir(), conv.ID, t.TempDir(),

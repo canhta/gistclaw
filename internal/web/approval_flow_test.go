@@ -12,9 +12,11 @@ func TestApprovalFlow_ExpiredBadgeVisible(t *testing.T) {
 	h.insertRun(t, "run-old", "conv-old", "expired approval", "needs_approval")
 
 	// Insert an expired approval directly.
+	bindingJSON := approvalBindingJSONForTarget(t, "bash", "/tmp")
 	_, err := h.db.RawDB().Exec(
-		`INSERT INTO approvals (id, run_id, tool_name, args_json, target_path, fingerprint, status, created_at)
-		 VALUES ('approval-expired-badge', 'run-old', 'bash', x'', '/tmp', 'fp-exp', 'expired', datetime('now', '-25 hours'))`,
+		`INSERT INTO approvals (id, run_id, tool_name, args_json, binding_json, fingerprint, status, created_at)
+		 VALUES ('approval-expired-badge', 'run-old', 'bash', x'', ?, 'fp-exp', 'expired', datetime('now', '-25 hours'))`,
+		bindingJSON,
 	)
 	if err != nil {
 		t.Fatalf("insert expired approval: %v", err)
@@ -37,9 +39,11 @@ func TestApprovalFlow_ExpiredResolveReturns409(t *testing.T) {
 	h.insertRun(t, "run-old2", "conv-old2", "expired approval", "needs_approval")
 
 	// Insert an expired approval.
+	bindingJSON := approvalBindingJSONForTarget(t, "bash", "/tmp")
 	_, err := h.db.RawDB().Exec(
-		`INSERT INTO approvals (id, run_id, tool_name, args_json, target_path, fingerprint, status, created_at)
-		 VALUES ('approval-expired-resolve', 'run-old2', 'bash', x'', '/tmp', 'fp-exp2', 'expired', datetime('now', '-25 hours'))`,
+		`INSERT INTO approvals (id, run_id, tool_name, args_json, binding_json, fingerprint, status, created_at)
+		 VALUES ('approval-expired-resolve', 'run-old2', 'bash', x'', ?, 'fp-exp2', 'expired', datetime('now', '-25 hours'))`,
+		bindingJSON,
 	)
 	if err != nil {
 		t.Fatalf("insert expired approval: %v", err)
@@ -61,9 +65,11 @@ func TestApprovalFlow_AuditTrailShowsResolvedToday(t *testing.T) {
 	h := newServerHarness(t)
 	h.insertRun(t, "run-audit", "conv-audit", "audit approval", "completed")
 
+	bindingJSON := approvalBindingJSONForTarget(t, "bash", "/tmp")
 	_, err := h.db.RawDB().Exec(
-		`INSERT INTO approvals (id, run_id, tool_name, args_json, target_path, fingerprint, status, resolved_by, created_at, resolved_at)
-		 VALUES ('approval-audit-web', 'run-audit', 'bash', x'', '/tmp', 'fp-audit', 'approved', 'web', datetime('now', '-1 hour'), datetime('now'))`,
+		`INSERT INTO approvals (id, run_id, tool_name, args_json, binding_json, fingerprint, status, resolved_by, created_at, resolved_at)
+		 VALUES ('approval-audit-web', 'run-audit', 'bash', x'', ?, 'fp-audit', 'approved', 'web', datetime('now', '-1 hour'), datetime('now'))`,
+		bindingJSON,
 	)
 	if err != nil {
 		t.Fatalf("insert resolved approval: %v", err)
@@ -89,9 +95,11 @@ func TestApprovalFlow_AuditTrailShowsTelegramActor(t *testing.T) {
 	h := newServerHarness(t)
 	h.insertRun(t, "run-audit-tg", "conv-audit-tg", "audit approval", "completed")
 
+	bindingJSON := approvalBindingJSONForTarget(t, "bash", "/tmp")
 	_, err := h.db.RawDB().Exec(
-		`INSERT INTO approvals (id, run_id, tool_name, args_json, target_path, fingerprint, status, resolved_by, created_at, resolved_at)
-		 VALUES ('approval-audit-tg', 'run-audit-tg', 'bash', x'', '/tmp', 'fp-audit-tg', 'approved', 'telegram', datetime('now', '-2 hours'), datetime('now', '-1 hour'))`,
+		`INSERT INTO approvals (id, run_id, tool_name, args_json, binding_json, fingerprint, status, resolved_by, created_at, resolved_at)
+		 VALUES ('approval-audit-tg', 'run-audit-tg', 'bash', x'', ?, 'fp-audit-tg', 'approved', 'telegram', datetime('now', '-2 hours'), datetime('now', '-1 hour'))`,
+		bindingJSON,
 	)
 	if err != nil {
 		t.Fatalf("insert telegram approval: %v", err)

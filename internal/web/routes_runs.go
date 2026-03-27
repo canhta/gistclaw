@@ -345,13 +345,13 @@ type runToolCallRecord struct {
 }
 
 type runApprovalRecord struct {
-	ID         string
-	ToolName   string
-	TargetPath string
-	Status     string
-	ResolvedBy string
-	CreatedAt  string
-	ResolvedAt string
+	ID          string
+	ToolName    string
+	BindingJSON []byte
+	Status      string
+	ResolvedBy  string
+	CreatedAt   string
+	ResolvedAt  string
 }
 
 func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
@@ -805,7 +805,7 @@ func loadRunApprovals(ctx context.Context, db *sql.DB, runID string) ([]runAppro
 	rows, err := db.QueryContext(ctx,
 		`SELECT id,
 		        tool_name,
-		        COALESCE(target_path, ''),
+		        binding_json,
 		        status,
 		        COALESCE(resolved_by, ''),
 		        created_at,
@@ -826,7 +826,7 @@ func loadRunApprovals(ctx context.Context, db *sql.DB, runID string) ([]runAppro
 		if err := rows.Scan(
 			&record.ID,
 			&record.ToolName,
-			&record.TargetPath,
+			&record.BindingJSON,
 			&record.Status,
 			&record.ResolvedBy,
 			&record.CreatedAt,
@@ -894,10 +894,11 @@ func buildRunNodeApprovalView(approvals []runApprovalRecord, events []model.Even
 			continue
 		}
 		var payload struct {
-			ApprovalID string `json:"approval_id"`
-			ToolName   string `json:"tool_name"`
-			TargetPath string `json:"target_path"`
-			Reason     string `json:"reason"`
+			ApprovalID  string          `json:"approval_id"`
+			ToolName    string          `json:"tool_name"`
+			TargetPath  string          `json:"target_path"`
+			BindingJSON json.RawMessage `json:"binding_json"`
+			Reason      string          `json:"reason"`
 		}
 		if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
 			continue
@@ -912,7 +913,7 @@ func buildRunNodeApprovalView(approvals []runApprovalRecord, events []model.Even
 			CreatedAt  time.Time
 		}{
 			ToolName:   strings.TrimSpace(payload.ToolName),
-			TargetPath: strings.TrimSpace(payload.TargetPath),
+			TargetPath: firstNonEmpty(strings.TrimSpace(payload.TargetPath), approvalDisplayTarget(payload.BindingJSON)),
 			Reason:     strings.TrimSpace(payload.Reason),
 			CreatedAt:  evt.CreatedAt.UTC(),
 		}
@@ -929,7 +930,7 @@ func buildRunNodeApprovalView(approvals []runApprovalRecord, events []model.Even
 	view := &runNodeApprovalView{
 		ID:          selected.ID,
 		ToolName:    strings.TrimSpace(selected.ToolName),
-		TargetPath:  strings.TrimSpace(selected.TargetPath),
+		TargetPath:  approvalDisplayTarget(selected.BindingJSON),
 		Status:      strings.TrimSpace(selected.Status),
 		StatusLabel: strings.TrimSpace(strings.ReplaceAll(selected.Status, "_", " ")),
 		StatusClass: approvalStatusClass(selected.Status),
@@ -958,6 +959,15 @@ func buildRunNodeApprovalView(approvals []runApprovalRecord, events []model.Even
 	}
 
 	return view
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func joinTurnContent(events []model.Event) string {

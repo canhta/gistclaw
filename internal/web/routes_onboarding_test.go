@@ -14,7 +14,7 @@ import (
 	"github.com/canhta/gistclaw/internal/runtime"
 )
 
-// newServerHarnessOnboardingPending returns a harness with an active workspace
+// newServerHarnessOnboardingPending returns a harness with an active project
 // but no completed onboarding state.
 func newServerHarnessOnboardingPending(t *testing.T) *serverHarness {
 	t.Helper()
@@ -147,7 +147,7 @@ func TestOnboardingStep1_NotAGitRepo(t *testing.T) {
 }
 
 // TestOnboardingStep1_ValidGitRepo verifies that submitting a valid git repo
-// persists the workspace root and redirects to step 2.
+// activates the project path and redirects to step 2.
 func TestOnboardingStep1_ValidGitRepo(t *testing.T) {
 	h := newServerHarnessNoWorkspace(t)
 	dir := makeGitRepo(t)
@@ -163,10 +163,12 @@ func TestOnboardingStep1_ValidGitRepo(t *testing.T) {
 	if loc != "/onboarding/step/2" {
 		t.Fatalf("expected redirect to /onboarding/step/2, got %q", loc)
 	}
-	// Workspace root must be persisted.
-	saved := lookupSetting(h.db, "workspace_root")
-	if saved != dir {
-		t.Fatalf("expected workspace_root=%q, got %q", dir, saved)
+	project, err := runtime.ActiveProject(req.Context(), h.db)
+	if err != nil {
+		t.Fatalf("ActiveProject: %v", err)
+	}
+	if project.PrimaryPath != dir {
+		t.Fatalf("expected primary_path=%q, got %q", dir, project.PrimaryPath)
 	}
 }
 
@@ -231,7 +233,7 @@ func TestOnboardingStep2_BalancedTrio(t *testing.T) {
 // TestOnboardingStep3_TaskPickDispatchesPreviewRun verifies that picking a task
 // at step 3 dispatches a preview-only run and redirects to step 4.
 func TestOnboardingStep3_TaskPickDispatchesPreviewRun(t *testing.T) {
-	h := newServerHarness(t) // has workspace_root already set
+	h := newServerHarness(t) // has an active project already set
 	form := url.Values{"task": {"Explain the main package structure"}}
 	req := httptest.NewRequest(http.MethodPost, "/onboarding/step/3", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")

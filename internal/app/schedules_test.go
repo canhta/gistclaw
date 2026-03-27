@@ -38,8 +38,8 @@ func TestApp_ScheduleLifecycleMethods(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateSchedule returned error: %v", err)
 	}
-	if created.WorkspaceRoot != app.cfg.WorkspaceRoot {
-		t.Fatalf("CreateSchedule workspace_root = %q, want %q", created.WorkspaceRoot, app.cfg.WorkspaceRoot)
+	if created.CWD != app.cfg.WorkspaceRoot {
+		t.Fatalf("CreateSchedule cwd = %q, want %q", created.CWD, app.cfg.WorkspaceRoot)
 	}
 
 	listed, err := app.ListSchedules(context.Background())

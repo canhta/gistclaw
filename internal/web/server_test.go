@@ -19,6 +19,7 @@ import (
 	"time"
 
 	authpkg "github.com/canhta/gistclaw/internal/auth"
+	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -43,11 +44,13 @@ func TestRuns(t *testing.T) {
 		}
 		if _, err := h.db.RawDB().Exec(
 			`INSERT INTO runs
-			 (id, conversation_id, agent_id, parent_run_id, team_id, objective, workspace_root, status, model_lane, model_id, input_tokens, output_tokens, created_at, updated_at)
+			 (id, conversation_id, agent_id, project_id, parent_run_id, team_id, objective, cwd, status, model_lane, model_id, input_tokens, output_tokens, created_at, updated_at)
 			 VALUES
-			 ('run-worker-review', 'conv-1', 'reviewer', 'run-known', 'repo-task-team', 'review the change', ?, 'completed', 'review', 'gpt-5.4-mini', 4, 6, '2026-03-25 10:05:00', '2026-03-25 10:08:00'),
-			 ('run-worker-approval', 'conv-1', 'patcher', 'run-known', 'repo-task-team', 'apply the fix', ?, 'needs_approval', 'build', 'gpt-5.4', 8, 12, '2026-03-25 10:10:00', '2026-03-25 10:14:00')`,
+			 ('run-worker-review', 'conv-1', 'reviewer', ?, 'run-known', 'repo-task-team', 'review the change', ?, 'completed', 'review', 'gpt-5.4-mini', 4, 6, '2026-03-25 10:05:00', '2026-03-25 10:08:00'),
+			 ('run-worker-approval', 'conv-1', 'patcher', ?, 'run-known', 'repo-task-team', 'apply the fix', ?, 'needs_approval', 'build', 'gpt-5.4', 8, 12, '2026-03-25 10:10:00', '2026-03-25 10:14:00')`,
+			h.activeProjectID,
 			h.workspaceRoot,
+			h.activeProjectID,
 			h.workspaceRoot,
 		); err != nil {
 			t.Fatalf("insert worker runs: %v", err)
@@ -137,8 +140,9 @@ func TestRuns(t *testing.T) {
 		h.insertRunAt(t, "run-oldest", "conv-runs-3", "fix pagination", "active", "2026-03-25 08:00:00")
 		if _, err := h.db.RawDB().Exec(
 			`INSERT INTO runs
-			 (id, conversation_id, agent_id, parent_run_id, team_id, objective, workspace_root, status, created_at, updated_at)
-			 VALUES ('run-newest-child', 'conv-runs-1', 'researcher', 'run-newest', 'repo-task-team', 'inspect the graph', ?, 'completed', '2026-03-25 10:30:00', '2026-03-25 10:31:00')`,
+			 (id, conversation_id, agent_id, project_id, parent_run_id, team_id, objective, cwd, status, created_at, updated_at)
+			 VALUES ('run-newest-child', 'conv-runs-1', 'researcher', ?, 'run-newest', 'repo-task-team', 'inspect the graph', ?, 'completed', '2026-03-25 10:30:00', '2026-03-25 10:31:00')`,
+			h.activeProjectID,
 			h.workspaceRoot,
 		); err != nil {
 			t.Fatalf("insert paginated child run: %v", err)
@@ -381,9 +385,10 @@ func TestRuns(t *testing.T) {
 		}
 		if _, err := h.db.RawDB().Exec(
 			`INSERT INTO runs
-			 (id, conversation_id, agent_id, session_id, team_id, parent_run_id, objective, workspace_root, status, created_at, updated_at)
+			 (id, conversation_id, agent_id, session_id, project_id, team_id, parent_run_id, objective, cwd, status, created_at, updated_at)
 			 VALUES
-			 ('run-map-child', 'conv-map', 'patcher', 'sess-map-child', 'repo-task-team', 'run-map-root', 'Create the landing page', ?, 'active', '2026-03-25 08:03:00', '2026-03-25 08:04:00')`,
+			 ('run-map-child', 'conv-map', 'patcher', 'sess-map-child', ?, 'repo-task-team', 'run-map-root', 'Create the landing page', ?, 'active', '2026-03-25 08:03:00', '2026-03-25 08:04:00')`,
+			h.activeProjectID,
 			h.workspaceRoot,
 		); err != nil {
 			t.Fatalf("insert child run: %v", err)
@@ -439,9 +444,10 @@ func TestRuns(t *testing.T) {
 		h.insertRunAt(t, "run-topology-root", "conv-topology", "Coordinate the launch", "active", "2026-03-25 08:00:00")
 		if _, err := h.db.RawDB().Exec(
 			`INSERT INTO runs
-			 (id, conversation_id, agent_id, session_id, team_id, parent_run_id, objective, workspace_root, status, created_at, updated_at)
+			 (id, conversation_id, agent_id, session_id, project_id, team_id, parent_run_id, objective, cwd, status, created_at, updated_at)
 			 VALUES
-			 ('run-topology-review', 'conv-topology', 'reviewer', 'sess-topology-review', 'repo-task-team', 'run-topology-root', 'Review the landing page', ?, 'completed', '2026-03-25 08:05:00', '2026-03-25 08:06:00')`,
+			 ('run-topology-review', 'conv-topology', 'reviewer', 'sess-topology-review', ?, 'repo-task-team', 'run-topology-root', 'Review the landing page', ?, 'completed', '2026-03-25 08:05:00', '2026-03-25 08:06:00')`,
+			h.activeProjectID,
 			h.workspaceRoot,
 		); err != nil {
 			t.Fatalf("insert reviewer run: %v", err)
@@ -519,10 +525,11 @@ func TestRuns(t *testing.T) {
 		}
 		if _, err := h.db.RawDB().Exec(
 			`INSERT INTO runs
-			 (id, conversation_id, agent_id, session_id, team_id, parent_run_id, objective, workspace_root, status, created_at, updated_at)
-			 VALUES (?, ?, 'researcher', 'sess-worker-4ed077c29497f4c95a19125b86096953', 'repo-task-team', ?, ?, ?, ?, ?, ?)`,
+			 (id, conversation_id, agent_id, session_id, project_id, team_id, parent_run_id, objective, cwd, status, created_at, updated_at)
+			 VALUES (?, ?, 'researcher', 'sess-worker-4ed077c29497f4c95a19125b86096953', ?, 'repo-task-team', ?, ?, ?, ?, ?, ?)`,
 			"4ed077c29497f4c95a19125b86096953",
 			"conv-graph",
+			h.activeProjectID,
 			"082b1c314823744cc779ece2f90e80e7",
 			"Inspect docs.",
 			h.workspaceRoot,
@@ -618,9 +625,10 @@ func TestRuns(t *testing.T) {
 		h.insertRunAt(t, "run-root-node", "conv-node", "Coordinate the launch", "active", "2026-03-25 08:00:00")
 		if _, err := h.db.RawDB().Exec(
 			`INSERT INTO runs
-			 (id, conversation_id, agent_id, parent_run_id, session_id, team_id, objective, workspace_root, status, model_lane, model_id, input_tokens, output_tokens, created_at, updated_at)
+			 (id, conversation_id, agent_id, project_id, parent_run_id, session_id, team_id, objective, cwd, status, model_lane, model_id, input_tokens, output_tokens, created_at, updated_at)
 			 VALUES
-			 ('run-child-node', 'conv-node', 'patcher', 'run-root-node', 'sess-child-node', 'repo-task-team', ?, ?, 'completed', 'build', 'gpt-5.4', 2730, 183, '2026-03-25 08:05:00', '2026-03-25 08:09:00')`,
+			 ('run-child-node', 'conv-node', 'patcher', ?, 'run-root-node', 'sess-child-node', 'repo-task-team', ?, ?, 'completed', 'build', 'gpt-5.4', 2730, 183, '2026-03-25 08:05:00', '2026-03-25 08:09:00')`,
+			h.activeProjectID,
 			"1. Create the launch page\n2. Refine the copy\n3. Ship the result",
 			h.workspaceRoot,
 		); err != nil {
@@ -754,9 +762,10 @@ func TestRuns(t *testing.T) {
 		h.insertRunAt(t, "run-root-approval-node", "conv-node-approval", "Coordinate the launch", "active", "2026-03-25 08:00:00")
 		if _, err := h.db.RawDB().Exec(
 			`INSERT INTO runs
-			 (id, conversation_id, agent_id, parent_run_id, session_id, team_id, objective, workspace_root, status, model_lane, model_id, input_tokens, output_tokens, created_at, updated_at)
+			 (id, conversation_id, agent_id, project_id, parent_run_id, session_id, team_id, objective, cwd, status, model_lane, model_id, input_tokens, output_tokens, created_at, updated_at)
 			 VALUES
-			 ('run-child-approval-node', 'conv-node-approval', 'patcher', 'run-root-approval-node', 'sess-child-approval-node', 'repo-task-team', ?, ?, 'needs_approval', 'build', 'gpt-5.4', 2730, 183, '2026-03-25 08:05:00', '2026-03-25 08:09:00')`,
+			 ('run-child-approval-node', 'conv-node-approval', 'patcher', ?, 'run-root-approval-node', 'sess-child-approval-node', 'repo-task-team', ?, ?, 'needs_approval', 'build', 'gpt-5.4', 2730, 183, '2026-03-25 08:05:00', '2026-03-25 08:09:00')`,
+			h.activeProjectID,
 			"Apply the launch page changes",
 			h.workspaceRoot,
 		); err != nil {
@@ -859,7 +868,7 @@ func TestSessionsProjectScoping(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "review the seo project",
-			CWD: otherRoot,
+			CWD:           otherRoot,
 		})
 		if err != nil {
 			t.Fatalf("start other-project front session: %v", err)
@@ -895,7 +904,7 @@ func TestSessionsProjectScoping(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "review the seo project",
-			CWD: otherRoot,
+			CWD:           otherRoot,
 		})
 		if err != nil {
 			t.Fatalf("start other-project front session: %v", err)
@@ -958,7 +967,7 @@ func TestRoutesDeliveriesProjectScoping(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "inspect other delivery",
-		CWD: otherRoot,
+		CWD:           otherRoot,
 	})
 	if err != nil {
 		t.Fatalf("start other-project route flow: %v", err)
@@ -1010,7 +1019,7 @@ func TestProjectScopedAPIAccess(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "review the seo project",
-			CWD: otherRoot,
+			CWD:           otherRoot,
 		})
 		if err != nil {
 			t.Fatalf("start other-project front session: %v", err)
@@ -1039,7 +1048,7 @@ func TestProjectScopedAPIAccess(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "inspect other route",
-			CWD: otherRoot,
+			CWD:           otherRoot,
 		})
 		if err != nil {
 			t.Fatalf("start other-project route flow: %v", err)
@@ -1077,7 +1086,7 @@ func TestProjectScopedAPIAccess(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "inspect other delivery",
-			CWD: otherRoot,
+			CWD:           otherRoot,
 		})
 		if err != nil {
 			t.Fatalf("start other-project delivery flow: %v", err)
@@ -2072,7 +2081,7 @@ func TestApprovalsResolve(t *testing.T) {
 			ConversationID: "conv-approval-web-async",
 			AgentID:        "patcher",
 			Objective:      "mutate via coder",
-			CWD:  h.workspaceRoot,
+			CWD:            h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("Start failed: %v", err)
@@ -2279,7 +2288,7 @@ func TestProjectSwitcher(t *testing.T) {
 		}
 	})
 
-	t.Run("switching project updates active workspace", func(t *testing.T) {
+	t.Run("switching project updates the active project", func(t *testing.T) {
 		h := newServerHarness(t)
 		otherRoot := t.TempDir()
 		otherProjectID := h.insertProject(t, "seo-test", otherRoot)
@@ -2300,9 +2309,6 @@ func TestProjectSwitcher(t *testing.T) {
 		}
 		if got := lookupSetting(h.db, "active_project_id"); got != otherProjectID {
 			t.Fatalf("expected active_project_id %q, got %q", otherProjectID, got)
-		}
-		if got := lookupSetting(h.db, "workspace_root"); got != otherRoot {
-			t.Fatalf("expected workspace_root %q, got %q", otherRoot, got)
 		}
 	})
 
@@ -2447,7 +2453,7 @@ func TestSameOriginRequest(t *testing.T) {
 	}
 }
 
-func TestProjectLayoutData_FallsBackToLegacyWorkspaceSetting(t *testing.T) {
+func TestProjectLayoutData_UsesActiveProjectOnly(t *testing.T) {
 	h := newServerHarness(t)
 	if _, err := h.db.RawDB().Exec("DELETE FROM projects"); err != nil {
 		t.Fatalf("delete projects: %v", err)
@@ -2461,11 +2467,11 @@ func TestProjectLayoutData_FallsBackToLegacyWorkspaceSetting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("projectLayoutData: %v", err)
 	}
-	if layout.ActiveName != filepath.Base(h.workspaceRoot) {
-		t.Fatalf("expected legacy active project name %q, got %q", filepath.Base(h.workspaceRoot), layout.ActiveName)
+	if layout.ActiveName != "" {
+		t.Fatalf("expected empty active project name without an active project, got %q", layout.ActiveName)
 	}
 	if len(layout.Options) != 0 {
-		t.Fatalf("expected no switcher options for legacy fallback, got %d", len(layout.Options))
+		t.Fatalf("expected no switcher options without an active project, got %d", len(layout.Options))
 	}
 }
 
@@ -2846,7 +2852,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect the repo.",
-			CWD: h.workspaceRoot,
+			CWD:           h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession telegram failed: %v", err)
@@ -2860,7 +2866,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect WhatsApp.",
-			CWD: h.workspaceRoot,
+			CWD:           h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession whatsapp failed: %v", err)
@@ -2968,7 +2974,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect the repo.",
-			CWD: h.workspaceRoot,
+			CWD:           h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession failed: %v", err)
@@ -3044,7 +3050,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect Telegram.",
-			CWD: h.workspaceRoot,
+			CWD:           h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession telegram failed: %v", err)
@@ -3058,7 +3064,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect WhatsApp.",
-			CWD: h.workspaceRoot,
+			CWD:           h.workspaceRoot,
 		}); err != nil {
 			t.Fatalf("StartFrontSession whatsapp failed: %v", err)
 		}
@@ -3138,7 +3144,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect Telegram.",
-			CWD: h.workspaceRoot,
+			CWD:           h.workspaceRoot,
 		}); err != nil {
 			t.Fatalf("StartFrontSession telegram failed: %v", err)
 		}
@@ -3217,7 +3223,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect Telegram.",
-			CWD: h.workspaceRoot,
+			CWD:           h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession telegram failed: %v", err)
@@ -3339,7 +3345,7 @@ func TestSessionAPI(t *testing.T) {
 				ConversationKey: key,
 				FrontAgentID:    "assistant",
 				InitialPrompt:   "Inspect the repo.",
-				CWD:   h.workspaceRoot,
+				CWD:             h.workspaceRoot,
 			})
 			if err != nil {
 				t.Fatalf("StartFrontSession %d failed: %v", i, err)
@@ -3455,7 +3461,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect the repo.",
-			CWD: h.workspaceRoot,
+			CWD:           h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession failed: %v", err)
@@ -3500,7 +3506,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect the repo.",
-			CWD: h.workspaceRoot,
+			CWD:           h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession failed: %v", err)
@@ -3644,7 +3650,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect the repo.",
-			CWD: h.workspaceRoot,
+			CWD:           h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession failed: %v", err)
@@ -3722,7 +3728,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect the repo.",
-			CWD: h.workspaceRoot,
+			CWD:           h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession failed: %v", err)
@@ -3862,7 +3868,7 @@ func TestRoutesDeliveriesPage(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect WhatsApp.",
-			CWD: h.workspaceRoot,
+			CWD:           h.workspaceRoot,
 		}); err != nil {
 			t.Fatalf("StartFrontSession whatsapp failed: %v", err)
 		}
@@ -3902,7 +3908,7 @@ func TestRoutesDeliveriesPage(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect Telegram 2.",
-			CWD: h.workspaceRoot,
+			CWD:           h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession second telegram failed: %v", err)
@@ -4252,7 +4258,7 @@ func TestSessionPages(t *testing.T) {
 				ConversationKey: key,
 				FrontAgentID:    "assistant",
 				InitialPrompt:   "Inspect the repo.",
-				CWD:   h.workspaceRoot,
+				CWD:             h.workspaceRoot,
 			})
 			if err != nil {
 				t.Fatalf("StartFrontSession %d failed: %v", i, err)
@@ -4563,7 +4569,6 @@ func newServerHarnessWithProviderAndConnectorHealth(t *testing.T, prov runtime.P
 	seedSettings(t, db, map[string]string{
 		"admin_token":             adminToken,
 		"active_project_id":       activeProjectID,
-		"workspace_root":          workspaceRoot,
 		"team_name":               "Repo Task Team",
 		"onboarding_completed_at": "2026-03-25 00:00:00",
 	})
@@ -4641,7 +4646,6 @@ func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, e
 	seedSettings(t, db, map[string]string{
 		"admin_token":             adminToken,
 		"active_project_id":       activeProjectID,
-		"workspace_root":          workspaceRoot,
 		"team_name":               "Repo Task Team",
 		"onboarding_completed_at": "2026-03-25 00:00:00",
 	})
@@ -4736,8 +4740,8 @@ func (h *serverHarness) insertProject(t *testing.T, name, workspaceRoot string) 
 
 	projectID := "proj-" + strconv.Itoa(time.Now().Nanosecond())
 	if _, err := h.db.RawDB().Exec(
-		`INSERT INTO projects (id, name, workspace_root, source, created_at, last_used_at)
-		 VALUES (?, ?, ?, 'operator', datetime('now'), datetime('now'))`,
+		`INSERT INTO projects (id, name, primary_path, roots_json, policy_json, source, created_at, last_used_at)
+		 VALUES (?, ?, ?, '{}', '{}', 'operator', datetime('now'), datetime('now'))`,
 		projectID, name, workspaceRoot,
 	); err != nil {
 		t.Fatalf("insert project: %v", err)
@@ -4891,9 +4895,9 @@ func (h *serverHarness) insertRun(t *testing.T, runID, conversationID, objective
 
 	_, err := h.db.RawDB().Exec(
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, team_id, objective, workspace_root, status, created_at, updated_at)
-		 VALUES (?, ?, 'agent-1', 'repo-task-team', ?, ?, ?, datetime('now'), datetime('now'))`,
-		runID, conversationID, objective, h.workspaceRoot, status,
+		 (id, conversation_id, agent_id, project_id, team_id, objective, cwd, status, created_at, updated_at)
+		 VALUES (?, ?, 'agent-1', ?, 'repo-task-team', ?, ?, ?, datetime('now'), datetime('now'))`,
+		runID, conversationID, h.activeProjectID, objective, h.workspaceRoot, status,
 	)
 	if err != nil {
 		t.Fatalf("insert run: %v", err)
@@ -4905,9 +4909,9 @@ func (h *serverHarness) insertRunAt(t *testing.T, runID, conversationID, objecti
 
 	_, err := h.db.RawDB().Exec(
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, team_id, objective, workspace_root, status, created_at, updated_at)
-		 VALUES (?, ?, 'agent-1', 'repo-task-team', ?, ?, ?, ?, ?)`,
-		runID, conversationID, objective, h.workspaceRoot, status, createdAt, createdAt,
+		 (id, conversation_id, agent_id, project_id, team_id, objective, cwd, status, created_at, updated_at)
+		 VALUES (?, ?, 'agent-1', ?, 'repo-task-team', ?, ?, ?, ?, ?)`,
+		runID, conversationID, h.activeProjectID, objective, h.workspaceRoot, status, createdAt, createdAt,
 	)
 	if err != nil {
 		t.Fatalf("insert run at %s: %v", createdAt, err)
@@ -4917,11 +4921,13 @@ func (h *serverHarness) insertRunAt(t *testing.T, runID, conversationID, objecti
 func (h *serverHarness) insertRunInWorkspace(t *testing.T, runID, conversationID, objective, status, workspaceRoot string) {
 	t.Helper()
 
+	projectID := h.lookupProjectID(t, workspaceRoot)
+
 	_, err := h.db.RawDB().Exec(
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, team_id, objective, workspace_root, status, created_at, updated_at)
-		 VALUES (?, ?, 'agent-1', 'repo-task-team', ?, ?, ?, datetime('now'), datetime('now'))`,
-		runID, conversationID, objective, workspaceRoot, status,
+		 (id, conversation_id, agent_id, project_id, team_id, objective, cwd, status, created_at, updated_at)
+		 VALUES (?, ?, 'agent-1', ?, 'repo-task-team', ?, ?, ?, datetime('now'), datetime('now'))`,
+		runID, conversationID, projectID, objective, workspaceRoot, status,
 	)
 	if err != nil {
 		t.Fatalf("insert run in workspace: %v", err)
@@ -4943,9 +4949,9 @@ func (h *serverHarness) insertRunWithSnapshotAt(t *testing.T, runID, conversatio
 
 	_, err = h.db.RawDB().Exec(
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, team_id, objective, workspace_root, status, execution_snapshot_json, created_at, updated_at)
-		 VALUES (?, ?, 'agent-1', ?, ?, ?, ?, ?, ?, ?)`,
-		runID, conversationID, snapshot.TeamID, objective, h.workspaceRoot, status, rawSnapshot, createdAt, updatedAt,
+		 (id, conversation_id, agent_id, project_id, team_id, objective, cwd, status, execution_snapshot_json, created_at, updated_at)
+		 VALUES (?, ?, 'agent-1', ?, ?, ?, ?, ?, ?, ?, ?)`,
+		runID, conversationID, h.activeProjectID, snapshot.TeamID, objective, h.workspaceRoot, status, rawSnapshot, createdAt, updatedAt,
 	)
 	if err != nil {
 		t.Fatalf("insert run with snapshot: %v", err)
@@ -4957,13 +4963,24 @@ func (h *serverHarness) insertRunWithSession(t *testing.T, runID, conversationID
 
 	_, err := h.db.RawDB().Exec(
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, session_id, team_id, objective, workspace_root, status, created_at, updated_at)
-		 VALUES (?, ?, 'agent-1', ?, 'repo-task-team', ?, ?, ?, datetime('now'), datetime('now'))`,
-		runID, conversationID, sessionID, objective, h.workspaceRoot, status,
+		 (id, conversation_id, agent_id, session_id, project_id, team_id, objective, cwd, status, created_at, updated_at)
+		 VALUES (?, ?, 'agent-1', ?, ?, 'repo-task-team', ?, ?, ?, datetime('now'), datetime('now'))`,
+		runID, conversationID, sessionID, h.activeProjectID, objective, h.workspaceRoot, status,
 	)
 	if err != nil {
 		t.Fatalf("insert session run: %v", err)
 	}
+}
+
+func (h *serverHarness) lookupProjectID(t *testing.T, workspaceRoot string) string {
+	t.Helper()
+
+	var projectID string
+	_ = h.db.RawDB().QueryRow(`SELECT id FROM projects WHERE primary_path = ?`, workspaceRoot).Scan(&projectID)
+	if strings.TrimSpace(projectID) != "" {
+		return projectID
+	}
+	return h.insertProject(t, filepath.Base(workspaceRoot), workspaceRoot)
 }
 
 func (h *serverHarness) seedRoutesDeliveriesData(t *testing.T) (model.Run, model.RouteDirectoryItem, string) {
@@ -4978,7 +4995,7 @@ func (h *serverHarness) seedRoutesDeliveriesData(t *testing.T) (model.Run, model
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Inspect Telegram.",
-		CWD: h.workspaceRoot,
+		CWD:           h.workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession telegram failed: %v", err)
@@ -5029,10 +5046,11 @@ func (h *serverHarness) insertApproval(t *testing.T, runID, toolName, targetPath
 	h.ensureRunForApproval(t, runID)
 
 	id := "ticket-" + runID
+	bindingJSON := approvalBindingJSONForTarget(t, toolName, targetPath)
 	_, err := h.db.RawDB().Exec(
-		`INSERT INTO approvals (id, run_id, tool_name, args_json, target_path, fingerprint, status, created_at)
+		`INSERT INTO approvals (id, run_id, tool_name, args_json, binding_json, fingerprint, status, created_at)
 		 VALUES (?, ?, ?, x'', ?, 'fp-test', 'pending', datetime('now'))`,
-		id, runID, toolName, targetPath,
+		id, runID, toolName, bindingJSON,
 	)
 	if err != nil {
 		t.Fatalf("insert approval: %v", err)
@@ -5049,11 +5067,12 @@ func (h *serverHarness) insertApprovalAt(t *testing.T, runID, toolName, targetPa
 	if resolvedBy != "" {
 		resolvedAt = createdAt
 	}
+	bindingJSON := approvalBindingJSONForTarget(t, toolName, targetPath)
 
 	_, err := h.db.RawDB().Exec(
-		`INSERT INTO approvals (id, run_id, tool_name, args_json, target_path, fingerprint, status, resolved_by, created_at, resolved_at)
+		`INSERT INTO approvals (id, run_id, tool_name, args_json, binding_json, fingerprint, status, resolved_by, created_at, resolved_at)
 		 VALUES (?, ?, ?, x'', ?, 'fp-test', ?, NULLIF(?, ''), ?, ?)`,
-		id, runID, toolName, targetPath, status, resolvedBy, createdAt, resolvedAt,
+		id, runID, toolName, bindingJSON, status, resolvedBy, createdAt, resolvedAt,
 	)
 	if err != nil {
 		t.Fatalf("insert approval at %s: %v", createdAt, err)
@@ -5072,6 +5091,20 @@ func (h *serverHarness) ensureRunForApproval(t *testing.T, runID string) {
 		return
 	}
 	h.insertRun(t, runID, "conv-"+runID, "approval test run", "needs_approval")
+}
+
+func approvalBindingJSONForTarget(t *testing.T, toolName, targetPath string) []byte {
+	t.Helper()
+
+	payload, err := json.Marshal(authority.Binding{
+		ToolName: toolName,
+		Operands: []string{targetPath},
+		Mutating: true,
+	})
+	if err != nil {
+		t.Fatalf("marshal approval binding: %v", err)
+	}
+	return payload
 }
 
 func (h *serverHarness) insertEvent(t *testing.T, eventID, conversationID, runID, kind string) {
@@ -5116,7 +5149,7 @@ func (h *serverHarness) startFrontSession(t *testing.T, prompt string) model.Run
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: prompt,
-		CWD: h.workspaceRoot,
+		CWD:           h.workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)

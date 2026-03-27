@@ -344,11 +344,13 @@ func TestLoadRunDescendantsIncludesNestedWorkers(t *testing.T) {
 	h.insertRunAt(t, "run-root", "conv-tree", "Coordinate the tree", "active", "2026-03-25 10:00:00")
 	if _, err := h.db.RawDB().Exec(
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, parent_run_id, team_id, objective, workspace_root, status, created_at, updated_at)
+		 (id, conversation_id, agent_id, project_id, parent_run_id, team_id, objective, cwd, status, created_at, updated_at)
 		 VALUES
-		 ('run-child', 'conv-tree', 'researcher', 'run-root', 'repo-task-team', 'Inspect OpenClaw', ?, 'completed', '2026-03-25 10:05:00', '2026-03-25 10:06:00'),
-		 ('run-grandchild', 'conv-tree', 'reviewer', 'run-child', 'repo-task-team', 'Review notes', ?, 'completed', '2026-03-25 10:07:00', '2026-03-25 10:08:00')`,
+		 ('run-child', 'conv-tree', 'researcher', ?, 'run-root', 'repo-task-team', 'Inspect OpenClaw', ?, 'completed', '2026-03-25 10:05:00', '2026-03-25 10:06:00'),
+		 ('run-grandchild', 'conv-tree', 'reviewer', ?, 'run-child', 'repo-task-team', 'Review notes', ?, 'completed', '2026-03-25 10:07:00', '2026-03-25 10:08:00')`,
+		h.activeProjectID,
 		h.workspaceRoot,
+		h.activeProjectID,
 		h.workspaceRoot,
 	); err != nil {
 		t.Fatalf("insert descendant runs: %v", err)

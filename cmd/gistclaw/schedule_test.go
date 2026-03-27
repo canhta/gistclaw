@@ -26,7 +26,7 @@ func TestParseScheduleAddArgs_AtSchedule(t *testing.T) {
 		"--name", "Daily review",
 		"--objective", "Inspect repository status",
 		"--at", "2030-01-01T00:00:00Z",
-		"--workspace-root", "/tmp/repo",
+		"--cwd", "/tmp/repo",
 	})
 	if err != nil {
 		t.Fatalf("parseScheduleAddArgs returned error: %v", err)
@@ -38,8 +38,8 @@ func TestParseScheduleAddArgs_AtSchedule(t *testing.T) {
 	if input.Objective != "Inspect repository status" {
 		t.Fatalf("objective = %q, want %q", input.Objective, "Inspect repository status")
 	}
-	if input.WorkspaceRoot != "/tmp/repo" {
-		t.Fatalf("workspace_root = %q, want %q", input.WorkspaceRoot, "/tmp/repo")
+	if input.CWD != "/tmp/repo" {
+		t.Fatalf("cwd = %q, want %q", input.CWD, "/tmp/repo")
 	}
 	if input.Spec.Kind != scheduler.ScheduleKindAt || input.Spec.At != "2030-01-01T00:00:00Z" {
 		t.Fatalf("spec = %#v, want at schedule", input.Spec)

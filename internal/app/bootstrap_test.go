@@ -228,8 +228,8 @@ func TestBootstrap_CreatesStarterProjectAndLeavesOnboardingIncomplete(t *testing
 	}
 
 	var projectName string
-	var workspaceRoot string
-	if err := app.db.RawDB().QueryRow("SELECT name, workspace_root FROM projects LIMIT 1").Scan(&projectName, &workspaceRoot); err != nil {
+	var primaryPath string
+	if err := app.db.RawDB().QueryRow("SELECT name, primary_path FROM projects LIMIT 1").Scan(&projectName, &primaryPath); err != nil {
 		t.Fatalf("query starter project: %v", err)
 	}
 	if projectName == "" {
@@ -237,20 +237,21 @@ func TestBootstrap_CreatesStarterProjectAndLeavesOnboardingIncomplete(t *testing
 	}
 
 	wantPrefix := filepath.Join(home, ".gistclaw", "projects") + string(os.PathSeparator)
-	if !strings.HasPrefix(workspaceRoot, wantPrefix) {
-		t.Fatalf("expected starter workspace under %q, got %q", wantPrefix, workspaceRoot)
+	if !strings.HasPrefix(primaryPath, wantPrefix) {
+		t.Fatalf("expected starter project under %q, got %q", wantPrefix, primaryPath)
 	}
-	if _, err := os.Stat(workspaceRoot); err != nil {
-		t.Fatalf("expected starter workspace directory to exist: %v", err)
-	}
-	if _, err := os.Stat(filepath.Join(workspaceRoot, ".git")); err != nil {
-		t.Fatalf("expected starter workspace git repo to exist: %v", err)
+	if _, err := os.Stat(primaryPath); err != nil {
+		t.Fatalf("expected starter project directory to exist: %v", err)
 	}
 	if activeProjectID := lookupDBSetting(app.db, "active_project_id"); activeProjectID == "" {
 		t.Fatal("expected active_project_id to be set")
 	}
-	if activeWorkspace := lookupDBSetting(app.db, "workspace_root"); activeWorkspace != workspaceRoot {
-		t.Fatalf("expected workspace_root projection %q, got %q", workspaceRoot, activeWorkspace)
+	project, err := ensureProjectState(context.Background(), app.db, cfg)
+	if err != nil {
+		t.Fatalf("ensureProjectState: %v", err)
+	}
+	if project.PrimaryPath != primaryPath {
+		t.Fatalf("expected active primary_path %q, got %q", primaryPath, project.PrimaryPath)
 	}
 	if completed := lookupDBSetting(app.db, "onboarding_completed_at"); completed != "" {
 		t.Fatalf("expected onboarding to stay incomplete, got %q", completed)
@@ -278,19 +279,16 @@ func TestBootstrap_SeedsStarterProjectWithShippedDefaultTeam(t *testing.T) {
 		_ = app.db.Close()
 	})
 
-	var workspaceRoot string
-	if err := app.db.RawDB().QueryRow("SELECT workspace_root FROM projects LIMIT 1").Scan(&workspaceRoot); err != nil {
-		t.Fatalf("query starter project workspace: %v", err)
+	var primaryPath string
+	if err := app.db.RawDB().QueryRow("SELECT primary_path FROM projects LIMIT 1").Scan(&primaryPath); err != nil {
+		t.Fatalf("query starter project path: %v", err)
 	}
 
-	workspaceTeamDir := filepath.Join(workspaceRoot, ".gistclaw", "teams", "default")
+	workspaceTeamDir := filepath.Join(primaryPath, ".gistclaw", "teams", "default")
 	for _, name := range []string{"team.yaml", "coordinator.soul.yaml", "patcher.soul.yaml"} {
 		if _, err := os.Stat(filepath.Join(workspaceTeamDir, name)); err != nil {
 			t.Fatalf("expected starter workspace team file %q to exist: %v", name, err)
 		}
-	}
-	if _, err := os.Stat(filepath.Join(workspaceRoot, ".git")); err != nil {
-		t.Fatalf("expected starter workspace git repo to exist: %v", err)
 	}
 
 	runtimeCfg, err := app.runtime.TeamConfig(context.Background())
@@ -347,7 +345,7 @@ func TestBootstrap_AppliesSavedBudgetSettingsToRuntime(t *testing.T) {
 	}
 }
 
-func TestEnsureProjectState_UsesConfiguredWorkspaceWhenNoActiveProjectExists(t *testing.T) {
+func TestEnsureProjectState_UsesConfiguredPathWhenNoActiveProjectExists(t *testing.T) {
 	db, err := storeWiring(Config{DatabasePath: ":memory:"})
 	if err != nil {
 		t.Fatalf("storeWiring: %v", err)
@@ -359,15 +357,15 @@ func TestEnsureProjectState_UsesConfiguredWorkspaceWhenNoActiveProjectExists(t *
 	if err != nil {
 		t.Fatalf("ensureProjectState: %v", err)
 	}
-	if project.WorkspaceRoot != workspaceRoot {
-		t.Fatalf("expected configured workspace_root %q, got %q", workspaceRoot, project.WorkspaceRoot)
+	if project.PrimaryPath != workspaceRoot {
+		t.Fatalf("expected configured primary_path %q, got %q", workspaceRoot, project.PrimaryPath)
 	}
 	if lookupDBSetting(db, "active_project_id") == "" {
-		t.Fatal("expected configured workspace to become the active project")
+		t.Fatal("expected configured project path to become the active project")
 	}
 }
 
-func TestBootstrap_ConfiguredWorkspaceMarksOnboardingComplete(t *testing.T) {
+func TestBootstrap_ConfiguredPathMarksOnboardingComplete(t *testing.T) {
 	workspaceRoot := t.TempDir()
 	app, err := Bootstrap(Config{
 		DatabasePath:  ":memory:",
@@ -389,11 +387,15 @@ func TestBootstrap_ConfiguredWorkspaceMarksOnboardingComplete(t *testing.T) {
 		_ = app.db.Close()
 	})
 
-	if got := lookupDBSetting(app.db, "workspace_root"); got != workspaceRoot {
-		t.Fatalf("expected configured workspace_root %q, got %q", workspaceRoot, got)
+	project, err := runtime.ActiveProject(context.Background(), app.db)
+	if err != nil {
+		t.Fatalf("ActiveProject: %v", err)
+	}
+	if project.PrimaryPath != workspaceRoot {
+		t.Fatalf("expected active project primary_path %q, got %q", workspaceRoot, project.PrimaryPath)
 	}
 	if completed := lookupDBSetting(app.db, "onboarding_completed_at"); completed == "" {
-		t.Fatal("expected configured workspace bootstrap to mark onboarding complete")
+		t.Fatal("expected configured project path bootstrap to mark onboarding complete")
 	}
 }
 
@@ -405,8 +407,8 @@ func TestBootstrap_StoredNonStarterProjectMarksOnboardingComplete(t *testing.T) 
 	}
 
 	workspaceRoot := t.TempDir()
-	if _, err := runtime.ActivateWorkspace(context.Background(), db, workspaceRoot, "seo-test", "operator"); err != nil {
-		t.Fatalf("ActivateWorkspace: %v", err)
+	if _, err := runtime.ActivateProjectPath(context.Background(), db, workspaceRoot, "seo-test", "operator"); err != nil {
+		t.Fatalf("ActivateProjectPath: %v", err)
 	}
 	if _, err := db.RawDB().Exec("DELETE FROM settings WHERE key = 'onboarding_completed_at'"); err != nil {
 		t.Fatalf("delete onboarding_completed_at: %v", err)
@@ -439,7 +441,7 @@ func TestBootstrap_StoredNonStarterProjectMarksOnboardingComplete(t *testing.T) 
 	}
 }
 
-func TestEnsureProjectState_PrefersStoredActiveProjectOverConfigWorkspace(t *testing.T) {
+func TestEnsureProjectState_PrefersStoredActiveProjectOverConfigPath(t *testing.T) {
 	db, err := storeWiring(Config{DatabasePath: ":memory:"})
 	if err != nil {
 		t.Fatalf("storeWiring: %v", err)
@@ -447,9 +449,9 @@ func TestEnsureProjectState_PrefersStoredActiveProjectOverConfigWorkspace(t *tes
 	defer db.Close()
 
 	storedRoot := t.TempDir()
-	storedProject, err := runtime.ActivateWorkspace(context.Background(), db, storedRoot, "stored-project", "operator")
+	storedProject, err := runtime.ActivateProjectPath(context.Background(), db, storedRoot, "stored-project", "operator")
 	if err != nil {
-		t.Fatalf("ActivateWorkspace: %v", err)
+		t.Fatalf("ActivateProjectPath: %v", err)
 	}
 
 	configRoot := t.TempDir()
@@ -460,11 +462,8 @@ func TestEnsureProjectState_PrefersStoredActiveProjectOverConfigWorkspace(t *tes
 	if project.ID != storedProject.ID {
 		t.Fatalf("expected stored active project %q, got %q", storedProject.ID, project.ID)
 	}
-	if project.WorkspaceRoot != storedRoot {
-		t.Fatalf("expected stored workspace_root %q, got %q", storedRoot, project.WorkspaceRoot)
-	}
-	if got := lookupDBSetting(db, "workspace_root"); got != storedRoot {
-		t.Fatalf("expected workspace_root projection %q, got %q", storedRoot, got)
+	if project.PrimaryPath != storedRoot {
+		t.Fatalf("expected stored primary_path %q, got %q", storedRoot, project.PrimaryPath)
 	}
 }
 

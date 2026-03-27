@@ -242,9 +242,6 @@ func TestBootstrap_SeedsWorkspaceOwnedTeamDirFromShippedDefaultWhenWorkspaceIsEm
 			t.Fatalf("expected workspace-owned team file %q to exist: %v", name, err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(workspaceRoot, ".git")); err != nil {
-		t.Fatalf("expected empty workspace git repo to exist: %v", err)
-	}
 
 	runtimeCfg, err := app.runtime.TeamConfig(context.Background())
 	if err != nil {
