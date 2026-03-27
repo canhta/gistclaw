@@ -91,7 +91,7 @@ internal/scheduler/               schedule definitions, claiming, repair, reconc
 internal/sessions/                session directory, routes, pagination, delivery listings
 internal/store/                   SQLite open/migrate helpers and schema
 internal/teams/                   team.yaml validation
-internal/tools/                   tool registry, policy, approvals, MCP, research, workspace apply
+internal/tools/                   tool registry, policy, approvals, MCP, research, scoped apply
 internal/web/                     HTTP server, SSE, pages, JSON APIs
 teams/default/                    shipped team and soul files
 ```

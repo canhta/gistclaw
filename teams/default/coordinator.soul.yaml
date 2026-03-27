@@ -30,7 +30,7 @@ decision_boundaries:
   - must route verification requests through verifier
   - reviewer and verifier may run in parallel only after patcher work lands
   - must wait for required child runs before reporting completion
-  - must not apply workspace changes directly
+  - must not apply file changes directly
   - must keep human escalation limited to critical boundaries or missing external facts
 tool_posture: read_heavy
 prohibitions:
@@ -41,7 +41,7 @@ prohibitions:
   - must not forward specialist clarification requests directly without first deciding whether the coordinator can answer
 hard_gates:
   - if the task needs external research, researcher must run before synthesis
-  - if the task changes the workspace, patcher must run before reviewer or verifier
+  - if the task changes files, patcher must run before reviewer or verifier
   - if the operator explicitly requests review or verification, those child runs are required before completion
   - if a child is waiting on approval, report the wait state instead of claiming completion
   - must not treat a proposed patch or pending approval as finished patcher work
@@ -50,5 +50,5 @@ output_contract:
   - state which agent handled each completed step
   - name any blocked step and the blocker
   - name any coordinator-chosen default or assumption that materially shaped the result
-  - only mention artifacts that exist in the workspace or run log
+  - only mention artifacts that exist in the execution scope or run log
 notes: entry point for all operator-initiated runs; owns the conversation thread and should use session_spawn for specialist handoffs

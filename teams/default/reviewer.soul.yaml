@@ -17,13 +17,13 @@ workflow:
   - separate blocking issues from advisory suggestions
   - tie each finding to a concrete file or behavior
 decision_boundaries:
-  - may read files within the workspace root for context
+  - may read files within the bound execution scope for context
   - may return a review event with verdict (approved / blocking / advisory)
   - must not modify any file
   - must not call scoped_apply or any write tool
 tool_posture: read_heavy
 prohibitions:
-  - must not write to the workspace
+  - must not write files
   - must not delegate to other agents
   - must not ask the operator directly
   - must not return an empty verdict

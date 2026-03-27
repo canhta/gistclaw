@@ -31,7 +31,7 @@ type onboardingStep3Data struct {
 	SelectedTask string
 }
 
-// scanRepoSignals reads the local filesystem of workspaceRoot and produces
+// scanRepoSignals reads the local filesystem of the candidate project path and produces
 // a heuristic list of task candidates. It makes no model calls.
 func scanRepoSignals(workspaceRoot string) []TaskCandidate {
 	var candidates []TaskCandidate
@@ -75,7 +75,7 @@ func scanRepoSignals(workspaceRoot string) []TaskCandidate {
 			candidates = append(candidates, TaskCandidate{
 				Kind:        "review",
 				Description: fmt.Sprintf("Review changes in %s", e.Name()),
-				Signal:      fmt.Sprintf("code file %q found in workspace root", e.Name()),
+				Signal:      fmt.Sprintf("code file %q found in project root", e.Name()),
 			})
 			break
 		}
@@ -337,7 +337,7 @@ func (s *Server) handleOnboardingStep4(w http.ResponseWriter, r *http.Request) {
 }
 
 // onboardingMiddleware returns a handler that redirects to /onboarding when
-// no workspace is bound, except for /onboarding paths themselves.
+// no project is bound, except for /onboarding paths themselves.
 func (s *Server) onboardingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path

@@ -86,7 +86,7 @@ type StartRun struct {
 	AuthorityJSON         []byte
 	AccountID             string
 	ExecutionSnapshotJSON []byte
-	// PreviewOnly instructs the run engine to skip workspace apply calls and
+	// PreviewOnly instructs the run engine to skip scoped apply calls and
 	// emit a preview_completed event instead of mutating any files.
 	PreviewOnly bool
 	// VerificationAgent marks this run as a verification agent turn; on
