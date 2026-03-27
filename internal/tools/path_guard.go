@@ -67,6 +67,24 @@ func resolveToolPath(root, rawPath string, env authority.Envelope) (string, stri
 	return resolveScopedPath(root, rawPath)
 }
 
+func resolveToolCWD(root, rawPath string, env authority.Envelope) (string, error) {
+	if strings.TrimSpace(rawPath) == "" {
+		return root, nil
+	}
+	cwd, _, err := resolveToolPath(root, rawPath, env)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(cwd)
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("cwd must be a directory")
+	}
+	return cwd, nil
+}
+
 func ensureNoSymlinkEscape(root, target string) error {
 	rel, err := filepath.Rel(root, target)
 	if err != nil {

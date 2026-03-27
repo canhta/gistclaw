@@ -320,8 +320,8 @@ func (t *ApplyPatchTool) Name() string { return "apply_patch" }
 func (t *ApplyPatchTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Apply one unified diff patch inside the current working directory.",
-		InputSchemaJSON: `{"type":"object","properties":{"patch":{"type":"string"}},"required":["patch"]}`,
+		Description:     "Apply one unified diff patch inside the current working directory or an explicitly requested directory.",
+		InputSchemaJSON: `{"type":"object","properties":{"patch":{"type":"string"},"cwd":{"type":"string"}},"required":["patch"]}`,
 		Risk:            model.RiskMedium,
 		SideEffect:      effectPatch,
 		Approval:        "required",
@@ -335,6 +335,7 @@ func (t *ApplyPatchTool) Invoke(ctx context.Context, call model.ToolCall) (model
 	}
 	var input struct {
 		Patch string `json:"patch"`
+		CWD   string `json:"cwd"`
 	}
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("apply_patch: decode input: %w", err)
@@ -342,10 +343,14 @@ func (t *ApplyPatchTool) Invoke(ctx context.Context, call model.ToolCall) (model
 	if strings.TrimSpace(input.Patch) == "" {
 		return model.ToolResult{}, fmt.Errorf("apply_patch: patch is required")
 	}
+	cwd, err := resolveToolCWD(root, input.CWD, authorityFromContext(ctx))
+	if err != nil {
+		return model.ToolResult{}, fmt.Errorf("apply_patch: cwd: %w", err)
+	}
 	return t.runner.run(ctx, commandRequest{
 		command: "git",
 		args:    []string{"apply", "--recount", "--whitespace=nowarn", "-"},
-		cwd:     root,
+		cwd:     cwd,
 		stdin:   input.Patch,
 		effect:  effectPatch,
 	})
@@ -364,7 +369,7 @@ func (t *ShellExecTool) Name() string { return "shell_exec" }
 func (t *ShellExecTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Run one shell command inside the current working directory or a child directory.",
+		Description:     "Run one shell command inside the current working directory or an explicitly requested directory.",
 		InputSchemaJSON: `{"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"timeout_sec":{"type":"integer","minimum":1}},"required":["command"]}`,
 		Risk:            model.RiskHigh,
 		SideEffect:      effectExecWrite,
@@ -393,16 +398,9 @@ func (t *ShellExecTool) Invoke(ctx context.Context, call model.ToolCall) (model.
 	}
 	cwd := root
 	if strings.TrimSpace(input.CWD) != "" {
-		cwd, _, err = resolveToolPath(root, input.CWD, env)
+		cwd, err = resolveToolCWD(root, input.CWD, env)
 		if err != nil {
 			return model.ToolResult{}, fmt.Errorf("shell_exec: cwd: %w", err)
-		}
-		info, err := os.Stat(cwd)
-		if err != nil {
-			return model.ToolResult{}, fmt.Errorf("shell_exec: stat cwd: %w", err)
-		}
-		if !info.IsDir() {
-			return model.ToolResult{}, fmt.Errorf("shell_exec: cwd must be a directory")
 		}
 	}
 	effect := classifyShellCommand(input.Command)

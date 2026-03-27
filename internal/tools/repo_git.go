@@ -12,6 +12,7 @@ import (
 type gitInput struct {
 	Target string `json:"target"`
 	Limit  int    `json:"limit"`
+	CWD    string `json:"cwd"`
 }
 
 type GitStatusTool struct{ runner commandRunner }
@@ -23,18 +24,26 @@ func NewGitStatusTool(timeoutSec int, maxOutputBytes int) *GitStatusTool {
 func (t *GitStatusTool) Name() string { return "git_status" }
 
 func (t *GitStatusTool) Spec() model.ToolSpec {
-	return gitSpec(t.Name(), "Show git status for the repository in the current working directory.")
+	return gitSpec(t.Name(), "Show git status for the repository in the current working directory or an explicitly requested directory.")
 }
 
-func (t *GitStatusTool) Invoke(ctx context.Context, _ model.ToolCall) (model.ToolResult, error) {
+func (t *GitStatusTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
 	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
+	var input gitInput
+	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
+		return model.ToolResult{}, fmt.Errorf("git_status: decode input: %w", err)
+	}
+	cwd, err := resolveToolCWD(root, input.CWD, authorityFromContext(ctx))
+	if err != nil {
+		return model.ToolResult{}, fmt.Errorf("git_status: cwd: %w", err)
+	}
 	return t.runner.run(ctx, commandRequest{
 		command: "git",
 		args:    []string{"status", "--short", "--branch"},
-		cwd:     root,
+		cwd:     cwd,
 		effect:  effectRead,
 	})
 }
@@ -48,7 +57,7 @@ func NewGitDiffTool(timeoutSec int, maxOutputBytes int) *GitDiffTool {
 func (t *GitDiffTool) Name() string { return "git_diff" }
 
 func (t *GitDiffTool) Spec() model.ToolSpec {
-	return gitSpec(t.Name(), "Show git diff output for the repository in the current working directory.")
+	return gitSpec(t.Name(), "Show git diff output for the repository in the current working directory or an explicitly requested directory.")
 }
 
 func (t *GitDiffTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
@@ -60,6 +69,10 @@ func (t *GitDiffTool) Invoke(ctx context.Context, call model.ToolCall) (model.To
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("git_diff: decode input: %w", err)
 	}
+	cwd, err := resolveToolCWD(root, input.CWD, authorityFromContext(ctx))
+	if err != nil {
+		return model.ToolResult{}, fmt.Errorf("git_diff: cwd: %w", err)
+	}
 	args := []string{"diff"}
 	if target := strings.TrimSpace(input.Target); target != "" {
 		args = append(args, target)
@@ -67,7 +80,7 @@ func (t *GitDiffTool) Invoke(ctx context.Context, call model.ToolCall) (model.To
 	return t.runner.run(ctx, commandRequest{
 		command: "git",
 		args:    args,
-		cwd:     root,
+		cwd:     cwd,
 		effect:  effectRead,
 	})
 }
@@ -81,7 +94,7 @@ func NewGitShowTool(timeoutSec int, maxOutputBytes int) *GitShowTool {
 func (t *GitShowTool) Name() string { return "git_show" }
 
 func (t *GitShowTool) Spec() model.ToolSpec {
-	return gitSpec(t.Name(), "Show one git object or revision from the repository in the current working directory.")
+	return gitSpec(t.Name(), "Show one git object or revision from the repository in the current working directory or an explicitly requested directory.")
 }
 
 func (t *GitShowTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
@@ -93,6 +106,10 @@ func (t *GitShowTool) Invoke(ctx context.Context, call model.ToolCall) (model.To
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("git_show: decode input: %w", err)
 	}
+	cwd, err := resolveToolCWD(root, input.CWD, authorityFromContext(ctx))
+	if err != nil {
+		return model.ToolResult{}, fmt.Errorf("git_show: cwd: %w", err)
+	}
 	target := strings.TrimSpace(input.Target)
 	if target == "" {
 		target = "HEAD"
@@ -100,7 +117,7 @@ func (t *GitShowTool) Invoke(ctx context.Context, call model.ToolCall) (model.To
 	return t.runner.run(ctx, commandRequest{
 		command: "git",
 		args:    []string{"show", target, "--stat", "--oneline"},
-		cwd:     root,
+		cwd:     cwd,
 		effect:  effectRead,
 	})
 }
@@ -114,7 +131,7 @@ func NewGitLogTool(timeoutSec int, maxOutputBytes int) *GitLogTool {
 func (t *GitLogTool) Name() string { return "git_log" }
 
 func (t *GitLogTool) Spec() model.ToolSpec {
-	return gitSpec(t.Name(), "Show recent commit history from the repository in the current working directory.")
+	return gitSpec(t.Name(), "Show recent commit history from the repository in the current working directory or an explicitly requested directory.")
 }
 
 func (t *GitLogTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
@@ -126,6 +143,10 @@ func (t *GitLogTool) Invoke(ctx context.Context, call model.ToolCall) (model.Too
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("git_log: decode input: %w", err)
 	}
+	cwd, err := resolveToolCWD(root, input.CWD, authorityFromContext(ctx))
+	if err != nil {
+		return model.ToolResult{}, fmt.Errorf("git_log: cwd: %w", err)
+	}
 	limit := input.Limit
 	if limit <= 0 {
 		limit = 10
@@ -133,7 +154,7 @@ func (t *GitLogTool) Invoke(ctx context.Context, call model.ToolCall) (model.Too
 	return t.runner.run(ctx, commandRequest{
 		command: "git",
 		args:    []string{"log", "--oneline", fmt.Sprintf("-%d", limit)},
-		cwd:     root,
+		cwd:     cwd,
 		effect:  effectRead,
 	})
 }
@@ -142,7 +163,7 @@ func gitSpec(name, description string) model.ToolSpec {
 	return model.ToolSpec{
 		Name:            name,
 		Description:     description,
-		InputSchemaJSON: `{"type":"object","properties":{"target":{"type":"string"},"limit":{"type":"integer","minimum":1}}}`,
+		InputSchemaJSON: `{"type":"object","properties":{"target":{"type":"string"},"limit":{"type":"integer","minimum":1},"cwd":{"type":"string"}}}`,
 		Risk:            model.RiskLow,
 		SideEffect:      effectRead,
 		Approval:        "never",

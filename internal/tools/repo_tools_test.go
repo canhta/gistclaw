@@ -308,6 +308,39 @@ func TestApplyPatch_UpdatesExistingFile(t *testing.T) {
 	}
 }
 
+func TestApplyPatch_AllowsElevatedAbsoluteCWD(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	writeWorkspaceFile(t, outside, "README.md", "hello\n")
+
+	tool := NewApplyPatchTool(30)
+	patch := strings.Join([]string{
+		"diff --git a/README.md b/README.md",
+		"index ce01362..2e09960 100644",
+		"--- a/README.md",
+		"+++ b/README.md",
+		"@@ -1 +1 @@",
+		"-hello",
+		"+world",
+		"",
+	}, "\n")
+	if _, err := tool.Invoke(WithInvocationContext(context.Background(), InvocationContext{
+		CWD: root,
+		Authority: authority.Envelope{
+			HostAccessMode: authority.HostAccessModeElevated,
+		},
+	}), model.ToolCall{
+		ID:        "call-patch-absolute",
+		ToolName:  tool.Name(),
+		InputJSON: []byte(`{"cwd":` + quoteJSONString(outside) + `,"patch":` + quoteJSONString(patch) + `}`),
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if content := string(mustReadFile(t, filepath.Join(outside, "README.md"))); content != "world\n" {
+		t.Fatalf("unexpected patched content %q", content)
+	}
+}
+
 func TestShellExec_RunsInsideWorkspaceRoot(t *testing.T) {
 	root := t.TempDir()
 	tool := NewShellExecTool(30, 64<<10)
@@ -451,6 +484,58 @@ func TestGitTools_InspectRepository(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := tc.tool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 				ID:        "call-" + tc.name,
+				ToolName:  tc.tool.Name(),
+				InputJSON: []byte(tc.input),
+			})
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			var payload struct {
+				Stdout string `json:"stdout"`
+			}
+			if err := json.Unmarshal([]byte(got.Output), &payload); err != nil {
+				t.Fatalf("unmarshal output: %v", err)
+			}
+			if !strings.Contains(payload.Stdout, tc.want) {
+				t.Fatalf("expected output to contain %q, got %q", tc.want, payload.Stdout)
+			}
+		})
+	}
+}
+
+func TestGitTools_AllowElevatedAbsoluteCWD(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	writeWorkspaceFile(t, outside, "README.md", "hello\n")
+	runGit(t, outside, "init")
+	runGit(t, outside, "config", "user.name", "Gist Claw")
+	runGit(t, outside, "config", "user.email", "gist@example.com")
+	runGit(t, outside, "add", "README.md")
+	runGit(t, outside, "commit", "-m", "init")
+	writeWorkspaceFile(t, outside, "README.md", "updated\n")
+
+	ctx := WithInvocationContext(context.Background(), InvocationContext{
+		CWD: root,
+		Authority: authority.Envelope{
+			HostAccessMode: authority.HostAccessModeElevated,
+		},
+	})
+	tests := []struct {
+		name  string
+		tool  Tool
+		want  string
+		input string
+	}{
+		{name: "status", tool: NewGitStatusTool(30, 64<<10), want: "README.md", input: `{"cwd":` + quoteJSONString(outside) + `}`},
+		{name: "diff", tool: NewGitDiffTool(30, 64<<10), want: "-hello", input: `{"cwd":` + quoteJSONString(outside) + `}`},
+		{name: "show", tool: NewGitShowTool(30, 64<<10), want: "init", input: `{"cwd":` + quoteJSONString(outside) + `,"target":"HEAD"}`},
+		{name: "log", tool: NewGitLogTool(30, 64<<10), want: "init", input: `{"cwd":` + quoteJSONString(outside) + `,"limit":1}`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := tc.tool.Invoke(ctx, model.ToolCall{
+				ID:        "call-absolute-" + tc.name,
 				ToolName:  tc.tool.Name(),
 				InputJSON: []byte(tc.input),
 			})
