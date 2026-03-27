@@ -377,6 +377,7 @@ func (t *ShellExecTool) Invoke(ctx context.Context, call model.ToolCall) (model.
 	if err != nil {
 		return model.ToolResult{}, err
 	}
+	env := authorityFromContext(ctx)
 	var input struct {
 		Command string `json:"command"`
 		CWD     string `json:"cwd"`
@@ -392,7 +393,7 @@ func (t *ShellExecTool) Invoke(ctx context.Context, call model.ToolCall) (model.
 	}
 	cwd := root
 	if strings.TrimSpace(input.CWD) != "" {
-		cwd, _, err = resolveScopedPath(root, input.CWD)
+		cwd, _, err = resolveToolPath(root, input.CWD, env)
 		if err != nil {
 			return model.ToolResult{}, fmt.Errorf("shell_exec: cwd: %w", err)
 		}

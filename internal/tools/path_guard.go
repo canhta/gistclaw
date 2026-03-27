@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/canhta/gistclaw/internal/authority"
 )
 
 func resolveScopedPath(root, rawPath string) (string, string, error) {
@@ -47,6 +49,22 @@ func resolveScopedPath(root, rawPath string) (string, string, error) {
 		return "", "", fmt.Errorf("tools: relative path: %w", err)
 	}
 	return joined, rel, nil
+}
+
+func resolveToolPath(root, rawPath string, env authority.Envelope) (string, string, error) {
+	env = authority.NormalizeEnvelope(env)
+	candidate := strings.TrimSpace(rawPath)
+	if filepath.IsAbs(candidate) && env.HostAccessMode == authority.HostAccessModeElevated {
+		if root == "" {
+			return "", "", ErrCWDRequired
+		}
+		if strings.ContainsRune(candidate, 0) {
+			return "", "", ErrEscapeAttempt
+		}
+		cleaned := filepath.Clean(candidate)
+		return cleaned, filepath.ToSlash(cleaned), nil
+	}
+	return resolveScopedPath(root, rawPath)
 }
 
 func ensureNoSymlinkEscape(root, target string) error {

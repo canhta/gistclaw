@@ -36,13 +36,14 @@ func (t *ListDirTool) Invoke(ctx context.Context, call model.ToolCall) (model.To
 	if err != nil {
 		return model.ToolResult{}, err
 	}
+	env := authorityFromContext(ctx)
 	var input struct {
 		Path string `json:"path"`
 	}
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("list_dir: decode input: %w", err)
 	}
-	absPath, relPath, err := resolveScopedPath(root, input.Path)
+	absPath, relPath, err := resolveToolPath(root, input.Path, env)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("list_dir: %w", err)
 	}
@@ -122,6 +123,7 @@ func (t *ReadFileTool) Invoke(ctx context.Context, call model.ToolCall) (model.T
 	if err != nil {
 		return model.ToolResult{}, err
 	}
+	env := authorityFromContext(ctx)
 	var input struct {
 		Path      string `json:"path"`
 		StartLine int    `json:"start_line"`
@@ -131,7 +133,7 @@ func (t *ReadFileTool) Invoke(ctx context.Context, call model.ToolCall) (model.T
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("read_file: decode input: %w", err)
 	}
-	absPath, relPath, err := resolveScopedPath(root, input.Path)
+	absPath, relPath, err := resolveToolPath(root, input.Path, env)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("read_file: %w", err)
 	}
@@ -226,6 +228,7 @@ func (t *GrepSearchTool) Invoke(ctx context.Context, call model.ToolCall) (model
 	if err != nil {
 		return model.ToolResult{}, err
 	}
+	env := authorityFromContext(ctx)
 	var input struct {
 		Query      string `json:"query"`
 		Path       string `json:"path"`
@@ -239,7 +242,7 @@ func (t *GrepSearchTool) Invoke(ctx context.Context, call model.ToolCall) (model
 	if query == "" {
 		return model.ToolResult{}, fmt.Errorf("grep_search: query is required")
 	}
-	absPath, relPath, err := resolveScopedPath(root, input.Path)
+	absPath, relPath, err := resolveToolPath(root, input.Path, env)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("grep_search: %w", err)
 	}
@@ -349,6 +352,7 @@ func (t *WriteNewFileTool) Invoke(ctx context.Context, call model.ToolCall) (mod
 	if err != nil {
 		return model.ToolResult{}, err
 	}
+	env := authorityFromContext(ctx)
 	var input struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
@@ -356,7 +360,7 @@ func (t *WriteNewFileTool) Invoke(ctx context.Context, call model.ToolCall) (mod
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("write_new_file: decode input: %w", err)
 	}
-	absPath, relPath, err := resolveScopedPath(root, input.Path)
+	absPath, relPath, err := resolveToolPath(root, input.Path, env)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("write_new_file: %w", err)
 	}
@@ -406,13 +410,14 @@ func (t *DeletePathTool) Invoke(ctx context.Context, call model.ToolCall) (model
 	if err != nil {
 		return model.ToolResult{}, err
 	}
+	env := authorityFromContext(ctx)
 	var input struct {
 		Path string `json:"path"`
 	}
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("delete_path: decode input: %w", err)
 	}
-	absPath, relPath, err := resolveScopedPath(root, input.Path)
+	absPath, relPath, err := resolveToolPath(root, input.Path, env)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("delete_path: %w", err)
 	}
@@ -454,6 +459,7 @@ func (t *MovePathTool) Invoke(ctx context.Context, call model.ToolCall) (model.T
 	if err != nil {
 		return model.ToolResult{}, err
 	}
+	env := authorityFromContext(ctx)
 	var input struct {
 		From string `json:"from"`
 		To   string `json:"to"`
@@ -461,11 +467,11 @@ func (t *MovePathTool) Invoke(ctx context.Context, call model.ToolCall) (model.T
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("move_path: decode input: %w", err)
 	}
-	fromAbs, fromRel, err := resolveScopedPath(root, input.From)
+	fromAbs, fromRel, err := resolveToolPath(root, input.From, env)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("move_path: from: %w", err)
 	}
-	toAbs, toRel, err := resolveScopedPath(root, input.To)
+	toAbs, toRel, err := resolveToolPath(root, input.To, env)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("move_path: to: %w", err)
 	}

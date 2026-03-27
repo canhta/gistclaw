@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -218,17 +217,10 @@ func (b codexCoderBackend) Build(input coderExecInput, cwd string) (commandReque
 }
 
 func resolveCoderExecCWD(root, raw string, env authority.Envelope) (string, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
+	if strings.TrimSpace(raw) == "" {
 		return root, nil
 	}
-	if filepath.IsAbs(raw) && authority.NormalizeEnvelope(env).HostAccessMode == authority.HostAccessModeElevated {
-		if strings.ContainsRune(raw, 0) {
-			return "", ErrEscapeAttempt
-		}
-		return filepath.Clean(raw), nil
-	}
-	cwd, _, err := resolveScopedPath(root, raw)
+	cwd, _, err := resolveToolPath(root, raw, env)
 	if err != nil {
 		return "", err
 	}

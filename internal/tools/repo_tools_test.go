@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/model"
 )
 
@@ -25,6 +26,24 @@ func TestResolveScopedPath_RejectsSymlinkEscape(t *testing.T) {
 	}
 	if err != ErrEscapeAttempt {
 		t.Fatalf("expected ErrEscapeAttempt, got %v", err)
+	}
+}
+
+func TestResolveToolPath_AllowsAbsolutePathInElevatedMode(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "notes.txt")
+
+	absPath, displayPath, err := resolveToolPath(root, outside, authority.Envelope{
+		HostAccessMode: authority.HostAccessModeElevated,
+	})
+	if err != nil {
+		t.Fatalf("resolveToolPath: %v", err)
+	}
+	if absPath != outside {
+		t.Fatalf("expected abs path %q, got %q", outside, absPath)
+	}
+	if displayPath != filepath.ToSlash(outside) {
+		t.Fatalf("expected display path %q, got %q", filepath.ToSlash(outside), displayPath)
 	}
 }
 
@@ -131,6 +150,43 @@ func TestReadFile_ReturnsRequestedLineRange(t *testing.T) {
 	}
 	if payload.StartLine != 2 || payload.EndLine != 3 {
 		t.Fatalf("unexpected line range %+v", payload)
+	}
+}
+
+func TestReadFile_AllowsElevatedAbsolutePath(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "notes.txt")
+	if err := os.WriteFile(outside, []byte("outside\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	tool := NewReadFileTool(1024)
+	got, err := tool.Invoke(WithInvocationContext(context.Background(), InvocationContext{
+		CWD: root,
+		Authority: authority.Envelope{
+			HostAccessMode: authority.HostAccessModeElevated,
+		},
+	}), model.ToolCall{
+		ID:        "call-read-absolute",
+		ToolName:  tool.Name(),
+		InputJSON: []byte(`{"path":` + quoteJSONString(outside) + `}`),
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	var payload struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(got.Output), &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if payload.Path != filepath.ToSlash(outside) {
+		t.Fatalf("unexpected path %q", payload.Path)
+	}
+	if payload.Content != "outside\n" {
+		t.Fatalf("unexpected content %q", payload.Content)
 	}
 }
 
@@ -286,6 +342,40 @@ func TestShellExec_RunsInsideWorkspaceRoot(t *testing.T) {
 	}
 	if payload.Effect != effectExecRead {
 		t.Fatalf("expected read effect, got %q", payload.Effect)
+	}
+}
+
+func TestShellExec_AllowsElevatedAbsoluteCWD(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	tool := NewShellExecTool(30, 64<<10)
+
+	got, err := tool.Invoke(WithInvocationContext(context.Background(), InvocationContext{
+		CWD: root,
+		Authority: authority.Envelope{
+			HostAccessMode: authority.HostAccessModeElevated,
+		},
+	}), model.ToolCall{
+		ID:        "call-shell-absolute",
+		ToolName:  tool.Name(),
+		InputJSON: []byte(`{"command":"pwd","cwd":` + quoteJSONString(outside) + `}`),
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	var payload struct {
+		CWD    string `json:"cwd"`
+		Stdout string `json:"stdout"`
+	}
+	if err := json.Unmarshal([]byte(got.Output), &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if payload.CWD != outside {
+		t.Fatalf("expected cwd %q, got %q", outside, payload.CWD)
+	}
+	if strings.TrimSpace(payload.Stdout) != outside {
+		t.Fatalf("expected stdout %q, got %q", outside, payload.Stdout)
 	}
 }
 

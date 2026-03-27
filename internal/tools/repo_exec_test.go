@@ -33,8 +33,6 @@ func (s *recordingToolLogSink) snapshot() []ToolLogRecord {
 }
 
 func TestCommandRunner_StreamsToolLogs(t *testing.T) {
-	t.Parallel()
-
 	runner := newCommandRunner(5, 64<<10)
 	root := t.TempDir()
 	shell := mustShellRequest(t, "printf 'line one\\nline two\\n'; printf 'warn one\\n' >&2")
@@ -88,8 +86,6 @@ func TestCommandRunner_StreamsToolLogs(t *testing.T) {
 }
 
 func TestCommandRunner_StreamsPTYTerminalLogs(t *testing.T) {
-	t.Parallel()
-
 	runner := newCommandRunner(5, 64<<10)
 	root := t.TempDir()
 	shell := mustShellRequest(t, "printf '\\033[31mred\\033[0m\\n'; printf 'warn\\n' >&2")
