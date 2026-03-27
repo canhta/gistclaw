@@ -35,6 +35,7 @@ type Connector struct {
 	inbound                *InboundDispatcher
 	health                 *HealthState
 	login                  func(ctx context.Context, creds StoredCredentials) (*listenerSession, error)
+	sendText               func(ctx context.Context, creds StoredCredentials, chatID, text string) error
 	newListener            func(sess *listenerSession) (SessionListener, error)
 	credentialPollInterval time.Duration
 	reconnectDelay         time.Duration
@@ -49,7 +50,7 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 	}
 	connector.outbound = NewOutboundDispatcher(connector, db, cs)
 	connector.login = func(ctx context.Context, creds StoredCredentials) (*listenerSession, error) {
-		_, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
+		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
 			IMEI:      creds.IMEI,
 			Cookie:    creds.Cookie,
 			UserAgent: creds.UserAgent,
@@ -58,7 +59,24 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 		if err != nil {
 			return nil, err
 		}
-		return &listenerSession{AccountID: creds.AccountID, Language: creds.Language}, nil
+		accountID := creds.AccountID
+		if strings.TrimSpace(accountID) == "" {
+			accountID = sess.UID
+		}
+		return &listenerSession{AccountID: accountID, Language: creds.Language}, nil
+	}
+	connector.sendText = func(ctx context.Context, creds StoredCredentials, chatID, text string) error {
+		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
+			IMEI:      creds.IMEI,
+			Cookie:    creds.Cookie,
+			UserAgent: creds.UserAgent,
+			Language:  optionalLanguage(creds.Language),
+		})
+		if err != nil {
+			return err
+		}
+		_, err = protocol.SendMessage(ctx, sess, chatID, protocol.ThreadTypeUser, text)
+		return err
 	}
 	connector.newListener = func(*listenerSession) (SessionListener, error) {
 		return nil, fmt.Errorf("zalo personal connector: live listener not implemented")
@@ -159,8 +177,18 @@ func (c *Connector) Drain(ctx context.Context) error {
 	return c.outbound.Drain(ctx)
 }
 
-func (c *Connector) SendText(_ context.Context, _ string, _ string) error {
-	return fmt.Errorf("zalo personal connector: live send not implemented")
+func (c *Connector) SendText(ctx context.Context, chatID, text string) error {
+	creds, ok, err := LoadStoredCredentials(ctx, c.outbound.db)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("zalo personal connector: not authenticated")
+	}
+	if c.sendText == nil {
+		return fmt.Errorf("zalo personal connector: send path not configured")
+	}
+	return c.sendText(ctx, creds, chatID, text)
 }
 
 func (c *Connector) ConnectorHealthSnapshot() model.ConnectorHealthSnapshot {

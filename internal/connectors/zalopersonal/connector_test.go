@@ -231,3 +231,50 @@ func TestConnectorStart(t *testing.T) {
 		}
 	})
 }
+
+func TestConnectorSendText(t *testing.T) {
+	t.Run("stored credentials send text through connector sender", func(t *testing.T) {
+		db := setupZaloOutboundDB(t)
+		cs := conversations.NewConversationStore(db)
+		rt := &stubInboundRuntime{}
+		if err := SaveStoredCredentials(context.Background(), db, StoredCredentials{
+			AccountID: "acct-1",
+			IMEI:      "imei-123",
+			Cookie:    "zpw_sek=abc123",
+			UserAgent: "Mozilla/5.0",
+			Language:  "vi",
+		}); err != nil {
+			t.Fatalf("SaveStoredCredentials: %v", err)
+		}
+
+		connector := NewConnector(db, cs, rt, "assistant")
+		var gotChatID string
+		var gotText string
+		connector.sendText = func(_ context.Context, creds StoredCredentials, chatID, text string) error {
+			if creds.AccountID != "acct-1" {
+				t.Fatalf("unexpected creds: %+v", creds)
+			}
+			gotChatID = chatID
+			gotText = text
+			return nil
+		}
+
+		if err := connector.SendText(context.Background(), "user-1", "xin chao"); err != nil {
+			t.Fatalf("SendText: %v", err)
+		}
+		if gotChatID != "user-1" || gotText != "xin chao" {
+			t.Fatalf("unexpected send args: chatID=%q text=%q", gotChatID, gotText)
+		}
+	})
+
+	t.Run("missing credentials fails send text", func(t *testing.T) {
+		db := setupZaloOutboundDB(t)
+		cs := conversations.NewConversationStore(db)
+		rt := &stubInboundRuntime{}
+
+		connector := NewConnector(db, cs, rt, "assistant")
+		if err := connector.SendText(context.Background(), "user-1", "xin chao"); err == nil {
+			t.Fatal("expected SendText to fail without stored credentials")
+		}
+	})
+}
