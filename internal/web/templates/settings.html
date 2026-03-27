@@ -125,7 +125,7 @@
 
     <div class="stack-sm">
       <label>Automation Token</label>
-      <div class="mono">{{.AdminToken}}</div>
+      <div class="mono mono-wrap">{{.AdminToken}}</div>
       <p class="muted">Use this for machine or API access. Run <code>gistclaw inspect token</code> to retrieve the full token.</p>
     </div>
 
@@ -134,7 +134,7 @@
     <div class="stack-sm">
       <label>Telegram Token</label>
       {{if .TelegramToken}}
-      <div class="mono">{{.TelegramToken}}</div>
+      <div class="mono mono-wrap">{{.TelegramToken}}</div>
       {{else}}
       <div class="muted">Not configured</div>
       {{end}}

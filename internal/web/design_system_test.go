@@ -177,6 +177,26 @@ func TestLayoutShowsDirectoryCardsAtTabletWidths(t *testing.T) {
 	}
 }
 
+func TestLayoutDefinesSecretWrappingUtility(t *testing.T) {
+	t.Parallel()
+
+	body, err := os.ReadFile(templatePath(t, "layout.html"))
+	if err != nil {
+		t.Fatalf("read layout template: %v", err)
+	}
+
+	content := string(body)
+	for _, want := range []string{
+		".mono-wrap {",
+		"overflow-wrap: anywhere;",
+		"word-break: break-all;",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected layout template to contain %q", want)
+		}
+	}
+}
+
 func TestLayoutDefinesCompactUtilityButtonHeight(t *testing.T) {
 	t.Parallel()
 
@@ -366,6 +386,7 @@ func TestTemplatesUseTaskFramedCopy(t *testing.T) {
 				"Browser access, limits, and machine credentials.",
 				"Other Signed-In Browsers",
 				"Telegram Token",
+				`class="mono mono-wrap"`,
 			},
 			unwanted: []string{
 				"operator settings",
