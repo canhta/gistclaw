@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/model"
 )
 
@@ -21,11 +23,12 @@ type coderBackend interface {
 }
 
 type coderExecInput struct {
-	Backend          string `json:"backend"`
-	Prompt           string `json:"prompt"`
-	CWD              string `json:"cwd"`
-	Sandbox          string `json:"sandbox"`
-	SkipGitRepoCheck *bool  `json:"skip_git_repo_check"`
+	Backend          string             `json:"backend"`
+	Prompt           string             `json:"prompt"`
+	CWD              string             `json:"cwd"`
+	Sandbox          string             `json:"sandbox"`
+	SkipGitRepoCheck *bool              `json:"skip_git_repo_check"`
+	Authority        authority.Envelope `json:"-"`
 }
 
 type CoderExecTool struct {
@@ -96,6 +99,7 @@ func (t *CoderExecTool) Invoke(ctx context.Context, call model.ToolCall) (model.
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("coder_exec: decode input: %w", err)
 	}
+	input.Authority = authorityFromContext(ctx)
 	input.Prompt = strings.TrimSpace(input.Prompt)
 	if input.Prompt == "" {
 		return model.ToolResult{}, fmt.Errorf("coder_exec: prompt is required")
@@ -116,7 +120,7 @@ func (t *CoderExecTool) Invoke(ctx context.Context, call model.ToolCall) (model.
 	cwd := root
 	if strings.TrimSpace(input.CWD) != "" {
 		var resolveErr error
-		cwd, _, resolveErr = resolveScopedPath(root, input.CWD)
+		cwd, resolveErr = resolveCoderExecCWD(root, input.CWD, input.Authority)
 		if resolveErr != nil {
 			return model.ToolResult{}, fmt.Errorf("coder_exec: cwd: %w", resolveErr)
 		}
@@ -177,7 +181,7 @@ func (b codexCoderBackend) Name() string { return "codex" }
 func (b codexCoderBackend) Build(input coderExecInput, cwd string) (commandRequest, error) {
 	sandbox := strings.TrimSpace(input.Sandbox)
 	if sandbox == "" {
-		sandbox = "workspace-write"
+		sandbox = defaultCodexSandbox(input)
 	}
 	if sandbox != "read-only" && sandbox != "workspace-write" && sandbox != "danger-full-access" {
 		return commandRequest{}, fmt.Errorf("unsupported sandbox %q", sandbox)
@@ -211,6 +215,31 @@ func (b codexCoderBackend) Build(input coderExecInput, cwd string) (commandReque
 		outputCapturePath: outputPath,
 		usePTY:            true,
 	}, nil
+}
+
+func resolveCoderExecCWD(root, raw string, env authority.Envelope) (string, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return root, nil
+	}
+	if filepath.IsAbs(raw) && authority.NormalizeEnvelope(env).HostAccessMode == authority.HostAccessModeElevated {
+		if strings.ContainsRune(raw, 0) {
+			return "", ErrEscapeAttempt
+		}
+		return filepath.Clean(raw), nil
+	}
+	cwd, _, err := resolveScopedPath(root, raw)
+	if err != nil {
+		return "", err
+	}
+	return cwd, nil
+}
+
+func defaultCodexSandbox(input coderExecInput) string {
+	if authority.NormalizeEnvelope(input.Authority).HostAccessMode == authority.HostAccessModeElevated {
+		return "danger-full-access"
+	}
+	return "workspace-write"
 }
 
 type claudeCodeBackend struct {

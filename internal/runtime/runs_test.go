@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -97,6 +98,29 @@ func (t *cwdAwareTool) Invoke(ctx context.Context, _ model.ToolCall) (model.Tool
 		return model.ToolResult{}, fmt.Errorf("missing invocation context")
 	}
 	t.cwd = meta.CWD
+	return model.ToolResult{Output: `{"ok":true}`}, nil
+}
+
+type authorityAwareTool struct {
+	env authority.Envelope
+}
+
+func (t *authorityAwareTool) Name() string { return "authority_aware" }
+
+func (t *authorityAwareTool) Spec() model.ToolSpec {
+	return model.ToolSpec{
+		Name:       t.Name(),
+		Risk:       model.RiskLow,
+		SideEffect: "read",
+	}
+}
+
+func (t *authorityAwareTool) Invoke(ctx context.Context, _ model.ToolCall) (model.ToolResult, error) {
+	meta, ok := tools.InvocationContextFrom(ctx)
+	if !ok {
+		return model.ToolResult{}, fmt.Errorf("missing invocation context")
+	}
+	t.env = meta.Authority
 	return model.ToolResult{Output: `{"ok":true}`}, nil
 }
 
@@ -1022,6 +1046,49 @@ func TestRunEngine_PassesCWDIntoToolInvocationContext(t *testing.T) {
 	}
 	if tool.cwd != workspaceRoot {
 		t.Fatalf("expected tool to receive cwd %q, got %q", workspaceRoot, tool.cwd)
+	}
+}
+
+func TestRunEngine_PassesAuthorityIntoToolInvocationContext(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	tool := &authorityAwareTool{}
+	reg.Register(tool)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				ToolCalls: []model.ToolCallRequest{
+					{ID: "call-authority", ToolName: tool.Name(), InputJSON: []byte(`{}`)},
+				},
+				StopReason: "tool_calls",
+			},
+			{Content: "done", StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+
+	rawAuthority, err := json.Marshal(authority.Envelope{
+		ApprovalMode:   authority.ApprovalModeAutoApprove,
+		HostAccessMode: authority.HostAccessModeElevated,
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	if _, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-authority-tool",
+		AgentID:        "agent-a",
+		Objective:      "use tool",
+		CWD:            t.TempDir(),
+		AuthorityJSON:  rawAuthority,
+	}); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if tool.env.HostAccessMode != authority.HostAccessModeElevated {
+		t.Fatalf("expected elevated host access, got %q", tool.env.HostAccessMode)
+	}
+	if tool.env.ApprovalMode != authority.ApprovalModeAutoApprove {
+		t.Fatalf("expected auto approve mode, got %q", tool.env.ApprovalMode)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/model"
 )
 
@@ -22,6 +23,7 @@ type InvocationContext struct {
 	CWD        string
 	SessionID  string
 	Agent      model.AgentProfile
+	Authority  authority.Envelope
 	ApprovalID string
 	LogSink    ToolLogSink
 }
@@ -53,4 +55,12 @@ func toolLogSinkFromContext(ctx context.Context) ToolLogSink {
 		return nil
 	}
 	return meta.LogSink
+}
+
+func authorityFromContext(ctx context.Context) authority.Envelope {
+	meta, ok := InvocationContextFrom(ctx)
+	if !ok {
+		return authority.NormalizeEnvelope(authority.Envelope{})
+	}
+	return authority.NormalizeEnvelope(meta.Authority)
 }

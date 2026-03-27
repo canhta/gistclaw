@@ -3,12 +3,7 @@ package authority
 import "github.com/canhta/gistclaw/internal/model"
 
 func Decide(env Envelope, intent Intent) model.ToolDecision {
-	if env.ApprovalMode == "" {
-		env.ApprovalMode = ApprovalModePrompt
-	}
-	if env.HostAccessMode == "" {
-		env.HostAccessMode = HostAccessModeStandard
-	}
+	env = NormalizeEnvelope(env)
 
 	for _, class := range intent.Sensitive {
 		if IsSensitiveClass(class) && env.HostAccessMode != HostAccessModeElevated {

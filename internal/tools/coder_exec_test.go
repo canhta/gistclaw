@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/model"
 )
 
@@ -165,6 +167,58 @@ func TestCoderExecTool_InvokeHonorsExplicitSkipGitRepoCheckFalse(t *testing.T) {
 		if arg == "--skip-git-repo-check" {
 			t.Fatalf("did not expect --skip-git-repo-check in args: %v", runner.req.args)
 		}
+	}
+}
+
+func TestCoderExecTool_InvokeUsesElevatedAuthorityForHostAccess(t *testing.T) {
+	root := t.TempDir()
+	elevatedCWD := filepath.Join(t.TempDir(), "outside")
+	if err := os.MkdirAll(elevatedCWD, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	runner := &recordingCommandRunner{
+		res: model.ToolResult{Output: `{"command":"codex exec --sandbox danger-full-access --skip-git-repo-check -C /tmp/outside \"Build it\"","cwd":"/tmp/outside","stdout":"ok","stderr":"","exit_code":0,"timed_out":false,"truncated":false,"effect":"exec_write"}`},
+	}
+	tool := newCoderExecTool([]coderBackend{
+		newCodexCoderBackend("codex"),
+	}, runner)
+
+	got, err := tool.Invoke(WithInvocationContext(context.Background(), InvocationContext{
+		CWD: root,
+		Authority: authority.Envelope{
+			HostAccessMode: authority.HostAccessModeElevated,
+		},
+	}), model.ToolCall{
+		ID:       "call-coder",
+		ToolName: tool.Name(),
+		InputJSON: []byte(fmt.Sprintf(`{
+			"backend":"codex",
+			"cwd":%q,
+			"prompt":"Build it"
+		}`, elevatedCWD)),
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if runner.req.cwd != elevatedCWD {
+		t.Fatalf("expected elevated cwd %q, got %q", elevatedCWD, runner.req.cwd)
+	}
+	if len(runner.req.args) < 4 {
+		t.Fatalf("expected sandbox args, got %v", runner.req.args)
+	}
+	for i, want := range []string{"exec", "--sandbox", "danger-full-access", "--color"} {
+		if runner.req.args[i] != want {
+			t.Fatalf("expected danger-full-access sandbox args, got %v", runner.req.args)
+		}
+	}
+	var payload struct {
+		Backend string `json:"backend"`
+	}
+	if err := json.Unmarshal([]byte(got.Output), &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if payload.Backend != "codex" {
+		t.Fatalf("expected codex backend, got %q", payload.Backend)
 	}
 }
 

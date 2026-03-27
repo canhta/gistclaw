@@ -1,5 +1,10 @@
 package authority
 
+import (
+	"bytes"
+	"encoding/json"
+)
+
 type ApprovalMode string
 
 const (
@@ -30,6 +35,27 @@ type Envelope struct {
 	ApprovalMode   ApprovalMode
 	HostAccessMode HostAccessMode
 	Capabilities   CapabilitySet
+}
+
+func NormalizeEnvelope(env Envelope) Envelope {
+	if env.ApprovalMode == "" {
+		env.ApprovalMode = ApprovalModePrompt
+	}
+	if env.HostAccessMode == "" {
+		env.HostAccessMode = HostAccessModeStandard
+	}
+	return env
+}
+
+func DecodeEnvelope(raw []byte) (Envelope, error) {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return NormalizeEnvelope(Envelope{}), nil
+	}
+	var env Envelope
+	if err := json.Unmarshal(raw, &env); err != nil {
+		return Envelope{}, err
+	}
+	return NormalizeEnvelope(env), nil
 }
 
 type SensitiveClass string
