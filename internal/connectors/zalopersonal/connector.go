@@ -95,13 +95,6 @@ func (c *Connector) Start(ctx context.Context) error {
 			return err
 		}
 
-		if err := c.Drain(ctx); err != nil {
-			if isContextDone(err) {
-				return ctx.Err()
-			}
-			c.health.markDisconnected("drain: " + err.Error())
-		}
-
 		creds, ok, err := LoadStoredCredentials(ctx, c.outbound.db)
 		if err != nil {
 			if isContextDone(err) {
@@ -131,6 +124,13 @@ func (c *Connector) Start(ctx context.Context) error {
 				return err
 			}
 			continue
+		}
+
+		if err := c.Drain(ctx); err != nil {
+			if isContextDone(err) {
+				return ctx.Err()
+			}
+			c.health.markDisconnected("drain: " + err.Error())
 		}
 
 		listener, err := c.newListener(sess)

@@ -91,6 +91,45 @@ func TestConnectorStart(t *testing.T) {
 		}
 	})
 
+	t.Run("missing credentials does not drain pending outbound intents", func(t *testing.T) {
+		db := setupZaloOutboundDB(t)
+		cs := conversations.NewConversationStore(db)
+		rt := &stubInboundRuntime{}
+
+		if _, err := db.RawDB().ExecContext(context.Background(),
+			`INSERT INTO outbound_intents
+			 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at)
+			 VALUES ('intent-pending', NULL, 'zalo_personal', 'user-1', 'hello', NULL, 'pending', 0, datetime('now'))`,
+		); err != nil {
+			t.Fatalf("insert outbound intent: %v", err)
+		}
+
+		connector := NewConnector(db, cs, rt, "assistant")
+		connector.credentialPollInterval = 10 * time.Millisecond
+		connector.reconnectDelay = 10 * time.Millisecond
+		connector.outbound.maxAttempts = 1
+		connector.outbound.retryDelay = 1 * time.Millisecond
+
+		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Millisecond)
+		defer cancel()
+
+		err := connector.Start(ctx)
+		if err != context.DeadlineExceeded && err != context.Canceled {
+			t.Fatalf("expected context shutdown, got %v", err)
+		}
+
+		var status string
+		var attempts int
+		if err := db.RawDB().QueryRowContext(context.Background(),
+			`SELECT status, attempts FROM outbound_intents WHERE id = 'intent-pending'`,
+		).Scan(&status, &attempts); err != nil {
+			t.Fatalf("load outbound intent: %v", err)
+		}
+		if status != "pending" || attempts != 0 {
+			t.Fatalf("expected pending outbound intent to remain untouched, got status=%q attempts=%d", status, attempts)
+		}
+	})
+
 	t.Run("saved credentials login and inbound message dispatch", func(t *testing.T) {
 		db := setupZaloOutboundDB(t)
 		cs := conversations.NewConversationStore(db)
