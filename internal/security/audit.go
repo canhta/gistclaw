@@ -85,6 +85,7 @@ func runAudit(input Input, deps auditDeps) Report {
 	auditResearch(&report, cfg.Research)
 	auditMCP(&report, cfg.MCP, deps)
 	auditWhatsApp(&report, cfg.WhatsApp)
+	auditZaloPersonal(&report, cfg.ZaloPersonal)
 
 	return report
 }
@@ -283,6 +284,21 @@ func auditWhatsApp(report *Report, cfg app.WhatsAppConfig) {
 		Title:       "WhatsApp config is incomplete",
 		Detail:      "whatsapp.phone_number_id, whatsapp.access_token, and whatsapp.verify_token must be configured together",
 		Remediation: "Configure all three WhatsApp fields together, or clear the partial configuration.",
+	})
+}
+
+func auditZaloPersonal(report *Report, cfg app.ZaloPersonalConfig) {
+	if !cfg.Enabled {
+		return
+	}
+
+	report.add(Finding{
+		ID:          "zalo_personal.unofficial",
+		Subject:     "zalo_personal",
+		Severity:    SeverityWarn,
+		Title:       "Unofficial Zalo Personal connector enabled",
+		Detail:      "zalo_personal relies on reverse-engineered personal-account behavior and may be restricted or broken by Zalo changes.",
+		Remediation: "Keep operator approval enabled for remote connectors and expect reauthentication or connector breakage when Zalo changes the personal account surface.",
 	})
 }
 

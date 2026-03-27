@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/scheduler"
 	"github.com/canhta/gistclaw/internal/store"
 )
@@ -64,6 +66,75 @@ func TestDoctor_PrintsConnectorHealthSummary(t *testing.T) {
 	}
 	if !strings.Contains(output, "connector:whatsapp SKIP") {
 		t.Fatalf("expected unknown connector health to render as SKIP, got:\n%s", output)
+	}
+}
+
+func TestDoctor_PrintsZaloPersonalConnectorHealthAndSecurityWarning(t *testing.T) {
+	workspaceRoot := t.TempDir()
+	exec.Command("git", "init", workspaceRoot).Run()
+	dbPath := filepath.Join(t.TempDir(), "gistclaw.db")
+
+	cfgDir := t.TempDir()
+	cfgPath := filepath.Join(cfgDir, "config.yaml")
+	content := strings.Join([]string{
+		"database_path: " + dbPath,
+		"storage_root: " + workspaceRoot,
+		"provider:",
+		"  name: openai",
+		"  api_key: sk-test",
+		"zalo_personal:",
+		"  enabled: true",
+		"",
+	}, "\n")
+	if err := os.WriteFile(cfgPath, []byte(content), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+
+	raw, err := json.Marshal(model.ConnectorHealthSnapshot{
+		ConnectorID: "zalo_personal",
+		State:       model.ConnectorHealthHealthy,
+		Summary:     "connected",
+		CheckedAt:   time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("marshal connector health snapshot: %v", err)
+	}
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		"connector_health.zalo_personal",
+		string(raw),
+	); err != nil {
+		t.Fatalf("seed connector health: %v", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runDoctor(testOptions(cfgPath), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("expected zero exit code, got %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	output := stdout.String()
+	for _, want := range []string{
+		"connector:zalo_personal",
+		"connected",
+		"security:zalo_personal",
+		"reverse-engineered personal-account behavior",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("expected %q in doctor output:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "awaiting first authentication") {
+		t.Fatalf("expected persisted connector health to override cold-start summary, got:\n%s", output)
 	}
 }
 

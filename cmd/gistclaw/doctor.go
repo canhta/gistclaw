@@ -85,6 +85,10 @@ func runDoctor(opts globalOptions, stdout, stderr io.Writer) int {
 		checks = append(checks, check{name: "storage_root", status: "PASS", detail: cfg.StorageRoot})
 	}
 
+	if findingDetails := joinFindingDetails(findingsBySubject(auditReport, "zalo_personal")); findingDetails != "" {
+		checks = append(checks, check{name: "security:zalo_personal", status: "WARN", detail: findingDetails})
+	}
+
 	// 5. Research and MCP config safety.
 	if cfg.Research.Provider != "" {
 		if findingDetails := joinFindingDetails(findingsBySubject(auditReport, "research")); findingDetails != "" {

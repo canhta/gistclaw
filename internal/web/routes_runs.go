@@ -1351,6 +1351,8 @@ func humanizeTriggerLabel(connectorID string) string {
 		return "Telegram"
 	case "whatsapp":
 		return "WhatsApp"
+	case "zalo_personal":
+		return "Zalo Personal"
 	default:
 		normalized := strings.ReplaceAll(strings.TrimSpace(connectorID), "_", " ")
 		if normalized == "" {

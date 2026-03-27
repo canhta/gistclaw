@@ -165,6 +165,40 @@ func TestRunAudit(t *testing.T) {
 	}
 }
 
+func TestAuditWarnsWhenZaloPersonalEnabled(t *testing.T) {
+	workspaceRoot := t.TempDir()
+
+	report := RunAudit(Input{
+		Config: app.Config{
+			StorageRoot: workspaceRoot,
+			Provider: app.ProviderConfig{
+				Name:   "anthropic",
+				APIKey: "sk-test",
+			},
+			ZaloPersonal: app.ZaloPersonalConfig{
+				Enabled: true,
+			},
+			Web: app.WebConfig{
+				ListenAddr: "127.0.0.1:8080",
+			},
+		},
+		AdminTokenPresent: true,
+	})
+
+	finding, ok := findingByID(report.Findings, "zalo_personal.unofficial")
+	if !ok {
+		t.Fatalf("expected unofficial zalo personal warning, got %#v", report.Findings)
+	}
+	if finding.Severity != SeverityWarn {
+		t.Fatalf("expected warn severity, got %q", finding.Severity)
+	}
+	for _, part := range []string{"reverse-engineered", "personal-account", "Zalo"} {
+		if !strings.Contains(finding.Detail, part) {
+			t.Fatalf("expected detail %q to contain %q", finding.Detail, part)
+		}
+	}
+}
+
 func findingByID(findings []Finding, id string) (Finding, bool) {
 	for _, finding := range findings {
 		if finding.ID == id {

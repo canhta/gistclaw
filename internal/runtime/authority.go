@@ -123,7 +123,7 @@ func parseConversationConnectorID(normalizedKey string) string {
 
 func isRemoteConnectorID(connectorID string) bool {
 	switch strings.ToLower(strings.TrimSpace(connectorID)) {
-	case "telegram", "whatsapp":
+	case "telegram", "whatsapp", "zalo_personal":
 		return true
 	default:
 		return false
