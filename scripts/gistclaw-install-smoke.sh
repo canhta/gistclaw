@@ -57,7 +57,7 @@ fi
 cat <<PATHS
 state_dir: ${GISTCLAW_FAKE_STATE_DIR:-/var/lib/gistclaw}
 database_dir: ${GISTCLAW_FAKE_DATABASE_DIR:-/var/lib/gistclaw}
-workspace_root: ${GISTCLAW_FAKE_WORKSPACE_ROOT:-/var/lib/gistclaw/projects}
+storage_root: ${GISTCLAW_FAKE_STORAGE_ROOT:-/var/lib/gistclaw}
 PATHS
 exit 0
 fi
@@ -193,7 +193,7 @@ run_happy_path() {
 	GISTCLAW_FAKE_WORKDIR="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_FAKE_STATE_DIR="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_FAKE_DATABASE_DIR="$root_dir/var/lib/gistclaw" \
-	GISTCLAW_FAKE_WORKSPACE_ROOT="$root_dir/var/lib/gistclaw/projects" \
+	GISTCLAW_FAKE_STORAGE_ROOT="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_PROVIDER_NAME=openai \
 	GISTCLAW_PROVIDER_API_KEY=sk-test \
 	bash "$INSTALLER" >/dev/null
@@ -247,7 +247,7 @@ telegram:
   agent_id: assistant
 
 database_path: $root_dir/srv/data/runtime.db
-workspace_root: $root_dir/srv/projects
+storage_root: $root_dir/srv/storage
 
 web:
   listen_addr: 127.0.0.1:8080
@@ -267,13 +267,13 @@ EOF
 	GISTCLAW_FAKE_WORKDIR="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_FAKE_STATE_DIR="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_FAKE_DATABASE_DIR="$root_dir/srv/data" \
-	GISTCLAW_FAKE_WORKSPACE_ROOT="$root_dir/srv/projects" \
+	GISTCLAW_FAKE_STORAGE_ROOT="$root_dir/srv/storage" \
 	bash "$INSTALLER" --config-file "$source_cfg" >/dev/null
 
 	assert_files_equal "$source_cfg" "$root_dir/etc/gistclaw/config.yaml"
 	assert_contains "$log_dir/ownership.log" "chown -R gistclaw:gistclaw $root_dir/var/lib/gistclaw"
 	assert_contains "$log_dir/ownership.log" "chown -R gistclaw:gistclaw $root_dir/srv/data"
-	assert_contains "$log_dir/ownership.log" "chown -R gistclaw:gistclaw $root_dir/srv/projects"
+	assert_contains "$log_dir/ownership.log" "chown -R gistclaw:gistclaw $root_dir/srv/storage"
 	assert_contains "$log_dir/systemctl.log" "enable gistclaw"
 	assert_contains "$log_dir/systemctl.log" "is-active --quiet gistclaw"
 	assert_contains "$log_dir/systemctl.log" "start gistclaw"
@@ -304,7 +304,7 @@ provider:
   name: openai
   api_key: sk-test
 database_path: $root_dir/srv/data/runtime.db
-workspace_root: $root_dir/srv/projects
+storage_root: $root_dir/srv/storage
 web:
   listen_addr: 127.0.0.1:8080
 EOF
@@ -323,7 +323,7 @@ EOF
 	GISTCLAW_FAKE_WORKDIR="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_FAKE_STATE_DIR="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_FAKE_DATABASE_DIR="$root_dir/srv/data" \
-	GISTCLAW_FAKE_WORKSPACE_ROOT="$root_dir/srv/projects" \
+	GISTCLAW_FAKE_STORAGE_ROOT="$root_dir/srv/storage" \
 	bash "$INSTALLER" --config-file "$source_cfg" >/dev/null
 
 	assert_files_equal "$source_cfg" "$root_dir/etc/gistclaw/config.yaml"
@@ -365,7 +365,7 @@ run_active_service_restart_case() {
 	GISTCLAW_FAKE_WORKDIR="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_FAKE_STATE_DIR="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_FAKE_DATABASE_DIR="$root_dir/var/lib/gistclaw" \
-	GISTCLAW_FAKE_WORKSPACE_ROOT="$root_dir/var/lib/gistclaw/projects" \
+	GISTCLAW_FAKE_STORAGE_ROOT="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_FAKE_ACTIVE_SERVICE=1 \
 	GISTCLAW_PROVIDER_NAME=openai \
 	GISTCLAW_PROVIDER_API_KEY=sk-test \
@@ -642,7 +642,7 @@ run_public_domain_happy_path() {
 	GISTCLAW_FAKE_WORKDIR="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_FAKE_STATE_DIR="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_FAKE_DATABASE_DIR="$root_dir/var/lib/gistclaw" \
-	GISTCLAW_FAKE_WORKSPACE_ROOT="$root_dir/var/lib/gistclaw/projects" \
+	GISTCLAW_FAKE_STORAGE_ROOT="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_PROVIDER_NAME=openai \
 	GISTCLAW_PROVIDER_API_KEY=sk-test \
 	bash "$INSTALLER" --public-domain "$domain" >"$tmp/out"
@@ -685,7 +685,7 @@ provider:
   name: openai
   api_key: sk-test
 database_path: $root_dir/srv/data/runtime.db
-workspace_root: $root_dir/srv/projects
+storage_root: $root_dir/srv/storage
 web:
   listen_addr: 0.0.0.0:8080
 EOF
@@ -705,7 +705,7 @@ EOF
 	GISTCLAW_FAKE_WORKDIR="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_FAKE_STATE_DIR="$root_dir/var/lib/gistclaw" \
 	GISTCLAW_FAKE_DATABASE_DIR="$root_dir/srv/data" \
-	GISTCLAW_FAKE_WORKSPACE_ROOT="$root_dir/srv/projects" \
+	GISTCLAW_FAKE_STORAGE_ROOT="$root_dir/srv/storage" \
 	bash "$INSTALLER" --config-file "$source_cfg" --public-domain gistclaw.example.com >"$tmp/out" 2>"$tmp/err"
 	local status=$?
 	set -e

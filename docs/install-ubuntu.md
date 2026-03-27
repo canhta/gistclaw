@@ -27,7 +27,7 @@ If you also want the installer to manage the public HTTPS front door, add `--pub
 sudo ./gistclaw-install.sh --version v0.1.0 --provider-name openai --provider-api-key YOUR_REAL_KEY --public-domain your.domain.example
 ```
 
-If you already have a full operator config, install from that exact config file instead of re-entering fields. That file should already include `database_path` and `workspace_root`.
+If you already have a full operator config, install from that exact config file instead of re-entering fields. That file should already include `database_path` and `storage_root`.
 
 ```bash
 sudo ./gistclaw-install.sh --version v0.1.0 --config-file /path/to/gistclaw-config.yaml

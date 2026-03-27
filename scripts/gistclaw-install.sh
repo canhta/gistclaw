@@ -202,7 +202,7 @@ provider:
   name: ${PROVIDER_NAME}
   api_key: ${PROVIDER_API_KEY}
 database_path: ${VAR_DIR}/runtime.db
-workspace_root: ${VAR_DIR}/projects
+storage_root: ${VAR_DIR}
 web:
   listen_addr: 127.0.0.1:8080
 EOF
@@ -223,8 +223,8 @@ CONFIG_PATHS_OUTPUT=$("${BIN_LINK}" inspect --config "${CONFIG_PATH}" config-pat
 
 STATE_DIR=$(extract_config_value "state_dir" "${CONFIG_PATHS_OUTPUT}")
 DATABASE_DIR=$(extract_config_value "database_dir" "${CONFIG_PATHS_OUTPUT}")
-WORKSPACE_ROOT=$(extract_config_value "workspace_root" "${CONFIG_PATHS_OUTPUT}")
-if [ -z "${STATE_DIR}" ] || [ -z "${DATABASE_DIR}" ] || [ -z "${WORKSPACE_ROOT}" ]; then
+STORAGE_ROOT=$(extract_config_value "storage_root" "${CONFIG_PATHS_OUTPUT}")
+if [ -z "${STATE_DIR}" ] || [ -z "${DATABASE_DIR}" ] || [ -z "${STORAGE_ROOT}" ]; then
 	echo "inspect config-paths returned incomplete output" >&2
 	exit 1
 fi
@@ -232,7 +232,7 @@ fi
 ensure_owned_dir "${VAR_DIR}"
 ensure_owned_dir "${STATE_DIR}"
 ensure_owned_dir "${DATABASE_DIR}"
-ensure_owned_dir "${WORKSPACE_ROOT}"
+ensure_owned_dir "${STORAGE_ROOT}"
 
 # Generate the canonical unit via `gistclaw inspect systemd-unit`.
 GISTCLAW_SYSTEMD_BINARY_PATH="${BIN_LINK}" \
