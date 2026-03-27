@@ -23,8 +23,6 @@ func TestLoginWithCredentialsRejectsInvalidCredentials(t *testing.T) {
 }
 
 func TestLoginWithCredentialsSeedsCookieJar(t *testing.T) {
-	t.Parallel()
-
 	oldTransport := defaultHTTPTransport
 	defaultHTTPTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		switch {
@@ -102,8 +100,6 @@ func TestLoginWithCredentialsSeedsCookieJar(t *testing.T) {
 }
 
 func TestLoginQRReturnsNotImplemented(t *testing.T) {
-	t.Parallel()
-
 	oldTransport := defaultHTTPTransport
 	var waitingScanCalls int
 	var waitingConfirmCalls int
@@ -150,7 +146,7 @@ func TestLoginQRReturnsNotImplemented(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoginQR: %v", err)
 	}
-	if string(qr.Bytes()) != "png-bytes" {
+	if qr.String() != "png-bytes" {
 		t.Fatalf("expected qr callback bytes, got %q", qr.Bytes())
 	}
 	if creds == nil {

@@ -11,8 +11,6 @@ import (
 )
 
 func TestSendMessageDM(t *testing.T) {
-	t.Parallel()
-
 	key := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
 	oldTransport := defaultHTTPTransport
 	defaultHTTPTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
@@ -85,8 +83,6 @@ func TestSendMessageDM(t *testing.T) {
 }
 
 func TestSendMessageDMAcceptsNumericMessageID(t *testing.T) {
-	t.Parallel()
-
 	key := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
 	oldTransport := defaultHTTPTransport
 	defaultHTTPTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {

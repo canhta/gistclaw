@@ -28,10 +28,6 @@ func (h *HealthState) snapshotCopy() model.ConnectorHealthSnapshot {
 	return h.snapshot
 }
 
-func (h *HealthState) markUnknown(summary string) {
-	h.set(model.ConnectorHealthUnknown, summary)
-}
-
 func (h *HealthState) markUnauthenticated() {
 	h.set(model.ConnectorHealthDegraded, "not authenticated")
 }

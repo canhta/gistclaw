@@ -1088,10 +1088,6 @@ func (r *Runtime) appendApprovalRequested(
 	return nil
 }
 
-func buildApprovalPromptTitle(tc model.ToolCallRequest) string {
-	return buildApprovalPromptTitleForLanguage("", tc)
-}
-
 func buildApprovalPromptTitleForLanguage(languageHint string, tc model.ToolCallRequest) string {
 	if strings.TrimSpace(tc.ToolName) == "" {
 		return i18n.DefaultCatalog.Format(languageHint, i18n.MessageApprovalPromptTitle, nil)
@@ -1099,10 +1095,6 @@ func buildApprovalPromptTitleForLanguage(languageHint string, tc model.ToolCallR
 	return i18n.DefaultCatalog.Format(languageHint, i18n.MessageApprovalPromptTitleWithTool, map[string]string{
 		"tool_name": tc.ToolName,
 	})
-}
-
-func buildApprovalPromptBody(ticket model.ApprovalTicket, reason string) string {
-	return buildApprovalPromptBodyForLanguage("", ticket, reason)
 }
 
 func buildApprovalPromptBodyForLanguage(languageHint string, ticket model.ApprovalTicket, reason string) string {
@@ -1124,10 +1116,6 @@ func buildApprovalPromptBodyForLanguage(languageHint string, ticket model.Approv
 	return strings.Join(lines, "\n")
 }
 
-func buildApprovalPromptMetadata(ticket model.ApprovalTicket) ([]byte, error) {
-	return buildApprovalPromptMetadataForLanguage("", ticket)
-}
-
 func buildApprovalPromptMetadataForLanguage(languageHint string, ticket model.ApprovalTicket) ([]byte, error) {
 	return json.Marshal(model.OutboundIntentMetadata{
 		ActionButtons: []model.OutboundActionButton{
@@ -1141,10 +1129,6 @@ func buildApprovalPromptMetadataForLanguage(languageHint string, ticket model.Ap
 			},
 		},
 	})
-}
-
-func buildApprovalResolutionBody(decision string) string {
-	return buildApprovalResolutionBodyForLanguage("", decision)
 }
 
 func buildApprovalResolutionBodyForLanguage(languageHint string, decision string) string {
