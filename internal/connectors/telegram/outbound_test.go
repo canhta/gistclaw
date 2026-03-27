@@ -243,19 +243,14 @@ func TestOutbound_FinishedEventDelivers(t *testing.T) {
 	}
 }
 
-func TestOutbound_ApprovalRequestedEventDelivers(t *testing.T) {
+func TestOutbound_ApprovalRequestedEventIsIgnored(t *testing.T) {
 	db := setupOutboundDB(t)
 	cs := conversations.NewConversationStore(db)
 
 	var delivered atomic.Int32
-	var messageText atomic.Value
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "sendMessage") {
 			delivered.Add(1)
-			if err := r.ParseForm(); err != nil {
-				t.Fatalf("parse form: %v", err)
-			}
-			messageText.Store(r.Form.Get("text"))
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":5}}`))
 		}
@@ -273,18 +268,8 @@ func TestOutbound_ApprovalRequestedEventDelivers(t *testing.T) {
 		t.Fatalf("Notify: %v", err)
 	}
 
-	if delivered.Load() == 0 {
-		t.Fatal("expected sendMessage for approval_requested event")
-	}
-	got, _ := messageText.Load().(string)
-	if !strings.Contains(strings.ToLower(got), "approval") {
-		t.Fatalf("expected approval message text, got %q", got)
-	}
-	if !strings.Contains(got, "openclaw-sim/index.html") {
-		t.Fatalf("expected binding summary in approval message, got %q", got)
-	}
-	if strings.Contains(strings.ToLower(got), "web ui") {
-		t.Fatalf("expected approval message to stay native to Telegram, got %q", got)
+	if delivered.Load() != 0 {
+		t.Fatal("expected approval_requested replay event to be ignored by Telegram outbound")
 	}
 }
 

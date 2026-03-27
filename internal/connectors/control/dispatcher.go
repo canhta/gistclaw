@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/canhta/gistclaw/internal/conversations"
+	"github.com/canhta/gistclaw/internal/i18n"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime"
 )
@@ -47,32 +48,32 @@ func (d *Dispatcher) Dispatch(ctx context.Context, env model.Envelope) (string, 
 
 	switch command.Name {
 	case "start", "help":
-		return helpText(), true, nil
+		return helpText(env.Metadata["language_hint"]), true, nil
 	case "status":
 		status, err := d.statuses.InspectConversation(ctx, conversationKeyFromEnvelope(env))
 		if err != nil {
 			return "", false, fmt.Errorf("control: inspect conversation status: %w", err)
 		}
-		return formatConversationStatus(status), true, nil
+		return formatConversationStatus(env.Metadata["language_hint"], status), true, nil
 	case "reset":
 		outcome, err := d.statuses.ResetConversation(ctx, conversationKeyFromEnvelope(env))
 		if err != nil {
 			return "", false, fmt.Errorf("control: reset conversation: %w", err)
 		}
-		return formatResetOutcome(outcome), true, nil
+		return formatResetOutcome(env.Metadata["language_hint"], outcome), true, nil
 	default:
 		return "", false, nil
 	}
 }
 
-func helpText() string {
+func helpText(languageHint string) string {
 	return strings.Join([]string{
-		"Message me naturally to start a task.",
+		i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlHelpIntro, nil),
 		"",
-		"Native commands:",
-		"/help   Show this help",
-		"/status Show the latest status for this chat",
-		"/reset  Clear this chat's history and temp state",
+		i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlHelpHeader, nil),
+		i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlHelpCommandHelp, nil),
+		i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlHelpCommandStatus, nil),
+		i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlHelpCommandReset, nil),
 	}, "\n")
 }
 
@@ -85,38 +86,38 @@ func conversationKeyFromEnvelope(env model.Envelope) conversations.ConversationK
 	}
 }
 
-func formatConversationStatus(status runtime.ConversationStatus) string {
+func formatConversationStatus(languageHint string, status runtime.ConversationStatus) string {
 	if !status.Exists {
 		return strings.Join([]string{
-			"No runs yet for this chat.",
-			"Message me naturally to start one.",
+			i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlStatusNoRuns, nil),
+			i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlStatusNoRunsHint, nil),
 		}, "\n")
 	}
 
 	lines := make([]string, 0, 4)
 	if status.ActiveRun.ID != "" {
-		lines = append(lines, fmt.Sprintf(
-			"Active run %s is working on: %s",
-			displayRunID(status.ActiveRun.ID),
-			displayObjective(status.ActiveRun.Objective),
-		))
+		lines = append(lines, i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlStatusActiveRun, map[string]string{
+			"run_id":    displayRunID(status.ActiveRun.ID),
+			"objective": displayObjective(languageHint, status.ActiveRun.Objective),
+		}))
 	} else {
-		lines = append(lines, "No active run for this chat.")
+		lines = append(lines, i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlStatusNoActiveRun, nil))
 	}
 
 	if status.LatestRootRun.ID != "" && status.LatestRootRun.ID != status.ActiveRun.ID {
-		lines = append(lines, fmt.Sprintf(
-			"Last run %s finished with status %s: %s",
-			displayRunID(status.LatestRootRun.ID),
-			status.LatestRootRun.Status,
-			displayObjective(status.LatestRootRun.Objective),
-		))
+		lines = append(lines, i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlStatusLastRun, map[string]string{
+			"run_id":    displayRunID(status.LatestRootRun.ID),
+			"status":    string(status.LatestRootRun.Status),
+			"objective": displayObjective(languageHint, status.LatestRootRun.Objective),
+		}))
 	}
 
 	if status.PendingApprovals == 1 {
-		lines = append(lines, "1 pending approval is waiting for a reply in this chat.")
+		lines = append(lines, i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlStatusPendingOne, nil))
 	} else if status.PendingApprovals > 1 {
-		lines = append(lines, fmt.Sprintf("%d pending approvals are waiting for replies in this chat.", status.PendingApprovals))
+		lines = append(lines, i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlStatusPendingMany, map[string]string{
+			"count": fmt.Sprintf("%d", status.PendingApprovals),
+		}))
 	}
 
 	return strings.Join(lines, "\n")
@@ -129,22 +130,22 @@ func displayRunID(runID string) string {
 	return runID[:8]
 }
 
-func displayObjective(objective string) string {
+func displayObjective(languageHint string, objective string) string {
 	trimmed := strings.TrimSpace(objective)
 	if trimmed == "" {
-		return "no objective recorded"
+		return i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlStatusNoObjective, nil)
 	}
 	return trimmed
 }
 
-func formatResetOutcome(outcome runtime.ConversationResetOutcome) string {
+func formatResetOutcome(languageHint string, outcome runtime.ConversationResetOutcome) string {
 	switch outcome {
 	case runtime.ConversationResetMissing:
-		return "Nothing to reset for this chat."
+		return i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlResetMissing, nil)
 	case runtime.ConversationResetBusy:
-		return "This chat has an active run right now. Retry /reset in a moment."
+		return i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlResetBusy, nil)
 	default:
-		return "Chat reset. History cleared for this chat."
+		return i18n.DefaultCatalog.Format(languageHint, i18n.MessageControlResetCleared, nil)
 	}
 }
 

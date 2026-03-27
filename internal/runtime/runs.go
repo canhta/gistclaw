@@ -15,6 +15,7 @@ import (
 
 	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/conversations"
+	"github.com/canhta/gistclaw/internal/i18n"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/sessions"
@@ -1088,34 +1089,54 @@ func (r *Runtime) appendApprovalRequested(
 }
 
 func buildApprovalPromptTitle(tc model.ToolCallRequest) string {
+	return buildApprovalPromptTitleForLanguage("", tc)
+}
+
+func buildApprovalPromptTitleForLanguage(languageHint string, tc model.ToolCallRequest) string {
 	if strings.TrimSpace(tc.ToolName) == "" {
-		return "Approval required"
+		return i18n.DefaultCatalog.Format(languageHint, i18n.MessageApprovalPromptTitle, nil)
 	}
-	return fmt.Sprintf("Approval required for %s", tc.ToolName)
+	return i18n.DefaultCatalog.Format(languageHint, i18n.MessageApprovalPromptTitleWithTool, map[string]string{
+		"tool_name": tc.ToolName,
+	})
 }
 
 func buildApprovalPromptBody(ticket model.ApprovalTicket, reason string) string {
+	return buildApprovalPromptBodyForLanguage("", ticket, reason)
+}
+
+func buildApprovalPromptBodyForLanguage(languageHint string, ticket model.ApprovalTicket, reason string) string {
 	lines := make([]string, 0, 4)
 	if summary := authority.BindingSummaryJSON(ticket.BindingJSON); strings.TrimSpace(summary) != "" {
-		lines = append(lines, fmt.Sprintf("Blocked action: %s.", summary))
+		lines = append(lines, i18n.DefaultCatalog.Format(languageHint, i18n.MessageApprovalBlockedAction, map[string]string{
+			"summary": summary,
+		}))
 	}
 	if trimmedReason := strings.TrimSpace(reason); trimmedReason != "" {
-		lines = append(lines, trimmedReason+".")
+		lines = append(lines, i18n.DefaultCatalog.Format(languageHint, i18n.MessageApprovalReason, map[string]string{
+			"reason": ensureSentence(trimmedReason),
+		}))
 	}
-	lines = append(lines, "Reply naturally in any language to approve or deny it here.")
-	lines = append(lines, fmt.Sprintf("Command fallback: /approve %s allow-once or /approve %s deny", ticket.ID, ticket.ID))
+	lines = append(lines, i18n.DefaultCatalog.Format(languageHint, i18n.MessageApprovalReplyInstruction, nil))
+	lines = append(lines, i18n.DefaultCatalog.Format(languageHint, i18n.MessageApprovalCommandFallback, map[string]string{
+		"approval_id": ticket.ID,
+	}))
 	return strings.Join(lines, "\n")
 }
 
 func buildApprovalPromptMetadata(ticket model.ApprovalTicket) ([]byte, error) {
+	return buildApprovalPromptMetadataForLanguage("", ticket)
+}
+
+func buildApprovalPromptMetadataForLanguage(languageHint string, ticket model.ApprovalTicket) ([]byte, error) {
 	return json.Marshal(model.OutboundIntentMetadata{
 		ActionButtons: []model.OutboundActionButton{
 			{
-				Label: "Approve",
+				Label: i18n.DefaultCatalog.Format(languageHint, i18n.MessageApprovalButtonApprove, nil),
 				Value: fmt.Sprintf("/approve %s allow-once", ticket.ID),
 			},
 			{
-				Label: "Deny",
+				Label: i18n.DefaultCatalog.Format(languageHint, i18n.MessageApprovalButtonDeny, nil),
 				Value: fmt.Sprintf("/approve %s deny", ticket.ID),
 			},
 		},
@@ -1123,14 +1144,29 @@ func buildApprovalPromptMetadata(ticket model.ApprovalTicket) ([]byte, error) {
 }
 
 func buildApprovalResolutionBody(decision string) string {
+	return buildApprovalResolutionBodyForLanguage("", decision)
+}
+
+func buildApprovalResolutionBodyForLanguage(languageHint string, decision string) string {
 	switch decision {
 	case "approved":
-		return "Approved here in chat. Continuing the task."
+		return i18n.DefaultCatalog.Format(languageHint, i18n.MessageApprovalResolvedApproved, nil)
 	case "denied":
-		return "Denied here in chat. The blocked action will be skipped."
+		return i18n.DefaultCatalog.Format(languageHint, i18n.MessageApprovalResolvedDenied, nil)
 	default:
-		return "Updated the pending approval."
+		return i18n.DefaultCatalog.Format(languageHint, i18n.MessageApprovalResolvedUpdated, nil)
 	}
+}
+
+func ensureSentence(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasSuffix(trimmed, ".") || strings.HasSuffix(trimmed, "!") || strings.HasSuffix(trimmed, "?") || strings.HasSuffix(trimmed, "…") {
+		return trimmed
+	}
+	return trimmed + "."
 }
 
 func (r *Runtime) appendConversationGateOpened(
@@ -1211,12 +1247,12 @@ func (r *Runtime) appendApprovalGate(
 	ticket model.ApprovalTicket,
 	reason string,
 ) error {
-	title := buildApprovalPromptTitle(tc)
-	body := buildApprovalPromptBody(ticket, reason)
 	languageHint, err := r.loadLatestSessionLanguageHint(ctx, sessionID)
 	if err != nil {
 		return err
 	}
+	title := buildApprovalPromptTitleForLanguage(languageHint, tc)
+	body := buildApprovalPromptBodyForLanguage(languageHint, ticket, reason)
 	if err := r.appendConversationGateOpened(ctx, conversationID, runID, sessionID, ticket, title, body, languageHint); err != nil {
 		return err
 	}
@@ -1227,7 +1263,7 @@ func (r *Runtime) appendApprovalGate(
 	if strings.TrimSpace(body) != "" {
 		messageBody += "\n" + body
 	}
-	metadataJSON, err := buildApprovalPromptMetadata(ticket)
+	metadataJSON, err := buildApprovalPromptMetadataForLanguage(languageHint, ticket)
 	if err != nil {
 		return err
 	}
@@ -2115,7 +2151,11 @@ func (r *Runtime) finishApprovalResolution(ctx context.Context, prepared approva
 			return err
 		}
 		if run.SessionID != "" {
-			body := buildApprovalResolutionBody(prepared.decision)
+			languageHint, err := r.loadLatestSessionLanguageHint(ctx, run.SessionID)
+			if err != nil {
+				return err
+			}
+			body := buildApprovalResolutionBodyForLanguage(languageHint, prepared.decision)
 			messageID, err := r.appendSessionMessage(
 				ctx,
 				run.ConversationID,
@@ -2170,7 +2210,11 @@ func (r *Runtime) finishApprovalResolution(ctx context.Context, prepared approva
 			return err
 		}
 		if run.SessionID != "" {
-			body := buildApprovalResolutionBody(prepared.decision)
+			languageHint, err := r.loadLatestSessionLanguageHint(ctx, run.SessionID)
+			if err != nil {
+				return err
+			}
+			body := buildApprovalResolutionBodyForLanguage(languageHint, prepared.decision)
 			messageID, err := r.appendSessionMessage(
 				ctx,
 				run.ConversationID,

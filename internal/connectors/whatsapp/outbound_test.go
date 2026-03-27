@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -100,7 +99,7 @@ func TestOutboundDispatcher_NotifySendsToMetaAPI(t *testing.T) {
 	}
 }
 
-func TestOutboundDispatcher_ApprovalRequestedSendsToMetaAPI(t *testing.T) {
+func TestOutboundDispatcher_ApprovalRequestedIsIgnored(t *testing.T) {
 	var capturedBodies []map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
@@ -123,17 +122,8 @@ func TestOutboundDispatcher_ApprovalRequestedSendsToMetaAPI(t *testing.T) {
 		t.Fatalf("Notify: %v", err)
 	}
 
-	if len(capturedBodies) != 1 {
-		t.Fatalf("expected 1 API call, got %d", len(capturedBodies))
-	}
-	body := capturedBodies[0]
-	textBlock, _ := body["text"].(map[string]any)
-	if textBlock == nil {
-		t.Fatalf("expected text payload, got %+v", body)
-	}
-	text, _ := textBlock["body"].(string)
-	if text == "" || !strings.Contains(strings.ToLower(text), "approval") {
-		t.Fatalf("expected approval text, got %q", text)
+	if len(capturedBodies) != 0 {
+		t.Fatalf("expected approval_requested replay event to be ignored by WhatsApp outbound, got %d API calls", len(capturedBodies))
 	}
 }
 

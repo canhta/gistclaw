@@ -49,6 +49,21 @@ func TestDispatcherDispatch(t *testing.T) {
 			wantContains: []string{"Message me naturally", "/status", "/reset"},
 		},
 		{
+			name: "help command localized",
+			env: model.Envelope{
+				ConnectorID:    "telegram",
+				AccountID:      "acct-1",
+				ConversationID: "chat-1",
+				ThreadID:       "main",
+				Text:           "/help",
+				Metadata: map[string]string{
+					"language_hint": "vi",
+				},
+			},
+			wantHandled:  true,
+			wantContains: []string{"Nhắn cho mình tự nhiên", "/status", "/reset"},
+		},
+		{
 			name: "status command",
 			env: model.Envelope{
 				ConnectorID:    "whatsapp",
@@ -76,6 +91,36 @@ func TestDispatcherDispatch(t *testing.T) {
 			},
 		},
 		{
+			name: "status command localized",
+			env: model.Envelope{
+				ConnectorID:    "telegram",
+				AccountID:      "acct-2",
+				ConversationID: "chat-2",
+				ThreadID:       "main",
+				Text:           "/status",
+				Metadata: map[string]string{
+					"language_hint": "vi",
+				},
+			},
+			status: runtime.ConversationStatus{
+				Exists: true,
+				ActiveRun: model.Run{
+					ID:        "run-active-1234",
+					Objective: "review the repo",
+					Status:    model.RunStatusActive,
+				},
+				PendingApprovals: 2,
+			},
+			wantHandled:  true,
+			wantContains: []string{"Tiến trình đang chạy", "run-acti", "2 yêu cầu phê duyệt"},
+			wantKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-2",
+				ExternalID:  "chat-2",
+				ThreadID:    "main",
+			},
+		},
+		{
 			name: "plain chat not handled",
 			env: model.Envelope{
 				ConnectorID:    "telegram",
@@ -97,6 +142,27 @@ func TestDispatcherDispatch(t *testing.T) {
 			},
 			wantHandled:  true,
 			wantContains: []string{"Chat reset", "History cleared"},
+			wantKey: conversations.ConversationKey{
+				ConnectorID: "telegram",
+				AccountID:   "acct-4",
+				ExternalID:  "chat-4",
+				ThreadID:    "main",
+			},
+		},
+		{
+			name: "reset command localized",
+			env: model.Envelope{
+				ConnectorID:    "telegram",
+				AccountID:      "acct-4",
+				ConversationID: "chat-4",
+				ThreadID:       "main",
+				Text:           "/reset",
+				Metadata: map[string]string{
+					"language_hint": "vi",
+				},
+			},
+			wantHandled:  true,
+			wantContains: []string{"Đã đặt lại chat", "Lịch sử"},
 			wantKey: conversations.ConversationKey{
 				ConnectorID: "telegram",
 				AccountID:   "acct-4",
@@ -147,18 +213,30 @@ func TestDispatcherDispatchResetOutcomeMessages(t *testing.T) {
 			outcome:      runtime.ConversationResetBusy,
 			wantContains: []string{"active run", "Retry /reset"},
 		},
+		{
+			name:    "busy conversation localized",
+			outcome: runtime.ConversationResetBusy,
+			wantContains: []string{
+				"tiến trình hoạt động",
+				"Hãy thử /reset",
+			},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			dispatcher := NewDispatcher(&stubInspector{reset: tt.outcome, err: tt.err})
-			reply, handled, err := dispatcher.Dispatch(context.Background(), model.Envelope{
+			env := model.Envelope{
 				ConnectorID:    "telegram",
 				AccountID:      "acct-1",
 				ConversationID: "chat-1",
 				ThreadID:       "main",
 				Text:           "/reset",
-			})
+			}
+			if strings.Contains(tt.name, "localized") {
+				env.Metadata = map[string]string{"language_hint": "vi"}
+			}
+			reply, handled, err := dispatcher.Dispatch(context.Background(), env)
 			if err != nil {
 				t.Fatalf("Dispatch: %v", err)
 			}

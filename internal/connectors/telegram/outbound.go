@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/canhta/gistclaw/internal/authority"
 	deliveryconnector "github.com/canhta/gistclaw/internal/connectors/delivery"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
@@ -24,11 +23,10 @@ import (
 
 // outboundAllowedKinds is the set of event kinds that trigger an outbound message.
 var outboundAllowedKinds = map[string]bool{
-	"run_started":        true,
-	"run_blocked":        true,
-	"run_completed":      true,
-	"run_interrupted":    true,
-	"approval_requested": true,
+	"run_started":     true,
+	"run_blocked":     true,
+	"run_completed":   true,
+	"run_interrupted": true,
 }
 
 // OutboundDispatcher writes outbound_intents and delivers them via sendMessage.
@@ -422,28 +420,9 @@ func buildMessage(delta model.ReplayDelta) string {
 		return fmt.Sprintf("Run %s completed.", delta.RunID)
 	case "run_interrupted":
 		return fmt.Sprintf("Run %s was interrupted.", delta.RunID)
-	case "approval_requested":
-		return buildApprovalMessage(delta)
 	default:
 		return fmt.Sprintf("Run %s: %s", delta.RunID, delta.Kind)
 	}
-}
-
-func buildApprovalMessage(delta model.ReplayDelta) string {
-	var payload struct {
-		ToolName    string          `json:"tool_name"`
-		BindingJSON json.RawMessage `json:"binding_json"`
-	}
-	_ = json.Unmarshal(delta.PayloadJSON, &payload)
-
-	message := fmt.Sprintf("Run %s needs approval", delta.RunID)
-	if strings.TrimSpace(payload.ToolName) != "" {
-		message += " for " + payload.ToolName
-	}
-	if summary := authority.BindingSummaryJSON(payload.BindingJSON); strings.TrimSpace(summary) != "" {
-		message += " (" + summary + ")"
-	}
-	return message + ". Reply here to approve or deny it."
 }
 
 func generateIntentID() string {

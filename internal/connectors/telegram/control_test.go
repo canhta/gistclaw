@@ -189,6 +189,33 @@ func TestConnector_HandleEnvelopeRoutesStatusToNativeReply(t *testing.T) {
 	}
 }
 
+func TestConnector_HandleEnvelopeRoutesLocalizedHelpToNativeReply(t *testing.T) {
+	rt := &stubTelegramRuntime{}
+	connector := newTelegramControlConnector(t, rt)
+	sender := &stubTelegramSender{}
+	connector.sender = sender
+
+	err := connector.handleEnvelope(context.Background(), model.Envelope{
+		ConnectorID:    "telegram",
+		AccountID:      "123",
+		ConversationID: "123",
+		ThreadID:       "main",
+		Text:           "/help",
+		Metadata: map[string]string{
+			"language_hint": "vi",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handleEnvelope: %v", err)
+	}
+	if sender.sentCount() != 1 {
+		t.Fatalf("expected 1 native reply, got %d", sender.sentCount())
+	}
+	if got := sender.first(); got.chatID != "123" || !strings.Contains(got.text, "Nhắn cho mình tự nhiên") {
+		t.Fatalf("unexpected localized native reply: %+v", got)
+	}
+}
+
 func TestConnector_HandleEnvelopeRoutesResetToNativeReply(t *testing.T) {
 	rt := &stubTelegramRuntime{reset: runtime.ConversationResetCleared}
 	connector := newTelegramControlConnector(t, rt)

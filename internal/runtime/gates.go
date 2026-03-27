@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/canhta/gistclaw/internal/conversations"
+	"github.com/canhta/gistclaw/internal/i18n"
 	"github.com/canhta/gistclaw/internal/model"
 )
 
@@ -38,8 +39,8 @@ type gateResolverResult struct {
 	ReplyText  string `json:"reply_text"`
 }
 
-func defaultGateClarificationReply() string {
-	return "I couldn't tell whether you want to approve or deny that. Reply yes/no, approve/deny, or answer in your language."
+func defaultGateClarificationReply(languageHint string) string {
+	return i18n.DefaultCatalog.Format(languageHint, i18n.MessageGateClarificationDefault, nil)
 }
 
 func (r *Runtime) HandleConversationGateReply(ctx context.Context, cmd ConversationGateReplyCommand) (ConversationGateReplyOutcome, error) {
@@ -120,7 +121,7 @@ func (r *Runtime) HandleConversationGateReply(ctx context.Context, cmd Conversat
 
 	replyText := strings.TrimSpace(resolution.ReplyText)
 	if replyText == "" {
-		replyText = defaultGateClarificationReply()
+		replyText = defaultGateClarificationReply(preferredLanguageHint(cmd.LanguageHint, gate.LanguageHint))
 	}
 	if err := r.appendGateAssistantMessage(ctx, gate, replyText); err != nil {
 		return ConversationGateReplyOutcome{}, err
@@ -262,11 +263,13 @@ func parseApprovalCommandReply(body string, gate model.ConversationGate) (gateAp
 	}
 	tokens := strings.Fields(body)
 	if len(tokens) < 3 {
-		return gateApprovalCommand{Handled: true}, fmt.Errorf("usage: /approve %s allow-once|allow-always|deny", gate.ApprovalID)
+		return gateApprovalCommand{Handled: true}, fmt.Errorf("%s", i18n.DefaultCatalog.Format(gate.LanguageHint, i18n.MessageGateCommandUsage, map[string]string{
+			"approval_id": gate.ApprovalID,
+		}))
 	}
 	approvalID := strings.TrimSpace(tokens[1])
 	if approvalID != gate.ApprovalID && approvalID != gate.ID {
-		return gateApprovalCommand{Handled: true}, fmt.Errorf("approval ID does not match the pending request")
+		return gateApprovalCommand{Handled: true}, fmt.Errorf("%s", i18n.DefaultCatalog.Format(gate.LanguageHint, i18n.MessageGateCommandMismatch, nil))
 	}
 	decision := strings.ToLower(strings.TrimSpace(tokens[2]))
 	switch decision {
@@ -275,7 +278,9 @@ func parseApprovalCommandReply(body string, gate model.ConversationGate) (gateAp
 	case "deny", "denied", "reject":
 		return gateApprovalCommand{Handled: true, Decision: "denied"}, nil
 	default:
-		return gateApprovalCommand{Handled: true}, fmt.Errorf("usage: /approve %s allow-once|allow-always|deny", gate.ApprovalID)
+		return gateApprovalCommand{Handled: true}, fmt.Errorf("%s", i18n.DefaultCatalog.Format(gate.LanguageHint, i18n.MessageGateCommandUsage, map[string]string{
+			"approval_id": gate.ApprovalID,
+		}))
 	}
 }
 
@@ -312,10 +317,19 @@ func (r *Runtime) resolveGateReplyWithModel(ctx context.Context, gate model.Conv
 		return gateResolverResult{
 			Action:     "clarify",
 			Confidence: "low",
-			ReplyText:  defaultGateClarificationReply(),
+			ReplyText:  defaultGateClarificationReply(preferredLanguageHint(replyLanguageHint, gate.LanguageHint)),
 		}, nil
 	}
 	return parsed, nil
+}
+
+func preferredLanguageHint(candidates ...string) string {
+	for _, candidate := range candidates {
+		if trimmed := strings.TrimSpace(candidate); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func (r *Runtime) resolveGateApprovalAsync(ctx context.Context, gate model.ConversationGate, decision string) error {

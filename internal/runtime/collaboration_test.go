@@ -1042,17 +1042,23 @@ func TestRuntime_ReceiveInboundMessageApprovalRequestCreatesConversationGateAndO
 	}
 
 	var metadataJSON string
+	var messageText string
 	if err := db.RawDB().QueryRow(
-		`SELECT COALESCE(metadata_json, '{}')
+		`SELECT message_text, COALESCE(metadata_json, '{}')
 		 FROM outbound_intents
 		 WHERE run_id = ?
 		 ORDER BY created_at DESC, id DESC
 		 LIMIT 1`,
 		run.ID,
-	).Scan(&metadataJSON); err != nil {
+	).Scan(&messageText, &metadataJSON); err != nil {
 		t.Fatalf("load approval prompt metadata: %v", err)
 	}
-	for _, want := range []string{`"action_buttons"`, `"/approve `, `"Deny"`, ` deny`} {
+	for _, want := range []string{"Cần phê duyệt", "Phê duyệt", "Từ chối"} {
+		if !strings.Contains(messageText+"\n"+metadataJSON, want) {
+			t.Fatalf("expected localized approval prompt copy to include %q, got message=%q metadata=%s", want, messageText, metadataJSON)
+		}
+	}
+	for _, want := range []string{`"action_buttons"`, `"/approve `, `"Từ chối"`, ` deny`} {
 		if !strings.Contains(metadataJSON, want) {
 			t.Fatalf("expected approval prompt metadata to include %q, got %s", want, metadataJSON)
 		}
@@ -1084,6 +1090,7 @@ func TestResolveApproval_ApprovedResolvesConversationGateForInboundTelegramRun(t
 		},
 		FrontAgentID:    "patcher",
 		Body:            "Please create created.txt",
+		LanguageHint:    "vi",
 		SourceMessageID: "tg-gate-2",
 		CWD:             workspaceRoot,
 	})
@@ -1122,6 +1129,19 @@ func TestResolveApproval_ApprovedResolvesConversationGateForInboundTelegramRun(t
 	}
 	if gateStatus != "resolved" {
 		t.Fatalf("expected resolved gate status, got %q", gateStatus)
+	}
+	var localizedResolutionCount int
+	if err := db.RawDB().QueryRow(
+		`SELECT count(*)
+		 FROM session_messages
+		 WHERE session_id = ? AND body = ?`,
+		run.SessionID,
+		"Đã phê duyệt ngay trong chat. Đang tiếp tục tác vụ.",
+	).Scan(&localizedResolutionCount); err != nil {
+		t.Fatalf("count localized approval resolution messages: %v", err)
+	}
+	if localizedResolutionCount == 0 {
+		t.Fatal("expected localized approval resolution message after resolving a Vietnamese gate")
 	}
 }
 
@@ -1346,6 +1366,72 @@ func TestRuntime_HandleConversationGateReplyResolverPromptSupportsMultilingualRe
 		if !strings.Contains(instructions, want) {
 			t.Fatalf("expected multilingual gate resolver prompt to include %q, got:\n%s", want, instructions)
 		}
+	}
+}
+
+func TestRuntime_HandleConversationGateReplyUsesLocalizedClarificationFallback(t *testing.T) {
+	prov := NewMockProvider([]GenerateResult{
+		{
+			ToolCalls: []model.ToolCallRequest{
+				{ID: "call-touch", ToolName: "shell_exec", InputJSON: []byte(`{"command":"touch created.txt"}`)},
+			},
+			StopReason: "tool_calls",
+		},
+		{
+			Content:    `not-json`,
+			StopReason: "end_turn",
+		},
+	}, nil)
+	rt, db, _ := newCollaborationRuntimeWithProviderAndTools(t, prov)
+	if err := rt.SetDefaultExecutionSnapshot(workspaceWriteSnapshot()); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+	workspaceRoot := t.TempDir()
+
+	run, err := rt.ReceiveInboundMessage(context.Background(), InboundMessageCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		FrontAgentID:    "patcher",
+		Body:            "Please create created.txt",
+		LanguageHint:    "vi",
+		SourceMessageID: "tg-gate-9",
+		CWD:             workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("ReceiveInboundMessage failed: %v", err)
+	}
+
+	if _, err := rt.HandleConversationGateReply(context.Background(), ConversationGateReplyCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		Body:            "de em xem",
+		LanguageHint:    "vi",
+		SourceMessageID: "tg-gate-10",
+	}); err != nil {
+		t.Fatalf("HandleConversationGateReply failed: %v", err)
+	}
+
+	var latestAssistant string
+	if err := db.RawDB().QueryRow(
+		`SELECT body
+		 FROM session_messages
+		 WHERE session_id = ? AND kind = 'assistant'
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		run.SessionID,
+	).Scan(&latestAssistant); err != nil {
+		t.Fatalf("load latest assistant clarification: %v", err)
+	}
+	if !strings.Contains(latestAssistant, "phê duyệt hay từ chối") {
+		t.Fatalf("expected localized clarification fallback, got %q", latestAssistant)
 	}
 }
 
