@@ -50,6 +50,11 @@ func TestBindingSummaryJSON_PrefersConcreteOperandsThenFallbacks(t *testing.T) {
 			want: "/tmp/repo",
 		},
 		{
+			name: "uses argv preview with cwd when available",
+			raw:  `{"tool_name":"shell_exec","argv":["go","test","./..."],"cwd":"/tmp/repo","mutating":false}`,
+			want: "go test @ /tmp/repo",
+		},
+		{
 			name: "falls back to write roots",
 			raw:  `{"tool_name":"shell_exec","write_roots":["/tmp/repo"],"mutating":true}`,
 			want: "/tmp/repo",

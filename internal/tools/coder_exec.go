@@ -19,6 +19,7 @@ type commandToolRunner interface {
 type coderBackend interface {
 	Name() string
 	Build(coderExecInput, string) (commandRequest, error)
+	ApprovalArgv(coderExecInput, string) ([]string, error)
 }
 
 type coderExecInput struct {
@@ -178,19 +179,6 @@ func newCodexCoderBackend(command string) coderBackend {
 func (b codexCoderBackend) Name() string { return "codex" }
 
 func (b codexCoderBackend) Build(input coderExecInput, cwd string) (commandRequest, error) {
-	sandbox := strings.TrimSpace(input.Sandbox)
-	if sandbox == "" {
-		sandbox = defaultCodexSandbox(input)
-	}
-	if sandbox != "read-only" && sandbox != "workspace-write" && sandbox != "danger-full-access" {
-		return commandRequest{}, fmt.Errorf("unsupported sandbox %q", sandbox)
-	}
-
-	skipGitRepoCheck := true
-	if input.SkipGitRepoCheck != nil {
-		skipGitRepoCheck = *input.SkipGitRepoCheck
-	}
-
 	outputFile, err := os.CreateTemp("", "gistclaw-coder-exec-*.txt")
 	if err != nil {
 		return commandRequest{}, fmt.Errorf("create codex output capture file: %w", err)
@@ -201,11 +189,11 @@ func (b codexCoderBackend) Build(input coderExecInput, cwd string) (commandReque
 		return commandRequest{}, fmt.Errorf("close codex output capture file: %w", closeErr)
 	}
 
-	args := []string{"exec", "--sandbox", sandbox, "--color", "never", "-o", outputPath}
-	if skipGitRepoCheck {
-		args = append(args, "--skip-git-repo-check")
+	args, err := b.commandArgs(input, cwd, outputPath, true)
+	if err != nil {
+		_ = os.Remove(outputPath)
+		return commandRequest{}, err
 	}
-	args = append(args, "-C", cwd, wrapCoderExecPrompt(input.Prompt))
 	return commandRequest{
 		command:           b.command,
 		args:              args,
@@ -214,6 +202,42 @@ func (b codexCoderBackend) Build(input coderExecInput, cwd string) (commandReque
 		outputCapturePath: outputPath,
 		usePTY:            true,
 	}, nil
+}
+
+func (b codexCoderBackend) ApprovalArgv(input coderExecInput, cwd string) ([]string, error) {
+	args, err := b.commandArgs(input, cwd, "", false)
+	if err != nil {
+		return nil, err
+	}
+	return append([]string{b.command}, args...), nil
+}
+
+func (b codexCoderBackend) commandArgs(input coderExecInput, cwd, outputCapturePath string, includePrompt bool) ([]string, error) {
+	sandbox := strings.TrimSpace(input.Sandbox)
+	if sandbox == "" {
+		sandbox = defaultCodexSandbox(input)
+	}
+	if sandbox != "read-only" && sandbox != "workspace-write" && sandbox != "danger-full-access" {
+		return nil, fmt.Errorf("unsupported sandbox %q", sandbox)
+	}
+
+	skipGitRepoCheck := true
+	if input.SkipGitRepoCheck != nil {
+		skipGitRepoCheck = *input.SkipGitRepoCheck
+	}
+
+	args := []string{"exec", "--sandbox", sandbox, "--color", "never"}
+	if strings.TrimSpace(outputCapturePath) != "" {
+		args = append(args, "-o", outputCapturePath)
+	}
+	if skipGitRepoCheck {
+		args = append(args, "--skip-git-repo-check")
+	}
+	args = append(args, "-C", cwd)
+	if includePrompt {
+		args = append(args, wrapCoderExecPrompt(input.Prompt))
+	}
+	return args, nil
 }
 
 func resolveCoderExecCWD(root, raw string, env authority.Envelope) (string, error) {
@@ -249,12 +273,7 @@ func newClaudeCodeBackend(command string) coderBackend {
 func (b claudeCodeBackend) Name() string { return "claude_code" }
 
 func (b claudeCodeBackend) Build(input coderExecInput, cwd string) (commandRequest, error) {
-	args := []string{
-		"--print",
-		"--output-format", "json",
-		"--permission-mode", "acceptEdits",
-		wrapCoderExecPrompt(input.Prompt),
-	}
+	args := b.commandArgs(input, true)
 	return commandRequest{
 		command: b.command,
 		args:    args,
@@ -262,4 +281,21 @@ func (b claudeCodeBackend) Build(input coderExecInput, cwd string) (commandReque
 		effect:  effectExecWrite,
 		usePTY:  true,
 	}, nil
+}
+
+func (b claudeCodeBackend) ApprovalArgv(input coderExecInput, _ string) ([]string, error) {
+	args := b.commandArgs(input, false)
+	return append([]string{b.command}, args...), nil
+}
+
+func (b claudeCodeBackend) commandArgs(input coderExecInput, includePrompt bool) []string {
+	args := []string{
+		"--print",
+		"--output-format", "json",
+		"--permission-mode", "acceptEdits",
+	}
+	if includePrompt {
+		args = append(args, wrapCoderExecPrompt(input.Prompt))
+	}
+	return args
 }

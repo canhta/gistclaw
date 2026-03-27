@@ -33,7 +33,7 @@ provider:
   api_key: REPLACE_WITH_REAL_KEY
 ```
 
-Pick or create the working project through onboarding or the project switcher after the daemon starts; it is no longer configured as a global workspace root in the config file.
+Pick or create the working project through onboarding or the project switcher after the daemon starts; the config now stores only the daemon's `storage_root`, while run location is resolved from the active project and task context.
 
 Then start the daemon and local web UI:
 

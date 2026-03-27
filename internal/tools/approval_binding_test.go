@@ -91,3 +91,49 @@ func TestBuildApprovalBindingJSON_ShellExecUsesResolvedCWDAndApproxArgv(t *testi
 		}
 	}
 }
+
+func TestBuildApprovalBindingJSON_CoderExecIncludesStableBackendContract(t *testing.T) {
+	root := t.TempDir()
+	subdir := filepath.Join(root, "repo")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	got, err := BuildApprovalBindingJSON(
+		"coder_exec",
+		root,
+		NewCoderExecTool(30, 1024).Spec(),
+		[]byte(`{"backend":"codex","prompt":"Build it","cwd":"repo"}`),
+		authority.Envelope{},
+	)
+	if err != nil {
+		t.Fatalf("BuildApprovalBindingJSON: %v", err)
+	}
+
+	var binding authority.Binding
+	if err := json.Unmarshal(got, &binding); err != nil {
+		t.Fatalf("unmarshal binding: %v", err)
+	}
+	wantCWD, _, err := resolveToolPath(root, "repo", authority.Envelope{})
+	if err != nil {
+		t.Fatalf("resolveToolPath: %v", err)
+	}
+	if binding.CWD != wantCWD {
+		t.Fatalf("expected cwd %q, got %+v", wantCWD, binding)
+	}
+	wantPrefix := []string{"codex", "exec", "--sandbox", "workspace-write", "--color", "never", "--skip-git-repo-check", "-C", wantCWD}
+	if len(binding.Argv) != len(wantPrefix) {
+		t.Fatalf("expected argv %v, got %+v", wantPrefix, binding)
+	}
+	for i, want := range wantPrefix {
+		if binding.Argv[i] != want {
+			t.Fatalf("expected argv %v, got %+v", wantPrefix, binding)
+		}
+	}
+	if !binding.Mutating {
+		t.Fatalf("expected mutating binding, got %+v", binding)
+	}
+	if len(binding.WriteRoots) != 1 || binding.WriteRoots[0] != wantCWD {
+		t.Fatalf("expected write root %q, got %+v", wantCWD, binding)
+	}
+}

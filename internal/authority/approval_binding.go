@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -35,6 +36,12 @@ func (b Binding) Summary() string {
 		if strings.TrimSpace(operand) != "" {
 			return strings.TrimSpace(operand)
 		}
+	}
+	if preview := bindingArgvPreview(b.Argv); preview != "" {
+		if cwd := strings.TrimSpace(b.CWD); cwd != "" {
+			return preview + " @ " + cwd
+		}
+		return preview
 	}
 	if strings.TrimSpace(b.CWD) != "" {
 		return strings.TrimSpace(b.CWD)
@@ -67,4 +74,32 @@ func sortedCopy(values []string) []string {
 	out := append([]string(nil), values...)
 	sort.Strings(out)
 	return out
+}
+
+func bindingArgvPreview(argv []string) string {
+	trimmed := make([]string, 0, len(argv))
+	for _, value := range argv {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		trimmed = append(trimmed, value)
+		if len(trimmed) == 2 {
+			break
+		}
+	}
+	if len(trimmed) == 0 {
+		return ""
+	}
+	for i, value := range trimmed {
+		trimmed[i] = sanitizeBindingPreviewToken(value)
+	}
+	return strings.Join(trimmed, " ")
+}
+
+func sanitizeBindingPreviewToken(value string) string {
+	if strings.ContainsAny(value, " \t\r\n") {
+		return strconv.Quote(value)
+	}
+	return value
 }

@@ -23,7 +23,7 @@ func (t *ListDirTool) Name() string { return "list_dir" }
 func (t *ListDirTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "List direct children under one path relative to the current working directory.",
+		Description:     "List direct children under one path from the run directory or an explicit host path when authority allows.",
 		InputSchemaJSON: `{"type":"object","properties":{"path":{"type":"string"}}}`,
 		Risk:            model.RiskLow,
 		SideEffect:      effectRead,
@@ -110,7 +110,7 @@ func (t *ReadFileTool) Name() string { return "read_file" }
 func (t *ReadFileTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Read one text file relative to the current working directory, optionally restricted to a line range.",
+		Description:     "Read one text file from the run directory or an explicit host path, optionally restricted to a line range.",
 		InputSchemaJSON: `{"type":"object","properties":{"path":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1},"max_bytes":{"type":"integer","minimum":1}},"required":["path"]}`,
 		Risk:            model.RiskLow,
 		SideEffect:      effectRead,
@@ -215,7 +215,7 @@ func (t *GrepSearchTool) Name() string { return "grep_search" }
 func (t *GrepSearchTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Recursively search files under the current working directory for a substring and return matching lines.",
+		Description:     "Recursively search files under the run directory or an explicit host path for a substring and return matching lines.",
 		InputSchemaJSON: `{"type":"object","properties":{"query":{"type":"string"},"path":{"type":"string"},"glob":{"type":"string"},"max_matches":{"type":"integer","minimum":1}},"required":["query"]}`,
 		Risk:            model.RiskLow,
 		SideEffect:      effectRead,
@@ -339,7 +339,7 @@ func (t *WriteNewFileTool) Name() string { return "write_new_file" }
 func (t *WriteNewFileTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Create one new file relative to the current working directory and fail if it already exists.",
+		Description:     "Create one new file under the run directory or an explicit host path and fail if it already exists.",
 		InputSchemaJSON: `{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}`,
 		Risk:            model.RiskMedium,
 		SideEffect:      effectCreate,
@@ -397,7 +397,7 @@ func (t *DeletePathTool) Name() string { return "delete_path" }
 func (t *DeletePathTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Delete one file or directory tree under the current working directory.",
+		Description:     "Delete one file or directory tree under the run directory or an explicit host path.",
 		InputSchemaJSON: `{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`,
 		Risk:            model.RiskHigh,
 		SideEffect:      effectDelete,
@@ -446,7 +446,7 @@ func (t *MovePathTool) Name() string { return "move_path" }
 func (t *MovePathTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Move or rename one file or directory under the current working directory.",
+		Description:     "Move or rename one file or directory under the run directory or an explicit host path.",
 		InputSchemaJSON: `{"type":"object","properties":{"from":{"type":"string"},"to":{"type":"string"}},"required":["from","to"]}`,
 		Risk:            model.RiskHigh,
 		SideEffect:      effectMove,

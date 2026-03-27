@@ -41,20 +41,22 @@ func buildApprovalBinding(toolName, root string, spec model.ToolSpec, inputJSON 
 		binding.CWD = cwd
 		binding.Argv = shellFields(input.Command)
 	case "coder_exec":
-		var input struct {
-			Backend string `json:"backend"`
-			CWD     string `json:"cwd"`
-		}
+		var input coderExecInput
 		if err := json.Unmarshal(inputJSON, &input); err != nil {
 			return authority.Binding{}, fmt.Errorf("decode coder_exec binding input: %w", err)
 		}
+		input.Authority = env
 		cwd, err := resolveToolCWD(root, input.CWD, env)
 		if err != nil {
 			return authority.Binding{}, fmt.Errorf("resolve coder_exec cwd: %w", err)
 		}
 		binding.CWD = cwd
-		if backend := strings.TrimSpace(input.Backend); backend != "" {
-			binding.Argv = []string{backend}
+		argv, err := coderApprovalArgv(input, cwd)
+		if err != nil {
+			return authority.Binding{}, fmt.Errorf("build coder_exec approval argv: %w", err)
+		}
+		if len(argv) > 0 {
+			binding.Argv = argv
 		}
 	case "write_new_file", "delete_path":
 		var input struct {
@@ -105,6 +107,19 @@ func buildApprovalBinding(toolName, root string, spec model.ToolSpec, inputJSON 
 		binding.WriteRoots = compactBindingRoots(binding.CWD)
 	}
 	return binding, nil
+}
+
+func coderApprovalArgv(input coderExecInput, cwd string) ([]string, error) {
+	switch strings.TrimSpace(input.Backend) {
+	case "codex":
+		return newCodexCoderBackend("codex").ApprovalArgv(input, cwd)
+	case "claude_code":
+		return newClaudeCodeBackend("claude").ApprovalArgv(input, cwd)
+	case "":
+		return nil, nil
+	default:
+		return nil, fmt.Errorf("backend %q is not available", input.Backend)
+	}
 }
 
 func compactBindingRoots(values ...string) []string {

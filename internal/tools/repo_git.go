@@ -24,7 +24,7 @@ func NewGitStatusTool(timeoutSec int, maxOutputBytes int) *GitStatusTool {
 func (t *GitStatusTool) Name() string { return "git_status" }
 
 func (t *GitStatusTool) Spec() model.ToolSpec {
-	return gitSpec(t.Name(), "Show git status for the repository in the current working directory or an explicitly requested directory.")
+	return gitSpec(t.Name(), "Show git status for the repository in the run directory or an explicit host directory when authority allows.")
 }
 
 func (t *GitStatusTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
@@ -57,7 +57,7 @@ func NewGitDiffTool(timeoutSec int, maxOutputBytes int) *GitDiffTool {
 func (t *GitDiffTool) Name() string { return "git_diff" }
 
 func (t *GitDiffTool) Spec() model.ToolSpec {
-	return gitSpec(t.Name(), "Show git diff output for the repository in the current working directory or an explicitly requested directory.")
+	return gitSpec(t.Name(), "Show git diff output for the repository in the run directory or an explicit host directory when authority allows.")
 }
 
 func (t *GitDiffTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
@@ -94,7 +94,7 @@ func NewGitShowTool(timeoutSec int, maxOutputBytes int) *GitShowTool {
 func (t *GitShowTool) Name() string { return "git_show" }
 
 func (t *GitShowTool) Spec() model.ToolSpec {
-	return gitSpec(t.Name(), "Show one git object or revision from the repository in the current working directory or an explicitly requested directory.")
+	return gitSpec(t.Name(), "Show one git object or revision from the repository in the run directory or an explicit host directory when authority allows.")
 }
 
 func (t *GitShowTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
@@ -131,7 +131,7 @@ func NewGitLogTool(timeoutSec int, maxOutputBytes int) *GitLogTool {
 func (t *GitLogTool) Name() string { return "git_log" }
 
 func (t *GitLogTool) Spec() model.ToolSpec {
-	return gitSpec(t.Name(), "Show recent commit history from the repository in the current working directory or an explicitly requested directory.")
+	return gitSpec(t.Name(), "Show recent commit history from the repository in the run directory or an explicit host directory when authority allows.")
 }
 
 func (t *GitLogTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {

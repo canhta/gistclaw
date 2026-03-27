@@ -320,7 +320,7 @@ func (t *ApplyPatchTool) Name() string { return "apply_patch" }
 func (t *ApplyPatchTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Apply one unified diff patch inside the current working directory or an explicitly requested directory.",
+		Description:     "Apply one unified diff patch inside the run directory or an explicit host directory when authority allows.",
 		InputSchemaJSON: `{"type":"object","properties":{"patch":{"type":"string"},"cwd":{"type":"string"}},"required":["patch"]}`,
 		Risk:            model.RiskMedium,
 		SideEffect:      effectPatch,
@@ -369,7 +369,7 @@ func (t *ShellExecTool) Name() string { return "shell_exec" }
 func (t *ShellExecTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Run one shell command inside the current working directory or an explicitly requested directory.",
+		Description:     "Run one shell command inside the run directory or an explicit host directory when authority allows.",
 		InputSchemaJSON: `{"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"timeout_sec":{"type":"integer","minimum":1}},"required":["command"]}`,
 		Risk:            model.RiskHigh,
 		SideEffect:      effectExecWrite,
@@ -476,7 +476,7 @@ func (t *RunTestsTool) Name() string { return "run_tests" }
 func (t *RunTestsTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Run the repository's default test command from the current working directory or an explicitly requested directory.",
+		Description:     "Run the repository's default test command from the run directory or an explicit host directory when authority allows.",
 		InputSchemaJSON: `{"type":"object","properties":{"target":{"type":"string"},"cwd":{"type":"string"}}}`,
 		Risk:            model.RiskLow,
 		SideEffect:      effectExecRead,
@@ -522,7 +522,7 @@ func (t *RunBuildTool) Name() string { return "run_build" }
 func (t *RunBuildTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Run the repository's default build command from the current working directory or an explicitly requested directory.",
+		Description:     "Run the repository's default build command from the run directory or an explicit host directory when authority allows.",
 		InputSchemaJSON: `{"type":"object","properties":{"target":{"type":"string"},"cwd":{"type":"string"}}}`,
 		Risk:            model.RiskLow,
 		SideEffect:      effectExecRead,
