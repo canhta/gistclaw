@@ -11,7 +11,7 @@ This document is the source of truth for what the repository ships today: packag
 - A SQLite-backed scheduler service for local scheduled tasks, occurrence history, restart repair, and CLI-first schedule management.
 - Provider adapters for Anthropic and OpenAI-compatible endpoints.
 - A tool registry with built-in web fetch, optional Tavily search, and optional MCP stdio tools.
-- Live external surfaces for Telegram DM and WhatsApp.
+- Live external surfaces for Telegram DM, WhatsApp, and optional unofficial Zalo Personal DM.
 - A default team definition under [teams/default/team.yaml](../teams/default/team.yaml).
 - Project-specific team profiles stored under `storage_root/projects/<project-id>/teams/`, with the machine fallback under `storage_root/teams/default/`.
 
@@ -33,6 +33,7 @@ This document is the source of truth for what the repository ships today: packag
 - `gistclaw serve` starts the daemon and local web host.
 - `gistclaw version` prints the running release/build metadata.
 - `gistclaw auth set-password` bootstraps or resets the built-in browser password.
+- `gistclaw auth zalo-personal login` and `gistclaw auth zalo-personal logout` manage optional Zalo Personal credentials through a CLI QR flow.
 - `gistclaw run` submits a task directly from the CLI.
 - `gistclaw inspect` reports status, runs, replay, the canonical `systemd` unit, the admin token through `inspect token`, and storage health for the current database.
 - `gistclaw security audit` reports deployment-risk findings for the current config and runtime posture.
@@ -60,7 +61,8 @@ This document is the source of truth for what the repository ships today: packag
 
 - Telegram is wired through long polling, DM-focused control commands, chat-native approval/blocked-state replies, inline approval buttons, and command fallback that resume pending runs from the same DM.
 - WhatsApp is wired through a webhook handler plus outbound delivery.
-- Connector helper packages also exist for control-plane delivery plumbing and SMTP email, but bootstrap currently wires Telegram and WhatsApp for live runtime use.
+- Zalo Personal is wired through CLI-driven QR authentication, stored SQLite credentials, DM-only inbound and outbound delivery, connector health reporting, and an unofficial reverse-engineered protocol implementation.
+- Connector helper packages also exist for control-plane delivery plumbing and SMTP email, while bootstrap currently wires Telegram, WhatsApp, and optional Zalo Personal for live runtime use.
 
 ## Extension Seams
 
@@ -82,6 +84,8 @@ internal/connectors/delivery/     shared delivery helpers
 internal/connectors/email/        SMTP outbound connector helpers
 internal/connectors/telegram/     Telegram inbound and outbound runtime integration
 internal/connectors/whatsapp/     WhatsApp webhook and outbound runtime integration
+internal/connectors/zalopersonal/ Zalo Personal auth state, connector loop, inbound and outbound runtime integration
+internal/connectors/zalopersonal/protocol/ Reverse-engineered Zalo Personal HTTP, crypto, and WebSocket transport
 internal/memory/                  memory storage, search, summarize, promote, edit, forget
 internal/model/                   shared runtime types and interfaces
 internal/providers/anthropic/     Anthropic provider adapter
@@ -103,6 +107,7 @@ teams/default/                    shipped team and soul files
 The codebase is past the original reset, but a few surfaces are still intentionally incomplete:
 
 - broader connector and gateway coverage
+- official Zalo OA or group support
 - dedicated web schedule pages
 - explicit storage-maintenance commands beyond health reporting
 - extra packaging channels beyond GitHub Releases and the blessed installer

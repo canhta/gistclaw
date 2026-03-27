@@ -32,6 +32,9 @@ func TestRun_HelpFlag(t *testing.T) {
 				t.Errorf("%s: expected %q in stdout:\n%s", flag, want, stdout.String())
 			}
 		}
+		if !strings.Contains(stdout.String(), "Manage built-in browser and connector access") {
+			t.Errorf("%s: expected auth help text to mention connector access:\n%s", flag, stdout.String())
+		}
 	}
 }
 

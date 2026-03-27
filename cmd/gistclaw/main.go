@@ -22,7 +22,7 @@ const usage = `Usage: gistclaw <subcommand> [options]
 Subcommands:
   serve      Start the GistClaw daemon
   run        Submit a task directly
-  auth       Manage built-in browser access
+  auth       Manage built-in browser and connector access
   version    Print release/build metadata
   inspect    Inspect daemon state
   security   Run deployment security audit
