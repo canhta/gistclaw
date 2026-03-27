@@ -232,7 +232,12 @@ GISTCLAW_SYSTEMD_CONFIG_PATH="${CONFIG_PATH}" \
 	"${BIN_LINK}" inspect --config "${CONFIG_PATH}" systemd-unit > "${SERVICE_PATH}"
 
 systemctl daemon-reload
-systemctl enable --now gistclaw
+systemctl enable gistclaw
+if systemctl is-active --quiet gistclaw; then
+	systemctl restart gistclaw
+else
+	systemctl start gistclaw
+fi
 
 if [ -n "${PUBLIC_DOMAIN}" ]; then
 	apt-get update

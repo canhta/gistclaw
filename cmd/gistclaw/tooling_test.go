@@ -208,7 +208,10 @@ func TestRepoTooling_ReleaseContract(t *testing.T) {
 				"chown -R gistclaw:gistclaw",
 				"chown root:gistclaw",
 				"chmod 640",
-				"systemctl enable --now gistclaw",
+				"systemctl enable gistclaw",
+				"systemctl is-active --quiet gistclaw",
+				"systemctl restart gistclaw",
+				"systemctl start gistclaw",
 			},
 		},
 		{

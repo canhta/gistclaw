@@ -114,6 +114,13 @@ EOF
 	cat > "$stub_dir/systemctl" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
+if [ "\${1:-}" = "is-active" ] && [ "\${2:-}" = "--quiet" ] && [ "\${3:-}" = "gistclaw" ]; then
+	echo "\$*" >> "$log_dir/systemctl.log"
+	if [ "\${GISTCLAW_FAKE_ACTIVE_SERVICE:-0}" = "1" ]; then
+		exit 0
+	fi
+	exit 3
+fi
 echo "\$*" >> "$log_dir/systemctl.log"
 EOF
 	chmod +x "$stub_dir/systemctl"
@@ -197,7 +204,9 @@ run_happy_path() {
 	assert_contains "$root_dir/etc/gistclaw/config.yaml" "api_key: sk-test"
 	assert_contains "$root_dir/etc/systemd/system/gistclaw.service" "ExecStart=$root_dir/usr/local/bin/gistclaw --config $root_dir/etc/gistclaw/config.yaml serve"
 	assert_contains "$log_dir/systemctl.log" "daemon-reload"
-	assert_contains "$log_dir/systemctl.log" "enable --now gistclaw"
+	assert_contains "$log_dir/systemctl.log" "enable gistclaw"
+	assert_contains "$log_dir/systemctl.log" "is-active --quiet gistclaw"
+	assert_contains "$log_dir/systemctl.log" "start gistclaw"
 	assert_contains "$log_dir/ownership.log" "chown -R gistclaw:gistclaw $root_dir/var/lib/gistclaw"
 	assert_contains "$log_dir/ownership.log" "chown root:gistclaw $root_dir/etc/gistclaw/config.yaml"
 	assert_contains "$log_dir/ownership.log" "chmod 640 $root_dir/etc/gistclaw/config.yaml"
@@ -265,7 +274,56 @@ EOF
 	assert_contains "$log_dir/ownership.log" "chown -R gistclaw:gistclaw $root_dir/var/lib/gistclaw"
 	assert_contains "$log_dir/ownership.log" "chown -R gistclaw:gistclaw $root_dir/srv/data"
 	assert_contains "$log_dir/ownership.log" "chown -R gistclaw:gistclaw $root_dir/srv/projects"
-	assert_contains "$log_dir/systemctl.log" "enable --now gistclaw"
+	assert_contains "$log_dir/systemctl.log" "enable gistclaw"
+	assert_contains "$log_dir/systemctl.log" "is-active --quiet gistclaw"
+	assert_contains "$log_dir/systemctl.log" "start gistclaw"
+}
+
+run_active_service_restart_case() {
+	local tmp
+	tmp="$(mktemp -d)"
+	trap 'rm -rf "$tmp"' RETURN
+
+	local fixture_dir="$tmp/fixtures"
+	local stub_dir="$tmp/stubs"
+	local log_dir="$tmp/logs"
+	local root_dir="$tmp/root"
+	local version="v0.1.0"
+	mkdir -p "$fixture_dir" "$stub_dir" "$log_dir" "$root_dir"
+	: > "$log_dir/systemctl.log"
+	: > "$log_dir/apt.log"
+	: > "$log_dir/users.log"
+	: > "$log_dir/ownership.log"
+	setup_fixture_repo "$fixture_dir" "$version"
+	setup_stub_bin "$stub_dir" "$fixture_dir" "$log_dir"
+
+	PATH="$stub_dir:$PATH" \
+	GISTCLAW_ALLOW_NON_ROOT=1 \
+	GISTCLAW_ARCH=amd64 \
+	GISTCLAW_VERSION="$version" \
+	GISTCLAW_BASE_URL="https://example.invalid/$version" \
+	GISTCLAW_RELEASES_DIR="$root_dir/opt/gistclaw/releases" \
+	GISTCLAW_BIN_LINK="$root_dir/usr/local/bin/gistclaw" \
+	GISTCLAW_ETC_DIR="$root_dir/etc/gistclaw" \
+	GISTCLAW_SYSTEMD_DIR="$root_dir/etc/systemd/system" \
+	GISTCLAW_VAR_DIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_DOWNLOAD_DIR="$tmp/downloads" \
+	GISTCLAW_FAKE_WORKDIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_FAKE_STATE_DIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_FAKE_DATABASE_DIR="$root_dir/var/lib/gistclaw" \
+	GISTCLAW_FAKE_WORKSPACE_ROOT="$root_dir/var/lib/gistclaw/projects" \
+	GISTCLAW_FAKE_ACTIVE_SERVICE=1 \
+	GISTCLAW_PROVIDER_NAME=openai \
+	GISTCLAW_PROVIDER_API_KEY=sk-test \
+	bash "$INSTALLER" >/dev/null
+
+	assert_contains "$log_dir/systemctl.log" "enable gistclaw"
+	assert_contains "$log_dir/systemctl.log" "is-active --quiet gistclaw"
+	assert_contains "$log_dir/systemctl.log" "restart gistclaw"
+	if grep -Fxq "start gistclaw" "$log_dir/systemctl.log"; then
+		echo "expected active-service upgrade to restart instead of start" >&2
+		exit 1
+	fi
 }
 
 run_missing_provider_case() {
@@ -540,7 +598,9 @@ run_public_domain_happy_path() {
 	assert_contains "$root_dir/etc/caddy/Caddyfile" "reverse_proxy 127.0.0.1:8080"
 	assert_contains "$log_dir/apt.log" "update"
 	assert_contains "$log_dir/apt.log" "install -y caddy"
-	assert_contains "$log_dir/systemctl.log" "enable --now gistclaw"
+	assert_contains "$log_dir/systemctl.log" "enable gistclaw"
+	assert_contains "$log_dir/systemctl.log" "is-active --quiet gistclaw"
+	assert_contains "$log_dir/systemctl.log" "start gistclaw"
 	assert_contains "$log_dir/systemctl.log" "enable --now caddy"
 	assert_contains "$log_dir/systemctl.log" "restart caddy"
 	assert_contains "$tmp/out" "gistclaw auth set-password --config $root_dir/etc/gistclaw/config.yaml"
@@ -605,7 +665,7 @@ EOF
 		echo "apt-get should not run when public-domain validation fails" >&2
 		exit 1
 	fi
-	if grep -Fq "enable --now gistclaw" "$log_dir/systemctl.log"; then
+	if grep -Fq "enable gistclaw" "$log_dir/systemctl.log"; then
 		echo "gistclaw service should not start when public-domain validation fails" >&2
 		exit 1
 	fi
@@ -613,6 +673,7 @@ EOF
 
 run_happy_path
 run_config_file_happy_path
+run_active_service_restart_case
 run_missing_provider_case
 run_missing_config_file_case
 run_mixed_mode_case
