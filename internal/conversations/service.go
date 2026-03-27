@@ -197,6 +197,25 @@ type deliveryRedriveRequestedPayload struct {
 	IntentID string `json:"intent_id"`
 }
 
+type conversationGateOpenedPayload struct {
+	GateID       string          `json:"gate_id"`
+	SessionID    string          `json:"session_id"`
+	Kind         string          `json:"kind"`
+	Status       string          `json:"status"`
+	ApprovalID   string          `json:"approval_id"`
+	Title        string          `json:"title"`
+	Body         string          `json:"body"`
+	Options      json.RawMessage `json:"options"`
+	Metadata     json.RawMessage `json:"metadata"`
+	LanguageHint string          `json:"language_hint"`
+}
+
+type conversationGateResolvedPayload struct {
+	GateID   string `json:"gate_id"`
+	Status   string `json:"status"`
+	Decision string `json:"decision"`
+}
+
 func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt model.Event) error {
 	switch evt.Kind {
 	case "run_started":
@@ -283,6 +302,61 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 		_, err := tx.ExecContext(ctx,
 			"UPDATE runs SET status = 'needs_approval', updated_at = ? WHERE id = ?",
 			evt.CreatedAt, evt.RunID,
+		)
+		return err
+	case "conversation_gate_opened":
+		var payload conversationGateOpenedPayload
+		if err := decodePayload(evt.PayloadJSON, &payload); err != nil {
+			return err
+		}
+		status := payload.Status
+		if status == "" {
+			status = string(model.ConversationGatePending)
+		}
+		optionsJSON := payload.Options
+		if len(optionsJSON) == 0 {
+			optionsJSON = json.RawMessage(`[]`)
+		}
+		metadataJSON := payload.Metadata
+		if len(metadataJSON) == 0 {
+			metadataJSON = json.RawMessage(`{}`)
+		}
+		_, err := tx.ExecContext(ctx,
+			`INSERT INTO conversation_gates
+			 (id, conversation_id, run_id, session_id, kind, status, approval_id, title, body, options_json, metadata_json, language_hint, created_at, resolved_at)
+			 VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, NULLIF(?, ''), ?, NULL)`,
+			payload.GateID,
+			evt.ConversationID,
+			evt.RunID,
+			payload.SessionID,
+			payload.Kind,
+			status,
+			payload.ApprovalID,
+			payload.Title,
+			payload.Body,
+			optionsJSON,
+			metadataJSON,
+			payload.LanguageHint,
+			evt.CreatedAt,
+		)
+		return err
+	case "conversation_gate_resolved":
+		var payload conversationGateResolvedPayload
+		if err := decodePayload(evt.PayloadJSON, &payload); err != nil {
+			return err
+		}
+		status := payload.Status
+		if status == "" {
+			status = string(model.ConversationGateResolved)
+		}
+		_, err := tx.ExecContext(ctx,
+			`UPDATE conversation_gates
+			 SET status = ?,
+			     resolved_at = ?
+			 WHERE id = ?`,
+			status,
+			evt.CreatedAt,
+			payload.GateID,
 		)
 		return err
 	case "run_resumed":

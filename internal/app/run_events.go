@@ -63,7 +63,7 @@ func (n *connectorRouteNotifier) Emit(ctx context.Context, runID string, evt mod
 	if n == nil || n.db == nil {
 		return nil
 	}
-	if evt.Kind != "turn_delta" && evt.Kind != "turn_completed" && evt.Kind != "approval_requested" {
+	if evt.Kind != "turn_delta" && evt.Kind != "turn_completed" {
 		return nil
 	}
 
@@ -89,7 +89,7 @@ func (n *connectorRouteNotifier) Emit(ctx context.Context, runID string, evt mod
 }
 
 func (n *connectorRouteNotifier) loadRouteForEvent(ctx context.Context, runID, kind string) (model.SessionRoute, error) {
-	sessionID, conversationID, err := n.loadRunRouteContext(ctx, runID)
+	sessionID, _, err := n.loadRunRouteContext(ctx, runID)
 	if err != nil {
 		return model.SessionRoute{}, err
 	}
@@ -104,39 +104,7 @@ func (n *connectorRouteNotifier) loadRouteForEvent(ctx context.Context, runID, k
 			return model.SessionRoute{}, err
 		}
 	}
-	if kind != "approval_requested" || conversationID == "" {
-		return model.SessionRoute{}, sessions.ErrSessionRouteNotFound
-	}
-
-	var route model.SessionRoute
-	err = n.db.RawDB().QueryRowContext(ctx,
-		`SELECT bind.id, bind.session_id, bind.thread_id, bind.connector_id, bind.account_id, bind.external_id,
-		        bind.status, bind.created_at
-		 FROM session_bindings bind
-		 JOIN sessions sess ON sess.id = bind.session_id
-		 WHERE bind.conversation_id = ? AND bind.status = 'active'
-		 ORDER BY CASE sess.role WHEN 'front' THEN 0 ELSE 1 END,
-		          bind.created_at DESC,
-		          bind.id DESC
-		 LIMIT 1`,
-		conversationID,
-	).Scan(
-		&route.ID,
-		&route.SessionID,
-		&route.ThreadID,
-		&route.ConnectorID,
-		&route.AccountID,
-		&route.ExternalID,
-		&route.Status,
-		&route.CreatedAt,
-	)
-	if err == sql.ErrNoRows {
-		return model.SessionRoute{}, sessions.ErrSessionRouteNotFound
-	}
-	if err != nil {
-		return model.SessionRoute{}, err
-	}
-	return route, nil
+	return model.SessionRoute{}, sessions.ErrSessionRouteNotFound
 }
 
 func (n *connectorRouteNotifier) loadRunRouteContext(ctx context.Context, runID string) (string, string, error) {

@@ -168,17 +168,59 @@ func (b *Bot) getUpdates(ctx context.Context, offset int64) ([]Update, error) {
 	return result.Result, nil
 }
 
+func (b *Bot) answerCallbackQuery(ctx context.Context, callbackQueryID string) error {
+	if strings.TrimSpace(callbackQueryID) == "" {
+		return nil
+	}
+
+	form := url.Values{}
+	form.Set("callback_query_id", callbackQueryID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		fmt.Sprintf("%s%s/answerCallbackQuery", b.apiBase, b.token),
+		strings.NewReader(form.Encode()),
+	)
+	if err != nil {
+		return fmt.Errorf("telegram: build answerCallbackQuery request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := b.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("telegram: answerCallbackQuery: %w", err)
+	}
+	defer resp.Body.Close()
+
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("telegram: read answerCallbackQuery body: %w", err)
+	}
+
+	var result struct {
+		OK bool `json:"ok"`
+	}
+	if err := json.Unmarshal(rawBody, &result); err != nil {
+		return fmt.Errorf("telegram: parse answerCallbackQuery response: %w", err)
+	}
+	if !result.OK {
+		return fmt.Errorf("telegram: answerCallbackQuery returned ok=false")
+	}
+	return nil
+}
+
 // ── Telegram types ────────────────────────────────────────────────────────────
 
 // Update is a Telegram update object.
 type Update struct {
-	UpdateID int64    `json:"update_id"`
-	Message  *Message `json:"message"`
+	UpdateID      int64          `json:"update_id"`
+	Message       *Message       `json:"message"`
+	CallbackQuery *CallbackQuery `json:"callback_query"`
 }
 
 // Message is a Telegram message object.
 type Message struct {
 	MessageID int64  `json:"message_id"`
+	From      User   `json:"from"`
 	Chat      Chat   `json:"chat"`
 	Text      string `json:"text"`
 }
@@ -187,4 +229,16 @@ type Message struct {
 type Chat struct {
 	ID   int64  `json:"id"`
 	Type string `json:"type"` // "private", "group", "supergroup", "channel"
+}
+
+type User struct {
+	ID           int64  `json:"id"`
+	LanguageCode string `json:"language_code"`
+}
+
+type CallbackQuery struct {
+	ID      string   `json:"id"`
+	From    User     `json:"from"`
+	Message *Message `json:"message"`
+	Data    string   `json:"data"`
 }

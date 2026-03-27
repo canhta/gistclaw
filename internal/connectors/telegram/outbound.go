@@ -61,11 +61,11 @@ func (d *OutboundDispatcher) Start(ctx context.Context) error { return d.bot.Sta
 // Send records and delivers a connector-owned outbound message that is not
 // attached to a run lifecycle event, such as a native control-command reply.
 func (d *OutboundDispatcher) Send(ctx context.Context, chatID, text string) error {
-	intentID, err := d.enqueueIntent(ctx, "", chatID, text, "")
+	intentID, err := d.enqueueIntent(ctx, "", chatID, text, nil, "")
 	if err != nil {
 		return err
 	}
-	return d.deliverWithRetry(ctx, intentID, chatID, text, "connector_command")
+	return d.deliverWithRetry(ctx, intentID, chatID, text, nil, "connector_command")
 }
 
 // NewOutboundDispatcher creates a dispatcher. token is the Telegram bot token.
@@ -108,12 +108,12 @@ func (d *OutboundDispatcher) Notify(ctx context.Context, chatID string, delta mo
 	}
 
 	text := buildMessage(delta)
-	intentID, err := d.enqueueIntent(ctx, delta.RunID, chatID, text, dedupeKey)
+	intentID, err := d.enqueueIntent(ctx, delta.RunID, chatID, text, nil, dedupeKey)
 	if err != nil {
 		return err
 	}
 
-	return d.deliverWithRetry(ctx, intentID, chatID, text, delta.Kind)
+	return d.deliverWithRetry(ctx, intentID, chatID, text, nil, delta.Kind)
 }
 
 func (d *OutboundDispatcher) recordDraft(chatID string, delta model.ReplayDelta) error {
@@ -159,7 +159,7 @@ func (d *OutboundDispatcher) recordDraft(chatID string, delta model.ReplayDelta)
 // Drain delivers all pending/retrying intents from a previous session.
 func (d *OutboundDispatcher) Drain(ctx context.Context) error {
 	rows, err := d.db.RawDB().QueryContext(ctx,
-		`SELECT id, chat_id, message_text, run_id FROM outbound_intents
+		`SELECT id, chat_id, message_text, COALESCE(metadata_json, x'7B7D'), run_id FROM outbound_intents
 		 WHERE status IN ('pending', 'retrying') AND connector_id = ?`,
 		d.connectorID)
 	if err != nil {
@@ -169,11 +169,12 @@ func (d *OutboundDispatcher) Drain(ctx context.Context) error {
 
 	type intent struct {
 		id, chatID, text, runID string
+		metadataJSON            []byte
 	}
 	var intents []intent
 	for rows.Next() {
 		var it intent
-		if err := rows.Scan(&it.id, &it.chatID, &it.text, &it.runID); err != nil {
+		if err := rows.Scan(&it.id, &it.chatID, &it.text, &it.metadataJSON, &it.runID); err != nil {
 			return fmt.Errorf("telegram: drain scan: %w", err)
 		}
 		intents = append(intents, it)
@@ -181,7 +182,7 @@ func (d *OutboundDispatcher) Drain(ctx context.Context) error {
 	_ = rows.Close()
 
 	for _, it := range intents {
-		_ = d.deliverWithRetry(ctx, it.id, it.chatID, it.text, "")
+		_ = d.deliverWithRetry(ctx, it.id, it.chatID, it.text, it.metadataJSON, "")
 	}
 	return nil
 }
@@ -230,13 +231,13 @@ func (d *OutboundDispatcher) FlushDrafts(ctx context.Context) error {
 	return nil
 }
 
-func (d *OutboundDispatcher) enqueueIntent(ctx context.Context, runID, chatID, text, dedupeKey string) (string, error) {
+func (d *OutboundDispatcher) enqueueIntent(ctx context.Context, runID, chatID, text string, metadataJSON []byte, dedupeKey string) (string, error) {
 	intentID := generateIntentID()
 	_, err := d.db.RawDB().ExecContext(ctx,
 		`INSERT INTO outbound_intents
-		 (id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at)
-		 VALUES (?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), 'pending', 0, datetime('now'))`,
-		intentID, runID, d.connectorID, chatID, text, dedupeKey,
+		 (id, run_id, connector_id, chat_id, message_text, metadata_json, dedupe_key, status, attempts, created_at)
+		 VALUES (?, NULLIF(?, ''), ?, ?, ?, COALESCE(?, '{}'), NULLIF(?, ''), 'pending', 0, datetime('now'))`,
+		intentID, runID, d.connectorID, chatID, text, metadataJSON, dedupeKey,
 	)
 	if err != nil {
 		return "", fmt.Errorf("telegram: write intent: %w", err)
@@ -245,7 +246,7 @@ func (d *OutboundDispatcher) enqueueIntent(ctx context.Context, runID, chatID, t
 }
 
 // deliverWithRetry attempts delivery up to maxAttempts times with retryDelay between each.
-func (d *OutboundDispatcher) deliverWithRetry(ctx context.Context, intentID, chatID, text, eventKind string) error {
+func (d *OutboundDispatcher) deliverWithRetry(ctx context.Context, intentID, chatID, text string, metadataJSON []byte, eventKind string) error {
 	var lastErr error
 	for attempt := 1; attempt <= d.maxAttempts; attempt++ {
 		if attempt > 1 && d.retryDelay > 0 {
@@ -256,7 +257,7 @@ func (d *OutboundDispatcher) deliverWithRetry(ctx context.Context, intentID, cha
 			}
 		}
 
-		if err := d.sendMessage(ctx, chatID, text); err != nil {
+		if err := d.sendMessage(ctx, chatID, text, metadataJSON); err != nil {
 			lastErr = err
 			// Mark retrying.
 			_, _ = d.db.RawDB().ExecContext(ctx,
@@ -301,12 +302,19 @@ func (d *OutboundDispatcher) deliverWithRetry(ctx context.Context, intentID, cha
 	return lastErr
 }
 
-func (d *OutboundDispatcher) sendMessage(ctx context.Context, chatID, text string) error {
+func (d *OutboundDispatcher) sendMessage(ctx context.Context, chatID, text string, metadataJSON []byte) error {
 	apiURL := fmt.Sprintf("%s%s/sendMessage", d.bot.apiBase, d.bot.token)
 
 	form := url.Values{}
 	form.Set("chat_id", chatID)
 	form.Set("text", text)
+	replyMarkup, err := telegramReplyMarkup(metadataJSON)
+	if err != nil {
+		return err
+	}
+	if replyMarkup != "" {
+		form.Set("reply_markup", replyMarkup)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL,
 		strings.NewReader(form.Encode()))
@@ -333,6 +341,40 @@ func (d *OutboundDispatcher) sendMessage(ctx context.Context, chatID, text strin
 		return fmt.Errorf("telegram: sendMessage not ok: %s", body)
 	}
 	return nil
+}
+
+func telegramReplyMarkup(metadataJSON []byte) (string, error) {
+	if len(metadataJSON) == 0 {
+		return "", nil
+	}
+	var metadata model.OutboundIntentMetadata
+	if err := json.Unmarshal(metadataJSON, &metadata); err != nil {
+		return "", fmt.Errorf("telegram: decode outbound metadata: %w", err)
+	}
+	if len(metadata.ActionButtons) == 0 {
+		return "", nil
+	}
+
+	row := make([]map[string]string, 0, len(metadata.ActionButtons))
+	for _, button := range metadata.ActionButtons {
+		if strings.TrimSpace(button.Label) == "" || strings.TrimSpace(button.Value) == "" {
+			continue
+		}
+		row = append(row, map[string]string{
+			"text":          button.Label,
+			"callback_data": button.Value,
+		})
+	}
+	if len(row) == 0 {
+		return "", nil
+	}
+	payload, err := json.Marshal(map[string]any{
+		"inline_keyboard": []any{row},
+	})
+	if err != nil {
+		return "", fmt.Errorf("telegram: marshal reply markup: %w", err)
+	}
+	return string(payload), nil
 }
 
 func (d *OutboundDispatcher) sendMessageDraft(ctx context.Context, chatID string, draftID int64, text string) error {
@@ -401,7 +443,7 @@ func buildApprovalMessage(delta model.ReplayDelta) string {
 	if summary := authority.BindingSummaryJSON(payload.BindingJSON); strings.TrimSpace(summary) != "" {
 		message += " (" + summary + ")"
 	}
-	return message + ". Review it in the web UI."
+	return message + ". Reply here to approve or deny it."
 }
 
 func generateIntentID() string {

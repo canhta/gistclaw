@@ -373,6 +373,125 @@ func TestConversationStore_AppendEventProjectsApprovalLifecycle(t *testing.T) {
 	}
 }
 
+func TestConversationStore_AppendEventProjectsConversationGateLifecycle(t *testing.T) {
+	db := setupTestStore(t)
+	cs := NewConversationStore(db)
+	ctx := context.Background()
+
+	startPayload, err := json.Marshal(map[string]any{
+		"agent_id":       "assistant",
+		"objective":      "inspect repo",
+		"cwd":            t.TempDir(),
+		"authority_json": json.RawMessage(`{"approval_mode":"prompt"}`),
+		"session_id":     "sess-front",
+	})
+	if err != nil {
+		t.Fatalf("marshal start payload: %v", err)
+	}
+
+	if err := cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-gate-run-started",
+		ConversationID: "conv-gate",
+		RunID:          "run-gate",
+		Kind:           "run_started",
+		PayloadJSON:    startPayload,
+	}); err != nil {
+		t.Fatalf("AppendEvent run_started failed: %v", err)
+	}
+
+	openPayload, err := json.Marshal(map[string]any{
+		"gate_id":        "gate-1",
+		"session_id":     "sess-front",
+		"kind":           "approval",
+		"status":         "pending",
+		"approval_id":    "ticket-1",
+		"title":          "Approval required",
+		"body":           "Approve the shell command",
+		"options":        []string{"approve", "deny"},
+		"metadata":       map[string]any{"tool_name": "shell_exec"},
+		"language_hint":  "vi",
+	})
+	if err != nil {
+		t.Fatalf("marshal gate open payload: %v", err)
+	}
+
+	if err := cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-gate-opened",
+		ConversationID: "conv-gate",
+		RunID:          "run-gate",
+		Kind:           "conversation_gate_opened",
+		PayloadJSON:    openPayload,
+	}); err != nil {
+		t.Fatalf("AppendEvent conversation_gate_opened failed: %v", err)
+	}
+
+	var kind string
+	var status string
+	var approvalID string
+	var sessionID string
+	var title string
+	var body string
+	var optionsJSON string
+	var metadataJSON string
+	var languageHint string
+	err = db.RawDB().QueryRowContext(ctx,
+		`SELECT kind, status, COALESCE(approval_id, ''), session_id, title, body, options_json, metadata_json, COALESCE(language_hint, '')
+		 FROM conversation_gates
+		 WHERE id = 'gate-1'`,
+	).Scan(&kind, &status, &approvalID, &sessionID, &title, &body, &optionsJSON, &metadataJSON, &languageHint)
+	if err != nil {
+		t.Fatalf("query conversation gate projection: %v", err)
+	}
+	if kind != "approval" || status != "pending" || approvalID != "ticket-1" || sessionID != "sess-front" {
+		t.Fatalf("unexpected gate projection kind=%q status=%q approval_id=%q session_id=%q", kind, status, approvalID, sessionID)
+	}
+	if title != "Approval required" || body != "Approve the shell command" {
+		t.Fatalf("unexpected gate text title=%q body=%q", title, body)
+	}
+	if !strings.Contains(optionsJSON, `"approve"`) || !strings.Contains(metadataJSON, `"tool_name":"shell_exec"`) {
+		t.Fatalf("expected options/metadata to round-trip, got options=%q metadata=%q", optionsJSON, metadataJSON)
+	}
+	if languageHint != "vi" {
+		t.Fatalf("expected language hint %q, got %q", "vi", languageHint)
+	}
+
+	resolvePayload, err := json.Marshal(map[string]any{
+		"gate_id":   "gate-1",
+		"status":    "resolved",
+		"decision":  "approved",
+	})
+	if err != nil {
+		t.Fatalf("marshal gate resolve payload: %v", err)
+	}
+
+	if err := cs.AppendEvent(ctx, model.Event{
+		ID:             "evt-gate-resolved",
+		ConversationID: "conv-gate",
+		RunID:          "run-gate",
+		Kind:           "conversation_gate_resolved",
+		PayloadJSON:    resolvePayload,
+	}); err != nil {
+		t.Fatalf("AppendEvent conversation_gate_resolved failed: %v", err)
+	}
+
+	var resolvedStatus string
+	var resolvedAt sql.NullString
+	err = db.RawDB().QueryRowContext(ctx,
+		`SELECT status, resolved_at
+		 FROM conversation_gates
+		 WHERE id = 'gate-1'`,
+	).Scan(&resolvedStatus, &resolvedAt)
+	if err != nil {
+		t.Fatalf("query resolved conversation gate: %v", err)
+	}
+	if resolvedStatus != "resolved" {
+		t.Fatalf("expected resolved gate status, got %q", resolvedStatus)
+	}
+	if !resolvedAt.Valid {
+		t.Fatal("expected resolved_at to be populated")
+	}
+}
+
 func TestConversationStore_AppendEventProjectsSummary(t *testing.T) {
 	db := setupTestStore(t)
 	cs := NewConversationStore(db)

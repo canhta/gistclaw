@@ -211,11 +211,21 @@ type OutboundIntent struct {
 	ConnectorID   string
 	ChatID        string
 	MessageText   string
+	MetadataJSON  []byte
 	DedupeKey     string
 	Status        string
 	Attempts      int
 	CreatedAt     time.Time
 	LastAttemptAt *time.Time
+}
+
+type OutboundActionButton struct {
+	Label string `json:"label"`
+	Value string `json:"value"`
+}
+
+type OutboundIntentMetadata struct {
+	ActionButtons []OutboundActionButton `json:"action_buttons,omitempty"`
 }
 
 type DeliveryFailure struct {
@@ -462,4 +472,36 @@ type ApprovalTicket struct {
 	Fingerprint string
 	Status      string
 	CreatedAt   time.Time
+}
+
+type ConversationGateKind string
+
+const (
+	ConversationGateApproval ConversationGateKind = "approval"
+)
+
+type ConversationGateStatus string
+
+const (
+	ConversationGatePending  ConversationGateStatus = "pending"
+	ConversationGateQueued   ConversationGateStatus = "queued"
+	ConversationGateResolved ConversationGateStatus = "resolved"
+	ConversationGateExpired  ConversationGateStatus = "expired"
+)
+
+type ConversationGate struct {
+	ID             string
+	ConversationID string
+	RunID          string
+	SessionID      string
+	Kind           ConversationGateKind
+	Status         ConversationGateStatus
+	ApprovalID     string
+	Title          string
+	Body           string
+	OptionsJSON    []byte
+	MetadataJSON   []byte
+	LanguageHint   string
+	CreatedAt      time.Time
+	ResolvedAt     *time.Time
 }

@@ -2,8 +2,11 @@ package telegram
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/conversations"
@@ -15,6 +18,9 @@ import (
 type stubTelegramRuntime struct {
 	mu           sync.Mutex
 	calls        []runtime.InboundMessageCommand
+	gateCalls    []runtime.ConversationGateReplyCommand
+	gateOutcome  runtime.ConversationGateReplyOutcome
+	gateErr      error
 	status       runtime.ConversationStatus
 	statusErr    error
 	inspectedKey conversations.ConversationKey
@@ -28,6 +34,13 @@ func (s *stubTelegramRuntime) ReceiveInboundMessage(_ context.Context, req runti
 	defer s.mu.Unlock()
 	s.calls = append(s.calls, req)
 	return model.Run{ID: "run-inbound", SessionID: "session-inbound"}, nil
+}
+
+func (s *stubTelegramRuntime) HandleConversationGateReply(_ context.Context, req runtime.ConversationGateReplyCommand) (runtime.ConversationGateReplyOutcome, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.gateCalls = append(s.gateCalls, req)
+	return s.gateOutcome, s.gateErr
 }
 
 func (s *stubTelegramRuntime) InspectConversation(_ context.Context, key conversations.ConversationKey) (runtime.ConversationStatus, error) {
@@ -48,6 +61,12 @@ func (s *stubTelegramRuntime) callCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.calls)
+}
+
+func (s *stubTelegramRuntime) gateCallCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.gateCalls)
 }
 
 type stubTelegramSender struct {
@@ -165,6 +184,9 @@ func TestConnector_HandleEnvelopeRoutesStatusToNativeReply(t *testing.T) {
 			t.Fatalf("expected status reply to include %q, got:\n%s", want, reply)
 		}
 	}
+	if strings.Contains(strings.ToLower(reply), "web ui") {
+		t.Fatalf("expected Telegram status reply to stay native to chat, got:\n%s", reply)
+	}
 }
 
 func TestConnector_HandleEnvelopeRoutesResetToNativeReply(t *testing.T) {
@@ -230,5 +252,114 @@ func TestConnector_HandleEnvelopePassesUnknownSlashTextToRuntime(t *testing.T) {
 	}
 	if got := rt.calls[0].Body; got != "/review the repo" {
 		t.Fatalf("expected body %q, got %q", "/review the repo", got)
+	}
+}
+
+func TestConnector_HandleEnvelopeConsumesActiveConversationGateReply(t *testing.T) {
+	rt := &stubTelegramRuntime{
+		gateOutcome: runtime.ConversationGateReplyOutcome{
+			Handled:  true,
+			GateID:   "gate-1",
+			Decision: "approved",
+		},
+	}
+	connector := newTelegramControlConnector(t, rt)
+	sender := &stubTelegramSender{}
+	connector.sender = sender
+
+	err := connector.handleEnvelope(context.Background(), model.Envelope{
+		ConnectorID:    "telegram",
+		AccountID:      "123",
+		ConversationID: "123",
+		ThreadID:       "main",
+		MessageID:      "43",
+		Text:           "/approve approval-1 allow-once",
+	})
+	if err != nil {
+		t.Fatalf("handleEnvelope: %v", err)
+	}
+	if rt.gateCallCount() != 1 {
+		t.Fatalf("expected gate handler to be consulted once, got %d calls", rt.gateCallCount())
+	}
+	if rt.callCount() != 0 {
+		t.Fatalf("expected no inbound run when gate reply is consumed, got %d calls", rt.callCount())
+	}
+	if sender.sentCount() != 0 {
+		t.Fatalf("expected no immediate native reply when runtime consumes gate reply, got %d sends", sender.sentCount())
+	}
+	if got := rt.gateCalls[0].Body; got != "/approve approval-1 allow-once" {
+		t.Fatalf("expected gate body %q, got %q", "/approve approval-1 allow-once", got)
+	}
+}
+
+func TestConnector_HandleEnvelopeFallsBackToInboundWhenNoConversationGateConsumes(t *testing.T) {
+	rt := &stubTelegramRuntime{
+		gateOutcome: runtime.ConversationGateReplyOutcome{Handled: false},
+	}
+	connector := newTelegramControlConnector(t, rt)
+
+	err := connector.handleEnvelope(context.Background(), model.Envelope{
+		ConnectorID:    "telegram",
+		AccountID:      "123",
+		ConversationID: "123",
+		ThreadID:       "main",
+		MessageID:      "44",
+		Text:           "review the repo",
+	})
+	if err != nil {
+		t.Fatalf("handleEnvelope: %v", err)
+	}
+	if rt.gateCallCount() != 1 {
+		t.Fatalf("expected gate handler to be consulted once, got %d calls", rt.gateCallCount())
+	}
+	if rt.callCount() != 1 {
+		t.Fatalf("expected inbound run when no gate consumes the message, got %d calls", rt.callCount())
+	}
+}
+
+func TestConnector_HandleUpdateAnswersCallbackQuery(t *testing.T) {
+	rt := &stubTelegramRuntime{
+		gateOutcome: runtime.ConversationGateReplyOutcome{Handled: true},
+	}
+	connector := newTelegramControlConnector(t, rt)
+
+	var answered atomic.Int32
+	var callbackQueryID string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "answerCallbackQuery") {
+			answered.Add(1)
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("ParseForm: %v", err)
+			}
+			callbackQueryID = r.Form.Get("callback_query_id")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	}))
+	defer srv.Close()
+
+	connector.outbound.bot.apiBase = srv.URL + "/bot"
+
+	connector.handleUpdate(context.Background(), Update{
+		UpdateID: 204,
+		CallbackQuery: &CallbackQuery{
+			ID:   "cbq-2",
+			From: User{ID: 123},
+			Data: "/approve ticket-1 allow-once",
+			Message: &Message{
+				MessageID: 89,
+				Chat: Chat{
+					ID:   123,
+					Type: "private",
+				},
+			},
+		},
+	})
+
+	if answered.Load() != 1 {
+		t.Fatalf("expected answerCallbackQuery to be called once, got %d", answered.Load())
+	}
+	if callbackQueryID != "cbq-2" {
+		t.Fatalf("expected callback_query_id %q, got %q", "cbq-2", callbackQueryID)
 	}
 }

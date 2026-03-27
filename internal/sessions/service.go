@@ -775,7 +775,7 @@ func (s *Service) LoadSessionOutboundIntent(ctx context.Context, sessionID strin
 	var lastAttempt sql.NullString
 	err := s.db.RawDB().QueryRowContext(ctx,
 		`SELECT oi.id, COALESCE(oi.run_id, ''), oi.connector_id, oi.chat_id, oi.message_text,
-		        COALESCE(oi.dedupe_key, ''), oi.status, oi.attempts, oi.created_at, oi.last_attempt_at
+		        COALESCE(oi.metadata_json, x'7B7D'), COALESCE(oi.dedupe_key, ''), oi.status, oi.attempts, oi.created_at, oi.last_attempt_at
 		 FROM outbound_intents oi
 		 JOIN runs r ON r.id = oi.run_id
 		 WHERE r.session_id = ? AND oi.id = ?`,
@@ -787,6 +787,7 @@ func (s *Service) LoadSessionOutboundIntent(ctx context.Context, sessionID strin
 		&intent.ConnectorID,
 		&intent.ChatID,
 		&intent.MessageText,
+		&intent.MetadataJSON,
 		&intent.DedupeKey,
 		&intent.Status,
 		&intent.Attempts,
@@ -817,10 +818,10 @@ func (s *Service) ListSessionOutboundIntents(ctx context.Context, sessionID stri
 
 	if limit > 0 {
 		rows, err = s.db.RawDB().QueryContext(ctx,
-			`SELECT id, run_id, connector_id, chat_id, message_text, dedupe_key, status, attempts, created_at, last_attempt_at
+			`SELECT id, run_id, connector_id, chat_id, message_text, metadata_json, dedupe_key, status, attempts, created_at, last_attempt_at
 			 FROM (
 			     SELECT oi.id, COALESCE(oi.run_id, '') AS run_id, oi.connector_id, oi.chat_id, oi.message_text,
-			            COALESCE(oi.dedupe_key, '') AS dedupe_key, oi.status, oi.attempts, oi.created_at, oi.last_attempt_at
+			            COALESCE(oi.metadata_json, x'7B7D') AS metadata_json, COALESCE(oi.dedupe_key, '') AS dedupe_key, oi.status, oi.attempts, oi.created_at, oi.last_attempt_at
 			     FROM outbound_intents oi
 			     JOIN runs r ON r.id = oi.run_id
 			     WHERE r.session_id = ?
@@ -833,7 +834,7 @@ func (s *Service) ListSessionOutboundIntents(ctx context.Context, sessionID stri
 	} else {
 		rows, err = s.db.RawDB().QueryContext(ctx,
 			`SELECT oi.id, COALESCE(oi.run_id, ''), oi.connector_id, oi.chat_id, oi.message_text,
-			        COALESCE(oi.dedupe_key, ''), oi.status, oi.attempts, oi.created_at, oi.last_attempt_at
+			        COALESCE(oi.metadata_json, x'7B7D'), COALESCE(oi.dedupe_key, ''), oi.status, oi.attempts, oi.created_at, oi.last_attempt_at
 			 FROM outbound_intents oi
 			 JOIN runs r ON r.id = oi.run_id
 			 WHERE r.session_id = ?
@@ -856,6 +857,7 @@ func (s *Service) ListSessionOutboundIntents(ctx context.Context, sessionID stri
 			&intent.ConnectorID,
 			&intent.ChatID,
 			&intent.MessageText,
+			&intent.MetadataJSON,
 			&intent.DedupeKey,
 			&intent.Status,
 			&intent.Attempts,
@@ -905,7 +907,7 @@ func (s *Service) ListDeliveryQueuePage(ctx context.Context, filter DeliveryQueu
 	query := strings.Builder{}
 	query.WriteString(
 		`SELECT oi.id, COALESCE(oi.run_id, ''), r.session_id, r.conversation_id,
-		        oi.connector_id, oi.chat_id, oi.message_text, COALESCE(oi.dedupe_key, ''),
+		        oi.connector_id, oi.chat_id, oi.message_text, COALESCE(oi.metadata_json, x'7B7D'), COALESCE(oi.dedupe_key, ''),
 		        oi.status, oi.attempts, oi.created_at, oi.last_attempt_at,
 		        ` + statusRankExpr + ` AS status_rank,
 		        ` + createdMicrosExpr + ` AS created_at_micros
@@ -1205,7 +1207,7 @@ func (s *Service) ListConnectorDeliveryHealth(ctx context.Context) ([]model.Conn
 func (s *Service) LoadDeliveryQueueItem(ctx context.Context, intentID string) (model.DeliveryQueueItem, error) {
 	rows, err := s.db.RawDB().QueryContext(ctx,
 		`SELECT oi.id, COALESCE(oi.run_id, ''), r.session_id, r.conversation_id,
-		        oi.connector_id, oi.chat_id, oi.message_text, COALESCE(oi.dedupe_key, ''),
+		        oi.connector_id, oi.chat_id, oi.message_text, COALESCE(oi.metadata_json, x'7B7D'), COALESCE(oi.dedupe_key, ''),
 		        oi.status, oi.attempts, oi.created_at, oi.last_attempt_at
 		 FROM outbound_intents oi
 		 JOIN runs r ON r.id = oi.run_id
@@ -1315,6 +1317,7 @@ func scanDeliveryQueueItemWithCursor(scanner interface {
 		&item.ConnectorID,
 		&item.ChatID,
 		&item.MessageText,
+		&item.MetadataJSON,
 		&item.DedupeKey,
 		&item.Status,
 		&item.Attempts,

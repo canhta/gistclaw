@@ -146,6 +146,44 @@ func TestInbound_LegacyTaskAliasesArePreservedAsPlainText(t *testing.T) {
 	}
 }
 
+func TestInbound_CallbackQueryNormalizesAsDeterministicReply(t *testing.T) {
+	upd := Update{
+		UpdateID: 203,
+		CallbackQuery: &CallbackQuery{
+			ID: "cbq-1",
+			From: User{
+				ID:           77,
+				LanguageCode: "vi",
+			},
+			Data: "/approve ticket-1 allow-once",
+			Message: &Message{
+				MessageID: 88,
+				Chat: Chat{
+					ID:   123456,
+					Type: "private",
+				},
+			},
+		},
+	}
+
+	env, err := NormalizeUpdate(upd)
+	if err != nil {
+		t.Fatalf("NormalizeUpdate: %v", err)
+	}
+	if env.ConversationID != "123456" {
+		t.Fatalf("expected conversation id %q, got %q", "123456", env.ConversationID)
+	}
+	if env.MessageID != "cbq-1" {
+		t.Fatalf("expected callback query id as message id, got %q", env.MessageID)
+	}
+	if env.Text != "/approve ticket-1 allow-once" {
+		t.Fatalf("expected callback data to become envelope text, got %q", env.Text)
+	}
+	if env.Metadata["language_hint"] != "vi" {
+		t.Fatalf("expected language hint %q, got %#v", "vi", env.Metadata)
+	}
+}
+
 func TestInbound_SlashPrefixedChatPassesThrough(t *testing.T) {
 	tests := []struct {
 		name string

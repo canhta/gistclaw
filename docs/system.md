@@ -19,10 +19,12 @@ This document is the source of truth for what the repository ships today: packag
 
 - The daemon owns mutable state in `runtime.db`.
 - The append-only conversation journal is still the canonical write path.
-- Current-state tables project that journal into runs, approvals, tool calls, receipts, sessions, bindings, deliveries, and memory items.
+- Current-state tables project that journal into runs, approvals, conversational gates, tool calls, receipts, sessions, bindings, deliveries, and memory items.
 - A conversation can have one active root run at a time.
 - Collaboration happens through runtime-managed sessions and session messages.
 - Risky tool calls still require explicit approval before mutating writes are applied.
+- Connector-bound front sessions can surface blocked approvals as conversational gates, letting the same chat collect approval or denial and resume the run.
+- Outbound delivery can carry transport-agnostic action buttons so chat connectors may offer deterministic approval controls without leaving the active conversation.
 
 ## Operator Surfaces
 
@@ -56,7 +58,7 @@ This document is the source of truth for what the repository ships today: packag
 
 ### Connectors
 
-- Telegram is wired through long polling and DM-focused control commands.
+- Telegram is wired through long polling, DM-focused control commands, chat-native approval/blocked-state replies, inline approval buttons, and command fallback that resume pending runs from the same DM.
 - WhatsApp is wired through a webhook handler plus outbound delivery.
 - Connector helper packages also exist for control-plane delivery plumbing and SMTP email, but bootstrap currently wires Telegram and WhatsApp for live runtime use.
 

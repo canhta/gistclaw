@@ -18,6 +18,7 @@ type MessageSender interface {
 
 type ConnectorRuntime interface {
 	ReceiveInboundMessage(ctx context.Context, req runtime.InboundMessageCommand) (model.Run, error)
+	HandleConversationGateReply(ctx context.Context, req runtime.ConversationGateReplyCommand) (runtime.ConversationGateReplyOutcome, error)
 	InspectConversation(ctx context.Context, key conversations.ConversationKey) (runtime.ConversationStatus, error)
 	ResetConversation(ctx context.Context, key conversations.ConversationKey) (runtime.ConversationResetOutcome, error)
 }
@@ -25,6 +26,7 @@ type ConnectorRuntime interface {
 type Connector struct {
 	outbound      *OutboundDispatcher
 	sender        MessageSender
+	rt            ConnectorRuntime
 	inbound       *InboundDispatcher
 	commands      *controlconnector.Dispatcher
 	drainInterval time.Duration
@@ -44,6 +46,7 @@ func NewConnector(
 	connector := &Connector{
 		outbound:      outbound,
 		sender:        outbound,
+		rt:            rt,
 		inbound:       inbound,
 		commands:      controlconnector.NewDispatcher(rt),
 		drainInterval: 250 * time.Millisecond,
@@ -117,6 +120,12 @@ func (c *Connector) handleUpdate(ctx context.Context, upd Update) {
 	}
 	if err := c.handleEnvelope(ctx, env); err != nil {
 		log.Printf("telegram: dispatch update: %v", err)
+		return
+	}
+	if upd.CallbackQuery != nil {
+		if err := c.outbound.bot.answerCallbackQuery(ctx, upd.CallbackQuery.ID); err != nil {
+			log.Printf("telegram: answer callback query: %v", err)
+		}
 	}
 }
 
@@ -127,6 +136,25 @@ func (c *Connector) handleEnvelope(ctx context.Context, env model.Envelope) erro
 	}
 	if handled {
 		return c.sender.Send(ctx, env.ConversationID, reply)
+	}
+
+	gateOutcome, err := c.rt.HandleConversationGateReply(ctx, runtime.ConversationGateReplyCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: env.ConnectorID,
+			AccountID:   env.AccountID,
+			ExternalID:  env.ConversationID,
+			ThreadID:    env.ThreadID,
+		},
+		Body:            env.Text,
+		SourceMessageID: env.MessageID,
+		ProjectID:       env.Metadata["project_id"],
+		CWD:             env.Metadata["cwd"],
+	})
+	if err != nil {
+		return err
+	}
+	if gateOutcome.Handled {
+		return nil
 	}
 	return c.inbound.Dispatch(ctx, env)
 }

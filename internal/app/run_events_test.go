@@ -102,7 +102,7 @@ func TestConnectorRouteNotifier_EmitsTurnDeltasToBoundConnector(t *testing.T) {
 	}
 }
 
-func TestConnectorRouteNotifier_RoutesWorkerApprovalRequestsToFrontBinding(t *testing.T) {
+func TestConnectorRouteNotifier_DoesNotForwardApprovalRequestsToConnectors(t *testing.T) {
 	db, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open db: %v", err)
@@ -162,13 +162,7 @@ func TestConnectorRouteNotifier_RoutesWorkerApprovalRequestsToFrontBinding(t *te
 		t.Fatalf("emit worker approval event: %v", err)
 	}
 
-	if connector.calls != 1 {
-		t.Fatalf("expected 1 connector notify call, got %d", connector.calls)
-	}
-	if connector.chatID != "chat-1" {
-		t.Fatalf("expected approval request to route to front chat %q, got %q", "chat-1", connector.chatID)
-	}
-	if connector.event.Kind != "approval_requested" {
-		t.Fatalf("expected approval_requested event, got %q", connector.event.Kind)
+	if connector.calls != 0 {
+		t.Fatalf("expected approval requests to stay on the runtime session/outbound path, got %d connector notify calls", connector.calls)
 	}
 }

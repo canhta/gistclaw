@@ -880,6 +880,9 @@ func (r *Runtime) executeToolCalls(
 			if err := r.appendApprovalRequested(ctx, conversationID, runID, tc, ticket, toolDecision.Reason); err != nil {
 				return outcome, err
 			}
+			if err := r.appendApprovalGate(ctx, conversationID, runID, sessionID, tc, ticket, toolDecision.Reason); err != nil {
+				return outcome, err
+			}
 			outcome.paused = true
 			return outcome, nil
 		default:
@@ -1080,6 +1083,166 @@ func (r *Runtime) appendApprovalRequested(
 			PayloadJSON: payload,
 			OccurredAt:  now,
 		})
+	}
+	return nil
+}
+
+func buildApprovalPromptTitle(tc model.ToolCallRequest) string {
+	if strings.TrimSpace(tc.ToolName) == "" {
+		return "Approval required"
+	}
+	return fmt.Sprintf("Approval required for %s", tc.ToolName)
+}
+
+func buildApprovalPromptBody(ticket model.ApprovalTicket, reason string) string {
+	lines := make([]string, 0, 4)
+	if summary := authority.BindingSummaryJSON(ticket.BindingJSON); strings.TrimSpace(summary) != "" {
+		lines = append(lines, fmt.Sprintf("Blocked action: %s.", summary))
+	}
+	if trimmedReason := strings.TrimSpace(reason); trimmedReason != "" {
+		lines = append(lines, trimmedReason+".")
+	}
+	lines = append(lines, "Reply naturally in any language to approve or deny it here.")
+	lines = append(lines, fmt.Sprintf("Command fallback: /approve %s allow-once or /approve %s deny", ticket.ID, ticket.ID))
+	return strings.Join(lines, "\n")
+}
+
+func buildApprovalPromptMetadata(ticket model.ApprovalTicket) ([]byte, error) {
+	return json.Marshal(model.OutboundIntentMetadata{
+		ActionButtons: []model.OutboundActionButton{
+			{
+				Label: "Approve",
+				Value: fmt.Sprintf("/approve %s allow-once", ticket.ID),
+			},
+			{
+				Label: "Deny",
+				Value: fmt.Sprintf("/approve %s deny", ticket.ID),
+			},
+		},
+	})
+}
+
+func buildApprovalResolutionBody(decision string) string {
+	switch decision {
+	case "approved":
+		return "Approved here in chat. Continuing the task."
+	case "denied":
+		return "Denied here in chat. The blocked action will be skipped."
+	default:
+		return "Updated the pending approval."
+	}
+}
+
+func (r *Runtime) appendConversationGateOpened(
+	ctx context.Context,
+	conversationID string,
+	runID string,
+	sessionID string,
+	ticket model.ApprovalTicket,
+	title string,
+	body string,
+) error {
+	payload, err := json.Marshal(map[string]any{
+		"gate_id":     ticket.ID,
+		"session_id":  sessionID,
+		"kind":        string(model.ConversationGateApproval),
+		"status":      string(model.ConversationGatePending),
+		"approval_id": ticket.ID,
+		"title":       title,
+		"body":        body,
+		"options":     []string{"approve", "deny"},
+		"metadata": map[string]any{
+			"tool_name": ticket.ToolName,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("marshal conversation_gate_opened payload: %w", err)
+	}
+	if err := r.convStore.AppendEvent(ctx, model.Event{
+		ID:             generateID(),
+		ConversationID: conversationID,
+		RunID:          runID,
+		Kind:           "conversation_gate_opened",
+		PayloadJSON:    payload,
+		CreatedAt:      time.Now().UTC(),
+	}); err != nil {
+		return fmt.Errorf("journal conversation_gate_opened: %w", err)
+	}
+	return nil
+}
+
+func (r *Runtime) appendConversationGateResolved(
+	ctx context.Context,
+	conversationID string,
+	runID string,
+	gateID string,
+	status string,
+	decision string,
+) error {
+	payload, err := json.Marshal(map[string]any{
+		"gate_id":  gateID,
+		"status":   status,
+		"decision": decision,
+	})
+	if err != nil {
+		return fmt.Errorf("marshal conversation_gate_resolved payload: %w", err)
+	}
+	if err := r.convStore.AppendEvent(ctx, model.Event{
+		ID:             generateID(),
+		ConversationID: conversationID,
+		RunID:          runID,
+		Kind:           "conversation_gate_resolved",
+		PayloadJSON:    payload,
+		CreatedAt:      time.Now().UTC(),
+	}); err != nil {
+		return fmt.Errorf("journal conversation_gate_resolved: %w", err)
+	}
+	return nil
+}
+
+func (r *Runtime) appendApprovalGate(
+	ctx context.Context,
+	conversationID string,
+	runID string,
+	sessionID string,
+	tc model.ToolCallRequest,
+	ticket model.ApprovalTicket,
+	reason string,
+) error {
+	title := buildApprovalPromptTitle(tc)
+	body := buildApprovalPromptBody(ticket, reason)
+	if err := r.appendConversationGateOpened(ctx, conversationID, runID, sessionID, ticket, title, body); err != nil {
+		return err
+	}
+	if sessionID == "" {
+		return nil
+	}
+	messageBody := title
+	if strings.TrimSpace(body) != "" {
+		messageBody += "\n" + body
+	}
+	metadataJSON, err := buildApprovalPromptMetadata(ticket)
+	if err != nil {
+		return err
+	}
+	messageID, err := r.appendSessionMessage(
+		ctx,
+		conversationID,
+		runID,
+		sessionID,
+		sessionID,
+		model.MessageAssistant,
+		messageBody,
+		model.SessionMessageProvenance{
+			Kind:        model.MessageProvenanceAssistantTurn,
+			SourceRunID: runID,
+		},
+	)
+	if err != nil {
+		return err
+	}
+	if err := r.queueConversationOutboundIntent(ctx, runID, conversationID, sessionID, messageID, messageBody, metadataJSON); err != nil {
+		return err
 	}
 	return nil
 }
@@ -1715,6 +1878,85 @@ func (r *Runtime) queueOutboundIntent(
 	return nil
 }
 
+func (r *Runtime) queueConversationOutboundIntent(
+	ctx context.Context,
+	runID string,
+	conversationID string,
+	sessionID string,
+	messageID string,
+	body string,
+	metadataJSON []byte,
+) error {
+	route, err := sessions.NewService(r.store, r.convStore).LoadRouteBySession(ctx, sessionID)
+	if err == sessions.ErrSessionRouteNotFound {
+		route, err = r.loadFrontConversationRoute(ctx, conversationID)
+	}
+	if err == ErrRouteNotFound || err == sessions.ErrSessionRouteNotFound {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("load conversation outbound route: %w", err)
+	}
+	if route.ConnectorID == "" || route.ConnectorID == "web" || route.ExternalID == "" {
+		return nil
+	}
+
+	dedupeKey := "session-message:" + messageID
+	var existing int
+	if err := r.store.RawDB().QueryRowContext(ctx,
+		"SELECT count(*) FROM outbound_intents WHERE dedupe_key = ?",
+		dedupeKey,
+	).Scan(&existing); err != nil {
+		return fmt.Errorf("check conversation outbound intent dedupe: %w", err)
+	}
+	if existing > 0 {
+		return nil
+	}
+
+	_, err = r.store.RawDB().ExecContext(ctx,
+		`INSERT INTO outbound_intents
+		 (id, run_id, connector_id, chat_id, message_text, metadata_json, dedupe_key, status, attempts, created_at)
+		 VALUES (?, ?, ?, ?, ?, COALESCE(?, '{}'), ?, 'pending', 0, datetime('now'))`,
+		generateID(), runID, route.ConnectorID, route.ExternalID, body, metadataJSON, dedupeKey,
+	)
+	if err != nil {
+		return fmt.Errorf("insert conversation outbound intent: %w", err)
+	}
+	return nil
+}
+
+func (r *Runtime) loadFrontConversationRoute(ctx context.Context, conversationID string) (model.SessionRoute, error) {
+	var route model.SessionRoute
+	err := r.store.RawDB().QueryRowContext(ctx,
+		`SELECT bind.id, bind.session_id, bind.thread_id, bind.connector_id, bind.account_id, bind.external_id,
+		        bind.status, bind.created_at
+		 FROM session_bindings bind
+		 JOIN sessions sess ON sess.id = bind.session_id
+		 WHERE bind.conversation_id = ? AND bind.status = 'active'
+		 ORDER BY CASE sess.role WHEN 'front' THEN 0 ELSE 1 END,
+		          bind.created_at DESC,
+		          bind.id DESC
+		 LIMIT 1`,
+		conversationID,
+	).Scan(
+		&route.ID,
+		&route.SessionID,
+		&route.ThreadID,
+		&route.ConnectorID,
+		&route.AccountID,
+		&route.ExternalID,
+		&route.Status,
+		&route.CreatedAt,
+	)
+	if err == sql.ErrNoRows {
+		return model.SessionRoute{}, ErrRouteNotFound
+	}
+	if err != nil {
+		return model.SessionRoute{}, err
+	}
+	return route, nil
+}
+
 // SubmitTask starts a new root run via the web interface, resolving the
 // web conversation key internally. This is the canonical entry point for
 // write-path web handlers.
@@ -1834,6 +2076,31 @@ func (r *Runtime) finishApprovalResolution(ctx context.Context, prepared approva
 
 	switch prepared.decision {
 	case "approved":
+		if err := r.appendConversationGateResolved(ctx, run.ConversationID, run.ID, ticket.ID, string(model.ConversationGateResolved), prepared.decision); err != nil {
+			return err
+		}
+		if run.SessionID != "" {
+			body := buildApprovalResolutionBody(prepared.decision)
+			messageID, err := r.appendSessionMessage(
+				ctx,
+				run.ConversationID,
+				run.ID,
+				run.SessionID,
+				run.SessionID,
+				model.MessageAssistant,
+				body,
+				model.SessionMessageProvenance{
+					Kind:        model.MessageProvenanceAssistantTurn,
+					SourceRunID: run.ID,
+				},
+			)
+			if err != nil {
+				return err
+			}
+			if err := r.queueConversationOutboundIntent(ctx, run.ID, run.ConversationID, run.SessionID, messageID, body, nil); err != nil {
+				return err
+			}
+		}
 		agent, err := r.agentProfileForRun(ctx, run.ID, run.AgentID)
 		if err != nil {
 			return err
@@ -1864,6 +2131,31 @@ func (r *Runtime) finishApprovalResolution(ctx context.Context, prepared approva
 		}
 		return r.resumeParentAfterChildTerminal(ctx, resumed)
 	case "denied":
+		if err := r.appendConversationGateResolved(ctx, run.ConversationID, run.ID, ticket.ID, string(model.ConversationGateResolved), prepared.decision); err != nil {
+			return err
+		}
+		if run.SessionID != "" {
+			body := buildApprovalResolutionBody(prepared.decision)
+			messageID, err := r.appendSessionMessage(
+				ctx,
+				run.ConversationID,
+				run.ID,
+				run.SessionID,
+				run.SessionID,
+				model.MessageAssistant,
+				body,
+				model.SessionMessageProvenance{
+					Kind:        model.MessageProvenanceAssistantTurn,
+					SourceRunID: run.ID,
+				},
+			)
+			if err != nil {
+				return err
+			}
+			if err := r.queueConversationOutboundIntent(ctx, run.ID, run.ConversationID, run.SessionID, messageID, body, nil); err != nil {
+				return err
+			}
+		}
 		agent, err := r.agentProfileForRun(ctx, run.ID, run.AgentID)
 		if err != nil {
 			return err

@@ -35,6 +35,32 @@ func newCollaborationRuntime(t *testing.T, responses []GenerateResult) (*Runtime
 	return rt, db
 }
 
+func newCollaborationRuntimeWithProviderAndTools(t *testing.T, prov *MockProvider) (*Runtime, *store.DB, *MockProvider) {
+	t.Helper()
+
+	db, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	cs := conversations.NewConversationStore(db)
+	mem := memory.NewStore(db, cs)
+	reg, closer, err := tools.BuildRegistry(context.Background(), tools.BuildOptions{})
+	if err != nil {
+		t.Fatalf("BuildRegistry failed: %v", err)
+	}
+	if closer != nil {
+		t.Cleanup(func() { _ = closer.Close() })
+	}
+
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	return rt, db, prov
+}
+
 func startFrontRun(t *testing.T, rt *Runtime, prompt string) model.Run {
 	t.Helper()
 
@@ -929,6 +955,390 @@ func TestRuntime_ReceiveInboundMessagePromotesNaturalPromptPreferencesIntoProjec
 	}
 	if got := items[0].Provenance; got != "prompt_preference_summary" {
 		t.Fatalf("expected prompt_preference_summary provenance, got %q", got)
+	}
+}
+
+func TestRuntime_ReceiveInboundMessageApprovalRequestCreatesConversationGateAndOutboundPrompt(t *testing.T) {
+	prov := NewMockProvider([]GenerateResult{
+		{
+			ToolCalls: []model.ToolCallRequest{
+				{ID: "call-touch", ToolName: "shell_exec", InputJSON: []byte(`{"command":"touch created.txt"}`)},
+			},
+			StopReason: "tool_calls",
+		},
+	}, nil)
+	rt, db, _ := newCollaborationRuntimeWithProviderAndTools(t, prov)
+	workspaceRoot := t.TempDir()
+	if err := rt.SetDefaultExecutionSnapshot(workspaceWriteSnapshot()); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	run, err := rt.ReceiveInboundMessage(context.Background(), InboundMessageCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		FrontAgentID:    "patcher",
+		Body:            "Please create created.txt",
+		SourceMessageID: "tg-gate-1",
+		CWD:             workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("ReceiveInboundMessage failed: %v", err)
+	}
+	if run.Status != model.RunStatusNeedsApproval {
+		t.Fatalf("expected needs_approval run, got %q", run.Status)
+	}
+
+	var gateID string
+	var gateKind string
+	var gateStatus string
+	var approvalID string
+	if err := db.RawDB().QueryRow(
+		`SELECT id, kind, status, COALESCE(approval_id, '')
+		 FROM conversation_gates
+		 WHERE run_id = ?
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		run.ID,
+	).Scan(&gateID, &gateKind, &gateStatus, &approvalID); err != nil {
+		t.Fatalf("query conversation gate: %v", err)
+	}
+	if gateID == "" || gateKind != "approval" || gateStatus != "pending" || approvalID == "" {
+		t.Fatalf("unexpected gate row id=%q kind=%q status=%q approval_id=%q", gateID, gateKind, gateStatus, approvalID)
+	}
+
+	var assistantPromptCount int
+	if err := db.RawDB().QueryRow(
+		`SELECT count(*)
+		 FROM session_messages
+		 WHERE session_id = ? AND kind = 'assistant'`,
+		run.SessionID,
+	).Scan(&assistantPromptCount); err != nil {
+		t.Fatalf("count assistant gate prompts: %v", err)
+	}
+	if assistantPromptCount == 0 {
+		t.Fatal("expected conversational gate prompt to be recorded as an assistant session message")
+	}
+
+	var outboundPromptCount int
+	if err := db.RawDB().QueryRow(
+		`SELECT count(*)
+		 FROM outbound_intents
+		 WHERE run_id = ?`,
+		run.ID,
+	).Scan(&outboundPromptCount); err != nil {
+		t.Fatalf("count outbound prompts: %v", err)
+	}
+	if outboundPromptCount == 0 {
+		t.Fatal("expected gate prompt to queue an outbound intent for the bound Telegram chat")
+	}
+
+	var metadataJSON string
+	if err := db.RawDB().QueryRow(
+		`SELECT COALESCE(metadata_json, '{}')
+		 FROM outbound_intents
+		 WHERE run_id = ?
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		run.ID,
+	).Scan(&metadataJSON); err != nil {
+		t.Fatalf("load approval prompt metadata: %v", err)
+	}
+	for _, want := range []string{`"action_buttons"`, `"/approve `, `"Deny"`, ` deny`} {
+		if !strings.Contains(metadataJSON, want) {
+			t.Fatalf("expected approval prompt metadata to include %q, got %s", want, metadataJSON)
+		}
+	}
+}
+
+func TestResolveApproval_ApprovedResolvesConversationGateForInboundTelegramRun(t *testing.T) {
+	prov := NewMockProvider([]GenerateResult{
+		{
+			ToolCalls: []model.ToolCallRequest{
+				{ID: "call-touch", ToolName: "shell_exec", InputJSON: []byte(`{"command":"touch created.txt"}`)},
+			},
+			StopReason: "tool_calls",
+		},
+		{Content: "Done.", StopReason: "end_turn"},
+	}, nil)
+	rt, db, _ := newCollaborationRuntimeWithProviderAndTools(t, prov)
+	workspaceRoot := t.TempDir()
+	if err := rt.SetDefaultExecutionSnapshot(workspaceWriteSnapshot()); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	run, err := rt.ReceiveInboundMessage(context.Background(), InboundMessageCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		FrontAgentID:    "patcher",
+		Body:            "Please create created.txt",
+		SourceMessageID: "tg-gate-2",
+		CWD:             workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("ReceiveInboundMessage failed: %v", err)
+	}
+
+	var gateID string
+	var approvalID string
+	if err := db.RawDB().QueryRow(
+		`SELECT id, COALESCE(approval_id, '')
+		 FROM conversation_gates
+		 WHERE run_id = ?
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		run.ID,
+	).Scan(&gateID, &approvalID); err != nil {
+		t.Fatalf("query conversation gate: %v", err)
+	}
+	if gateID == "" || approvalID == "" {
+		t.Fatalf("expected gate and approval ids, got gate=%q approval=%q", gateID, approvalID)
+	}
+
+	if err := rt.ResolveApproval(context.Background(), approvalID, "approved"); err != nil {
+		t.Fatalf("ResolveApproval failed: %v", err)
+	}
+
+	var gateStatus string
+	if err := db.RawDB().QueryRow(
+		`SELECT status
+		 FROM conversation_gates
+		 WHERE id = ?`,
+		gateID,
+	).Scan(&gateStatus); err != nil {
+		t.Fatalf("query resolved gate status: %v", err)
+	}
+	if gateStatus != "resolved" {
+		t.Fatalf("expected resolved gate status, got %q", gateStatus)
+	}
+}
+
+func TestRuntime_HandleConversationGateReplyApproveCommandBypassesResolverModel(t *testing.T) {
+	prov := NewMockProvider([]GenerateResult{
+		{
+			ToolCalls: []model.ToolCallRequest{
+				{ID: "call-touch", ToolName: "shell_exec", InputJSON: []byte(`{"command":"touch created.txt"}`)},
+			},
+			StopReason: "tool_calls",
+		},
+		{Content: "Done.", StopReason: "end_turn"},
+	}, nil)
+	rt, db, prov := newCollaborationRuntimeWithProviderAndTools(t, prov)
+	if err := rt.SetDefaultExecutionSnapshot(workspaceWriteSnapshot()); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+	workspaceRoot := t.TempDir()
+
+	run, err := rt.ReceiveInboundMessage(context.Background(), InboundMessageCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		FrontAgentID:    "patcher",
+		Body:            "Please create created.txt",
+		SourceMessageID: "tg-gate-3",
+		CWD:             workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("ReceiveInboundMessage failed: %v", err)
+	}
+
+	var approvalID string
+	if err := db.RawDB().QueryRow(
+		`SELECT approval_id
+		 FROM conversation_gates
+		 WHERE run_id = ?
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		run.ID,
+	).Scan(&approvalID); err != nil {
+		t.Fatalf("query gate approval id: %v", err)
+	}
+
+	outcome, err := rt.HandleConversationGateReply(context.Background(), ConversationGateReplyCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		Body:            "/approve " + approvalID + " allow-once",
+		SourceMessageID: "tg-gate-4",
+	})
+	if err != nil {
+		t.Fatalf("HandleConversationGateReply failed: %v", err)
+	}
+	if !outcome.Handled {
+		t.Fatal("expected approve command to be consumed by the active conversation gate")
+	}
+
+	rt.WaitAsync()
+
+	resolved, err := rt.loadRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("load resolved run: %v", err)
+	}
+	if resolved.Status != model.RunStatusCompleted {
+		t.Fatalf("expected run to complete after approval command, got %q", resolved.Status)
+	}
+
+	if got := len(prov.Requests); got != 2 {
+		t.Fatalf("expected 2 provider requests (initial run + resumed run) without gate resolver model call, got %d", got)
+	}
+}
+
+func TestRuntime_HandleConversationGateReplyClarifiesAmbiguousReplyWithoutStartingNewRun(t *testing.T) {
+	prov := NewMockProvider([]GenerateResult{
+		{
+			ToolCalls: []model.ToolCallRequest{
+				{ID: "call-touch", ToolName: "shell_exec", InputJSON: []byte(`{"command":"touch created.txt"}`)},
+			},
+			StopReason: "tool_calls",
+		},
+		{
+			Content:    `{"action":"clarify","confidence":"low","reply_text":"I couldn't tell whether you want to approve or deny that. Reply yes or no."}`,
+			StopReason: "end_turn",
+		},
+	}, nil)
+	rt, db, _ := newCollaborationRuntimeWithProviderAndTools(t, prov)
+	if err := rt.SetDefaultExecutionSnapshot(workspaceWriteSnapshot()); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+	workspaceRoot := t.TempDir()
+
+	run, err := rt.ReceiveInboundMessage(context.Background(), InboundMessageCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		FrontAgentID:    "patcher",
+		Body:            "Please create created.txt",
+		SourceMessageID: "tg-gate-5",
+		CWD:             workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("ReceiveInboundMessage failed: %v", err)
+	}
+
+	outcome, err := rt.HandleConversationGateReply(context.Background(), ConversationGateReplyCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		Body:            "maybe later",
+		SourceMessageID: "tg-gate-6",
+	})
+	if err != nil {
+		t.Fatalf("HandleConversationGateReply failed: %v", err)
+	}
+	if !outcome.Handled {
+		t.Fatal("expected ambiguous gate reply to be consumed by the active conversation gate")
+	}
+
+	refreshed, err := rt.loadRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatalf("load refreshed run: %v", err)
+	}
+	if refreshed.Status != model.RunStatusNeedsApproval {
+		t.Fatalf("expected run to remain blocked after ambiguous reply, got %q", refreshed.Status)
+	}
+
+	var runCount int
+	if err := db.RawDB().QueryRow(`SELECT count(*) FROM runs`).Scan(&runCount); err != nil {
+		t.Fatalf("count runs: %v", err)
+	}
+	if runCount != 1 {
+		t.Fatalf("expected no new run to start while clarifying a gate reply, got %d runs", runCount)
+	}
+
+	var latestAssistant string
+	if err := db.RawDB().QueryRow(
+		`SELECT body
+		 FROM session_messages
+		 WHERE session_id = ? AND kind = 'assistant'
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		run.SessionID,
+	).Scan(&latestAssistant); err != nil {
+		t.Fatalf("load latest assistant clarification: %v", err)
+	}
+	if !strings.Contains(latestAssistant, "approve or deny") {
+		t.Fatalf("expected clarification message in session history, got %q", latestAssistant)
+	}
+}
+
+func TestRuntime_HandleConversationGateReplyResolverPromptSupportsMultilingualReplies(t *testing.T) {
+	prov := NewMockProvider([]GenerateResult{
+		{
+			ToolCalls: []model.ToolCallRequest{
+				{ID: "call-touch", ToolName: "shell_exec", InputJSON: []byte(`{"command":"touch created.txt"}`)},
+			},
+			StopReason: "tool_calls",
+		},
+		{
+			Content:    `{"action":"clarify","confidence":"low","reply_text":"Tôi chưa rõ bạn muốn duyệt hay từ chối. Bạn có thể trả lời bằng bất kỳ ngôn ngữ nào."}`,
+			StopReason: "end_turn",
+		},
+	}, nil)
+	rt, _, prov := newCollaborationRuntimeWithProviderAndTools(t, prov)
+	if err := rt.SetDefaultExecutionSnapshot(workspaceWriteSnapshot()); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+	workspaceRoot := t.TempDir()
+
+	if _, err := rt.ReceiveInboundMessage(context.Background(), InboundMessageCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		FrontAgentID:    "patcher",
+		Body:            "Please create created.txt",
+		SourceMessageID: "tg-gate-7",
+		CWD:             workspaceRoot,
+	}); err != nil {
+		t.Fatalf("ReceiveInboundMessage failed: %v", err)
+	}
+
+	if _, err := rt.HandleConversationGateReply(context.Background(), ConversationGateReplyCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		Body:            "duyet nhe",
+		SourceMessageID: "tg-gate-8",
+	}); err != nil {
+		t.Fatalf("HandleConversationGateReply failed: %v", err)
+	}
+
+	if got := len(prov.Requests); got != 2 {
+		t.Fatalf("expected 2 provider requests, got %d", got)
+	}
+	instructions := prov.Requests[1].Instructions
+	for _, want := range []string{
+		"Interpret approvals and denials in any language",
+		"mixed-language replies",
+		"reply_text in the user's language",
+	} {
+		if !strings.Contains(instructions, want) {
+			t.Fatalf("expected multilingual gate resolver prompt to include %q, got:\n%s", want, instructions)
+		}
 	}
 }
 

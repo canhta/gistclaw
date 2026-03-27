@@ -283,6 +283,53 @@ func TestOutbound_ApprovalRequestedEventDelivers(t *testing.T) {
 	if !strings.Contains(got, "openclaw-sim/index.html") {
 		t.Fatalf("expected binding summary in approval message, got %q", got)
 	}
+	if strings.Contains(strings.ToLower(got), "web ui") {
+		t.Fatalf("expected approval message to stay native to Telegram, got %q", got)
+	}
+}
+
+func TestOutbound_DrainIntentWithActionButtonsSendsInlineKeyboard(t *testing.T) {
+	db := setupOutboundDB(t)
+	cs := conversations.NewConversationStore(db)
+
+	var delivered atomic.Int32
+	var replyMarkup string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "sendMessage") {
+			delivered.Add(1)
+			if err := r.ParseForm(); err != nil {
+				t.Fatalf("parse form: %v", err)
+			}
+			replyMarkup = r.Form.Get("reply_markup")
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":6}}`))
+		}
+	}))
+	defer srv.Close()
+
+	dispatcher := NewOutboundDispatcher("testtoken", db, cs)
+	dispatcher.bot.apiBase = srv.URL + "/bot"
+
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO outbound_intents
+		 (id, run_id, connector_id, chat_id, message_text, metadata_json, dedupe_key, status, attempts, created_at)
+		 VALUES ('intent-buttons', 'run-buttons', 'telegram', '446', 'Approval required', '{"action_buttons":[{"label":"Approve","value":"/approve ticket-1 allow-once"},{"label":"Deny","value":"/approve ticket-1 deny"}]}', 'dedupe-buttons', 'pending', 0, datetime('now'))`,
+	); err != nil {
+		t.Fatalf("seed outbound intent: %v", err)
+	}
+
+	if err := dispatcher.Drain(context.Background()); err != nil {
+		t.Fatalf("Drain: %v", err)
+	}
+
+	if delivered.Load() != 1 {
+		t.Fatalf("expected 1 sendMessage call, got %d", delivered.Load())
+	}
+	for _, want := range []string{`"inline_keyboard"`, `"Approve"`, `"/approve ticket-1 allow-once"`, `"Deny"`} {
+		if !strings.Contains(replyMarkup, want) {
+			t.Fatalf("expected reply_markup to include %q, got %s", want, replyMarkup)
+		}
+	}
 }
 
 func TestOutbound_TurnDeltasFlushAsTelegramDrafts(t *testing.T) {

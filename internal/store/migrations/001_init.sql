@@ -120,6 +120,28 @@ CREATE TABLE IF NOT EXISTS approvals (
     resolved_at DATETIME
 );
 
+CREATE TABLE IF NOT EXISTS conversation_gates (
+    id TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    approval_id TEXT,
+    title TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL DEFAULT '',
+    options_json BLOB NOT NULL DEFAULT '[]',
+    metadata_json BLOB NOT NULL DEFAULT '{}',
+    language_hint TEXT,
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    resolved_at DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_gates_conversation_status_created_at
+    ON conversation_gates(conversation_id, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_conversation_gates_run_id_status
+    ON conversation_gates(run_id, status, created_at);
+
 CREATE TABLE IF NOT EXISTS receipts (
     id TEXT PRIMARY KEY,
     run_id TEXT NOT NULL UNIQUE,
@@ -155,6 +177,7 @@ CREATE TABLE IF NOT EXISTS outbound_intents (
     connector_id TEXT NOT NULL,
     chat_id TEXT NOT NULL,
     message_text TEXT NOT NULL,
+    metadata_json BLOB NOT NULL DEFAULT '{}',
     dedupe_key TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     attempts INTEGER DEFAULT 0,

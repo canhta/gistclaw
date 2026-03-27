@@ -29,6 +29,10 @@ func (s *stubFrontSessionStarter) ReceiveInboundMessage(_ context.Context, req r
 	return model.Run{ID: "run-front", SessionID: "session-front"}, nil
 }
 
+func (s *stubFrontSessionStarter) HandleConversationGateReply(context.Context, runtime.ConversationGateReplyCommand) (runtime.ConversationGateReplyOutcome, error) {
+	return runtime.ConversationGateReplyOutcome{}, nil
+}
+
 func (s *stubFrontSessionStarter) callCount() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

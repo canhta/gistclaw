@@ -114,9 +114,9 @@ func formatConversationStatus(status runtime.ConversationStatus) string {
 	}
 
 	if status.PendingApprovals == 1 {
-		lines = append(lines, "1 pending approval needs attention in the web UI.")
+		lines = append(lines, "1 pending approval is waiting for a reply in this chat.")
 	} else if status.PendingApprovals > 1 {
-		lines = append(lines, fmt.Sprintf("%d pending approvals need attention in the web UI.", status.PendingApprovals))
+		lines = append(lines, fmt.Sprintf("%d pending approvals are waiting for replies in this chat.", status.PendingApprovals))
 	}
 
 	return strings.Join(lines, "\n")
