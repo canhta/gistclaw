@@ -77,13 +77,13 @@ func (p *blockingProvider) Generate(ctx context.Context, _ GenerateRequest, _ St
 	return GenerateResult{}, ctx.Err()
 }
 
-type workspaceAwareTool struct {
-	root string
+type cwdAwareTool struct {
+	cwd string
 }
 
-func (t *workspaceAwareTool) Name() string { return "workspace_aware" }
+func (t *cwdAwareTool) Name() string { return "cwd_aware" }
 
-func (t *workspaceAwareTool) Spec() model.ToolSpec {
+func (t *cwdAwareTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:       t.Name(),
 		Risk:       model.RiskLow,
@@ -91,12 +91,12 @@ func (t *workspaceAwareTool) Spec() model.ToolSpec {
 	}
 }
 
-func (t *workspaceAwareTool) Invoke(ctx context.Context, _ model.ToolCall) (model.ToolResult, error) {
+func (t *cwdAwareTool) Invoke(ctx context.Context, _ model.ToolCall) (model.ToolResult, error) {
 	meta, ok := tools.InvocationContextFrom(ctx)
 	if !ok {
 		return model.ToolResult{}, fmt.Errorf("missing invocation context")
 	}
-	t.root = meta.WorkspaceRoot
+	t.cwd = meta.CWD
 	return model.ToolResult{Output: `{"ok":true}`}, nil
 }
 
@@ -163,7 +163,7 @@ func TestRunEngine_StartAndComplete(t *testing.T) {
 		ConversationID: "conv-1",
 		AgentID:        "agent-a",
 		Objective:      "test task",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -192,7 +192,7 @@ func TestRunEngine_FailsHungProviderTurnsAfterTimeout(t *testing.T) {
 		ConversationID: "conv-hung-provider",
 		AgentID:        "assistant",
 		Objective:      "coordinate a task",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err == nil {
 		t.Fatal("expected provider timeout error")
@@ -233,7 +233,7 @@ func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
 		ConversationID: "conv-visible-tools",
 		AgentID:        "assistant",
 		Objective:      "coordinate the task",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{
 			TeamID: "default",
 			Agents: map[string]model.AgentProfile{
@@ -287,7 +287,7 @@ func TestRunEngine_AdvertisesCoderExecToWorkspaceWriteAgent(t *testing.T) {
 		ConversationID: "conv-patcher-tools",
 		AgentID:        "patcher",
 		Objective:      "write the change",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{
 			TeamID: "default",
 			Agents: map[string]model.AgentProfile{
@@ -375,7 +375,7 @@ func TestRunEngine_SessionSpawnToolCreatesChildRun(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Coordinate research.",
-		CWD: t.TempDir(),
+		CWD:           t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
@@ -483,7 +483,7 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Coordinate the delivery workflow.",
-		CWD: workspaceRoot,
+		CWD:           workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
@@ -718,7 +718,7 @@ func TestRunEngine_SessionSpawnInterruptsParentWhenChildInterrupts(t *testing.T)
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Coordinate the delivery workflow.",
-		CWD: t.TempDir(),
+		CWD:           t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
@@ -822,7 +822,7 @@ func TestRunEngine_IncludesSoulInstructionsInProviderRequests(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Coordinate research.",
-		CWD: t.TempDir(),
+		CWD:           t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
@@ -897,7 +897,7 @@ func TestRunEngine_ApprovalRequestedEmitsReplayDelta(t *testing.T) {
 		ConversationID: "conv-approval-replay",
 		AgentID:        "patcher",
 		Objective:      "mutate shell",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{
 			TeamID: "default",
 			Agents: map[string]model.AgentProfile{
@@ -939,7 +939,7 @@ func TestRunEngine_ContinueAndResumeLoadRun(t *testing.T) {
 		ConversationID: "conv-continue",
 		AgentID:        "agent-a",
 		Objective:      "finish task",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -993,9 +993,9 @@ func TestRunEngine_SubmitTaskStartsWebConversation(t *testing.T) {
 	}
 }
 
-func TestRunEngine_PassesWorkspaceRootIntoToolInvocationContext(t *testing.T) {
+func TestRunEngine_PassesCWDIntoToolInvocationContext(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	tool := &workspaceAwareTool{}
+	tool := &cwdAwareTool{}
 	reg.Register(tool)
 	prov := NewMockProvider(
 		[]GenerateResult{
@@ -1016,12 +1016,12 @@ func TestRunEngine_PassesWorkspaceRootIntoToolInvocationContext(t *testing.T) {
 		ConversationID: "conv-workspace-tool",
 		AgentID:        "agent-a",
 		Objective:      "use tool",
-		CWD:  workspaceRoot,
+		CWD:            workspaceRoot,
 	}); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
-	if tool.root != workspaceRoot {
-		t.Fatalf("expected tool to receive workspace root %q, got %q", workspaceRoot, tool.root)
+	if tool.cwd != workspaceRoot {
+		t.Fatalf("expected tool to receive cwd %q, got %q", workspaceRoot, tool.cwd)
 	}
 }
 
@@ -1034,7 +1034,7 @@ func TestRunEngine_EmitsTurnDeltasToEventSink(t *testing.T) {
 		ConversationID: "conv-stream",
 		AgentID:        "agent-a",
 		Objective:      "stream text",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1099,7 +1099,7 @@ func TestRunEngine_LifecycleEventsJournaled(t *testing.T) {
 		ConversationID: "conv-2",
 		AgentID:        "agent-a",
 		Objective:      "lifecycle test",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1159,7 +1159,7 @@ func TestRunEngine_PersistsProviderModelID(t *testing.T) {
 		ConversationID: "conv-model-id",
 		AgentID:        "agent-a",
 		Objective:      "persist model identity",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1210,7 +1210,7 @@ func TestRunEngine_StartRollsBackWhenRunStartedEventFails(t *testing.T) {
 		ConversationID: "conv-atomic-start",
 		AgentID:        "agent-a",
 		Objective:      "should rollback",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err == nil {
 		t.Fatal("expected start error, got nil")
@@ -1255,7 +1255,7 @@ func TestRunEngine_RunCompletedAndReceiptAreAtomic(t *testing.T) {
 		ConversationID: "conv-atomic-complete",
 		AgentID:        "agent-a",
 		Objective:      "should fail on receipt",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err == nil {
 		t.Fatal("expected completion error, got nil")
@@ -1301,7 +1301,7 @@ func TestRunEngine_NeverWritesToStoreDirectly(t *testing.T) {
 		ConversationID: "conv-3",
 		AgentID:        "agent-a",
 		Objective:      "store test",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1343,7 +1343,7 @@ func TestRunEngine_RejectsCompetingRootRun(t *testing.T) {
 		ConversationID: "conv-busy",
 		AgentID:        "agent-b",
 		Objective:      "should be blocked",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err == nil {
 		t.Fatal("expected competing root run error, got nil")
@@ -1384,7 +1384,7 @@ func TestBudgetGuard_PerRunCapExhaustion(t *testing.T) {
 		ConversationID: "conv-budget-1",
 		AgentID:        "agent-a",
 		Objective:      "budget test",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1425,7 +1425,7 @@ func TestBudgetGuard_DailyCapBlocksNewRun(t *testing.T) {
 		ConversationID: "conv-daily-cap",
 		AgentID:        "agent-a",
 		Objective:      "should be blocked",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 		AccountID:      "local",
 	})
 	if err == nil {
@@ -1459,7 +1459,7 @@ func TestBudgetGuard_RollingWindow_NotUTCMidnight(t *testing.T) {
 		ConversationID: "conv-rolling",
 		AgentID:        "agent-a",
 		Objective:      "should be blocked by rolling window",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 		AccountID:      "local",
 	})
 	if err == nil {
@@ -1492,7 +1492,7 @@ func TestRunEngine_ContextCompaction_At75Percent(t *testing.T) {
 		ConversationID: "conv-compact",
 		AgentID:        "agent-a",
 		Objective:      "compaction test",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1528,7 +1528,7 @@ func TestRunEngine_InterruptsOnEmptyNonTerminalTurn(t *testing.T) {
 		ConversationID: "conv-empty-nonterminal",
 		AgentID:        "agent-a",
 		Objective:      "should not hang forever",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err == nil {
 		t.Fatal("expected empty non-terminal turn to interrupt the run")
@@ -1568,7 +1568,7 @@ func TestRunEngine_MemoryContextReadIsJournaled(t *testing.T) {
 		ConversationID: "conv-memory-read",
 		AgentID:        "agent-a",
 		Objective:      "journal memory reads",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1602,7 +1602,7 @@ func TestRunEngine_DoesNotPromoteOrdinaryCompletedRootRunIntoProjectMemory(t *te
 		ConversationID: "conv-memory-promotion",
 		AgentID:        "assistant",
 		Objective:      "Ship the launch page",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1651,7 +1651,7 @@ func TestRunEngine_PromotesExplicitMemoryRequestIntoProjectMemory(t *testing.T) 
 		ConversationID: "conv-memory-explicit",
 		AgentID:        "assistant",
 		Objective:      "Remember this for future runs: the repo uses pnpm workspaces.",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1703,7 +1703,7 @@ func TestRunEngine_DoesNotPromoteVagueExplicitMemoryPromptIntoProjectMemory(t *t
 		ConversationID: "conv-memory-vague",
 		AgentID:        "assistant",
 		Objective:      "Remember this for future runs.",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1749,7 +1749,7 @@ func TestRunEngine_PromotesNaturalPromptPreferencesIntoProjectMemory(t *testing.
 		ConversationID: "conv-memory-natural",
 		AgentID:        "assistant",
 		Objective:      "Please create a tiny static developer notes page. Keep the tone technical and aimed at developers evaluating self-hosted assistants. If tooling is needed, prefer bun-based workflows and keep lockfile churn isolated. Use Codex CLI for code changes, then review and verify before wrapping up.",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1786,7 +1786,7 @@ func TestRunEngine_PromotesNaturalPromptPreferencesBeforeRunSucceeds(t *testing.
 		ConversationID: "conv-memory-natural-fail",
 		AgentID:        "assistant",
 		Objective:      "Please create a tiny static developer notes page. Keep the tone technical and aimed at developers evaluating self-hosted assistants. If tooling is needed, prefer bun-based workflows and keep lockfile churn isolated. Use Codex CLI for code changes, then review and verify before wrapping up.",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err == nil {
 		t.Fatal("expected provider timeout error")
@@ -1845,7 +1845,7 @@ func TestRunEngine_ExecutesToolCallsAndCarriesResultsIntoNextTurn(t *testing.T) 
 		ConversationID: "conv-tool-loop",
 		AgentID:        "agent-a",
 		Objective:      "Inspect README and summarize it",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -1943,7 +1943,7 @@ func TestRunEngine_ProviderInstructionsIncludeWorkspaceSnapshot(t *testing.T) {
 		ConversationID: "conv-workspace-context",
 		AgentID:        "agent-a",
 		Objective:      "review the repo",
-		CWD:  workspaceRoot,
+		CWD:            workspaceRoot,
 	}); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -1955,7 +1955,7 @@ func TestRunEngine_ProviderInstructionsIncludeWorkspaceSnapshot(t *testing.T) {
 	instructions := prov.Requests[0].Instructions
 	for _, want := range []string{
 		"review the repo",
-		"Workspace root:",
+		"Working directory:",
 		"README.md",
 		"go.mod",
 		"module example.com/demo",
@@ -1990,7 +1990,7 @@ func TestRunEngine_JournalsToolLogsAndEmitsReplayDeltas(t *testing.T) {
 		ConversationID: "conv-tool-log",
 		AgentID:        "assistant",
 		Objective:      "capture tool logs",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -2063,7 +2063,7 @@ func TestStartFrontSession_ProviderContextUsesSessionMailboxNotConversationWideE
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "First prompt.",
-		CWD: workspaceRoot,
+		CWD:           workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("first StartFrontSession failed: %v", err)
@@ -2086,7 +2086,7 @@ func TestStartFrontSession_ProviderContextUsesSessionMailboxNotConversationWideE
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Second prompt.",
-		CWD: workspaceRoot,
+		CWD:           workspaceRoot,
 	}); err != nil {
 		t.Fatalf("second StartFrontSession failed: %v", err)
 	}

@@ -19,16 +19,16 @@ type ToolLogSink interface {
 }
 
 type InvocationContext struct {
-	WorkspaceRoot string
-	SessionID     string
-	Agent         model.AgentProfile
-	ApprovalID    string
-	LogSink       ToolLogSink
+	CWD        string
+	SessionID  string
+	Agent      model.AgentProfile
+	ApprovalID string
+	LogSink    ToolLogSink
 }
 
 type invocationContextKey struct{}
 
-var ErrWorkspaceRequired = fmt.Errorf("tools: workspace root is required")
+var ErrCWDRequired = fmt.Errorf("tools: cwd is required")
 
 func WithInvocationContext(ctx context.Context, meta InvocationContext) context.Context {
 	return context.WithValue(ctx, invocationContextKey{}, meta)
@@ -39,12 +39,12 @@ func InvocationContextFrom(ctx context.Context) (InvocationContext, bool) {
 	return meta, ok
 }
 
-func workspaceRootFromContext(ctx context.Context) (string, error) {
+func cwdFromContext(ctx context.Context) (string, error) {
 	meta, ok := InvocationContextFrom(ctx)
-	if !ok || meta.WorkspaceRoot == "" {
-		return "", ErrWorkspaceRequired
+	if !ok || meta.CWD == "" {
+		return "", ErrCWDRequired
 	}
-	return meta.WorkspaceRoot, nil
+	return meta.CWD, nil
 }
 
 func toolLogSinkFromContext(ctx context.Context) ToolLogSink {

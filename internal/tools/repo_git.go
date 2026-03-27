@@ -23,11 +23,11 @@ func NewGitStatusTool(timeoutSec int, maxOutputBytes int) *GitStatusTool {
 func (t *GitStatusTool) Name() string { return "git_status" }
 
 func (t *GitStatusTool) Spec() model.ToolSpec {
-	return gitSpec(t.Name(), "Show git status for the workspace repository.")
+	return gitSpec(t.Name(), "Show git status for the repository in the current working directory.")
 }
 
 func (t *GitStatusTool) Invoke(ctx context.Context, _ model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -48,11 +48,11 @@ func NewGitDiffTool(timeoutSec int, maxOutputBytes int) *GitDiffTool {
 func (t *GitDiffTool) Name() string { return "git_diff" }
 
 func (t *GitDiffTool) Spec() model.ToolSpec {
-	return gitSpec(t.Name(), "Show git diff output for the workspace repository.")
+	return gitSpec(t.Name(), "Show git diff output for the repository in the current working directory.")
 }
 
 func (t *GitDiffTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -81,11 +81,11 @@ func NewGitShowTool(timeoutSec int, maxOutputBytes int) *GitShowTool {
 func (t *GitShowTool) Name() string { return "git_show" }
 
 func (t *GitShowTool) Spec() model.ToolSpec {
-	return gitSpec(t.Name(), "Show one git object or revision from the workspace repository.")
+	return gitSpec(t.Name(), "Show one git object or revision from the repository in the current working directory.")
 }
 
 func (t *GitShowTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -114,11 +114,11 @@ func NewGitLogTool(timeoutSec int, maxOutputBytes int) *GitLogTool {
 func (t *GitLogTool) Name() string { return "git_log" }
 
 func (t *GitLogTool) Spec() model.ToolSpec {
-	return gitSpec(t.Name(), "Show recent commit history from the workspace repository.")
+	return gitSpec(t.Name(), "Show recent commit history from the repository in the current working directory.")
 }
 
 func (t *GitLogTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}

@@ -597,12 +597,12 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			return model.Run{}, err
 		}
 		providerReq, err := r.contexts.Assemble(ctx, ContextAssemblyInput{
-			SessionID:     sessionID,
-			AgentID:       agentID,
-			Agent:         agentProfile,
-			Objective:     objective,
-			CWD:           cwd,
-			MemoryView:    contextView,
+			SessionID:  sessionID,
+			AgentID:    agentID,
+			Agent:      agentProfile,
+			Objective:  objective,
+			CWD:        cwd,
+			MemoryView: contextView,
 		})
 		if err != nil {
 			return model.Run{}, err
@@ -965,10 +965,10 @@ func (r *Runtime) recordToolCall(
 			result.Error = "tool not found"
 		} else {
 			invokeCtx := tools.WithInvocationContext(ctx, tools.InvocationContext{
-				WorkspaceRoot: cwd,
-				SessionID:     sessionID,
-				Agent:         agent,
-				ApprovalID:    approvalID,
+				CWD:        cwd,
+				SessionID:  sessionID,
+				Agent:      agent,
+				ApprovalID: approvalID,
 				LogSink: toolInvocationLogSink{
 					convStore:      r.convStore,
 					eventSink:      r.eventSink,

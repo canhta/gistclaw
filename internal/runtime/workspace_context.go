@@ -11,14 +11,14 @@ import (
 )
 
 const (
-	workspaceTreeMaxDepth     = 2
-	workspaceTreeMaxEntries   = 200
-	workspaceFileMaxChars     = 4000
-	workspaceTotalFileChars   = 16000
-	workspaceTruncationNotice = "\n\n[truncated, inspect the file in the workspace for the full contents]"
+	directoryTreeMaxDepth     = 2
+	directoryTreeMaxEntries   = 200
+	directoryFileMaxChars     = 4000
+	directoryTotalFileChars   = 16000
+	directoryTruncationNotice = "\n\n[truncated, inspect the file in the working directory for the full contents]"
 )
 
-var workspaceContextCandidates = []string{
+var directoryContextCandidates = []string{
 	"AGENTS.md",
 	"README.md",
 	"README",
@@ -40,7 +40,7 @@ var workspaceContextCandidates = []string{
 	".github/workflows/*.yaml",
 }
 
-var workspaceTreeSkipDirs = map[string]bool{
+var directoryTreeSkipDirs = map[string]bool{
 	".git":         true,
 	".next":        true,
 	".turbo":       true,
@@ -53,87 +53,87 @@ var workspaceTreeSkipDirs = map[string]bool{
 	"vendor":       true,
 }
 
-type WorkspaceContextLoader interface {
-	Load(ctx context.Context, workspaceRoot string) (WorkspaceContext, error)
+type DirectoryContextLoader interface {
+	Load(ctx context.Context, root string) (DirectoryContext, error)
 }
 
-type WorkspaceContext struct {
+type DirectoryContext struct {
 	Root  string
 	Tree  []string
-	Files []WorkspaceContextFile
+	Files []DirectoryContextFile
 }
 
-type WorkspaceContextFile struct {
+type DirectoryContextFile struct {
 	Path    string
 	Content string
 }
 
-type workspaceContextLoader struct{}
+type directoryContextLoader struct{}
 
-func newWorkspaceContextLoader() *workspaceContextLoader {
-	return &workspaceContextLoader{}
+func newDirectoryContextLoader() *directoryContextLoader {
+	return &directoryContextLoader{}
 }
 
-func (l *workspaceContextLoader) Load(ctx context.Context, workspaceRoot string) (WorkspaceContext, error) {
-	root := strings.TrimSpace(workspaceRoot)
+func (l *directoryContextLoader) Load(ctx context.Context, root string) (DirectoryContext, error) {
+	root = strings.TrimSpace(root)
 	if root == "" {
-		return WorkspaceContext{}, nil
+		return DirectoryContext{}, nil
 	}
 
 	root = filepath.Clean(root)
 	info, err := os.Stat(root)
 	if err != nil {
-		return WorkspaceContext{}, fmt.Errorf("stat %q: %w", root, err)
+		return DirectoryContext{}, fmt.Errorf("stat %q: %w", root, err)
 	}
 	if !info.IsDir() {
-		return WorkspaceContext{}, fmt.Errorf("workspace root %q is not a directory", root)
+		return DirectoryContext{}, fmt.Errorf("working directory %q is not a directory", root)
 	}
 
-	tree, err := buildWorkspaceTree(ctx, root)
+	tree, err := buildDirectoryTree(ctx, root)
 	if err != nil {
-		return WorkspaceContext{}, err
+		return DirectoryContext{}, err
 	}
-	files, err := loadWorkspaceContextFiles(ctx, root)
+	files, err := loadDirectoryContextFiles(ctx, root)
 	if err != nil {
-		return WorkspaceContext{}, err
+		return DirectoryContext{}, err
 	}
 
-	return WorkspaceContext{
+	return DirectoryContext{
 		Root:  root,
 		Tree:  tree,
 		Files: files,
 	}, nil
 }
 
-func buildWorkspaceTree(ctx context.Context, workspaceRoot string) ([]string, error) {
-	lines := make([]string, 0, workspaceTreeMaxEntries)
-	err := filepath.WalkDir(workspaceRoot, func(path string, d fs.DirEntry, err error) error {
+func buildDirectoryTree(ctx context.Context, root string) ([]string, error) {
+	lines := make([]string, 0, directoryTreeMaxEntries)
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if path == workspaceRoot {
+		if path == root {
 			return nil
 		}
 
-		rel, err := filepath.Rel(workspaceRoot, path)
+		rel, err := filepath.Rel(root, path)
 		if err != nil {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
 		depth := strings.Count(rel, "/") + 1
-		if d.IsDir() && workspaceTreeSkipDirs[d.Name()] {
+		if d.IsDir() && directoryTreeSkipDirs[d.Name()] {
 			return filepath.SkipDir
 		}
-		if depth > workspaceTreeMaxDepth {
+		if depth > directoryTreeMaxDepth {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if len(lines) >= workspaceTreeMaxEntries {
+		if len(lines) >= directoryTreeMaxEntries {
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -148,20 +148,20 @@ func buildWorkspaceTree(ctx context.Context, workspaceRoot string) ([]string, er
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("build workspace tree: %w", err)
+		return nil, fmt.Errorf("build directory tree: %w", err)
 	}
 	sort.Strings(lines)
 	return lines, nil
 }
 
-func loadWorkspaceContextFiles(ctx context.Context, workspaceRoot string) ([]WorkspaceContextFile, error) {
-	paths, err := resolveWorkspaceContextPaths(workspaceRoot)
+func loadDirectoryContextFiles(ctx context.Context, root string) ([]DirectoryContextFile, error) {
+	paths, err := resolveDirectoryContextPaths(root)
 	if err != nil {
 		return nil, err
 	}
 
-	files := make([]WorkspaceContextFile, 0, len(paths))
-	remainingChars := workspaceTotalFileChars
+	files := make([]DirectoryContextFile, 0, len(paths))
+	remainingChars := directoryTotalFileChars
 	for _, absPath := range paths {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -171,17 +171,17 @@ func loadWorkspaceContextFiles(ctx context.Context, workspaceRoot string) ([]Wor
 		}
 		content, err := os.ReadFile(absPath)
 		if err != nil {
-			return nil, fmt.Errorf("read workspace context file %q: %w", absPath, err)
+			return nil, fmt.Errorf("read directory context file %q: %w", absPath, err)
 		}
-		relPath, err := filepath.Rel(workspaceRoot, absPath)
+		relPath, err := filepath.Rel(root, absPath)
 		if err != nil {
-			return nil, fmt.Errorf("rel workspace context path %q: %w", absPath, err)
+			return nil, fmt.Errorf("rel directory context path %q: %w", absPath, err)
 		}
-		text := truncateWorkspaceContent(string(content), remainingChars)
+		text := truncateDirectoryContent(string(content), remainingChars)
 		if text == "" {
 			continue
 		}
-		files = append(files, WorkspaceContextFile{
+		files = append(files, DirectoryContextFile{
 			Path:    filepath.ToSlash(relPath),
 			Content: text,
 		})
@@ -191,13 +191,13 @@ func loadWorkspaceContextFiles(ctx context.Context, workspaceRoot string) ([]Wor
 	return files, nil
 }
 
-func resolveWorkspaceContextPaths(workspaceRoot string) ([]string, error) {
+func resolveDirectoryContextPaths(root string) ([]string, error) {
 	seen := make(map[string]bool)
-	paths := make([]string, 0, len(workspaceContextCandidates))
-	for _, pattern := range workspaceContextCandidates {
-		matches, err := filepath.Glob(filepath.Join(workspaceRoot, pattern))
+	paths := make([]string, 0, len(directoryContextCandidates))
+	for _, pattern := range directoryContextCandidates {
+		matches, err := filepath.Glob(filepath.Join(root, pattern))
 		if err != nil {
-			return nil, fmt.Errorf("glob workspace context files %q: %w", pattern, err)
+			return nil, fmt.Errorf("glob directory context files %q: %w", pattern, err)
 		}
 		sort.Strings(matches)
 		for _, match := range matches {
@@ -206,7 +206,7 @@ func resolveWorkspaceContextPaths(workspaceRoot string) ([]string, error) {
 			}
 			info, err := os.Stat(match)
 			if err != nil {
-				return nil, fmt.Errorf("stat workspace context file %q: %w", match, err)
+				return nil, fmt.Errorf("stat directory context file %q: %w", match, err)
 			}
 			if info.IsDir() {
 				continue
@@ -218,7 +218,7 @@ func resolveWorkspaceContextPaths(workspaceRoot string) ([]string, error) {
 	return paths, nil
 }
 
-func truncateWorkspaceContent(content string, budget int) string {
+func truncateDirectoryContent(content string, budget int) string {
 	if budget <= 0 {
 		return ""
 	}
@@ -227,24 +227,24 @@ func truncateWorkspaceContent(content string, budget int) string {
 		return ""
 	}
 
-	limit := workspaceFileMaxChars
+	limit := directoryFileMaxChars
 	if budget < limit {
 		limit = budget
 	}
 	if len(content) <= limit {
 		return content
 	}
-	if limit <= len(workspaceTruncationNotice) {
+	if limit <= len(directoryTruncationNotice) {
 		return content[:limit]
 	}
-	return content[:limit-len(workspaceTruncationNotice)] + workspaceTruncationNotice
+	return content[:limit-len(directoryTruncationNotice)] + directoryTruncationNotice
 }
 
-func renderWorkspaceFileBlock(path string, content string) string {
-	return fmt.Sprintf("<file name=\"%s\">\n%s\n</file>", escapeWorkspaceFileAttr(path), escapeWorkspaceFileContent(content))
+func renderDirectoryFileBlock(path string, content string) string {
+	return fmt.Sprintf("<file name=\"%s\">\n%s\n</file>", escapeDirectoryFileAttr(path), escapeDirectoryFileContent(content))
 }
 
-func escapeWorkspaceFileAttr(value string) string {
+func escapeDirectoryFileAttr(value string) string {
 	replacer := strings.NewReplacer(
 		"&", "&amp;",
 		"<", "&lt;",
@@ -255,7 +255,7 @@ func escapeWorkspaceFileAttr(value string) string {
 	return replacer.Replace(strings.TrimSpace(value))
 }
 
-func escapeWorkspaceFileContent(value string) string {
+func escapeDirectoryFileContent(value string) string {
 	value = strings.ReplaceAll(value, "</file>", "&lt;/file&gt;")
 	value = strings.ReplaceAll(value, "<file", "&lt;file")
 	return value

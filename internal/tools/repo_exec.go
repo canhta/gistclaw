@@ -320,7 +320,7 @@ func (t *ApplyPatchTool) Name() string { return "apply_patch" }
 func (t *ApplyPatchTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Apply one unified diff patch inside the workspace root.",
+		Description:     "Apply one unified diff patch inside the current working directory.",
 		InputSchemaJSON: `{"type":"object","properties":{"patch":{"type":"string"}},"required":["patch"]}`,
 		Risk:            model.RiskMedium,
 		SideEffect:      effectPatch,
@@ -329,7 +329,7 @@ func (t *ApplyPatchTool) Spec() model.ToolSpec {
 }
 
 func (t *ApplyPatchTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -364,7 +364,7 @@ func (t *ShellExecTool) Name() string { return "shell_exec" }
 func (t *ShellExecTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Run one shell command inside the workspace root or a child directory.",
+		Description:     "Run one shell command inside the current working directory or a child directory.",
 		InputSchemaJSON: `{"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"timeout_sec":{"type":"integer","minimum":1}},"required":["command"]}`,
 		Risk:            model.RiskHigh,
 		SideEffect:      effectExecWrite,
@@ -373,7 +373,7 @@ func (t *ShellExecTool) Spec() model.ToolSpec {
 }
 
 func (t *ShellExecTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -392,7 +392,7 @@ func (t *ShellExecTool) Invoke(ctx context.Context, call model.ToolCall) (model.
 	}
 	cwd := root
 	if strings.TrimSpace(input.CWD) != "" {
-		cwd, _, err = resolveWorkspacePath(root, input.CWD)
+		cwd, _, err = resolveScopedPath(root, input.CWD)
 		if err != nil {
 			return model.ToolResult{}, fmt.Errorf("shell_exec: cwd: %w", err)
 		}
@@ -472,7 +472,7 @@ func (t *RunTestsTool) Name() string { return "run_tests" }
 func (t *RunTestsTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Run the repository's default test command from the workspace root.",
+		Description:     "Run the repository's default test command from the current working directory.",
 		InputSchemaJSON: `{"type":"object","properties":{"target":{"type":"string"}}}`,
 		Risk:            model.RiskLow,
 		SideEffect:      effectExecRead,
@@ -481,7 +481,7 @@ func (t *RunTestsTool) Spec() model.ToolSpec {
 }
 
 func (t *RunTestsTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -516,7 +516,7 @@ func (t *RunBuildTool) Name() string { return "run_build" }
 func (t *RunBuildTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Run the repository's default build command from the workspace root.",
+		Description:     "Run the repository's default build command from the current working directory.",
 		InputSchemaJSON: `{"type":"object","properties":{"target":{"type":"string"}}}`,
 		Risk:            model.RiskLow,
 		SideEffect:      effectExecRead,
@@ -525,7 +525,7 @@ func (t *RunBuildTool) Spec() model.ToolSpec {
 }
 
 func (t *RunBuildTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}

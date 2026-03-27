@@ -23,7 +23,7 @@ func (t *ListDirTool) Name() string { return "list_dir" }
 func (t *ListDirTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "List direct children under one workspace-relative directory.",
+		Description:     "List direct children under one path relative to the current working directory.",
 		InputSchemaJSON: `{"type":"object","properties":{"path":{"type":"string"}}}`,
 		Risk:            model.RiskLow,
 		SideEffect:      effectRead,
@@ -32,7 +32,7 @@ func (t *ListDirTool) Spec() model.ToolSpec {
 }
 
 func (t *ListDirTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -42,7 +42,7 @@ func (t *ListDirTool) Invoke(ctx context.Context, call model.ToolCall) (model.To
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("list_dir: decode input: %w", err)
 	}
-	absPath, relPath, err := resolveWorkspacePath(root, input.Path)
+	absPath, relPath, err := resolveScopedPath(root, input.Path)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("list_dir: %w", err)
 	}
@@ -109,7 +109,7 @@ func (t *ReadFileTool) Name() string { return "read_file" }
 func (t *ReadFileTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Read one workspace-relative text file, optionally restricted to a line range.",
+		Description:     "Read one text file relative to the current working directory, optionally restricted to a line range.",
 		InputSchemaJSON: `{"type":"object","properties":{"path":{"type":"string"},"start_line":{"type":"integer","minimum":1},"end_line":{"type":"integer","minimum":1},"max_bytes":{"type":"integer","minimum":1}},"required":["path"]}`,
 		Risk:            model.RiskLow,
 		SideEffect:      effectRead,
@@ -118,7 +118,7 @@ func (t *ReadFileTool) Spec() model.ToolSpec {
 }
 
 func (t *ReadFileTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -131,7 +131,7 @@ func (t *ReadFileTool) Invoke(ctx context.Context, call model.ToolCall) (model.T
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("read_file: decode input: %w", err)
 	}
-	absPath, relPath, err := resolveWorkspacePath(root, input.Path)
+	absPath, relPath, err := resolveScopedPath(root, input.Path)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("read_file: %w", err)
 	}
@@ -213,7 +213,7 @@ func (t *GrepSearchTool) Name() string { return "grep_search" }
 func (t *GrepSearchTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Recursively search workspace files for a substring and return matching lines.",
+		Description:     "Recursively search files under the current working directory for a substring and return matching lines.",
 		InputSchemaJSON: `{"type":"object","properties":{"query":{"type":"string"},"path":{"type":"string"},"glob":{"type":"string"},"max_matches":{"type":"integer","minimum":1}},"required":["query"]}`,
 		Risk:            model.RiskLow,
 		SideEffect:      effectRead,
@@ -222,7 +222,7 @@ func (t *GrepSearchTool) Spec() model.ToolSpec {
 }
 
 func (t *GrepSearchTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -239,7 +239,7 @@ func (t *GrepSearchTool) Invoke(ctx context.Context, call model.ToolCall) (model
 	if query == "" {
 		return model.ToolResult{}, fmt.Errorf("grep_search: query is required")
 	}
-	absPath, relPath, err := resolveWorkspacePath(root, input.Path)
+	absPath, relPath, err := resolveScopedPath(root, input.Path)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("grep_search: %w", err)
 	}
@@ -336,7 +336,7 @@ func (t *WriteNewFileTool) Name() string { return "write_new_file" }
 func (t *WriteNewFileTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Create one new workspace-relative file and fail if it already exists.",
+		Description:     "Create one new file relative to the current working directory and fail if it already exists.",
 		InputSchemaJSON: `{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"]}`,
 		Risk:            model.RiskMedium,
 		SideEffect:      effectCreate,
@@ -345,7 +345,7 @@ func (t *WriteNewFileTool) Spec() model.ToolSpec {
 }
 
 func (t *WriteNewFileTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -356,7 +356,7 @@ func (t *WriteNewFileTool) Invoke(ctx context.Context, call model.ToolCall) (mod
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("write_new_file: decode input: %w", err)
 	}
-	absPath, relPath, err := resolveWorkspacePath(root, input.Path)
+	absPath, relPath, err := resolveScopedPath(root, input.Path)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("write_new_file: %w", err)
 	}
@@ -393,7 +393,7 @@ func (t *DeletePathTool) Name() string { return "delete_path" }
 func (t *DeletePathTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Delete one workspace-relative file or directory tree.",
+		Description:     "Delete one file or directory tree under the current working directory.",
 		InputSchemaJSON: `{"type":"object","properties":{"path":{"type":"string"}},"required":["path"]}`,
 		Risk:            model.RiskHigh,
 		SideEffect:      effectDelete,
@@ -402,7 +402,7 @@ func (t *DeletePathTool) Spec() model.ToolSpec {
 }
 
 func (t *DeletePathTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -412,7 +412,7 @@ func (t *DeletePathTool) Invoke(ctx context.Context, call model.ToolCall) (model
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("delete_path: decode input: %w", err)
 	}
-	absPath, relPath, err := resolveWorkspacePath(root, input.Path)
+	absPath, relPath, err := resolveScopedPath(root, input.Path)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("delete_path: %w", err)
 	}
@@ -441,7 +441,7 @@ func (t *MovePathTool) Name() string { return "move_path" }
 func (t *MovePathTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Move or rename one workspace-relative file or directory.",
+		Description:     "Move or rename one file or directory under the current working directory.",
 		InputSchemaJSON: `{"type":"object","properties":{"from":{"type":"string"},"to":{"type":"string"}},"required":["from","to"]}`,
 		Risk:            model.RiskHigh,
 		SideEffect:      effectMove,
@@ -450,7 +450,7 @@ func (t *MovePathTool) Spec() model.ToolSpec {
 }
 
 func (t *MovePathTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -461,11 +461,11 @@ func (t *MovePathTool) Invoke(ctx context.Context, call model.ToolCall) (model.T
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("move_path: decode input: %w", err)
 	}
-	fromAbs, fromRel, err := resolveWorkspacePath(root, input.From)
+	fromAbs, fromRel, err := resolveScopedPath(root, input.From)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("move_path: from: %w", err)
 	}
-	toAbs, toRel, err := resolveWorkspacePath(root, input.To)
+	toAbs, toRel, err := resolveScopedPath(root, input.To)
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("move_path: to: %w", err)
 	}

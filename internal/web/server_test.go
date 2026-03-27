@@ -364,7 +364,6 @@ func TestRuns(t *testing.T) {
 		front, err := sessionSvc.OpenFrontSession(context.Background(), sessions.OpenFrontSession{
 			ConversationID: "conv-map",
 			AgentID:        "assistant",
-			WorkspaceRoot:  h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("OpenFrontSession failed: %v", err)
@@ -3104,7 +3103,6 @@ func TestSessionAPI(t *testing.T) {
 		front, err := sessionSvc.OpenFrontSession(context.Background(), sessions.OpenFrontSession{
 			ConversationID: "conv-manual-bind",
 			AgentID:        "assistant",
-			WorkspaceRoot:  h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("OpenFrontSession failed: %v", err)
@@ -4724,8 +4722,8 @@ func (t *blockingCoderExecTool) Spec() model.ToolSpec {
 
 func (t *blockingCoderExecTool) Invoke(ctx context.Context, _ model.ToolCall) (model.ToolResult, error) {
 	meta, ok := tools.InvocationContextFrom(ctx)
-	if !ok || meta.WorkspaceRoot == "" {
-		return model.ToolResult{}, tools.ErrWorkspaceRequired
+	if !ok || meta.CWD == "" {
+		return model.ToolResult{}, tools.ErrCWDRequired
 	}
 	select {
 	case <-t.started:
@@ -4737,7 +4735,7 @@ func (t *blockingCoderExecTool) Invoke(ctx context.Context, _ model.ToolCall) (m
 	case <-ctx.Done():
 		return model.ToolResult{}, ctx.Err()
 	}
-	if err := os.WriteFile(filepath.Join(meta.WorkspaceRoot, "created.txt"), []byte("created by blocking coder\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(meta.CWD, "created.txt"), []byte("created by blocking coder\n"), 0o644); err != nil {
 		return model.ToolResult{}, err
 	}
 	return model.ToolResult{

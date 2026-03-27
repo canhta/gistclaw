@@ -7,9 +7,9 @@ import (
 	"strings"
 )
 
-func resolveWorkspacePath(root, rawPath string) (string, string, error) {
+func resolveScopedPath(root, rawPath string) (string, string, error) {
 	if root == "" {
-		return "", "", ErrWorkspaceRequired
+		return "", "", ErrCWDRequired
 	}
 	if strings.ContainsRune(rawPath, 0) {
 		return "", "", ErrEscapeAttempt
@@ -17,11 +17,11 @@ func resolveWorkspacePath(root, rawPath string) (string, string, error) {
 
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return "", "", fmt.Errorf("tools: abs workspace root: %w", err)
+		return "", "", fmt.Errorf("tools: abs cwd: %w", err)
 	}
 	realRoot, err := filepath.EvalSymlinks(absRoot)
 	if err != nil {
-		return "", "", fmt.Errorf("tools: eval workspace root: %w", err)
+		return "", "", fmt.Errorf("tools: eval cwd: %w", err)
 	}
 	realRoot = filepath.Clean(realRoot)
 

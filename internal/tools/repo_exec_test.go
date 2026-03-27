@@ -40,15 +40,15 @@ func TestCommandRunner_StreamsToolLogs(t *testing.T) {
 	shell := mustShellRequest(t, "printf 'line one\\nline two\\n'; printf 'warn one\\n' >&2")
 	sink := &recordingToolLogSink{}
 	ctx := WithInvocationContext(context.Background(), InvocationContext{
-		WorkspaceRoot: root,
-		LogSink:       sink,
+		CWD:     root,
+		LogSink: sink,
 	})
 
 	got, err := runner.run(ctx, commandRequest{
 		command: shell.command,
 		args:    shell.args,
-		cwd:    root,
-		effect: effectExecWrite,
+		cwd:     root,
+		effect:  effectExecWrite,
 	})
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -95,16 +95,16 @@ func TestCommandRunner_StreamsPTYTerminalLogs(t *testing.T) {
 	shell := mustShellRequest(t, "printf '\\033[31mred\\033[0m\\n'; printf 'warn\\n' >&2")
 	sink := &recordingToolLogSink{}
 	ctx := WithInvocationContext(context.Background(), InvocationContext{
-		WorkspaceRoot: root,
-		LogSink:       sink,
+		CWD:     root,
+		LogSink: sink,
 	})
 
 	got, err := runner.run(ctx, commandRequest{
 		command: shell.command,
 		args:    shell.args,
-		cwd:    root,
-		effect: effectExecWrite,
-		usePTY: true,
+		cwd:     root,
+		effect:  effectExecWrite,
+		usePTY:  true,
 	})
 	if err != nil {
 		t.Fatalf("run: %v", err)

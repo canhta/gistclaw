@@ -33,7 +33,7 @@ func TestCoderExecTool_InvokeBuildsCodexCommand(t *testing.T) {
 		newCodexCoderBackend("codex"),
 	}, runner)
 
-	got, err := tool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+	got, err := tool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 		ID:       "call-coder",
 		ToolName: tool.Name(),
 		InputJSON: []byte(`{
@@ -51,9 +51,9 @@ func TestCoderExecTool_InvokeBuildsCodexCommand(t *testing.T) {
 	if runner.req.command != "codex" {
 		t.Fatalf("expected codex command, got %q", runner.req.command)
 	}
-	wantCWD, _, err := resolveWorkspacePath(root, "project")
+	wantCWD, _, err := resolveScopedPath(root, "project")
 	if err != nil {
-		t.Fatalf("resolveWorkspacePath: %v", err)
+		t.Fatalf("resolveScopedPath: %v", err)
 	}
 	if runner.req.cwd != wantCWD {
 		t.Fatalf("expected cwd %q, got %q", wantCWD, runner.req.cwd)
@@ -150,7 +150,7 @@ func TestCoderExecTool_InvokeHonorsExplicitSkipGitRepoCheckFalse(t *testing.T) {
 		newCodexCoderBackend("codex"),
 	}, runner)
 
-	if _, err := tool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+	if _, err := tool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 		ID:       "call-coder",
 		ToolName: tool.Name(),
 		InputJSON: []byte(`{
@@ -177,7 +177,7 @@ func TestCoderExecTool_InvokeBuildsClaudeCodeCommand(t *testing.T) {
 		newClaudeCodeBackend("claude"),
 	}, runner)
 
-	got, err := tool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+	got, err := tool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 		ID:       "call-coder",
 		ToolName: tool.Name(),
 		InputJSON: []byte(`{
@@ -189,9 +189,9 @@ func TestCoderExecTool_InvokeBuildsClaudeCodeCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	wantCWD, _, err := resolveWorkspacePath(root, "project")
+	wantCWD, _, err := resolveScopedPath(root, "project")
 	if err != nil {
-		t.Fatalf("resolveWorkspacePath: %v", err)
+		t.Fatalf("resolveScopedPath: %v", err)
 	}
 	if runner.req.command != "claude" {
 		t.Fatalf("expected claude command, got %q", runner.req.command)
@@ -244,7 +244,7 @@ func TestCoderExecTool_InvokeRejectsUnknownBackend(t *testing.T) {
 		newCodexCoderBackend("codex"),
 	}, &recordingCommandRunner{})
 
-	_, err := tool.Invoke(withWorkspaceContext(context.Background(), t.TempDir()), model.ToolCall{
+	_, err := tool.Invoke(withToolContext(context.Background(), t.TempDir()), model.ToolCall{
 		ID:        "call-coder",
 		ToolName:  tool.Name(),
 		InputJSON: []byte(`{"backend":"claude_code","prompt":"Build it"}`),

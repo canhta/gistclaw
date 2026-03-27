@@ -38,7 +38,7 @@ You were dispatched as a subagent to execute a specific task.
 The operator already approved this execution. Do not ask the user questions.
 Skip any startup skill or workflow that only applies to top-level interactive sessions, including using-superpowers.
 Do not start brainstorming, design review, clarification, or visual companion flows.
-Do not wait for more input. Make reasonable assumptions, perform the requested workspace changes now, then print a short summary of what changed or the concrete blocker.`
+Do not wait for more input. Make reasonable assumptions, perform the requested code or file changes now, then print a short summary of what changed or the concrete blocker.`
 
 func NewCoderExecTool(timeoutSec int, maxOutputBytes int) *CoderExecTool {
 	return newCoderExecTool([]coderBackend{
@@ -84,7 +84,7 @@ func (t *CoderExecTool) Spec() model.ToolSpec {
 }
 
 func (t *CoderExecTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
-	root, err := workspaceRootFromContext(ctx)
+	root, err := cwdFromContext(ctx)
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -116,7 +116,7 @@ func (t *CoderExecTool) Invoke(ctx context.Context, call model.ToolCall) (model.
 	cwd := root
 	if strings.TrimSpace(input.CWD) != "" {
 		var resolveErr error
-		cwd, _, resolveErr = resolveWorkspacePath(root, input.CWD)
+		cwd, _, resolveErr = resolveScopedPath(root, input.CWD)
 		if resolveErr != nil {
 			return model.ToolResult{}, fmt.Errorf("coder_exec: cwd: %w", resolveErr)
 		}

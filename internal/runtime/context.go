@@ -17,43 +17,43 @@ type ContextAssembler interface {
 }
 
 type ContextAssemblyInput struct {
-	SessionID     string
-	AgentID       string
-	Agent         model.AgentProfile
-	Objective     string
-	CWD           string
-	MemoryView    memory.ContextView
+	SessionID  string
+	AgentID    string
+	Agent      model.AgentProfile
+	Objective  string
+	CWD        string
+	MemoryView memory.ContextView
 }
 
 type defaultContextAssembler struct {
 	store         *store.DB
 	convStore     *conversations.ConversationStore
-	workspaceLoad WorkspaceContextLoader
+	directoryLoad DirectoryContextLoader
 }
 
 func newDefaultContextAssembler(
 	db *store.DB,
 	cs *conversations.ConversationStore,
-	workspaceLoad WorkspaceContextLoader,
+	directoryLoad DirectoryContextLoader,
 ) *defaultContextAssembler {
-	if workspaceLoad == nil {
-		workspaceLoad = newWorkspaceContextLoader()
+	if directoryLoad == nil {
+		directoryLoad = newDirectoryContextLoader()
 	}
 	return &defaultContextAssembler{
 		store:         db,
 		convStore:     cs,
-		workspaceLoad: workspaceLoad,
+		directoryLoad: directoryLoad,
 	}
 }
 
 func (a *defaultContextAssembler) Assemble(ctx context.Context, input ContextAssemblyInput) (GenerateRequest, error) {
-	workspace, err := a.workspaceLoad.Load(ctx, input.CWD)
+	directory, err := a.directoryLoad.Load(ctx, input.CWD)
 	if err != nil {
-		return GenerateRequest{}, fmt.Errorf("assemble provider request: workspace context: %w", err)
+		return GenerateRequest{}, fmt.Errorf("assemble provider request: directory context: %w", err)
 	}
 
 	req := GenerateRequest{
-		Instructions: composeInstructions(input.Objective, input.Agent, input.MemoryView, workspace),
+		Instructions: composeInstructions(input.Objective, input.Agent, input.MemoryView, directory),
 	}
 	if input.SessionID == "" {
 		return req, nil
@@ -70,7 +70,7 @@ func (a *defaultContextAssembler) Assemble(ctx context.Context, input ContextAss
 	return req, nil
 }
 
-func composeInstructions(objective string, agent model.AgentProfile, contextView memory.ContextView, workspace WorkspaceContext) string {
+func composeInstructions(objective string, agent model.AgentProfile, contextView memory.ContextView, directory DirectoryContext) string {
 	parts := []string{"Objective:\n" + objective}
 
 	agentParts := make([]string, 0, 6)
@@ -93,19 +93,19 @@ func composeInstructions(objective string, agent model.AgentProfile, contextView
 		parts = append(parts, "Agent contract:\n"+strings.Join(agentParts, "\n"))
 	}
 
-	if workspace.Root != "" {
-		workspaceParts := []string{"Workspace root:\n" + workspace.Root}
-		if len(workspace.Tree) > 0 {
-			workspaceParts = append(workspaceParts, "Workspace tree:\n"+strings.Join(workspace.Tree, "\n"))
+	if directory.Root != "" {
+		directoryParts := []string{"Working directory:\n" + directory.Root}
+		if len(directory.Tree) > 0 {
+			directoryParts = append(directoryParts, "Directory tree:\n"+strings.Join(directory.Tree, "\n"))
 		}
-		if len(workspace.Files) > 0 {
-			fileBlocks := make([]string, 0, len(workspace.Files))
-			for _, file := range workspace.Files {
-				fileBlocks = append(fileBlocks, renderWorkspaceFileBlock(file.Path, file.Content))
+		if len(directory.Files) > 0 {
+			fileBlocks := make([]string, 0, len(directory.Files))
+			for _, file := range directory.Files {
+				fileBlocks = append(fileBlocks, renderDirectoryFileBlock(file.Path, file.Content))
 			}
-			workspaceParts = append(workspaceParts, "Workspace context:\n"+strings.Join(fileBlocks, "\n\n"))
+			directoryParts = append(directoryParts, "Directory context:\n"+strings.Join(fileBlocks, "\n\n"))
 		}
-		parts = append(parts, strings.Join(workspaceParts, "\n\n"))
+		parts = append(parts, strings.Join(directoryParts, "\n\n"))
 	}
 
 	if contextView.Summary.Content != "" {

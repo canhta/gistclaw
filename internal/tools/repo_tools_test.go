@@ -12,14 +12,14 @@ import (
 	"github.com/canhta/gistclaw/internal/model"
 )
 
-func TestResolveWorkspacePath_RejectsSymlinkEscape(t *testing.T) {
+func TestResolveScopedPath_RejectsSymlinkEscape(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
 		t.Fatalf("symlink: %v", err)
 	}
 
-	_, _, err := resolveWorkspacePath(root, "link/secret.txt")
+	_, _, err := resolveScopedPath(root, "link/secret.txt")
 	if err == nil {
 		t.Fatal("expected symlink escape to fail")
 	}
@@ -66,7 +66,7 @@ func TestListDir_ReturnsWorkspaceRelativeEntries(t *testing.T) {
 	writeWorkspaceFile(t, root, "cmd/app.go", "package main\n")
 
 	tool := NewListDirTool()
-	got, err := tool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+	got, err := tool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 		ID:        "call-list",
 		ToolName:  tool.Name(),
 		InputJSON: []byte(`{"path":"."}`),
@@ -105,7 +105,7 @@ func TestReadFile_ReturnsRequestedLineRange(t *testing.T) {
 	writeWorkspaceFile(t, root, "notes.txt", "one\ntwo\nthree\nfour\n")
 
 	tool := NewReadFileTool(1024)
-	got, err := tool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+	got, err := tool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 		ID:        "call-read",
 		ToolName:  tool.Name(),
 		InputJSON: []byte(`{"path":"notes.txt","start_line":2,"end_line":3}`),
@@ -140,7 +140,7 @@ func TestGrepSearch_FindsMatchesUnderWorkspaceRoot(t *testing.T) {
 	writeWorkspaceFile(t, root, "docs/guide.md", "needle there too\n")
 
 	tool := NewGrepSearchTool(64 << 10)
-	got, err := tool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+	got, err := tool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 		ID:        "call-grep",
 		ToolName:  tool.Name(),
 		InputJSON: []byte(`{"query":"needle","path":"."}`),
@@ -172,7 +172,7 @@ func TestWriteNewFile_CreatesMissingFile(t *testing.T) {
 	root := t.TempDir()
 	tool := NewWriteNewFileTool()
 
-	got, err := tool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+	got, err := tool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 		ID:        "call-create",
 		ToolName:  tool.Name(),
 		InputJSON: []byte(`{"path":"docs/new.txt","content":"hello\n"}`),
@@ -201,7 +201,7 @@ func TestMoveAndDeletePath_UpdateWorkspace(t *testing.T) {
 	writeWorkspaceFile(t, root, "tmp/a.txt", "hello\n")
 
 	moveTool := NewMovePathTool()
-	if _, err := moveTool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+	if _, err := moveTool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 		ID:        "call-move",
 		ToolName:  moveTool.Name(),
 		InputJSON: []byte(`{"from":"tmp/a.txt","to":"tmp/b.txt"}`),
@@ -213,7 +213,7 @@ func TestMoveAndDeletePath_UpdateWorkspace(t *testing.T) {
 	}
 
 	deleteTool := NewDeletePathTool()
-	if _, err := deleteTool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+	if _, err := deleteTool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 		ID:        "call-delete",
 		ToolName:  deleteTool.Name(),
 		InputJSON: []byte(`{"path":"tmp/b.txt"}`),
@@ -240,7 +240,7 @@ func TestApplyPatch_UpdatesExistingFile(t *testing.T) {
 		"+world",
 		"",
 	}, "\n")
-	if _, err := tool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+	if _, err := tool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 		ID:        "call-patch",
 		ToolName:  tool.Name(),
 		InputJSON: []byte(`{"patch":` + quoteJSONString(patch) + `}`),
@@ -256,7 +256,7 @@ func TestShellExec_RunsInsideWorkspaceRoot(t *testing.T) {
 	root := t.TempDir()
 	tool := NewShellExecTool(30, 64<<10)
 
-	got, err := tool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+	got, err := tool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 		ID:        "call-shell",
 		ToolName:  tool.Name(),
 		InputJSON: []byte(`{"command":"pwd"}`),
@@ -296,7 +296,7 @@ func TestRunTestsAndBuild_DefaultToGoTooling(t *testing.T) {
 	writeWorkspaceFile(t, root, "main_test.go", "package main\n\nimport \"testing\"\n\nfunc TestOK(t *testing.T) {}\n")
 
 	testsTool := NewRunTestsTool(60, 64<<10)
-	testResult, err := testsTool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+	testResult, err := testsTool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 		ID:        "call-tests",
 		ToolName:  testsTool.Name(),
 		InputJSON: []byte(`{}`),
@@ -306,7 +306,7 @@ func TestRunTestsAndBuild_DefaultToGoTooling(t *testing.T) {
 	}
 
 	buildTool := NewRunBuildTool(60, 64<<10)
-	buildResult, err := buildTool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+	buildResult, err := buildTool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 		ID:        "call-build",
 		ToolName:  buildTool.Name(),
 		InputJSON: []byte(`{}`),
@@ -359,7 +359,7 @@ func TestGitTools_InspectRepository(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := tc.tool.Invoke(withWorkspaceContext(context.Background(), root), model.ToolCall{
+			got, err := tc.tool.Invoke(withToolContext(context.Background(), root), model.ToolCall{
 				ID:        "call-" + tc.name,
 				ToolName:  tc.tool.Name(),
 				InputJSON: []byte(tc.input),
@@ -398,8 +398,8 @@ func TestPolicy_DecideCall_HandlesShellEffects(t *testing.T) {
 	}
 }
 
-func withWorkspaceContext(ctx context.Context, root string) context.Context {
-	return WithInvocationContext(ctx, InvocationContext{WorkspaceRoot: root})
+func withToolContext(ctx context.Context, root string) context.Context {
+	return WithInvocationContext(ctx, InvocationContext{CWD: root})
 }
 
 func writeWorkspaceFile(t *testing.T, root, relPath, content string) {
