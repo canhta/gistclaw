@@ -43,3 +43,20 @@ func TestIncomingMessageFromProtocolMessage(t *testing.T) {
 		t.Fatal("expected direct message")
 	}
 }
+
+func TestIncomingMessageFromProtocolMessageIgnoresNonTextDM(t *testing.T) {
+	t.Parallel()
+
+	msg := protocol.NewUserMessage("acct-1", protocol.TMessage{
+		MsgID:   "msg-2",
+		UIDFrom: "user-2",
+		IDTo:    "acct-1",
+		Content: protocol.Content{
+			Raw: []byte(`{"title":"report.pdf","href":"https://example.com/report.pdf"}`),
+		},
+	})
+
+	if incoming, ok := incomingMessageFromProtocolMessage("acct-1", "vi", msg); ok {
+		t.Fatalf("expected non-text DM to be ignored, got %+v", incoming)
+	}
+}

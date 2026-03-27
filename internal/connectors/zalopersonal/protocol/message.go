@@ -135,11 +135,7 @@ func (m UserMessage) MessageID() string { return m.Data.MsgID }
 func (m UserMessage) SenderID() string { return m.Data.UIDFrom }
 
 func (m UserMessage) Text() string {
-	text := strings.TrimSpace(m.Data.Content.Text())
-	if text != "" {
-		return text
-	}
-	return strings.TrimSpace(m.Data.Content.AttachmentText())
+	return strings.TrimSpace(m.Data.Content.Text())
 }
 
 func (m UserMessage) IsSelf() bool { return m.isSelf }
