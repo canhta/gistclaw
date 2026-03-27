@@ -137,6 +137,46 @@ func TestLayoutDefinesUnifiedControlHeight(t *testing.T) {
 	}
 }
 
+func TestLayoutWrapsMonoContentToAvoidResponsiveOverflow(t *testing.T) {
+	t.Parallel()
+
+	body, err := os.ReadFile(templatePath(t, "layout.html"))
+	if err != nil {
+		t.Fatalf("read layout template: %v", err)
+	}
+
+	content := string(body)
+	for _, want := range []string{
+		".mono {",
+		"overflow-wrap: anywhere;",
+		"word-break: break-word;",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected layout template to contain %q", want)
+		}
+	}
+}
+
+func TestLayoutShowsDirectoryCardsAtTabletWidths(t *testing.T) {
+	t.Parallel()
+
+	body, err := os.ReadFile(templatePath(t, "layout.html"))
+	if err != nil {
+		t.Fatalf("read layout template: %v", err)
+	}
+
+	content := string(body)
+	for _, want := range []string{
+		"@media (max-width: 959px) {",
+		".desktop-table {",
+		".directory-card-list {",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("expected layout template to contain %q", want)
+		}
+	}
+}
+
 func TestLayoutDefinesCompactUtilityButtonHeight(t *testing.T) {
 	t.Parallel()
 

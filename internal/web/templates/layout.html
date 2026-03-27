@@ -464,12 +464,16 @@
       font-family: var(--font-mono);
       font-size: 12px;
       line-height: 1.6;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .mono-strong {
       font-family: var(--font-mono);
       font-size: 13px;
       font-weight: 500;
       line-height: 1.6;
+      overflow-wrap: anywhere;
+      word-break: break-word;
     }
     .muted {
       color: var(--text-2);
@@ -2039,6 +2043,14 @@
         grid-template-columns: repeat(3, minmax(0, 1fr));
       }
     }
+    @media (max-width: 959px) {
+      .desktop-table {
+        display: none;
+      }
+      .directory-card-list {
+        display: grid;
+      }
+    }
     @media (max-width: 767px) {
       .shell-header {
         padding: 8px 16px;
@@ -2091,12 +2103,6 @@
       }
       .team-primary-actions {
         justify-content: flex-start;
-      }
-      .desktop-table {
-        display: none;
-      }
-      .directory-card-list {
-        display: grid;
       }
       .shell-toolbar {
         margin-left: 0;
