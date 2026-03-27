@@ -59,6 +59,24 @@ func DecodeAESCBC(key []byte, data string) ([]byte, error) {
 	return plain, nil
 }
 
+func DecodeAESGCM(key, iv, aad, ct []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("zalo personal protocol: new cipher: %w", err)
+	}
+
+	gcm, err := cipher.NewGCMWithNonceSize(block, 16)
+	if err != nil {
+		return nil, fmt.Errorf("zalo personal protocol: new gcm: %w", err)
+	}
+
+	plain, err := gcm.Open(nil, iv, ct, aad)
+	if err != nil {
+		return nil, fmt.Errorf("zalo personal protocol: gcm open: %w", err)
+	}
+	return plain, nil
+}
+
 func pkcs7Pad(data []byte, blockSize int) ([]byte, error) {
 	if blockSize <= 0 {
 		return nil, errInvalidBlockSize

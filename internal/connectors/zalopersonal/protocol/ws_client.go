@@ -1,10 +1,36 @@
 package protocol
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+
+	"github.com/gorilla/websocket"
 )
+
+type WSClient struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+func DialWS(ctx context.Context, wsURL string, headers http.Header, jar http.CookieJar) (*WSClient, error) {
+	dialer := websocket.Dialer{
+		EnableCompression: true,
+	}
+	if jar != nil {
+		InjectCookies(headers, jar, wsURL)
+	}
+
+	conn, _, err := dialer.DialContext(ctx, wsURL, headers)
+	if err != nil {
+		return nil, fmt.Errorf("zalo personal protocol: ws dial: %w", err)
+	}
+	conn.SetReadLimit(1 << 20)
+	return &WSClient{conn: conn}, nil
+}
 
 func InjectCookies(headers http.Header, jar http.CookieJar, wsURL string) {
 	if headers == nil || jar == nil {
@@ -34,4 +60,22 @@ func InjectCookies(headers http.Header, jar http.CookieJar, wsURL string) {
 		cookieHeader = existing + "; " + cookieHeader
 	}
 	headers.Set("Cookie", cookieHeader)
+}
+
+func (c *WSClient) ReadMessage(context.Context) ([]byte, error) {
+	_, data, err := c.conn.ReadMessage()
+	return data, err
+}
+
+func (c *WSClient) WriteMessage(_ context.Context, data []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn.WriteMessage(websocket.BinaryMessage, data)
+}
+
+func (c *WSClient) Close(code int, reason string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_ = c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason))
+	_ = c.conn.Close()
 }

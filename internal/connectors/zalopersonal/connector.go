@@ -20,6 +20,7 @@ type ConnectorRuntime interface {
 type listenerSession struct {
 	AccountID string
 	Language  string
+	Protocol  *protocol.Session
 }
 
 type SessionListener interface {
@@ -63,7 +64,7 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 		if strings.TrimSpace(accountID) == "" {
 			accountID = sess.UID
 		}
-		return &listenerSession{AccountID: accountID, Language: creds.Language}, nil
+		return &listenerSession{AccountID: accountID, Language: creds.Language, Protocol: sess}, nil
 	}
 	connector.sendText = func(ctx context.Context, creds StoredCredentials, chatID, text string) error {
 		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
@@ -78,8 +79,8 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 		_, err = protocol.SendMessage(ctx, sess, chatID, protocol.ThreadTypeUser, text)
 		return err
 	}
-	connector.newListener = func(*listenerSession) (SessionListener, error) {
-		return nil, fmt.Errorf("zalo personal connector: live listener not implemented")
+	connector.newListener = func(sess *listenerSession) (SessionListener, error) {
+		return newProtocolSessionListener(sess)
 	}
 	return connector
 }
