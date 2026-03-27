@@ -341,8 +341,9 @@ func (s *Server) handleOnboardingStep4(w http.ResponseWriter, r *http.Request) {
 func (s *Server) onboardingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Path
-		// Allow onboarding paths and static assets through unconditionally.
-		if strings.HasPrefix(path, "/assets/") || strings.HasPrefix(path, "/onboarding") || strings.HasPrefix(path, "/webhooks/") {
+		// Public auth, onboarding, assets, and webhook paths must bypass onboarding
+		// gating or unauthenticated browsers can get stuck in a redirect loop.
+		if isPublicPath(path) || strings.HasPrefix(path, "/onboarding") {
 			next.ServeHTTP(w, r)
 			return
 		}

@@ -33,6 +33,24 @@ func TestAuthLoginPageShowsSetupRequiredWhenPasswordMissing(t *testing.T) {
 	}
 }
 
+func TestAuthLoginPageAccessibleWhenOnboardingPending(t *testing.T) {
+	h := newServerHarnessOnboardingPending(t)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/login", nil)
+	h.rawServer.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for _, want := range []string{"Browser Access", "Setup Required"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected login page to contain %q, got:\n%s", want, body)
+		}
+	}
+}
+
 func TestAuthProtectedPagesRedirectToLogin(t *testing.T) {
 	h := newServerHarness(t)
 	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Date(2026, time.March, 27, 7, 0, 0, 0, time.UTC)); err != nil {

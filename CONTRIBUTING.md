@@ -61,7 +61,7 @@ Run: `make coverage`
 
 ## Code style
 
-Run `make fmt` before committing. The pre-commit hook runs `goimports` and `golangci-lint` automatically via lefthook.
+Run `make fmt` before committing. The pre-commit hook runs `goimports` plus staged-file `golangci-lint --fast-only` checks automatically via lefthook, and the pre-push hook runs full `make lint` plus `make coverage`.
 
 Before handing work off, run:
 

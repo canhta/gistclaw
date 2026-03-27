@@ -106,6 +106,7 @@ func TestRepoTooling_ConfigFiles(t *testing.T) {
 				"pre-commit:",
 				"pre-push:",
 				"make precommit",
+				"make lint",
 				"make coverage",
 			},
 		},
