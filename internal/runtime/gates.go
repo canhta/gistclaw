@@ -261,11 +261,11 @@ func parseApprovalCommandReply(body string, gate model.ConversationGate) (gateAp
 	}
 	tokens := strings.Fields(body)
 	if len(tokens) < 3 {
-		return gateApprovalCommand{Handled: true}, fmt.Errorf("Usage: /approve %s allow-once|allow-always|deny", gate.ApprovalID)
+		return gateApprovalCommand{Handled: true}, fmt.Errorf("usage: /approve %s allow-once|allow-always|deny", gate.ApprovalID)
 	}
 	approvalID := strings.TrimSpace(tokens[1])
 	if approvalID != gate.ApprovalID && approvalID != gate.ID {
-		return gateApprovalCommand{Handled: true}, fmt.Errorf("That approval ID does not match the pending request.")
+		return gateApprovalCommand{Handled: true}, fmt.Errorf("approval ID does not match the pending request")
 	}
 	decision := strings.ToLower(strings.TrimSpace(tokens[2]))
 	switch decision {
@@ -274,7 +274,7 @@ func parseApprovalCommandReply(body string, gate model.ConversationGate) (gateAp
 	case "deny", "denied", "reject":
 		return gateApprovalCommand{Handled: true, Decision: "denied"}, nil
 	default:
-		return gateApprovalCommand{Handled: true}, fmt.Errorf("Usage: /approve %s allow-once|allow-always|deny", gate.ApprovalID)
+		return gateApprovalCommand{Handled: true}, fmt.Errorf("usage: /approve %s allow-once|allow-always|deny", gate.ApprovalID)
 	}
 }
 
