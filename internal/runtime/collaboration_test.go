@@ -983,6 +983,7 @@ func TestRuntime_ReceiveInboundMessageApprovalRequestCreatesConversationGateAndO
 		FrontAgentID:    "patcher",
 		Body:            "Please create created.txt",
 		SourceMessageID: "tg-gate-1",
+		LanguageHint:    "vi",
 		CWD:             workspaceRoot,
 	})
 	if err != nil {
@@ -996,18 +997,22 @@ func TestRuntime_ReceiveInboundMessageApprovalRequestCreatesConversationGateAndO
 	var gateKind string
 	var gateStatus string
 	var approvalID string
+	var languageHint string
 	if err := db.RawDB().QueryRow(
-		`SELECT id, kind, status, COALESCE(approval_id, '')
+		`SELECT id, kind, status, COALESCE(approval_id, ''), COALESCE(language_hint, '')
 		 FROM conversation_gates
 		 WHERE run_id = ?
 		 ORDER BY created_at DESC, id DESC
 		 LIMIT 1`,
 		run.ID,
-	).Scan(&gateID, &gateKind, &gateStatus, &approvalID); err != nil {
+	).Scan(&gateID, &gateKind, &gateStatus, &approvalID, &languageHint); err != nil {
 		t.Fatalf("query conversation gate: %v", err)
 	}
 	if gateID == "" || gateKind != "approval" || gateStatus != "pending" || approvalID == "" {
 		t.Fatalf("unexpected gate row id=%q kind=%q status=%q approval_id=%q", gateID, gateKind, gateStatus, approvalID)
+	}
+	if languageHint != "vi" {
+		t.Fatalf("expected gate language hint %q, got %q", "vi", languageHint)
 	}
 
 	var assistantPromptCount int
@@ -1323,6 +1328,7 @@ func TestRuntime_HandleConversationGateReplyResolverPromptSupportsMultilingualRe
 		},
 		Body:            "duyet nhe",
 		SourceMessageID: "tg-gate-8",
+		LanguageHint:    "vi",
 	}); err != nil {
 		t.Fatalf("HandleConversationGateReply failed: %v", err)
 	}
@@ -1335,6 +1341,7 @@ func TestRuntime_HandleConversationGateReplyResolverPromptSupportsMultilingualRe
 		"Interpret approvals and denials in any language",
 		"mixed-language replies",
 		"reply_text in the user's language",
+		"Reply language hint: vi",
 	} {
 		if !strings.Contains(instructions, want) {
 			t.Fatalf("expected multilingual gate resolver prompt to include %q, got:\n%s", want, instructions)

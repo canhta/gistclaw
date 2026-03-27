@@ -16,6 +16,7 @@ type ConversationGateReplyCommand struct {
 	ConversationKey conversations.ConversationKey
 	Body            string
 	SourceMessageID string
+	LanguageHint    string
 	ProjectID       string
 	CWD             string
 }
@@ -71,7 +72,7 @@ func (r *Runtime) HandleConversationGateReply(ctx context.Context, cmd Conversat
 		}
 	}
 
-	if _, err := r.appendInboundGateMessage(ctx, gate.ConversationID, gate.RunID, gate.SessionID, cmd.ConversationKey, threadID, cmd.SourceMessageID, cmd.Body); err != nil {
+	if _, err := r.appendInboundGateMessage(ctx, gate.ConversationID, gate.RunID, gate.SessionID, cmd.ConversationKey, threadID, cmd.SourceMessageID, cmd.LanguageHint, cmd.Body); err != nil {
 		return ConversationGateReplyOutcome{}, err
 	}
 
@@ -93,7 +94,7 @@ func (r *Runtime) HandleConversationGateReply(ctx context.Context, cmd Conversat
 		return ConversationGateReplyOutcome{Handled: true, GateID: gate.ID, Decision: commandDecision.Decision}, nil
 	}
 
-	resolution, err := r.resolveGateReplyWithModel(ctx, gate, cmd.Body)
+	resolution, err := r.resolveGateReplyWithModel(ctx, gate, cmd.Body, cmd.LanguageHint)
 	if err != nil {
 		return ConversationGateReplyOutcome{}, err
 	}
@@ -278,7 +279,7 @@ func parseApprovalCommandReply(body string, gate model.ConversationGate) (gateAp
 	}
 }
 
-func (r *Runtime) resolveGateReplyWithModel(ctx context.Context, gate model.ConversationGate, body string) (gateResolverResult, error) {
+func (r *Runtime) resolveGateReplyWithModel(ctx context.Context, gate model.ConversationGate, body string, replyLanguageHint string) (gateResolverResult, error) {
 	instructionsParts := []string{
 		"You resolve one pending operator approval gate.",
 		"Return JSON only with keys: action, confidence, reply_text.",
@@ -292,7 +293,9 @@ func (r *Runtime) resolveGateReplyWithModel(ctx context.Context, gate model.Conv
 		fmt.Sprintf("Pending approval id: %s", gate.ApprovalID),
 		fmt.Sprintf("User reply: %s", body),
 	}
-	if hint := strings.TrimSpace(gate.LanguageHint); hint != "" {
+	if hint := strings.TrimSpace(replyLanguageHint); hint != "" {
+		instructionsParts = append(instructionsParts, fmt.Sprintf("Reply language hint: %s", hint))
+	} else if hint := strings.TrimSpace(gate.LanguageHint); hint != "" {
 		instructionsParts = append(instructionsParts, fmt.Sprintf("Conversation language hint: %s", hint))
 	}
 	instructions := strings.Join(instructionsParts, "\n")
@@ -353,6 +356,7 @@ func (r *Runtime) appendInboundGateMessage(
 	key conversations.ConversationKey,
 	threadID string,
 	sourceMessageID string,
+	languageHint string,
 	body string,
 ) (string, error) {
 	now := time.Now().UTC()
@@ -370,6 +374,7 @@ func (r *Runtime) appendInboundGateMessage(
 			SourceConnectorID: key.ConnectorID,
 			SourceThreadID:    threadID,
 			SourceMessageID:   sourceMessageID,
+			LanguageHint:      strings.TrimSpace(languageHint),
 		},
 		messageID,
 		now,

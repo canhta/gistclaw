@@ -1141,16 +1141,18 @@ func (r *Runtime) appendConversationGateOpened(
 	ticket model.ApprovalTicket,
 	title string,
 	body string,
+	languageHint string,
 ) error {
 	payload, err := json.Marshal(map[string]any{
-		"gate_id":     ticket.ID,
-		"session_id":  sessionID,
-		"kind":        string(model.ConversationGateApproval),
-		"status":      string(model.ConversationGatePending),
-		"approval_id": ticket.ID,
-		"title":       title,
-		"body":        body,
-		"options":     []string{"approve", "deny"},
+		"gate_id":       ticket.ID,
+		"session_id":    sessionID,
+		"kind":          string(model.ConversationGateApproval),
+		"status":        string(model.ConversationGatePending),
+		"approval_id":   ticket.ID,
+		"title":         title,
+		"body":          body,
+		"language_hint": strings.TrimSpace(languageHint),
+		"options":       []string{"approve", "deny"},
 		"metadata": map[string]any{
 			"tool_name": ticket.ToolName,
 		},
@@ -1211,7 +1213,11 @@ func (r *Runtime) appendApprovalGate(
 ) error {
 	title := buildApprovalPromptTitle(tc)
 	body := buildApprovalPromptBody(ticket, reason)
-	if err := r.appendConversationGateOpened(ctx, conversationID, runID, sessionID, ticket, title, body); err != nil {
+	languageHint, err := r.loadLatestSessionLanguageHint(ctx, sessionID)
+	if err != nil {
+		return err
+	}
+	if err := r.appendConversationGateOpened(ctx, conversationID, runID, sessionID, ticket, title, body, languageHint); err != nil {
 		return err
 	}
 	if sessionID == "" {
@@ -1245,6 +1251,35 @@ func (r *Runtime) appendApprovalGate(
 		return err
 	}
 	return nil
+}
+
+func (r *Runtime) loadLatestSessionLanguageHint(ctx context.Context, sessionID string) (string, error) {
+	if strings.TrimSpace(sessionID) == "" {
+		return "", nil
+	}
+	var provenanceJSON []byte
+	err := r.store.RawDB().QueryRowContext(ctx,
+		`SELECT COALESCE(provenance_json, x'')
+		 FROM session_messages
+		 WHERE session_id = ? AND kind = 'user'
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		sessionID,
+	).Scan(&provenanceJSON)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("load session language hint: %w", err)
+	}
+	if len(provenanceJSON) == 0 {
+		return "", nil
+	}
+	var provenance model.SessionMessageProvenance
+	if err := json.Unmarshal(provenanceJSON, &provenance); err != nil {
+		return "", fmt.Errorf("decode session language hint: %w", err)
+	}
+	return strings.TrimSpace(provenance.LanguageHint), nil
 }
 
 func (r *Runtime) appendRunResumed(ctx context.Context, conversationID, runID, approvalID, decision string) error {

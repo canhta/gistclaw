@@ -63,6 +63,35 @@ func TestInboundDispatcher_DispatchesEnvelopeToRuntime(t *testing.T) {
 	}
 }
 
+func TestInboundDispatcher_PassesLanguageHintToRuntime(t *testing.T) {
+	ingress := &stubIngress{}
+	dispatcher := NewInboundDispatcher(ingress, "assistant")
+
+	env := model.Envelope{
+		ConnectorID:    "telegram",
+		AccountID:      "123456",
+		ActorID:        "123456",
+		ConversationID: "123456",
+		ThreadID:       "main",
+		MessageID:      "43",
+		Text:           "duyet giup toi",
+		Metadata: map[string]string{
+			"language_hint": "vi",
+		},
+	}
+
+	if err := dispatcher.Dispatch(context.Background(), env); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+
+	if len(ingress.calls) != 1 {
+		t.Fatalf("expected 1 ReceiveInboundMessage call, got %d", len(ingress.calls))
+	}
+	if got := ingress.calls[0].LanguageHint; got != "vi" {
+		t.Fatalf("expected language hint %q, got %q", "vi", got)
+	}
+}
+
 func TestInboundDispatcher_EmptyTextIsRejected(t *testing.T) {
 	ingress := &stubIngress{}
 	dispatcher := NewInboundDispatcher(ingress, "assistant")

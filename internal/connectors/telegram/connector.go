@@ -147,6 +147,7 @@ func (c *Connector) handleEnvelope(ctx context.Context, env model.Envelope) erro
 		},
 		Body:            env.Text,
 		SourceMessageID: env.MessageID,
+		LanguageHint:    env.Metadata["language_hint"],
 		ProjectID:       env.Metadata["project_id"],
 		CWD:             env.Metadata["cwd"],
 	})

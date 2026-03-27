@@ -188,6 +188,7 @@ type SessionMessageProvenance struct {
 	SourceConnectorID string                       `json:"source_connector_id,omitempty"`
 	SourceThreadID    string                       `json:"source_thread_id,omitempty"`
 	SourceMessageID   string                       `json:"source_message_id,omitempty"`
+	LanguageHint      string                       `json:"language_hint,omitempty"`
 	SourceTool        string                       `json:"source_tool,omitempty"`
 }
 

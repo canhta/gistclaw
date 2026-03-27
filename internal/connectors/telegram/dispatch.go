@@ -58,6 +58,7 @@ func (d *InboundDispatcher) Dispatch(ctx context.Context, env model.Envelope) er
 		FrontAgentID:    d.defaultAgentID,
 		Body:            env.Text,
 		SourceMessageID: env.MessageID,
+		LanguageHint:    env.Metadata["language_hint"],
 	})
 	if err != nil {
 		return fmt.Errorf("telegram: inbound dispatch: receive inbound message: %w", err)

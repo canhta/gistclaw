@@ -27,6 +27,7 @@ type InboundMessageCommand struct {
 	FrontAgentID    string
 	Body            string
 	SourceMessageID string
+	LanguageHint    string
 	ProjectID       string
 	CWD             string
 }
@@ -195,6 +196,7 @@ func (r *Runtime) receiveInboundMessage(ctx context.Context, cmd InboundMessageC
 		key:             cmd.ConversationKey,
 		threadID:        threadID,
 		sourceMessageID: cmd.SourceMessageID,
+		languageHint:    strings.TrimSpace(cmd.LanguageHint),
 	}
 	var run model.Run
 	if detached {
@@ -592,6 +594,7 @@ type inboundRunOptions struct {
 	key             conversations.ConversationKey
 	threadID        string
 	sourceMessageID string
+	languageHint    string
 }
 
 func (r *Runtime) startInboundRun(ctx context.Context, opts inboundRunOptions) (model.Run, error) {
@@ -673,6 +676,7 @@ func (r *Runtime) prepareInboundRun(ctx context.Context, opts inboundRunOptions)
 		SourceConnectorID: opts.key.ConnectorID,
 		SourceThreadID:    opts.threadID,
 		SourceMessageID:   opts.sourceMessageID,
+		LanguageHint:      opts.languageHint,
 	}
 	messageID := generateID()
 	messageEvent, err := newSessionMessageAddedEvent(
