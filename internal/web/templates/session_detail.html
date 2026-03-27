@@ -2,6 +2,7 @@
 <section class="page-header">
   <span class="page-eyebrow">Operate</span>
   <h1>Session Detail</h1>
+  <p class="page-lede">Mailbox, route, and delivery context for this session.</p>
   <div class="mono">{{.Session.ID}}</div>
   <p class="muted">{{.Session.AgentID}} · {{.Session.RoleLabel}} · {{.Session.StatusLabel}}</p>
 </section>
@@ -72,7 +73,9 @@
   <div class="muted mono">deactivated: {{.Route.DeactivatedLabel}}</div>
   {{end}}
   {{else}}
-  <p class="muted">This conversation is only inside GistClaw right now.</p>
+  <div class="empty-state is-compact">
+    <p class="empty-state-copy">This conversation is only inside GistClaw right now.</p>
+  </div>
   {{end}}
 </section>
 
@@ -113,7 +116,9 @@
     </tbody>
   </table>
   {{else}}
-  <p class="muted">No outgoing messages recorded for this session.</p>
+  <div class="empty-state is-compact">
+    <p class="empty-state-copy">No outgoing messages recorded for this session.</p>
+  </div>
   {{end}}
 </section>
 
@@ -146,7 +151,9 @@
     </tbody>
   </table>
   {{else}}
-  <p class="muted">No active delivery failures for this session.</p>
+  <div class="empty-state is-compact">
+    <p class="empty-state-copy">No active delivery failures for this session.</p>
+  </div>
   {{end}}
 </section>
 

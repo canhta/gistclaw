@@ -86,7 +86,7 @@
   {{if .RuntimeHealth}}
   <div class="grid-two">
     {{range .RuntimeHealth}}
-    <article class="run-row is-active">
+    <article class="run-row {{.StateClass}}">
       <div class="row-title">{{.ConnectorID}}</div>
       <div class="muted">state: <span class="mono">{{.StateLabel}}</span></div>
       <div class="muted">{{.Summary}}</div>
@@ -98,7 +98,7 @@
   {{if .Health}}
   <div class="grid-two">
     {{range .Health}}
-    <article class="run-row is-active">
+    <article class="run-row {{.StateClass}}">
       <div class="row-title">{{.ConnectorID}}</div>
       <div class="muted">pending: <span class="mono">{{.PendingCount}}</span></div>
       <div class="muted">retrying: <span class="mono">{{.RetryingCount}}</span></div>

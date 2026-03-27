@@ -139,7 +139,7 @@
     <hr class="divider">
 
     <div class="stack-sm">
-      <label>Automation Token</label>
+      <span class="field-label">Automation Token</span>
       <div class="mono mono-wrap">{{.AdminToken}}</div>
       <p class="muted">Use this for machine or API access. Run <code>gistclaw inspect token</code> to retrieve the full token.</p>
     </div>
@@ -147,7 +147,7 @@
     <hr class="divider">
 
     <div class="stack-sm">
-      <label>Telegram Token</label>
+      <span class="field-label">Telegram Token</span>
       {{if .TelegramToken}}
       <div class="mono mono-wrap">{{.TelegramToken}}</div>
       {{else}}

@@ -136,7 +136,10 @@
     {{end}}
   </div>
   {{else}}
-  <p class="muted">No conversations yet.</p>
+  <div class="empty-state is-compact">
+    <span class="panel-kicker">Sessions</span>
+    <p class="empty-state-copy">No conversations yet. Sessions appear here once a run has started.</p>
+  </div>
   {{end}}
   </div>
 </section>

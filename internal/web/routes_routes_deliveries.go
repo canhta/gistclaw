@@ -14,7 +14,7 @@ import (
 
 type routesDeliveriesPageData struct {
 	ConnectorCount int
-	Health         []model.ConnectorDeliveryHealth
+	Health         []routesDeliveriesDeliveryHealthView
 	RuntimeHealth  []routesDeliveriesRuntimeHealthView
 	ActiveRoutes   []routesDeliveriesRouteView
 	ActivePaging   pageLinks
@@ -63,10 +63,19 @@ type routesDeliveriesDeliveryView struct {
 	AttemptsLabel string
 }
 
+type routesDeliveriesDeliveryHealthView struct {
+	ConnectorID   string
+	PendingCount  int
+	RetryingCount int
+	TerminalCount int
+	StateClass    string
+}
+
 type routesDeliveriesRuntimeHealthView struct {
 	ConnectorID      string
 	State            string
 	StateLabel       string
+	StateClass       string
 	Summary          string
 	CheckedAtLabel   string
 	RestartSuggested bool
@@ -294,7 +303,7 @@ func (s *Server) loadRoutesDeliveriesPageData(r *http.Request) (routesDeliveries
 
 	return routesDeliveriesPageData{
 		ConnectorCount: connectorHealthCount(health, runtimeHealth),
-		Health:         health,
+		Health:         buildRoutesDeliveriesDeliveryHealthViews(health),
 		RuntimeHealth:  buildRoutesDeliveriesRuntimeHealthViews(runtimeHealth),
 		ActiveRoutes:   buildRoutesDeliveriesRouteViews(activeRoutes),
 		ActivePaging:   activePaging,
@@ -425,6 +434,26 @@ func buildRoutesDeliveriesDeliveryViews(items []model.DeliveryQueueItem) []route
 	return views
 }
 
+func buildRoutesDeliveriesDeliveryHealthViews(items []model.ConnectorDeliveryHealth) []routesDeliveriesDeliveryHealthView {
+	views := make([]routesDeliveriesDeliveryHealthView, 0, len(items))
+	for _, item := range items {
+		stateClass := "is-active"
+		if item.TerminalCount > 0 {
+			stateClass = "is-error"
+		} else if item.RetryingCount > 0 {
+			stateClass = "is-approval"
+		}
+		views = append(views, routesDeliveriesDeliveryHealthView{
+			ConnectorID:   item.ConnectorID,
+			PendingCount:  item.PendingCount,
+			RetryingCount: item.RetryingCount,
+			TerminalCount: item.TerminalCount,
+			StateClass:    stateClass,
+		})
+	}
+	return views
+}
+
 func buildRoutesDeliveriesRuntimeHealthViews(items []model.ConnectorHealthSnapshot) []routesDeliveriesRuntimeHealthView {
 	views := make([]routesDeliveriesRuntimeHealthView, 0, len(items))
 	for _, item := range items {
@@ -433,10 +462,18 @@ func buildRoutesDeliveriesRuntimeHealthViews(items []model.ConnectorHealthSnapsh
 			checkedAt := item.CheckedAt
 			checkedAtLabel = formatOptionalWebTimestamp(&checkedAt)
 		}
+		stateClass := "is-muted"
+		switch item.State {
+		case model.ConnectorHealthHealthy:
+			stateClass = "is-active"
+		case model.ConnectorHealthDegraded:
+			stateClass = "is-approval"
+		}
 		views = append(views, routesDeliveriesRuntimeHealthView{
 			ConnectorID:      item.ConnectorID,
 			State:            string(item.State),
 			StateLabel:       humanizeWebLabel(string(item.State)),
+			StateClass:       stateClass,
 			Summary:          item.Summary,
 			CheckedAtLabel:   checkedAtLabel,
 			RestartSuggested: item.RestartSuggested,
