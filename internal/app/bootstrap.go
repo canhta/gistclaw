@@ -489,7 +489,12 @@ func buildConnectors(
 		))
 	}
 	if cfg.ZaloPersonal.Enabled {
-		connectors = append(connectors, zalopersonalconnector.NewConnector())
+		connectors = append(connectors, zalopersonalconnector.NewConnector(
+			db,
+			cs,
+			rt,
+			cfg.ZaloPersonal.AgentID,
+		))
 	}
 	return connectors
 }
