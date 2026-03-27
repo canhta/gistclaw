@@ -481,7 +481,7 @@ func removeTeamMember(cfg *teams.Config, index int) error {
 	}
 	removedID := cfg.Agents[index].ID
 	if removedID == cfg.FrontAgent {
-		return fmt.Errorf("Choose another front agent before removing %s.", removedID)
+		return fmt.Errorf("choose another front agent before removing %s", removedID)
 	}
 	cfg.Agents = append(cfg.Agents[:index], cfg.Agents[index+1:]...)
 	for i := range cfg.Agents {

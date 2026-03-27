@@ -124,32 +124,6 @@ func ensureProjectSchema(db *DB) error {
 	return nil
 }
 
-func tableHasColumn(db *DB, tableName, columnName string) (bool, error) {
-	rows, err := db.db.Query(fmt.Sprintf("PRAGMA table_info(%s)", tableName))
-	if err != nil {
-		return false, fmt.Errorf("migrate: table info %s: %w", tableName, err)
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var cid int
-		var name string
-		var columnType string
-		var notNull int
-		var defaultValue sql.NullString
-		var primaryKey int
-		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
-			return false, fmt.Errorf("migrate: scan table info %s: %w", tableName, err)
-		}
-		if name == columnName {
-			return true, nil
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return false, fmt.Errorf("migrate: table info rows %s: %w", tableName, err)
-	}
-	return false, nil
-}
 
 func ensureAuthSchema(db *DB) error {
 	for _, stmt := range []string{

@@ -382,12 +382,12 @@ func (s *Server) renderOnboardingStep3(w http.ResponseWriter, r *http.Request, s
 }
 
 func onboardingPreviewStartError(err error) string {
-	switch {
-	case err == nil:
+	switch err {
+	case nil:
 		return ""
-	case err == runtime.ErrDailyCap:
+	case runtime.ErrDailyCap:
 		return "Preview runs are blocked by the daily cost cap. Raise the cap and try again."
-	case err == runtime.ErrBudgetExhausted:
+	case runtime.ErrBudgetExhausted:
 		return "Preview runs are blocked by the per-run token budget. Raise the budget and try again."
 	default:
 		return "Unable to start the preview run right now. Check the runtime configuration and try again."

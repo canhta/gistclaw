@@ -1700,7 +1700,7 @@ func TestTeam(t *testing.T) {
 		if rr.Code != http.StatusUnprocessableEntity {
 			t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if !strings.Contains(rr.Body.String(), "Choose another front agent before removing assistant.") {
+		if !strings.Contains(rr.Body.String(), "choose another front agent before removing assistant") {
 			t.Fatalf("expected front-agent guardrail, got:\n%s", rr.Body.String())
 		}
 	})
@@ -4952,11 +4952,6 @@ func (h *serverHarness) insertRunInWorkspace(t *testing.T, runID, conversationID
 	}
 }
 
-func (h *serverHarness) insertRunWithSnapshot(t *testing.T, runID, conversationID, objective, status string, snapshot model.ExecutionSnapshot) {
-	t.Helper()
-	h.insertRunWithSnapshotAt(t, runID, conversationID, objective, status, "2026-03-25 00:00:00", "2026-03-25 00:00:00", snapshot)
-}
-
 func (h *serverHarness) insertRunWithSnapshotAt(t *testing.T, runID, conversationID, objective, status, createdAt, updatedAt string, snapshot model.ExecutionSnapshot) {
 	t.Helper()
 
@@ -5123,11 +5118,6 @@ func approvalBindingJSONForTarget(t *testing.T, toolName, targetPath string) []b
 		t.Fatalf("marshal approval binding: %v", err)
 	}
 	return payload
-}
-
-func (h *serverHarness) insertEvent(t *testing.T, eventID, conversationID, runID, kind string) {
-	t.Helper()
-	h.insertEventAtWithPayload(t, eventID, conversationID, runID, kind, nil, "2026-03-25 00:00:00")
 }
 
 func (h *serverHarness) insertEventAt(t *testing.T, eventID, conversationID, runID, kind, createdAt string) {

@@ -54,10 +54,6 @@ func runEventsPathAfter(runID, after string) string {
 	return path + "?" + values.Encode()
 }
 
-func runNodeDetailPath(runID, nodeRunID string) string {
-	return runDetailPath(runID) + "/nodes/" + url.PathEscape(nodeRunID)
-}
-
 func runNodeDetailTemplatePath(runID string) string {
 	return runDetailPath(runID) + "/nodes/__RUN_ID__"
 }

@@ -18,8 +18,6 @@ import (
 	"github.com/canhta/gistclaw/internal/store"
 )
 
-const hostAdminCookieName = "gistclaw_admin"
-
 type Options struct {
 	DB              *store.DB
 	Replay          *replay.Service
@@ -185,10 +183,6 @@ func (s *Server) renderTemplate(w http.ResponseWriter, r *http.Request, title, b
 
 func (s *Server) renderTemplateStatus(w http.ResponseWriter, r *http.Request, status int, title, bodyTemplate string, data any) {
 	s.renderTemplateStatusMode(w, r, status, title, bodyTemplate, data, shellModeApp)
-}
-
-func (s *Server) renderAuthTemplate(w http.ResponseWriter, r *http.Request, title, bodyTemplate string, data any) {
-	s.renderTemplateStatusMode(w, r, http.StatusOK, title, bodyTemplate, data, shellModeAuth)
 }
 
 func (s *Server) renderAuthTemplateStatus(w http.ResponseWriter, r *http.Request, status int, title, bodyTemplate string, data any) {

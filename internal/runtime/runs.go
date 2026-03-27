@@ -1003,11 +1003,7 @@ func (r *Runtime) recordToolCall(
 					toolName:       tc.ToolName,
 				},
 			})
-			invoked, err := tool.Invoke(invokeCtx, model.ToolCall{
-				ID:        tc.ID,
-				ToolName:  tc.ToolName,
-				InputJSON: tc.InputJSON,
-			})
+			invoked, err := tool.Invoke(invokeCtx, model.ToolCall(tc))
 			if err != nil {
 				invoked.Error = err.Error()
 			}
@@ -1795,7 +1791,7 @@ func (r *Runtime) prepareApprovalResolution(ctx context.Context, ticketID, decis
 
 	run, err := r.loadRun(ctx, ticket.RunID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || errors.Is(err, sql.ErrNoRows) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return approvalResolution{ticket: ticket, decision: decision}, nil
 		}
 		return approvalResolution{}, err

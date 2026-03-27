@@ -415,12 +415,12 @@ func (s *Store) Status(ctx context.Context, now time.Time) (StatusSummary, error
 		  ORDER BY next_run_at ASC, id ASC
 		  LIMIT 1`,
 	).Scan(&nextWakeAt)
-	switch {
-	case err == nil:
+	switch err {
+	case nil:
 		if nextWakeAt.Valid {
 			status.NextWakeAt = nextWakeAt.Time.UTC()
 		}
-	case err == sql.ErrNoRows:
+	case sql.ErrNoRows:
 	default:
 		return StatusSummary{}, fmt.Errorf("scheduler: status next wake: %w", err)
 	}
@@ -436,13 +436,13 @@ func (s *Store) Status(ctx context.Context, now time.Time) (StatusSummary, error
 		  LIMIT 1`,
 		OccurrenceFailed,
 	).Scan(&failure.ScheduleID, &failure.Name, &failure.Error, &failedAt)
-	switch {
-	case err == nil:
+	switch err {
+	case nil:
 		if failedAt.Valid {
 			failure.FailedAt = failedAt.Time.UTC()
 		}
 		status.LastFailure = &failure
-	case err == sql.ErrNoRows:
+	case sql.ErrNoRows:
 	default:
 		return StatusSummary{}, fmt.Errorf("scheduler: status last failure: %w", err)
 	}

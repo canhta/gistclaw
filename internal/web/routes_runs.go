@@ -960,15 +960,6 @@ func buildRunNodeApprovalView(approvals []runApprovalRecord, events []model.Even
 	return view
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
-
 func joinTurnContent(events []model.Event) string {
 	parts := make([]string, 0, len(events))
 	for _, evt := range events {

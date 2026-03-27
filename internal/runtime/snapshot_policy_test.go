@@ -14,7 +14,7 @@ import (
 )
 
 func TestRunEngine_UsesExecutionSnapshotToolProfileForPolicy(t *testing.T) {
-	db, cs, mem, reg := setupRunTestDeps(t)
+	db, cs, mem, _ := setupRunTestDeps(t)
 	registry, closer, err := buildRuntimeRepoRegistry()
 	if err != nil {
 		t.Fatalf("buildRuntimeRepoRegistry: %v", err)
@@ -22,7 +22,6 @@ func TestRunEngine_UsesExecutionSnapshotToolProfileForPolicy(t *testing.T) {
 	if closer != nil {
 		defer closer.Close()
 	}
-	reg = registry
 	prov := NewMockProvider(
 		[]GenerateResult{
 			{
@@ -35,7 +34,7 @@ func TestRunEngine_UsesExecutionSnapshotToolProfileForPolicy(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, registry, mem, prov, &model.NoopEventSink{})
 
 	run, err := rt.Start(context.Background(), StartRun{
 		ConversationID:        "conv-snapshot-policy",

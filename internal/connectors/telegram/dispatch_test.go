@@ -4,10 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime"
-	"github.com/canhta/gistclaw/internal/store"
 )
 
 // stubIngress records the ReceiveInboundMessage calls made to it.
@@ -18,20 +16,6 @@ type stubIngress struct {
 func (s *stubIngress) ReceiveInboundMessage(_ context.Context, req runtime.InboundMessageCommand) (model.Run, error) {
 	s.calls = append(s.calls, req)
 	return model.Run{ID: "test-run"}, nil
-}
-
-func setupDispatchDB(t *testing.T) (*store.DB, *conversations.ConversationStore) {
-	t.Helper()
-	db, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	if err := store.Migrate(db); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-	cs := conversations.NewConversationStore(db)
-	return db, cs
 }
 
 func TestInboundDispatcher_DispatchesEnvelopeToRuntime(t *testing.T) {
