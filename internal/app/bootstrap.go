@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/canhta/gistclaw/internal/auth"
@@ -489,12 +490,26 @@ func buildConnectors(
 		))
 	}
 	if cfg.ZaloPersonal.Enabled {
-		connectors = append(connectors, zalopersonalconnector.NewConnector(
+		connector := zalopersonalconnector.NewConnector(
 			db,
 			cs,
 			rt,
 			cfg.ZaloPersonal.AgentID,
-		))
+		)
+		allowlist := make(map[string]bool, len(cfg.ZaloPersonal.Groups.Allowlist))
+		for _, groupID := range cfg.ZaloPersonal.Groups.Allowlist {
+			groupID = strings.TrimSpace(groupID)
+			if groupID == "" {
+				continue
+			}
+			allowlist[groupID] = true
+		}
+		connector.SetGroupPolicy(zalopersonalconnector.GroupPolicy{
+			Enabled:         cfg.ZaloPersonal.Groups.Enabled,
+			Allowlist:       allowlist,
+			MentionRequired: cfg.ZaloPersonal.Groups.ReplyMode != "open",
+		})
+		connectors = append(connectors, connector)
 	}
 	return connectors
 }

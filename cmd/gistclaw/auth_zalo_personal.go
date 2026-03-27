@@ -15,11 +15,12 @@ import (
 	"github.com/canhta/gistclaw/internal/connectors/zalopersonal/protocol"
 )
 
-const authZaloPersonalUsage = "Usage: gistclaw auth zalo-personal <login|logout|contacts>"
+const authZaloPersonalUsage = "Usage: gistclaw auth zalo-personal <login|logout|contacts|groups>"
 
 var (
 	newZaloPersonalQRRunner                  = func() app.ZaloPersonalQRLoginRunner { return zaloPersonalProtocolQRRunner{} }
 	newZaloPersonalFriendsReader             = func() app.ZaloPersonalFriendsReader { return zaloPersonalProtocolFriendsReader{} }
+	newZaloPersonalGroupsReader              = func() app.ZaloPersonalGroupsReader { return zaloPersonalProtocolGroupsReader{} }
 	zaloPersonalProtocolLoginQR              = protocol.LoginQR
 	zaloPersonalProtocolLoginWithCredentials = protocol.LoginWithCredentials
 	zaloPersonalLoginTimeout                 = 2 * time.Minute
@@ -28,6 +29,7 @@ var (
 
 type zaloPersonalProtocolQRRunner struct{}
 type zaloPersonalProtocolFriendsReader struct{}
+type zaloPersonalProtocolGroupsReader struct{}
 
 func (zaloPersonalProtocolQRRunner) LoginQR(ctx context.Context, qrCallback func([]byte)) (zalopersonal.StoredCredentials, error) {
 	creds, err := zaloPersonalProtocolLoginQR(ctx, qrCallback)
@@ -83,6 +85,34 @@ func (zaloPersonalProtocolFriendsReader) ListFriends(ctx context.Context, creds 
 	return results, nil
 }
 
+func (zaloPersonalProtocolGroupsReader) ListGroups(ctx context.Context, creds zalopersonal.StoredCredentials) ([]app.ZaloPersonalGroup, error) {
+	sess, err := zaloPersonalProtocolLoginWithCredentials(ctx, protocol.Credentials{
+		IMEI:      creds.IMEI,
+		Cookie:    creds.Cookie,
+		UserAgent: creds.UserAgent,
+		Language:  zaloPersonalLanguagePtr(creds.Language),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	groups, err := protocol.FetchGroups(ctx, sess)
+	if err != nil {
+		return nil, err
+	}
+
+	results := make([]app.ZaloPersonalGroup, 0, len(groups))
+	for _, group := range groups {
+		results = append(results, app.ZaloPersonalGroup{
+			GroupID:     strings.TrimSpace(group.GroupID),
+			Name:        strings.TrimSpace(group.Name),
+			Avatar:      strings.TrimSpace(group.Avatar),
+			TotalMember: group.TotalMember,
+		})
+	}
+	return results, nil
+}
+
 func runAuthZaloPersonal(opts globalOptions, args []string, stdout, stderr io.Writer) int {
 	if len(args) != 1 {
 		fmt.Fprintln(stderr, authZaloPersonalUsage)
@@ -96,6 +126,8 @@ func runAuthZaloPersonal(opts globalOptions, args []string, stdout, stderr io.Wr
 		return runAuthZaloPersonalLogout(opts, stdout, stderr)
 	case "contacts":
 		return runAuthZaloPersonalContacts(opts, stdout, stderr)
+	case "groups":
+		return runAuthZaloPersonalGroups(opts, stdout, stderr)
 	default:
 		fmt.Fprintln(stderr, authZaloPersonalUsage)
 		return 1
@@ -199,6 +231,45 @@ func runAuthZaloPersonalContacts(opts globalOptions, stdout, stderr io.Writer) i
 	fmt.Fprintln(stdout, "user_id\tdisplay_name")
 	for _, friend := range friends {
 		fmt.Fprintf(stdout, "%s\t%s\n", sanitizeZaloTabField(friend.UserID), sanitizeZaloTabField(zaloPersonalFriendLabel(friend)))
+	}
+	return 0
+}
+
+func runAuthZaloPersonalGroups(opts globalOptions, stdout, stderr io.Writer) int {
+	application, err := loadApp(opts)
+	if err != nil {
+		fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
+		return 1
+	}
+	defer func() { _ = application.Stop() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), zaloPersonalContactsTimeout)
+	defer cancel()
+
+	groups, err := application.ListZaloPersonalGroups(ctx, newZaloPersonalGroupsReader())
+	if err != nil {
+		fmt.Fprintf(stderr, "auth zalo-personal groups failed: %v\n", err)
+		return 1
+	}
+
+	sort.Slice(groups, func(i, j int) bool {
+		left := strings.ToLower(strings.TrimSpace(groups[i].Name))
+		right := strings.ToLower(strings.TrimSpace(groups[j].Name))
+		if left == right {
+			return groups[i].GroupID < groups[j].GroupID
+		}
+		return left < right
+	})
+
+	fmt.Fprintln(stdout, "group_id\tname\ttotal_member")
+	for _, group := range groups {
+		fmt.Fprintf(
+			stdout,
+			"%s\t%s\t%d\n",
+			sanitizeZaloTabField(group.GroupID),
+			sanitizeZaloTabField(group.Name),
+			group.TotalMember,
+		)
 	}
 	return 0
 }

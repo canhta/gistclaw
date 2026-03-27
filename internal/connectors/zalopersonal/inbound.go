@@ -28,6 +28,13 @@ type IncomingMessage struct {
 	Text           string
 	LanguageHint   string
 	IsDirect       bool
+	Mentioned      bool
+}
+
+type GroupPolicy struct {
+	Enabled         bool
+	Allowlist       map[string]bool
+	MentionRequired bool
 }
 
 func NewInboundDispatcher(rt InboundMessageReceiver, defaultAgentID string) *InboundDispatcher {
@@ -35,8 +42,20 @@ func NewInboundDispatcher(rt InboundMessageReceiver, defaultAgentID string) *Inb
 }
 
 func NormalizeInboundMessage(msg IncomingMessage) (model.Envelope, error) {
+	return NormalizeInboundMessageWithPolicy(msg, GroupPolicy{})
+}
+
+func NormalizeInboundMessageWithPolicy(msg IncomingMessage, policy GroupPolicy) (model.Envelope, error) {
 	if !msg.IsDirect {
-		return model.Envelope{}, fmt.Errorf("zalo personal inbound: DM only")
+		if !policy.Enabled {
+			return model.Envelope{}, fmt.Errorf("zalo personal inbound: DM only")
+		}
+		if len(policy.Allowlist) == 0 || !policy.Allowlist[strings.TrimSpace(msg.ConversationID)] {
+			return model.Envelope{}, fmt.Errorf("zalo personal inbound: group not allowed")
+		}
+		if policy.MentionRequired && !msg.Mentioned {
+			return model.Envelope{}, fmt.Errorf("zalo personal inbound: group mention required")
+		}
 	}
 	text := strings.TrimSpace(msg.Text)
 	if text == "" {

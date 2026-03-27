@@ -138,22 +138,40 @@ func (a *protocolListenerAdapter) pump(ctx context.Context) {
 }
 
 func incomingMessageFromProtocolMessage(accountID, language string, msg protocol.Message) (IncomingMessage, bool) {
-	if msg == nil || msg.Type() != protocol.ThreadTypeUser || msg.IsSelf() {
+	if msg == nil || msg.IsSelf() {
 		return IncomingMessage{}, false
 	}
 
 	text := strings.TrimSpace(msg.Text())
-	if text == "" {
+	switch typed := msg.(type) {
+	case protocol.UserMessage:
+		if text == "" {
+			return IncomingMessage{}, false
+		}
+		return IncomingMessage{
+			AccountID:      strings.TrimSpace(accountID),
+			SenderID:       strings.TrimSpace(msg.SenderID()),
+			ConversationID: strings.TrimSpace(msg.ThreadID()),
+			MessageID:      strings.TrimSpace(msg.MessageID()),
+			Text:           text,
+			LanguageHint:   strings.TrimSpace(language),
+			IsDirect:       true,
+		}, true
+	case protocol.GroupMessage:
+		if text == "" {
+			return IncomingMessage{}, false
+		}
+		return IncomingMessage{
+			AccountID:      strings.TrimSpace(accountID),
+			SenderID:       strings.TrimSpace(msg.SenderID()),
+			ConversationID: strings.TrimSpace(msg.ThreadID()),
+			MessageID:      strings.TrimSpace(msg.MessageID()),
+			Text:           text,
+			LanguageHint:   strings.TrimSpace(language),
+			IsDirect:       false,
+			Mentioned:      typed.MentionsAccount(accountID),
+		}, true
+	default:
 		return IncomingMessage{}, false
 	}
-
-	return IncomingMessage{
-		AccountID:      strings.TrimSpace(accountID),
-		SenderID:       strings.TrimSpace(msg.SenderID()),
-		ConversationID: strings.TrimSpace(msg.ThreadID()),
-		MessageID:      strings.TrimSpace(msg.MessageID()),
-		Text:           text,
-		LanguageHint:   strings.TrimSpace(language),
-		IsDirect:       true,
-	}, true
 }

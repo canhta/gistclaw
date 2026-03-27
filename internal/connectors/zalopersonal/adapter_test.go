@@ -60,3 +60,34 @@ func TestIncomingMessageFromProtocolMessageIgnoresNonTextDM(t *testing.T) {
 		t.Fatalf("expected non-text DM to be ignored, got %+v", incoming)
 	}
 }
+
+func TestIncomingMessageFromProtocolMessageConvertsGroupMentions(t *testing.T) {
+	t.Parallel()
+
+	text := "@acct-1 review this"
+	msg := protocol.NewGroupMessage("acct-1", protocol.TGroupMessage{
+		TMessage: protocol.TMessage{
+			MsgID:   "msg-group-1",
+			UIDFrom: "user-3",
+			IDTo:    "group-1",
+			Content: protocol.Content{String: &text},
+		},
+		Mentions: []*protocol.TMention{
+			{UID: "acct-1", Pos: 0, Len: 7, Type: protocol.MentionEach},
+		},
+	})
+
+	incoming, ok := incomingMessageFromProtocolMessage("acct-1", "vi", msg)
+	if !ok {
+		t.Fatal("expected group message to convert")
+	}
+	if incoming.IsDirect {
+		t.Fatalf("expected group message, got %+v", incoming)
+	}
+	if incoming.ConversationID != "group-1" {
+		t.Fatalf("expected group conversation, got %+v", incoming)
+	}
+	if !incoming.Mentioned {
+		t.Fatalf("expected group mention flag, got %+v", incoming)
+	}
+}

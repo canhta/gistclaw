@@ -47,6 +47,24 @@ func (s *stubZaloPersonalFriendsReader) ListFriends(ctx context.Context, creds z
 	return s.friends, nil
 }
 
+type stubZaloPersonalGroupsReader struct {
+	groups    []ZaloPersonalGroup
+	err       error
+	calls     int
+	lastCtx   context.Context
+	lastCreds zalopersonal.StoredCredentials
+}
+
+func (s *stubZaloPersonalGroupsReader) ListGroups(ctx context.Context, creds zalopersonal.StoredCredentials) ([]ZaloPersonalGroup, error) {
+	s.calls++
+	s.lastCtx = ctx
+	s.lastCreds = creds
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.groups, nil
+}
+
 func TestApp_ZaloPersonalAuth(t *testing.T) {
 	ctx := context.Background()
 
@@ -178,6 +196,39 @@ func TestApp_ZaloPersonalAuth(t *testing.T) {
 		}
 		if reader.calls != 0 {
 			t.Fatalf("expected reader to stay unused, got %d calls", reader.calls)
+		}
+	})
+
+	t.Run("list groups uses stored credentials", func(t *testing.T) {
+		app := setupCommandApp(t)
+		creds := zalopersonal.StoredCredentials{
+			AccountID: "123456789",
+			IMEI:      "imei-123",
+			Cookie:    "cookie=value",
+			UserAgent: "Mozilla/5.0",
+		}
+		if err := zalopersonal.SaveStoredCredentials(ctx, app.db, creds); err != nil {
+			t.Fatalf("SaveStoredCredentials: %v", err)
+		}
+		reader := &stubZaloPersonalGroupsReader{
+			groups: []ZaloPersonalGroup{
+				{GroupID: "group-1", Name: "Alpha", TotalMember: 3},
+				{GroupID: "group-2", Name: "Backend", TotalMember: 8},
+			},
+		}
+
+		got, err := app.ListZaloPersonalGroups(ctx, reader)
+		if err != nil {
+			t.Fatalf("ListZaloPersonalGroups: %v", err)
+		}
+		if reader.calls != 1 {
+			t.Fatalf("expected reader to be called once, got %d", reader.calls)
+		}
+		if reader.lastCreds != creds {
+			t.Fatalf("expected creds %+v, got %+v", creds, reader.lastCreds)
+		}
+		if len(got) != 2 || got[0].GroupID != "group-1" || got[1].GroupID != "group-2" {
+			t.Fatalf("unexpected groups: %+v", got)
 		}
 	})
 }

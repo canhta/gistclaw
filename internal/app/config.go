@@ -55,8 +55,15 @@ type WhatsAppConfig struct {
 }
 
 type ZaloPersonalConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	AgentID string `yaml:"agent_id"`
+	Enabled bool                     `yaml:"enabled"`
+	AgentID string                   `yaml:"agent_id"`
+	Groups  ZaloPersonalGroupsConfig `yaml:"groups"`
+}
+
+type ZaloPersonalGroupsConfig struct {
+	Enabled   bool     `yaml:"enabled"`
+	Allowlist []string `yaml:"allowlist"`
+	ReplyMode string   `yaml:"reply_mode"`
 }
 
 type WebConfig struct {
@@ -171,6 +178,11 @@ func (c *Config) validateCommon() error {
 		c.HostAccessMode != authority.HostAccessModeElevated {
 		return fmt.Errorf("config validation: unknown host_access_mode %q", c.HostAccessMode)
 	}
+	if c.ZaloPersonal.Groups.ReplyMode != "" &&
+		c.ZaloPersonal.Groups.ReplyMode != "mention_required" &&
+		c.ZaloPersonal.Groups.ReplyMode != "open" {
+		return fmt.Errorf("config validation: unknown zalo_personal.groups.reply_mode %q", c.ZaloPersonal.Groups.ReplyMode)
+	}
 
 	return nil
 }
@@ -231,6 +243,9 @@ func (c *Config) applyDefaults(defaultStateDir string) {
 	}
 	if c.ZaloPersonal.AgentID == "" {
 		c.ZaloPersonal.AgentID = "assistant"
+	}
+	if c.ZaloPersonal.Groups.ReplyMode == "" {
+		c.ZaloPersonal.Groups.ReplyMode = "mention_required"
 	}
 	if c.Web.ListenAddr == "" {
 		c.Web.ListenAddr = "127.0.0.1:8080"

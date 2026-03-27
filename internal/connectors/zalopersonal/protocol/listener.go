@@ -207,6 +207,8 @@ func (ln *Listener) handleFrame(ctx context.Context, data []byte) error {
 		ln.handleCipherKey(ctx, envelope.Key)
 	case "1_501_0":
 		ln.handleUserMessages(ctx, envelope.Data, envelope.Encrypt)
+	case "1_521_0":
+		ln.handleGroupMessages(ctx, envelope.Data, envelope.Encrypt)
 	case "1_3000_0":
 		return &DisconnectError{
 			Code:   CloseCodeDuplicate,
@@ -274,6 +276,40 @@ func (ln *Listener) handleUserMessages(ctx context.Context, data string, encType
 			continue
 		}
 		emit(ctx, ln.messageCh, Message(userMsg))
+	}
+}
+
+func (ln *Listener) handleGroupMessages(ctx context.Context, data string, encType uint) {
+	ln.mu.RLock()
+	cipherKey := ln.cipherKey
+	ln.mu.RUnlock()
+
+	payload, err := ln.decryptEventData(data, encType, cipherKey)
+	if err != nil {
+		emit(ctx, ln.errorCh, fmt.Errorf("zalo personal protocol: decrypt group message: %w", err))
+		return
+	}
+
+	var envelope struct {
+		Data struct {
+			GroupMsgs []json.RawMessage `json:"groupMsgs"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		emit(ctx, ln.errorCh, fmt.Errorf("zalo personal protocol: parse group messages: %w", err))
+		return
+	}
+
+	for _, raw := range envelope.Data.GroupMsgs {
+		var msg TGroupMessage
+		if err := json.Unmarshal(raw, &msg); err != nil {
+			continue
+		}
+		groupMsg := NewGroupMessage(ln.sess.UID, msg)
+		if groupMsg.IsSelf() {
+			continue
+		}
+		emit(ctx, ln.messageCh, Message(groupMsg))
 	}
 }
 

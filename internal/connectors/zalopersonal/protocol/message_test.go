@@ -134,3 +134,33 @@ func TestNewUserMessageResolvesSelfSentMessage(t *testing.T) {
 		t.Fatalf("expected sender acct-1, got %q", msg.SenderID())
 	}
 }
+
+func TestNewGroupMessageResolvesMentionAndThread(t *testing.T) {
+	t.Parallel()
+
+	text := "@acct-1 review"
+	msg := NewGroupMessage("acct-1", TGroupMessage{
+		TMessage: TMessage{
+			MsgID:   "group-msg-1",
+			UIDFrom: "user-9",
+			IDTo:    "group-1",
+			Content: Content{String: &text},
+		},
+		Mentions: []*TMention{
+			{UID: "acct-1", Pos: 0, Len: 7, Type: MentionEach},
+		},
+	})
+
+	if msg.Type() != ThreadTypeGroup {
+		t.Fatalf("expected group thread type, got %d", msg.Type())
+	}
+	if msg.ThreadID() != "group-1" {
+		t.Fatalf("expected group thread, got %q", msg.ThreadID())
+	}
+	if !msg.MentionsAccount("acct-1") {
+		t.Fatalf("expected group message to mention acct-1")
+	}
+	if msg.SenderID() != "user-9" {
+		t.Fatalf("expected sender user-9, got %q", msg.SenderID())
+	}
+}

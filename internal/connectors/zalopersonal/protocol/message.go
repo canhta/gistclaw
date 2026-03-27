@@ -25,6 +25,26 @@ type TMessage struct {
 	Content Content `json:"content"`
 }
 
+type TGroupMessage struct {
+	TMessage
+	Mentions []*TMention `json:"mentions,omitempty"`
+}
+
+type TMention struct {
+	UID  string      `json:"uid"`
+	Pos  int         `json:"pos"`
+	Len  int         `json:"len"`
+	Type MentionType `json:"type"`
+}
+
+type MentionType int
+
+const (
+	MentionEach MentionType = 0
+	MentionAll  MentionType = 1
+	MentionAllUID           = "-1"
+)
+
 type Content struct {
 	String *string
 	Raw    json.RawMessage
@@ -139,3 +159,51 @@ func (m UserMessage) Text() string {
 }
 
 func (m UserMessage) IsSelf() bool { return m.isSelf }
+
+type GroupMessage struct {
+	Data     TGroupMessage
+	threadID string
+	isSelf   bool
+}
+
+func NewGroupMessage(selfUID string, data TGroupMessage) GroupMessage {
+	msg := GroupMessage{Data: data, threadID: data.IDTo}
+	msg.isSelf = data.UIDFrom == DefaultUIDSelf
+	if data.UIDFrom == DefaultUIDSelf {
+		msg.Data.UIDFrom = selfUID
+	}
+	if data.IDTo == DefaultUIDSelf {
+		msg.Data.IDTo = selfUID
+	}
+	return msg
+}
+
+func (m GroupMessage) Type() ThreadType { return ThreadTypeGroup }
+
+func (m GroupMessage) ThreadID() string { return m.threadID }
+
+func (m GroupMessage) MessageID() string { return m.Data.MsgID }
+
+func (m GroupMessage) SenderID() string { return m.Data.UIDFrom }
+
+func (m GroupMessage) Text() string {
+	return strings.TrimSpace(m.Data.Content.Text())
+}
+
+func (m GroupMessage) IsSelf() bool { return m.isSelf }
+
+func (m GroupMessage) MentionsAccount(accountID string) bool {
+	accountID = strings.TrimSpace(accountID)
+	if accountID == "" {
+		return false
+	}
+	for _, mention := range m.Data.Mentions {
+		if mention == nil {
+			continue
+		}
+		if mention.UID == accountID || mention.UID == MentionAllUID || mention.Type == MentionAll {
+			return true
+		}
+	}
+	return false
+}

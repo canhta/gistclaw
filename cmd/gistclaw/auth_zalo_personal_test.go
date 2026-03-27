@@ -46,6 +46,20 @@ func (s *stubAuthZaloPersonalFriendsReader) ListFriends(_ context.Context, _ zal
 	return s.friends, nil
 }
 
+type stubAuthZaloPersonalGroupsReader struct {
+	groups []app.ZaloPersonalGroup
+	err    error
+	calls  int
+}
+
+func (s *stubAuthZaloPersonalGroupsReader) ListGroups(_ context.Context, _ zalopersonal.StoredCredentials) ([]app.ZaloPersonalGroup, error) {
+	s.calls++
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.groups, nil
+}
+
 func TestRun_AuthZaloPersonalLoginWritesQRFileAndStoresCredentials(t *testing.T) {
 	startMockAnthropicServer(t)
 	cfgPath, dbPath, stateDir := writeZaloPersonalCLIConfig(t)
@@ -228,8 +242,63 @@ func TestRun_AuthZaloPersonalInvalidSubcommandShowsUsage(t *testing.T) {
 	if code == 0 {
 		t.Fatal("expected invalid subcommand to fail")
 	}
-	if !strings.Contains(stderr.String(), "Usage: gistclaw auth zalo-personal <login|logout|contacts>") {
+	if !strings.Contains(stderr.String(), "Usage: gistclaw auth zalo-personal <login|logout|contacts|groups>") {
 		t.Fatalf("expected zalo-personal usage, got:\n%s", stderr.String())
+	}
+}
+
+func TestRun_AuthZaloPersonalGroupsPrintsGroupIDs(t *testing.T) {
+	startMockAnthropicServer(t)
+	cfgPath, dbPath, _ := writeZaloPersonalCLIConfig(t)
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	if err := zalopersonal.SaveStoredCredentials(context.Background(), db, zalopersonal.StoredCredentials{
+		AccountID: "123456789",
+		IMEI:      "imei-123",
+		Cookie:    "zpw_sek=abc123",
+		UserAgent: "Mozilla/5.0",
+	}); err != nil {
+		t.Fatalf("SaveStoredCredentials: %v", err)
+	}
+	_ = db.Close()
+
+	reader := &stubAuthZaloPersonalGroupsReader{
+		groups: []app.ZaloPersonalGroup{
+			{GroupID: "group-2", Name: "Backend", TotalMember: 8},
+			{GroupID: "group-1", Name: "Alpha", TotalMember: 3},
+		},
+	}
+	oldGroupsReaderFactory := newZaloPersonalGroupsReader
+	newZaloPersonalGroupsReader = func() app.ZaloPersonalGroupsReader { return reader }
+	t.Cleanup(func() { newZaloPersonalGroupsReader = oldGroupsReaderFactory })
+
+	var stdout, stderr bytes.Buffer
+	code := runWithInput(
+		[]string{"auth", "--config", cfgPath, "zalo-personal", "groups"},
+		bytes.NewReader(nil),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("auth zalo-personal groups failed with code %d:\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if reader.calls != 1 {
+		t.Fatalf("expected groups reader to be called once, got %d", reader.calls)
+	}
+	for _, want := range []string{
+		"group_id\tname\ttotal_member",
+		"group-1\tAlpha\t3",
+		"group-2\tBackend\t8",
+	} {
+		if !strings.Contains(stdout.String(), want) {
+			t.Fatalf("expected %q in stdout, got:\n%s", want, stdout.String())
+		}
 	}
 }
 

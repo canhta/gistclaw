@@ -43,6 +43,7 @@ type Connector struct {
 	credentialPollInterval time.Duration
 	reconnectDelay         time.Duration
 	duplicateSessionDelay  time.Duration
+	groupPolicy            GroupPolicy
 }
 
 const maxTextChunkBytes = 2000
@@ -93,6 +94,10 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 
 func (c *Connector) ID() string {
 	return "zalo_personal"
+}
+
+func (c *Connector) SetGroupPolicy(policy GroupPolicy) {
+	c.groupPolicy = policy
 }
 
 func (c *Connector) Start(ctx context.Context) error {
@@ -237,9 +242,12 @@ func (c *Connector) runListener(ctx context.Context, listener SessionListener) e
 				}
 				continue
 			}
-			env, err := NormalizeInboundMessage(msg)
+			env, err := NormalizeInboundMessageWithPolicy(msg, c.groupPolicy)
 			if err != nil {
-				if strings.Contains(err.Error(), "DM only") || strings.Contains(err.Error(), "text is required") {
+				if strings.Contains(err.Error(), "DM only") ||
+					strings.Contains(err.Error(), "text is required") ||
+					strings.Contains(err.Error(), "group not allowed") ||
+					strings.Contains(err.Error(), "group mention required") {
 					continue
 				}
 				return fmt.Errorf("listener normalize: %w", err)
@@ -335,7 +343,7 @@ func sleepContext(ctx context.Context, d time.Duration) error {
 }
 
 func isContextDone(err error) bool {
-	return err == context.Canceled || err == context.DeadlineExceeded
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 var _ model.Connector = (*Connector)(nil)

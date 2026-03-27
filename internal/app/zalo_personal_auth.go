@@ -18,8 +18,19 @@ type ZaloPersonalFriend struct {
 	Avatar      string
 }
 
+type ZaloPersonalGroup struct {
+	GroupID     string
+	Name        string
+	Avatar      string
+	TotalMember int
+}
+
 type ZaloPersonalFriendsReader interface {
 	ListFriends(ctx context.Context, creds zalopersonal.StoredCredentials) ([]ZaloPersonalFriend, error)
+}
+
+type ZaloPersonalGroupsReader interface {
+	ListGroups(ctx context.Context, creds zalopersonal.StoredCredentials) ([]ZaloPersonalGroup, error)
 }
 
 func (a *App) ZaloPersonalStoredCredentials(ctx context.Context) (zalopersonal.StoredCredentials, bool, error) {
@@ -78,4 +89,27 @@ func (a *App) ListZaloPersonalFriends(ctx context.Context, reader ZaloPersonalFr
 		return nil, fmt.Errorf("zalo personal contacts: %w", err)
 	}
 	return friends, nil
+}
+
+func (a *App) ListZaloPersonalGroups(ctx context.Context, reader ZaloPersonalGroupsReader) ([]ZaloPersonalGroup, error) {
+	if a == nil || a.db == nil {
+		return nil, fmt.Errorf("zalo personal groups: db is required")
+	}
+	if reader == nil {
+		return nil, fmt.Errorf("zalo personal groups: reader is required")
+	}
+
+	creds, ok, err := zalopersonal.LoadStoredCredentials(ctx, a.db)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("zalo personal groups: not authenticated")
+	}
+
+	groups, err := reader.ListGroups(ctx, creds)
+	if err != nil {
+		return nil, fmt.Errorf("zalo personal groups: %w", err)
+	}
+	return groups, nil
 }

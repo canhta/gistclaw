@@ -52,4 +52,51 @@ func TestNormalizeInboundMessage(t *testing.T) {
 			t.Fatal("expected non-DM message to be rejected")
 		}
 	})
+
+	t.Run("allowlisted group mention normalizes to envelope", func(t *testing.T) {
+		t.Parallel()
+
+		env, err := NormalizeInboundMessageWithPolicy(IncomingMessage{
+			AccountID:      "acct-1",
+			SenderID:       "user-1",
+			ConversationID: "group-1",
+			MessageID:      "msg-2",
+			Text:           "ship it",
+			IsDirect:       false,
+			Mentioned:      true,
+		}, GroupPolicy{
+			Enabled:         true,
+			Allowlist:       map[string]bool{"group-1": true},
+			MentionRequired: true,
+		})
+		if err != nil {
+			t.Fatalf("NormalizeInboundMessageWithPolicy: %v", err)
+		}
+		if env.ConversationID != "group-1" {
+			t.Fatalf("expected group conversation, got %+v", env)
+		}
+		if env.ThreadID != "main" {
+			t.Fatalf("expected main thread for group conversation, got %+v", env)
+		}
+	})
+
+	t.Run("group message without mention is rejected when mention_required", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := NormalizeInboundMessageWithPolicy(IncomingMessage{
+			AccountID:      "acct-1",
+			SenderID:       "user-1",
+			ConversationID: "group-1",
+			MessageID:      "msg-3",
+			Text:           "ship it",
+			IsDirect:       false,
+		}, GroupPolicy{
+			Enabled:         true,
+			Allowlist:       map[string]bool{"group-1": true},
+			MentionRequired: true,
+		})
+		if err == nil {
+			t.Fatal("expected unmentioned group message to be rejected")
+		}
+	})
 }

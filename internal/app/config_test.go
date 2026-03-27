@@ -117,6 +117,9 @@ zalo_personal:
 	if cfg.ZaloPersonal.AgentID != "assistant" {
 		t.Fatalf("expected default zalo_personal agent_id %q, got %q", "assistant", cfg.ZaloPersonal.AgentID)
 	}
+	if cfg.ZaloPersonal.Groups.ReplyMode != "mention_required" {
+		t.Fatalf("expected default zalo_personal groups reply_mode %q, got %q", "mention_required", cfg.ZaloPersonal.Groups.ReplyMode)
+	}
 }
 
 func TestConfig_MissingAPIKey(t *testing.T) {
