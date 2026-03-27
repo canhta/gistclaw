@@ -458,6 +458,64 @@ func TestRunTestsAndBuild_DefaultToGoTooling(t *testing.T) {
 	}
 }
 
+func TestRunTestsAndBuild_AllowElevatedAbsoluteCWD(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	writeWorkspaceFile(t, outside, "go.mod", "module example.com/repo\n\ngo 1.24\n")
+	writeWorkspaceFile(t, outside, "main.go", "package main\n\nfunc main() {}\n")
+	writeWorkspaceFile(t, outside, "main_test.go", "package main\n\nimport \"testing\"\n\nfunc TestOK(t *testing.T) {}\n")
+
+	ctx := WithInvocationContext(context.Background(), InvocationContext{
+		CWD: root,
+		Authority: authority.Envelope{
+			HostAccessMode: authority.HostAccessModeElevated,
+		},
+	})
+
+	testsTool := NewRunTestsTool(60, 64<<10)
+	testResult, err := testsTool.Invoke(ctx, model.ToolCall{
+		ID:        "call-tests-absolute",
+		ToolName:  testsTool.Name(),
+		InputJSON: []byte(`{"cwd":` + quoteJSONString(outside) + `}`),
+	})
+	if err != nil {
+		t.Fatalf("run_tests Invoke: %v", err)
+	}
+
+	buildTool := NewRunBuildTool(60, 64<<10)
+	buildResult, err := buildTool.Invoke(ctx, model.ToolCall{
+		ID:        "call-build-absolute",
+		ToolName:  buildTool.Name(),
+		InputJSON: []byte(`{"cwd":` + quoteJSONString(outside) + `}`),
+	})
+	if err != nil {
+		t.Fatalf("run_build Invoke: %v", err)
+	}
+
+	for name, raw := range map[string]string{
+		"run_tests": testResult.Output,
+		"run_build": buildResult.Output,
+	} {
+		var payload struct {
+			CWD      string `json:"cwd"`
+			Command  string `json:"command"`
+			ExitCode int    `json:"exit_code"`
+		}
+		if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+			t.Fatalf("%s unmarshal output: %v", name, err)
+		}
+		if payload.CWD != outside {
+			t.Fatalf("%s expected cwd %q, got %q", name, outside, payload.CWD)
+		}
+		if payload.ExitCode != 0 {
+			t.Fatalf("%s expected zero exit code, got %d", name, payload.ExitCode)
+		}
+		if payload.Command == "" {
+			t.Fatalf("%s expected command to be recorded", name)
+		}
+	}
+}
+
 func TestGitTools_InspectRepository(t *testing.T) {
 	root := t.TempDir()
 	writeWorkspaceFile(t, root, "README.md", "hello\n")

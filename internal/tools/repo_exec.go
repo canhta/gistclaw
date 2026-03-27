@@ -462,6 +462,11 @@ type RunTestsTool struct {
 	runner commandRunner
 }
 
+type repoCommandInput struct {
+	Target string `json:"target"`
+	CWD    string `json:"cwd"`
+}
+
 func NewRunTestsTool(timeoutSec int, maxOutputBytes int) *RunTestsTool {
 	return &RunTestsTool{runner: newCommandRunner(timeoutSec, maxOutputBytes)}
 }
@@ -471,8 +476,8 @@ func (t *RunTestsTool) Name() string { return "run_tests" }
 func (t *RunTestsTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Run the repository's default test command from the current working directory.",
-		InputSchemaJSON: `{"type":"object","properties":{"target":{"type":"string"}}}`,
+		Description:     "Run the repository's default test command from the current working directory or an explicitly requested directory.",
+		InputSchemaJSON: `{"type":"object","properties":{"target":{"type":"string"},"cwd":{"type":"string"}}}`,
 		Risk:            model.RiskLow,
 		SideEffect:      effectExecRead,
 		Approval:        "never",
@@ -484,20 +489,22 @@ func (t *RunTestsTool) Invoke(ctx context.Context, call model.ToolCall) (model.T
 	if err != nil {
 		return model.ToolResult{}, err
 	}
-	var input struct {
-		Target string `json:"target"`
-	}
+	var input repoCommandInput
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("run_tests: decode input: %w", err)
 	}
-	command, args, err := detectTestCommand(root, strings.TrimSpace(input.Target))
+	cwd, err := resolveToolCWD(root, input.CWD, authorityFromContext(ctx))
+	if err != nil {
+		return model.ToolResult{}, fmt.Errorf("run_tests: cwd: %w", err)
+	}
+	command, args, err := detectTestCommand(cwd, strings.TrimSpace(input.Target))
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("run_tests: %w", err)
 	}
 	return t.runner.run(ctx, commandRequest{
 		command: command,
 		args:    args,
-		cwd:     root,
+		cwd:     cwd,
 		effect:  effectExecRead,
 	})
 }
@@ -515,8 +522,8 @@ func (t *RunBuildTool) Name() string { return "run_build" }
 func (t *RunBuildTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
-		Description:     "Run the repository's default build command from the current working directory.",
-		InputSchemaJSON: `{"type":"object","properties":{"target":{"type":"string"}}}`,
+		Description:     "Run the repository's default build command from the current working directory or an explicitly requested directory.",
+		InputSchemaJSON: `{"type":"object","properties":{"target":{"type":"string"},"cwd":{"type":"string"}}}`,
 		Risk:            model.RiskLow,
 		SideEffect:      effectExecRead,
 		Approval:        "never",
@@ -528,20 +535,22 @@ func (t *RunBuildTool) Invoke(ctx context.Context, call model.ToolCall) (model.T
 	if err != nil {
 		return model.ToolResult{}, err
 	}
-	var input struct {
-		Target string `json:"target"`
-	}
+	var input repoCommandInput
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("run_build: decode input: %w", err)
 	}
-	command, args, err := detectBuildCommand(root, strings.TrimSpace(input.Target))
+	cwd, err := resolveToolCWD(root, input.CWD, authorityFromContext(ctx))
+	if err != nil {
+		return model.ToolResult{}, fmt.Errorf("run_build: cwd: %w", err)
+	}
+	command, args, err := detectBuildCommand(cwd, strings.TrimSpace(input.Target))
 	if err != nil {
 		return model.ToolResult{}, fmt.Errorf("run_build: %w", err)
 	}
 	return t.runner.run(ctx, commandRequest{
 		command: command,
 		args:    args,
-		cwd:     root,
+		cwd:     cwd,
 		effect:  effectExecRead,
 	})
 }
