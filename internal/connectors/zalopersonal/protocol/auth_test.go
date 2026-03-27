@@ -3,8 +3,8 @@ package protocol
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -104,9 +104,71 @@ func TestLoginWithCredentialsSeedsCookieJar(t *testing.T) {
 func TestLoginQRReturnsNotImplemented(t *testing.T) {
 	t.Parallel()
 
-	_, err := LoginQR(context.Background(), nil)
-	if !errors.Is(err, ErrQRLoginNotImplemented) {
-		t.Fatalf("expected ErrQRLoginNotImplemented, got %v", err)
+	oldTransport := defaultHTTPTransport
+	var waitingScanCalls int
+	var waitingConfirmCalls int
+	defaultHTTPTransport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.URL.Host == "id.zalo.me" && req.URL.Path == "/account":
+			return htmlHTTPResponse(t, `<script src="https://stc-zlogin.zdn.vn/main-1.2.3.js"></script>`), nil
+		case req.URL.Host == "id.zalo.me" && req.URL.Path == "/account/logininfo":
+			return rawHTTPResponse(t, `{"error_code":0}`), nil
+		case req.URL.Host == "id.zalo.me" && req.URL.Path == "/account/verify-client":
+			return rawHTTPResponse(t, `{"error_code":0}`), nil
+		case req.URL.Host == "id.zalo.me" && req.URL.Path == "/account/authen/qr/generate":
+			return rawHTTPResponse(t, `{"error_code":0,"data":{"code":"qr-code","image":"data:image/png;base64,`+base64.StdEncoding.EncodeToString([]byte("png-bytes"))+`"}}`), nil
+		case req.URL.Host == "id.zalo.me" && req.URL.Path == "/account/authen/qr/waiting-scan":
+			waitingScanCalls++
+			if waitingScanCalls == 1 {
+				return rawHTTPResponse(t, `{"error_code":8}`), nil
+			}
+			return rawHTTPResponse(t, `{"error_code":0,"data":{"display_name":"Canh"}}`), nil
+		case req.URL.Host == "id.zalo.me" && req.URL.Path == "/account/authen/qr/waiting-confirm":
+			waitingConfirmCalls++
+			if waitingConfirmCalls == 1 {
+				return rawHTTPResponse(t, `{"error_code":8}`), nil
+			}
+			return httpResponse(t, `{"error_code":0}`, http.Header{
+				"Content-Type": []string{"application/json"},
+				"Set-Cookie":   []string{"zpw_sek=abc123; Domain=.zalo.me; Path=/", "_ga=test; Domain=.zalo.me; Path=/"},
+			}), nil
+		case req.URL.Host == "id.zalo.me" && req.URL.Path == "/account/checksession":
+			return htmlHTTPResponse(t, ""), nil
+		case req.URL.Host == "jr.chat.zalo.me" && req.URL.Path == "/jr/userinfo":
+			return rawHTTPResponse(t, `{"error_code":0,"data":{"logged":true,"info":{"name":"Canh"}}}`), nil
+		default:
+			t.Fatalf("unexpected request: %s %s", req.Method, req.URL.String())
+			return nil, nil
+		}
+	})
+	t.Cleanup(func() { defaultHTTPTransport = oldTransport })
+
+	var qr bytes.Buffer
+	creds, err := LoginQR(context.Background(), func(png []byte) {
+		_, _ = qr.Write(png)
+	})
+	if err != nil {
+		t.Fatalf("LoginQR: %v", err)
+	}
+	if string(qr.Bytes()) != "png-bytes" {
+		t.Fatalf("expected qr callback bytes, got %q", qr.Bytes())
+	}
+	if creds == nil {
+		t.Fatal("expected credentials")
+	}
+	if creds.IMEI == "" {
+		t.Fatal("expected IMEI to be generated")
+	}
+	if creds.UserAgent != DefaultUserAgent {
+		t.Fatalf("expected default user agent, got %q", creds.UserAgent)
+	}
+	if creds.Language == nil || *creds.Language != DefaultLanguage {
+		t.Fatalf("expected default language %q, got %+v", DefaultLanguage, creds.Language)
+	}
+	for _, want := range []string{"zpw_sek=abc123", "_ga=test"} {
+		if !containsCookie(creds.Cookie, want) {
+			t.Fatalf("expected cookie header %q to contain %q", creds.Cookie, want)
+		}
 	}
 }
 
@@ -165,11 +227,25 @@ func jsonHTTPResponse(t *testing.T, payload any) *http.Response {
 func rawHTTPResponse(t *testing.T, body string) *http.Response {
 	t.Helper()
 
+	return httpResponse(t, body, http.Header{
+		"Content-Type": []string{"application/json"},
+	})
+}
+
+func htmlHTTPResponse(t *testing.T, body string) *http.Response {
+	t.Helper()
+
+	return httpResponse(t, body, http.Header{
+		"Content-Type": []string{"text/html; charset=utf-8"},
+	})
+}
+
+func httpResponse(t *testing.T, body string, header http.Header) *http.Response {
+	t.Helper()
+
 	return &http.Response{
 		StatusCode: http.StatusOK,
-		Header: http.Header{
-			"Content-Type": []string{"application/json"},
-		},
-		Body: io.NopCloser(bytes.NewBufferString(body)),
+		Header:     header,
+		Body:       io.NopCloser(bytes.NewBufferString(body)),
 	}
 }

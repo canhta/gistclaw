@@ -16,15 +16,22 @@ var (
 	authReadPassword = func(fd int) ([]byte, error) { return term.ReadPassword(fd) }
 )
 
+const authUsage = `Usage:
+  gistclaw auth set-password [--password-stdin]
+  gistclaw auth zalo-personal login
+  gistclaw auth zalo-personal logout`
+
 func runAuth(opts globalOptions, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "Usage: gistclaw auth set-password [--password-stdin]")
+		fmt.Fprintln(stderr, authUsage)
 		return 1
 	}
 
 	switch args[0] {
 	case "set-password":
 		return runAuthSetPassword(opts, args[1:], stdin, stdout, stderr)
+	case "zalo-personal":
+		return runAuthZaloPersonal(opts, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown auth subcommand: %s\n", args[0])
 		return 1
