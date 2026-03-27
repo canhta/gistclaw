@@ -18,7 +18,7 @@ Today the repo already ships a working daemon, CLI, local web control plane, rep
 - `gistclaw serve` starts the daemon and local web host.
 - `gistclaw version` prints the installed release identity.
 - `gistclaw auth set-password` bootstraps or rotates the built-in browser login for VPS operators.
-- `gistclaw auth zalo-personal login`, `gistclaw auth zalo-personal logout`, and `gistclaw auth zalo-personal contacts` manage optional Zalo Personal connector credentials and DM target lookup through the CLI.
+- `gistclaw auth zalo-personal login`, `logout`, `contacts`, `groups`, `send-text`, `send-image`, and `send-file` manage optional Zalo Personal auth, target lookup, and operator sends through the CLI.
 - `gistclaw run`, `inspect`, `security audit`, `schedule`, `doctor`, `backup`, and `export` cover the operator CLI.
 - `gistclaw inspect systemd-unit` prints the canonical service file used by the Ubuntu installer.
 - `gistclaw inspect token` prints the admin token stored in the runtime settings table.
@@ -27,7 +27,7 @@ Today the repo already ships a working daemon, CLI, local web control plane, rep
 - The Ubuntu installer supports either a quick-start provider key path or an exact `--config-file` reinstall path for VPS operators, plus optional `--public-domain` Caddy bootstrap.
 - Providers: Anthropic and OpenAI-compatible endpoints.
 - Tools: built-in web fetch, optional Tavily search, optional MCP stdio tools.
-- Live external surfaces: Telegram DM, WhatsApp, and optional unofficial Zalo Personal DM.
+- Live external surfaces: Telegram DM, WhatsApp, and optional unofficial Zalo Personal messaging.
 - The repo includes a default team definition in [teams/default/team.yaml](teams/default/team.yaml).
 - The Team page supports named per-project team profiles under `storage_root/projects/<project-id>/teams/<profile>/`, with the machine default under `storage_root/teams/default/`.
 
@@ -68,6 +68,8 @@ gistclaw serve
 gistclaw auth set-password
 gistclaw auth zalo-personal login
 gistclaw auth zalo-personal contacts
+gistclaw auth zalo-personal groups
+gistclaw auth zalo-personal send-text user-1 "xin chao"
 gistclaw run "fix the failing tests"
 gistclaw inspect status
 gistclaw inspect replay <run_id>
@@ -80,7 +82,7 @@ gistclaw backup --db ~/.local/share/gistclaw/runtime.db
 gistclaw export --db ~/.local/share/gistclaw/runtime.db --out export.json
 ```
 
-Use `gistclaw help`, `gistclaw inspect --help`, and `gistclaw schedule --help` for the full command surface. `gistclaw inspect status` includes storage-health details, `gistclaw doctor` summarizes connector and storage health, and `gistclaw security audit` reports deployment-risk findings with distinct exit codes for warnings vs failures. Zalo Personal remains an unofficial, DM-only connector with CLI-driven authentication.
+Use `gistclaw help`, `gistclaw inspect --help`, and `gistclaw schedule --help` for the full command surface. `gistclaw inspect status` includes storage-health details, `gistclaw doctor` summarizes connector and storage health, and `gistclaw security audit` reports deployment-risk findings with distinct exit codes for warnings vs failures. Zalo Personal remains an unofficial connector with CLI-driven authentication, safe-by-default group controls, and operator send commands.
 
 ## Build And Test
 

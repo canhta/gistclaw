@@ -44,7 +44,7 @@ func TestIncomingMessageFromProtocolMessage(t *testing.T) {
 	}
 }
 
-func TestIncomingMessageFromProtocolMessageIgnoresNonTextDM(t *testing.T) {
+func TestIncomingMessageFromProtocolMessagePreservesNonTextDMAsPlaceholder(t *testing.T) {
 	t.Parallel()
 
 	msg := protocol.NewUserMessage("acct-1", protocol.TMessage{
@@ -56,8 +56,12 @@ func TestIncomingMessageFromProtocolMessageIgnoresNonTextDM(t *testing.T) {
 		},
 	})
 
-	if incoming, ok := incomingMessageFromProtocolMessage("acct-1", "vi", msg); ok {
-		t.Fatalf("expected non-text DM to be ignored, got %+v", incoming)
+	incoming, ok := incomingMessageFromProtocolMessage("acct-1", "vi", msg)
+	if !ok {
+		t.Fatal("expected non-text DM to become a placeholder message")
+	}
+	if incoming.Text != "[User sent a file: report.pdf]" {
+		t.Fatalf("expected file placeholder text, got %+v", incoming)
 	}
 }
 

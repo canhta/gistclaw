@@ -20,7 +20,11 @@ const authUsage = `Usage:
   gistclaw auth set-password [--password-stdin]
   gistclaw auth zalo-personal login
   gistclaw auth zalo-personal logout
-  gistclaw auth zalo-personal contacts`
+  gistclaw auth zalo-personal contacts
+  gistclaw auth zalo-personal groups
+  gistclaw auth zalo-personal send-text <chat-id> <text>
+  gistclaw auth zalo-personal send-image <chat-id> <file-path> [caption]
+  gistclaw auth zalo-personal send-file <chat-id> <file-path>`
 
 func runAuth(opts globalOptions, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {

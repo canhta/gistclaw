@@ -242,7 +242,7 @@ func TestRun_AuthZaloPersonalInvalidSubcommandShowsUsage(t *testing.T) {
 	if code == 0 {
 		t.Fatal("expected invalid subcommand to fail")
 	}
-	if !strings.Contains(stderr.String(), "Usage: gistclaw auth zalo-personal <login|logout|contacts|groups>") {
+	if !strings.Contains(stderr.String(), "Usage: gistclaw auth zalo-personal <login|logout|contacts|groups|send-text|send-image|send-file>") {
 		t.Fatalf("expected zalo-personal usage, got:\n%s", stderr.String())
 	}
 }
@@ -302,6 +302,199 @@ func TestRun_AuthZaloPersonalGroupsPrintsGroupIDs(t *testing.T) {
 	}
 }
 
+func TestRun_AuthZaloPersonalSendTextUsesStoredCredentials(t *testing.T) {
+	startMockAnthropicServer(t)
+	cfgPath, dbPath, _ := writeZaloPersonalCLIConfig(t)
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	if err := zalopersonal.SaveStoredCredentials(context.Background(), db, zalopersonal.StoredCredentials{
+		AccountID: "123456789",
+		IMEI:      "imei-123",
+		Cookie:    "zpw_sek=abc123",
+		UserAgent: "Mozilla/5.0",
+	}); err != nil {
+		t.Fatalf("SaveStoredCredentials: %v", err)
+	}
+	_ = db.Close()
+
+	oldLoginWithCredentials := zaloPersonalProtocolLoginWithCredentials
+	oldSendMessage := zaloPersonalProtocolSendMessage
+	t.Cleanup(func() {
+		zaloPersonalProtocolLoginWithCredentials = oldLoginWithCredentials
+		zaloPersonalProtocolSendMessage = oldSendMessage
+	})
+
+	zaloPersonalProtocolLoginWithCredentials = func(_ context.Context, _ protocol.Credentials) (*protocol.Session, error) {
+		return &protocol.Session{UID: "123456789"}, nil
+	}
+	var gotThreadID string
+	var gotText string
+	zaloPersonalProtocolSendMessage = func(_ context.Context, _ *protocol.Session, threadID string, threadType protocol.ThreadType, text string) (string, error) {
+		if threadType != protocol.ThreadTypeUser {
+			t.Fatalf("expected direct thread type, got %d", threadType)
+		}
+		gotThreadID = threadID
+		gotText = text
+		return "msg-1", nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runWithInput(
+		[]string{"auth", "--config", cfgPath, "zalo-personal", "send-text", "user-1", "xin chao"},
+		bytes.NewReader(nil),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("auth zalo-personal send-text failed with code %d:\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if gotThreadID != "user-1" || gotText != "xin chao" {
+		t.Fatalf("unexpected send-text args: threadID=%q text=%q", gotThreadID, gotText)
+	}
+}
+
+func TestRun_AuthZaloPersonalSendImageUsesStoredCredentials(t *testing.T) {
+	startMockAnthropicServer(t)
+	cfgPath, dbPath, _ := writeZaloPersonalCLIConfig(t)
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	if err := zalopersonal.SaveStoredCredentials(context.Background(), db, zalopersonal.StoredCredentials{
+		AccountID: "123456789",
+		IMEI:      "imei-123",
+		Cookie:    "zpw_sek=abc123",
+		UserAgent: "Mozilla/5.0",
+	}); err != nil {
+		t.Fatalf("SaveStoredCredentials: %v", err)
+	}
+	_ = db.Close()
+
+	imagePath := filepath.Join(t.TempDir(), "tiny.png")
+	if err := os.WriteFile(imagePath, []byte("png"), 0o600); err != nil {
+		t.Fatalf("WriteFile image: %v", err)
+	}
+
+	oldLoginWithCredentials := zaloPersonalProtocolLoginWithCredentials
+	oldUploadImage := zaloPersonalProtocolUploadImage
+	oldSendImage := zaloPersonalProtocolSendImage
+	t.Cleanup(func() {
+		zaloPersonalProtocolLoginWithCredentials = oldLoginWithCredentials
+		zaloPersonalProtocolUploadImage = oldUploadImage
+		zaloPersonalProtocolSendImage = oldSendImage
+	})
+
+	zaloPersonalProtocolLoginWithCredentials = func(_ context.Context, _ protocol.Credentials) (*protocol.Session, error) {
+		return &protocol.Session{UID: "123456789"}, nil
+	}
+	zaloPersonalProtocolUploadImage = func(_ context.Context, _ *protocol.Session, threadID string, threadType protocol.ThreadType, filePath string) (*protocol.ImageUploadResult, error) {
+		if threadID != "user-1" || threadType != protocol.ThreadTypeUser || filePath != imagePath {
+			t.Fatalf("unexpected upload image args: %q %d %q", threadID, threadType, filePath)
+		}
+		return &protocol.ImageUploadResult{PhotoID: "photo-1"}, nil
+	}
+	var gotCaption string
+	zaloPersonalProtocolSendImage = func(_ context.Context, _ *protocol.Session, threadID string, threadType protocol.ThreadType, upload *protocol.ImageUploadResult, caption string) (string, error) {
+		if threadID != "user-1" || threadType != protocol.ThreadTypeUser || upload == nil {
+			t.Fatalf("unexpected send image args: threadID=%q threadType=%d upload=%+v", threadID, threadType, upload)
+		}
+		gotCaption = caption
+		return "msg-image-1", nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runWithInput(
+		[]string{"auth", "--config", cfgPath, "zalo-personal", "send-image", "user-1", imagePath, "release evidence"},
+		bytes.NewReader(nil),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("auth zalo-personal send-image failed with code %d:\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if gotCaption != "release evidence" {
+		t.Fatalf("expected image caption to round-trip, got %q", gotCaption)
+	}
+}
+
+func TestRun_AuthZaloPersonalSendFileUsesStoredCredentials(t *testing.T) {
+	startMockAnthropicServer(t)
+	cfgPath, dbPath, _ := writeZaloPersonalCLIConfig(t)
+
+	db, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+	if err := zalopersonal.SaveStoredCredentials(context.Background(), db, zalopersonal.StoredCredentials{
+		AccountID: "123456789",
+		IMEI:      "imei-123",
+		Cookie:    "zpw_sek=abc123",
+		UserAgent: "Mozilla/5.0",
+	}); err != nil {
+		t.Fatalf("SaveStoredCredentials: %v", err)
+	}
+	_ = db.Close()
+
+	filePath := filepath.Join(t.TempDir(), "report.txt")
+	if err := os.WriteFile(filePath, []byte("hello"), 0o600); err != nil {
+		t.Fatalf("WriteFile file: %v", err)
+	}
+
+	oldLoginWithCredentials := zaloPersonalProtocolLoginWithCredentials
+	oldUploadFile := zaloPersonalProtocolUploadFile
+	oldSendFile := zaloPersonalProtocolSendFile
+	t.Cleanup(func() {
+		zaloPersonalProtocolLoginWithCredentials = oldLoginWithCredentials
+		zaloPersonalProtocolUploadFile = oldUploadFile
+		zaloPersonalProtocolSendFile = oldSendFile
+	})
+
+	zaloPersonalProtocolLoginWithCredentials = func(_ context.Context, _ protocol.Credentials) (*protocol.Session, error) {
+		return &protocol.Session{UID: "123456789"}, nil
+	}
+	zaloPersonalProtocolUploadFile = func(_ context.Context, _ *protocol.Session, threadID string, threadType protocol.ThreadType, filePathArg string) (*protocol.FileUploadResult, error) {
+		if threadID != "user-1" || threadType != protocol.ThreadTypeUser || filePathArg != filePath {
+			t.Fatalf("unexpected upload file args: %q %d %q", threadID, threadType, filePathArg)
+		}
+		return &protocol.FileUploadResult{FileID: "file-1"}, nil
+	}
+	var gotFileID string
+	zaloPersonalProtocolSendFile = func(_ context.Context, _ *protocol.Session, threadID string, threadType protocol.ThreadType, upload *protocol.FileUploadResult) (string, error) {
+		if threadID != "user-1" || threadType != protocol.ThreadTypeUser || upload == nil {
+			t.Fatalf("unexpected send file args: threadID=%q threadType=%d upload=%+v", threadID, threadType, upload)
+		}
+		gotFileID = upload.FileID
+		return "msg-file-1", nil
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := runWithInput(
+		[]string{"auth", "--config", cfgPath, "zalo-personal", "send-file", "user-1", filePath},
+		bytes.NewReader(nil),
+		&stdout,
+		&stderr,
+	)
+	if code != 0 {
+		t.Fatalf("auth zalo-personal send-file failed with code %d:\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+	}
+	if gotFileID != "file-1" {
+		t.Fatalf("expected file upload metadata to reach send, got %q", gotFileID)
+	}
+}
+
 func TestZaloPersonalProtocolQRRunnerCopiesDisplayName(t *testing.T) {
 	lang := "vi"
 
@@ -331,6 +524,83 @@ func TestZaloPersonalProtocolQRRunnerCopiesDisplayName(t *testing.T) {
 	}
 	if got.DisplayName != "Canh" {
 		t.Fatalf("expected display name Canh, got %q", got.DisplayName)
+	}
+}
+
+func TestZaloPersonalProtocolFriendsReaderMapsProtocolResults(t *testing.T) {
+	oldLoginWithCredentials := zaloPersonalProtocolLoginWithCredentials
+	oldFetchFriends := zaloPersonalProtocolFetchFriends
+	t.Cleanup(func() {
+		zaloPersonalProtocolLoginWithCredentials = oldLoginWithCredentials
+		zaloPersonalProtocolFetchFriends = oldFetchFriends
+	})
+
+	zaloPersonalProtocolLoginWithCredentials = func(_ context.Context, _ protocol.Credentials) (*protocol.Session, error) {
+		return &protocol.Session{UID: "123456789"}, nil
+	}
+	zaloPersonalProtocolFetchFriends = func(_ context.Context, _ *protocol.Session) ([]protocol.FriendInfo, error) {
+		return []protocol.FriendInfo{
+			{UserID: "user-2", DisplayName: "Bao", ZaloName: "Bao Nguyen", Avatar: "https://example.com/b.png"},
+		}, nil
+	}
+
+	got, err := (zaloPersonalProtocolFriendsReader{}).ListFriends(context.Background(), zalopersonal.StoredCredentials{
+		IMEI:      "imei-123",
+		Cookie:    "zpw_sek=abc123",
+		UserAgent: "Mozilla/5.0",
+		Language:  "vi",
+	})
+	if err != nil {
+		t.Fatalf("ListFriends: %v", err)
+	}
+	if len(got) != 1 || got[0].UserID != "user-2" || got[0].DisplayName != "Bao" {
+		t.Fatalf("unexpected friends: %+v", got)
+	}
+}
+
+func TestZaloPersonalProtocolGroupsReaderMapsProtocolResults(t *testing.T) {
+	oldLoginWithCredentials := zaloPersonalProtocolLoginWithCredentials
+	oldFetchGroups := zaloPersonalProtocolFetchGroups
+	t.Cleanup(func() {
+		zaloPersonalProtocolLoginWithCredentials = oldLoginWithCredentials
+		zaloPersonalProtocolFetchGroups = oldFetchGroups
+	})
+
+	zaloPersonalProtocolLoginWithCredentials = func(_ context.Context, _ protocol.Credentials) (*protocol.Session, error) {
+		return &protocol.Session{UID: "123456789"}, nil
+	}
+	zaloPersonalProtocolFetchGroups = func(_ context.Context, _ *protocol.Session) ([]protocol.GroupListInfo, error) {
+		return []protocol.GroupListInfo{
+			{GroupID: "group-1", Name: "Alpha", Avatar: "https://example.com/a.png", TotalMember: 3},
+		}, nil
+	}
+
+	got, err := (zaloPersonalProtocolGroupsReader{}).ListGroups(context.Background(), zalopersonal.StoredCredentials{
+		IMEI:      "imei-123",
+		Cookie:    "zpw_sek=abc123",
+		UserAgent: "Mozilla/5.0",
+	})
+	if err != nil {
+		t.Fatalf("ListGroups: %v", err)
+	}
+	if len(got) != 1 || got[0].GroupID != "group-1" || got[0].Name != "Alpha" {
+		t.Fatalf("unexpected groups: %+v", got)
+	}
+}
+
+func TestZaloPersonalThreadTypeUsesAllowlist(t *testing.T) {
+	cfg := app.Config{
+		ZaloPersonal: app.ZaloPersonalConfig{
+			Groups: app.ZaloPersonalGroupsConfig{
+				Allowlist: []string{"group-1"},
+			},
+		},
+	}
+	if got := zaloPersonalThreadType(cfg, "group-1"); got != protocol.ThreadTypeGroup {
+		t.Fatalf("expected group thread type, got %d", got)
+	}
+	if got := zaloPersonalThreadType(cfg, "user-1"); got != protocol.ThreadTypeUser {
+		t.Fatalf("expected user thread type, got %d", got)
 	}
 }
 

@@ -15,7 +15,7 @@ import (
 	"github.com/canhta/gistclaw/internal/connectors/zalopersonal/protocol"
 )
 
-const authZaloPersonalUsage = "Usage: gistclaw auth zalo-personal <login|logout|contacts|groups>"
+const authZaloPersonalUsage = "Usage: gistclaw auth zalo-personal <login|logout|contacts|groups|send-text|send-image|send-file>"
 
 var (
 	newZaloPersonalQRRunner                  = func() app.ZaloPersonalQRLoginRunner { return zaloPersonalProtocolQRRunner{} }
@@ -23,8 +23,25 @@ var (
 	newZaloPersonalGroupsReader              = func() app.ZaloPersonalGroupsReader { return zaloPersonalProtocolGroupsReader{} }
 	zaloPersonalProtocolLoginQR              = protocol.LoginQR
 	zaloPersonalProtocolLoginWithCredentials = protocol.LoginWithCredentials
-	zaloPersonalLoginTimeout                 = 2 * time.Minute
-	zaloPersonalContactsTimeout              = 30 * time.Second
+	zaloPersonalProtocolFetchFriends         = protocol.FetchFriends
+	zaloPersonalProtocolFetchGroups          = protocol.FetchGroups
+	zaloPersonalProtocolSendMessage          = protocol.SendMessage
+	zaloPersonalProtocolUploadImage          = protocol.UploadImage
+	zaloPersonalProtocolSendImage            = protocol.SendImage
+	zaloPersonalProtocolUploadFile           = func(ctx context.Context, sess *protocol.Session, threadID string, threadType protocol.ThreadType, filePath string) (*protocol.FileUploadResult, error) {
+		listener, err := protocol.NewListener(sess)
+		if err != nil {
+			return nil, err
+		}
+		if err := listener.Start(ctx); err != nil {
+			return nil, err
+		}
+		defer listener.Stop()
+		return protocol.UploadFile(ctx, sess, listener, threadID, threadType, filePath)
+	}
+	zaloPersonalProtocolSendFile = protocol.SendFile
+	zaloPersonalLoginTimeout     = 2 * time.Minute
+	zaloPersonalContactsTimeout  = 30 * time.Second
 )
 
 type zaloPersonalProtocolQRRunner struct{}
@@ -68,7 +85,7 @@ func (zaloPersonalProtocolFriendsReader) ListFriends(ctx context.Context, creds 
 		return nil, err
 	}
 
-	friends, err := protocol.FetchFriends(ctx, sess)
+	friends, err := zaloPersonalProtocolFetchFriends(ctx, sess)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +113,7 @@ func (zaloPersonalProtocolGroupsReader) ListGroups(ctx context.Context, creds za
 		return nil, err
 	}
 
-	groups, err := protocol.FetchGroups(ctx, sess)
+	groups, err := zaloPersonalProtocolFetchGroups(ctx, sess)
 	if err != nil {
 		return nil, err
 	}
@@ -114,20 +131,42 @@ func (zaloPersonalProtocolGroupsReader) ListGroups(ctx context.Context, creds za
 }
 
 func runAuthZaloPersonal(opts globalOptions, args []string, stdout, stderr io.Writer) int {
-	if len(args) != 1 {
+	if len(args) < 1 {
 		fmt.Fprintln(stderr, authZaloPersonalUsage)
 		return 1
 	}
 
 	switch args[0] {
 	case "login":
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, authZaloPersonalUsage)
+			return 1
+		}
 		return runAuthZaloPersonalLogin(opts, stdout, stderr)
 	case "logout":
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, authZaloPersonalUsage)
+			return 1
+		}
 		return runAuthZaloPersonalLogout(opts, stdout, stderr)
 	case "contacts":
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, authZaloPersonalUsage)
+			return 1
+		}
 		return runAuthZaloPersonalContacts(opts, stdout, stderr)
 	case "groups":
+		if len(args) != 1 {
+			fmt.Fprintln(stderr, authZaloPersonalUsage)
+			return 1
+		}
 		return runAuthZaloPersonalGroups(opts, stdout, stderr)
+	case "send-text":
+		return runAuthZaloPersonalSendText(opts, args[1:], stdout, stderr)
+	case "send-image":
+		return runAuthZaloPersonalSendImage(opts, args[1:], stdout, stderr)
+	case "send-file":
+		return runAuthZaloPersonalSendFile(opts, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintln(stderr, authZaloPersonalUsage)
 		return 1
@@ -274,6 +313,74 @@ func runAuthZaloPersonalGroups(opts globalOptions, stdout, stderr io.Writer) int
 	return 0
 }
 
+func runAuthZaloPersonalSendText(opts globalOptions, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 2 {
+		fmt.Fprintln(stderr, "Usage: gistclaw auth zalo-personal send-text <chat-id> <text>")
+		return 1
+	}
+	cfg, creds, sess, ok := loadZaloPersonalSessionForSend(opts, stderr)
+	if !ok {
+		return 1
+	}
+	threadType := zaloPersonalThreadType(cfg, args[0])
+	if _, err := zaloPersonalProtocolSendMessage(context.Background(), sess, args[0], threadType, args[1]); err != nil {
+		fmt.Fprintf(stderr, "auth zalo-personal send-text failed: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "sent text to %s (%s)\n", args[0], creds.AccountID)
+	return 0
+}
+
+func runAuthZaloPersonalSendImage(opts globalOptions, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 2 && len(args) != 3 {
+		fmt.Fprintln(stderr, "Usage: gistclaw auth zalo-personal send-image <chat-id> <file-path> [caption]")
+		return 1
+	}
+	cfg, creds, sess, ok := loadZaloPersonalSessionForSend(opts, stderr)
+	if !ok {
+		return 1
+	}
+	threadType := zaloPersonalThreadType(cfg, args[0])
+	upload, err := zaloPersonalProtocolUploadImage(context.Background(), sess, args[0], threadType, args[1])
+	if err != nil {
+		fmt.Fprintf(stderr, "auth zalo-personal send-image failed: %v\n", err)
+		return 1
+	}
+	caption := ""
+	if len(args) == 3 {
+		caption = args[2]
+	}
+	if _, err := zaloPersonalProtocolSendImage(context.Background(), sess, args[0], threadType, upload, caption); err != nil {
+		fmt.Fprintf(stderr, "auth zalo-personal send-image failed: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "sent image to %s (%s)\n", args[0], creds.AccountID)
+	return 0
+}
+
+func runAuthZaloPersonalSendFile(opts globalOptions, args []string, stdout, stderr io.Writer) int {
+	if len(args) != 2 {
+		fmt.Fprintln(stderr, "Usage: gistclaw auth zalo-personal send-file <chat-id> <file-path>")
+		return 1
+	}
+	cfg, creds, sess, ok := loadZaloPersonalSessionForSend(opts, stderr)
+	if !ok {
+		return 1
+	}
+	threadType := zaloPersonalThreadType(cfg, args[0])
+	upload, err := zaloPersonalProtocolUploadFile(context.Background(), sess, args[0], threadType, args[1])
+	if err != nil {
+		fmt.Fprintf(stderr, "auth zalo-personal send-file failed: %v\n", err)
+		return 1
+	}
+	if _, err := zaloPersonalProtocolSendFile(context.Background(), sess, args[0], threadType, upload); err != nil {
+		fmt.Fprintf(stderr, "auth zalo-personal send-file failed: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "sent file to %s (%s)\n", args[0], creds.AccountID)
+	return 0
+}
+
 func zaloPersonalLanguagePtr(language string) *string {
 	language = strings.TrimSpace(language)
 	if language == "" {
@@ -297,4 +404,50 @@ func sanitizeZaloTabField(value string) string {
 	value = strings.ReplaceAll(value, "\n", " ")
 	value = strings.ReplaceAll(value, "\r", " ")
 	return strings.TrimSpace(value)
+}
+
+func loadZaloPersonalSessionForSend(opts globalOptions, stderr io.Writer) (app.Config, zalopersonal.StoredCredentials, *protocol.Session, bool) {
+	cfg, err := loadConfigRawWithOverrides(opts)
+	if err != nil {
+		fmt.Fprintf(stderr, "load config: %v\n", err)
+		return app.Config{}, zalopersonal.StoredCredentials{}, nil, false
+	}
+
+	application, err := loadApp(opts)
+	if err != nil {
+		fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
+		return app.Config{}, zalopersonal.StoredCredentials{}, nil, false
+	}
+	defer func() { _ = application.Stop() }()
+
+	creds, ok, err := application.ZaloPersonalStoredCredentials(context.Background())
+	if err != nil {
+		fmt.Fprintf(stderr, "load stored credentials: %v\n", err)
+		return app.Config{}, zalopersonal.StoredCredentials{}, nil, false
+	}
+	if !ok {
+		fmt.Fprintln(stderr, "load stored credentials: not authenticated")
+		return app.Config{}, zalopersonal.StoredCredentials{}, nil, false
+	}
+
+	sess, err := zaloPersonalProtocolLoginWithCredentials(context.Background(), protocol.Credentials{
+		IMEI:      creds.IMEI,
+		Cookie:    creds.Cookie,
+		UserAgent: creds.UserAgent,
+		Language:  zaloPersonalLanguagePtr(creds.Language),
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "open zalo session: %v\n", err)
+		return app.Config{}, zalopersonal.StoredCredentials{}, nil, false
+	}
+	return cfg, creds, sess, true
+}
+
+func zaloPersonalThreadType(cfg app.Config, chatID string) protocol.ThreadType {
+	for _, groupID := range cfg.ZaloPersonal.Groups.Allowlist {
+		if strings.TrimSpace(groupID) == strings.TrimSpace(chatID) {
+			return protocol.ThreadTypeGroup
+		}
+	}
+	return protocol.ThreadTypeUser
 }

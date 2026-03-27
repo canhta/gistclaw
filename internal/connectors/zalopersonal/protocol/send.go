@@ -94,18 +94,11 @@ func SendMessage(ctx context.Context, sess *Session, threadID string, threadType
 	if err := json.Unmarshal(plain, &result); err != nil {
 		return "", fmt.Errorf("zalo personal protocol: parse send result: %w", err)
 	}
-
-	var msgID string
-	if err := json.Unmarshal(result.MsgID, &msgID); err == nil {
-		return msgID, nil
+	msgID, err := parseMessageID(result.MsgID)
+	if err != nil {
+		return "", fmt.Errorf("zalo personal protocol: parse send result: %w", err)
 	}
-
-	var numericID json.Number
-	if err := json.Unmarshal(result.MsgID, &numericID); err == nil {
-		return numericID.String(), nil
-	}
-
-	return "", fmt.Errorf("zalo personal protocol: parse send result: unsupported msgId format")
+	return msgID, nil
 }
 
 func getServiceURL(sess *Session, service string) string {

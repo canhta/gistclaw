@@ -117,6 +117,122 @@ func TestListenerRunEmitsUserMessage(t *testing.T) {
 	<-done
 }
 
+func TestListenerRunEmitsGroupMessage(t *testing.T) {
+	t.Parallel()
+
+	cipherKey := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	client := newStubWSClient()
+	ln := &Listener{
+		sess:           sessWithWSSettings(cipherKey),
+		client:         client,
+		messageCh:      make(chan Message, 4),
+		errorCh:        make(chan error, 4),
+		disconnectedCh: make(chan error, 4),
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan struct{})
+	ln.wg.Add(1)
+	go func() {
+		defer close(done)
+		ln.run(ctx)
+	}()
+
+	client.reads <- makeFrame(1, 1, 1, map[string]any{"key": cipherKey})
+	client.reads <- makeFrame(1, 521, 0, map[string]any{
+		"encrypt": 3,
+		"data": encryptWSData(t, cipherKey, map[string]any{
+			"data": map[string]any{
+				"groupMsgs": []map[string]any{
+					{
+						"msgId":   "group-msg-1",
+						"uidFrom": "user-2",
+						"idTo":    "group-1",
+						"content": "@acct-1 review this",
+						"mentions": []map[string]any{
+							{"uid": "acct-1", "pos": 0, "len": 7, "type": 0},
+						},
+					},
+				},
+			},
+		}),
+	})
+
+	select {
+	case raw := <-ln.messageCh:
+		msg, ok := raw.(GroupMessage)
+		if !ok {
+			t.Fatalf("expected GroupMessage, got %T", raw)
+		}
+		if msg.MessageID() != "group-msg-1" {
+			t.Fatalf("expected group-msg-1, got %q", msg.MessageID())
+		}
+		if msg.ThreadID() != "group-1" {
+			t.Fatalf("expected thread group-1, got %q", msg.ThreadID())
+		}
+		if !msg.MentionsAccount("acct-1") {
+			t.Fatalf("expected mention to be preserved, got %+v", msg)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for group listener message")
+	}
+
+	cancel()
+	close(client.reads)
+	<-done
+}
+
+func TestListenerHandleControlEventResolvesUploadCallback(t *testing.T) {
+	t.Parallel()
+
+	cipherKey := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	ln := &Listener{
+		sess:           sessWithWSSettings(cipherKey),
+		messageCh:      make(chan Message, 1),
+		errorCh:        make(chan error, 1),
+		disconnectedCh: make(chan error, 1),
+	}
+	ln.cipherKey = cipherKey
+
+	urlCh := ln.RegisterUploadCallback("123")
+	frame := makeFrame(1, 601, 0, map[string]any{
+		"encrypt": 3,
+		"data": encryptWSData(t, cipherKey, map[string]any{
+			"data": map[string]any{
+				"controls": []map[string]any{
+					{
+						"content": map[string]any{
+							"act_type": "file_done",
+							"fileId":   123,
+							"data": map[string]any{
+								"url": "https://example.com/report.pdf",
+							},
+						},
+					},
+				},
+			},
+		}),
+	})
+	if err := ln.handleFrame(context.Background(), frame); err != nil {
+		t.Fatalf("handleFrame: %v", err)
+	}
+
+	select {
+	case fileURL := <-urlCh:
+		if fileURL != "https://example.com/report.pdf" {
+			t.Fatalf("expected callback URL, got %q", fileURL)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for upload callback URL")
+	}
+
+	if _, ok := ln.uploadCallbacks.Load("123"); ok {
+		t.Fatal("expected upload callback to be removed after file_done")
+	}
+}
+
 func sessWithWSSettings(cipherKey string) *Session {
 	sess := NewSession()
 	sess.UID = "acct-1"

@@ -10,14 +10,14 @@ The current tree already has concrete seams for:
 - providers in `internal/providers/`
 - connectors in `internal/connectors/`
 
-The shipped surface today includes built-in web fetch, optional Tavily search, optional MCP stdio tools, provider adapters for Anthropic and OpenAI-compatible APIs, and live Telegram, WhatsApp, and optional unofficial Zalo Personal DM connector wiring.
+The shipped surface today includes built-in web fetch, optional Tavily search, optional MCP stdio tools, provider adapters for Anthropic and OpenAI-compatible APIs, and live Telegram, WhatsApp, and optional unofficial Zalo Personal connector wiring.
 
 ## Still Deferred
 
 The following are still intentionally deferred until the session-first runtime is more mature:
 
 - broad connector expansion
-- official Zalo OA support and Zalo Personal group coverage
+- official Zalo OA support
 - marketplace or installation UX
 - compatibility layers for legacy extension shapes
 - large plugin/runtime breadth

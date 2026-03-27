@@ -83,7 +83,7 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 		if err != nil {
 			return err
 		}
-		_, err = protocol.SendMessage(ctx, sess, chatID, protocol.ThreadTypeUser, text)
+		_, err = protocol.SendMessage(ctx, sess, chatID, connector.threadTypeForChat(chatID), text)
 		return err
 	}
 	connector.newListener = func(sess *listenerSession) (SessionListener, error) {
@@ -193,6 +193,14 @@ func isDuplicateSessionError(err error) bool {
 		return false
 	}
 	return disconnect.Code == protocol.CloseCodeDuplicate
+}
+
+func (c *Connector) threadTypeForChat(chatID string) protocol.ThreadType {
+	chatID = strings.TrimSpace(chatID)
+	if c.groupPolicy.Enabled && c.groupPolicy.Allowlist[chatID] {
+		return protocol.ThreadTypeGroup
+	}
+	return protocol.ThreadTypeUser
 }
 
 func (c *Connector) Notify(ctx context.Context, chatID string, delta model.ReplayDelta, dedupeKey string) error {

@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 	"unicode/utf8"
@@ -64,12 +65,13 @@ type Listener struct {
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
 
-	cipherKey    string
-	pingCancel   context.CancelFunc
-	connectedAt  time.Time
-	retryStates  map[string]*retryState
-	stopped      bool
-	retryBackoff func(ctx context.Context, delay time.Duration) error
+	cipherKey       string
+	pingCancel      context.CancelFunc
+	connectedAt     time.Time
+	retryStates     map[string]*retryState
+	stopped         bool
+	retryBackoff    func(ctx context.Context, delay time.Duration) error
+	uploadCallbacks sync.Map
 
 	messageCh      chan Message
 	errorCh        chan error
@@ -209,6 +211,8 @@ func (ln *Listener) handleFrame(ctx context.Context, data []byte) error {
 		ln.handleUserMessages(ctx, envelope.Data, envelope.Encrypt)
 	case "1_521_0":
 		ln.handleGroupMessages(ctx, envelope.Data, envelope.Encrypt)
+	case "1_601_0":
+		ln.handleControlEvents(ctx, envelope.Data, envelope.Encrypt)
 	case "1_3000_0":
 		return &DisconnectError{
 			Code:   CloseCodeDuplicate,
@@ -313,6 +317,62 @@ func (ln *Listener) handleGroupMessages(ctx context.Context, data string, encTyp
 	}
 }
 
+func (ln *Listener) handleControlEvents(ctx context.Context, data string, encType uint) {
+	ln.mu.RLock()
+	cipherKey := ln.cipherKey
+	ln.mu.RUnlock()
+
+	payload, err := ln.decryptEventData(data, encType, cipherKey)
+	if err != nil {
+		emit(ctx, ln.errorCh, fmt.Errorf("zalo personal protocol: decrypt control event: %w", err))
+		return
+	}
+
+	var envelope struct {
+		Data struct {
+			Controls []struct {
+				Content struct {
+					ActType string          `json:"act_type"`
+					FileID  any             `json:"fileId"`
+					Data    json.RawMessage `json:"data"`
+				} `json:"content"`
+			} `json:"controls"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(payload, &envelope); err != nil {
+		emit(ctx, ln.errorCh, fmt.Errorf("zalo personal protocol: parse control event: %w", err))
+		return
+	}
+
+	for _, control := range envelope.Data.Controls {
+		if control.Content.ActType != "file_done" || control.Content.FileID == nil {
+			continue
+		}
+		fileID := anyToDecimalString(control.Content.FileID)
+		var fileURL string
+		if len(control.Content.Data) > 0 {
+			if control.Content.Data[0] == '{' {
+				var dataObj struct {
+					URL string `json:"url"`
+				}
+				if json.Unmarshal(control.Content.Data, &dataObj) == nil {
+					fileURL = dataObj.URL
+				}
+			} else {
+				_ = json.Unmarshal(control.Content.Data, &fileURL)
+			}
+		}
+		if value, ok := ln.uploadCallbacks.LoadAndDelete(fileID); ok {
+			if ch, ok := value.(chan string); ok {
+				select {
+				case ch <- fileURL:
+				default:
+				}
+			}
+		}
+	}
+}
+
 func (ln *Listener) decryptEventData(data string, encType uint, cipherKey string) ([]byte, error) {
 	var result []byte
 	var err error
@@ -412,6 +472,16 @@ func (ln *Listener) sendPing(ctx context.Context) {
 
 func buildWSURL(sess *Session, base string) string {
 	return makeURL(sess, base, map[string]any{"t": time.Now().UnixMilli()}, true)
+}
+
+func (ln *Listener) RegisterUploadCallback(fileID string) <-chan string {
+	ch := make(chan string, 1)
+	ln.uploadCallbacks.Store(fileID, ch)
+	return ch
+}
+
+func (ln *Listener) CancelUploadCallback(fileID string) {
+	ln.uploadCallbacks.Delete(fileID)
 }
 
 func (ln *Listener) connect(ctx context.Context) error {
@@ -569,6 +639,19 @@ func sleepContext(ctx context.Context, delay time.Duration) error {
 		return ctx.Err()
 	case <-timer.C:
 		return nil
+	}
+}
+
+func anyToDecimalString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case float64:
+		return strconv.FormatFloat(typed, 'f', -1, 64)
+	case json.Number:
+		return typed.String()
+	default:
+		return fmt.Sprint(value)
 	}
 }
 
