@@ -47,23 +47,23 @@
       <label for="recovery-connector-id">Source</label>
       <input id="recovery-connector-id" type="text" name="connector_id" value="{{.Filters.ConnectorID}}" placeholder="telegram, whatsapp">
     </div>
-    <label>
-      Routes
-      <select name="route_status">
+    <div class="field">
+      <label for="recovery-route-status">Routes</label>
+      <select id="recovery-route-status" name="route_status">
         <option value="all" {{if eq .Filters.RouteStatus "all"}}selected{{end}}>All</option>
         <option value="active" {{if eq .Filters.RouteStatus "active"}}selected{{end}}>Active</option>
         <option value="inactive" {{if eq .Filters.RouteStatus "inactive"}}selected{{end}}>Inactive</option>
       </select>
-    </label>
-    <label>
-      Deliveries
-      <select name="delivery_status">
+    </div>
+    <div class="field">
+      <label for="recovery-delivery-status">Deliveries</label>
+      <select id="recovery-delivery-status" name="delivery_status">
         <option value="all" {{if eq .Filters.DeliveryStatus "all"}}selected{{end}}>All</option>
         <option value="pending" {{if eq .Filters.DeliveryStatus "pending"}}selected{{end}}>Pending</option>
         <option value="retrying" {{if eq .Filters.DeliveryStatus "retrying"}}selected{{end}}>Retrying</option>
         <option value="terminal" {{if eq .Filters.DeliveryStatus "terminal"}}selected{{end}}>Terminal</option>
       </select>
-    </label>
+    </div>
     <div class="filter-action-group">
       <span class="field-label field-label-ghost" aria-hidden="true">Actions</span>
       <div class="filter-actions">

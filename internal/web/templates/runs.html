@@ -58,9 +58,9 @@
         <label for="run-query">Search</label>
         <input id="run-query" type="text" name="q" value="{{.Filters.Query}}" placeholder="Search task ID or objective">
       </div>
-      <label>
-        Status
-        <select name="status">
+      <div class="field">
+        <label for="run-status">Status</label>
+        <select id="run-status" name="status">
           <option value="" {{if eq .Filters.Status ""}}selected{{end}}>All</option>
           <option value="pending" {{if eq .Filters.Status "pending"}}selected{{end}}>Pending</option>
           <option value="active" {{if eq .Filters.Status "active"}}selected{{end}}>Active</option>
@@ -69,22 +69,22 @@
           <option value="failed" {{if eq .Filters.Status "failed"}}selected{{end}}>Failed</option>
           <option value="interrupted" {{if eq .Filters.Status "interrupted"}}selected{{end}}>Interrupted</option>
         </select>
-      </label>
-      <label>
-        Page Size
-        <select name="limit">
+      </div>
+      <div class="field">
+        <label for="run-limit">Page Size</label>
+        <select id="run-limit" name="limit">
           <option value="10" {{if eq .Filters.Limit 10}}selected{{end}}>10</option>
           <option value="20" {{if eq .Filters.Limit 20}}selected{{end}}>20</option>
           <option value="50" {{if eq .Filters.Limit 50}}selected{{end}}>50</option>
         </select>
-      </label>
-      <label>
-        Scope
-        <select name="scope">
+      </div>
+      <div class="field">
+        <label for="run-scope">Scope</label>
+        <select id="run-scope" name="scope">
           <option value="active" {{if eq .Filters.Scope "active"}}selected{{end}}>Active project</option>
           <option value="all" {{if eq .Filters.Scope "all"}}selected{{end}}>All projects</option>
         </select>
-      </label>
+      </div>
       <div class="filter-action-group">
         <span class="field-label field-label-ghost" aria-hidden="true">Actions</span>
         <div class="filter-actions">
