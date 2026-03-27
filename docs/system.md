@@ -13,6 +13,7 @@ This document is the source of truth for what the repository ships today: packag
 - A tool registry with built-in web fetch, optional Tavily search, and optional MCP stdio tools.
 - Live external surfaces for Telegram DM and WhatsApp.
 - A default team definition under [teams/default/team.yaml](../teams/default/team.yaml).
+- Project-specific team profiles stored under `storage_root/projects/<project-id>/teams/`, with the machine fallback under `storage_root/teams/default/`.
 
 ## Runtime Model
 
@@ -21,7 +22,7 @@ This document is the source of truth for what the repository ships today: packag
 - Current-state tables project that journal into runs, approvals, tool calls, receipts, sessions, bindings, deliveries, and memory items.
 - A conversation can have one active root run at a time.
 - Collaboration happens through runtime-managed sessions and session messages.
-- Risky tool calls still require explicit approval before workspace writes are applied.
+- Risky tool calls still require explicit approval before mutating writes are applied.
 
 ## Operator Surfaces
 
@@ -34,7 +35,7 @@ This document is the source of truth for what the repository ships today: packag
 - `gistclaw inspect` reports status, runs, replay, the canonical `systemd` unit, the admin token through `inspect token`, and storage health for the current database.
 - `gistclaw security audit` reports deployment-risk findings for the current config and runtime posture.
 - `gistclaw schedule` adds, updates, reports scheduler status, lists, shows, runs, enables, disables, and deletes scheduled tasks.
-- `gistclaw doctor` checks config, database, provider, workspace, research, MCP binaries, Telegram reachability, connector health, storage health, and scheduler state.
+- `gistclaw doctor` checks config, database, provider, project paths, research, MCP binaries, Telegram reachability, connector health, storage health, and scheduler state.
 - `gistclaw backup` creates a timestamped SQLite backup.
 - `gistclaw export` writes runs, receipts, and approvals to JSON.
 
@@ -43,11 +44,11 @@ This document is the source of truth for what the repository ships today: packag
 - `/login` is the browser gate for operator access and shows a locked setup-required page until a password has been bootstrapped.
 - `/onboarding` starts with a starter project, then lets the operator keep it, bind an existing repo, or create a new project elsewhere before the first run.
 - Operator UI pages and browser read APIs require the built-in login. Machine automation may still use the admin token path.
-- The shell includes a project switcher that updates the active workspace context without turning project selection into a primary Settings job.
+- The shell includes a project switcher that updates the active project context without turning project selection into a primary Settings job.
 - `/operate/runs` and `/operate/runs/{id}` show run state and live replay, with the orchestration graph kept on runs and run detail. The runs queue defaults to the active project with an explicit all-projects filter.
 - `/operate/sessions` and `/operate/sessions/{id}` expose session mailbox history, route state, and delivery failures.
 - `/operate/start-task` starts a new operator task from the web surface.
-- `/configure/team` selects, creates, clones, deletes, edits, imports, and exports named team profiles for the active project.
+- `/configure/team` selects, creates, clones, deletes, edits, imports, and exports named team profiles for the active project, stored under the operator storage root instead of the repo path.
 - `/configure/memory` lists, edits, and forgets stored facts.
 - `/configure/settings` updates machine-level operator settings, rotates the operator password, and manages current, active, and blocked browser devices.
 - `/recover/approvals` resolves risky tool actions.

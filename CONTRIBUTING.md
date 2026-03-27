@@ -27,11 +27,13 @@ Create a config file at `~/.config/gistclaw/config.yaml` or pass `-c /path/to/co
 The minimum useful config is:
 
 ```yaml
-workspace_root: /absolute/path/to/repo
+storage_root: /absolute/path/to/gistclaw-storage
 provider:
   name: anthropic
   api_key: REPLACE_WITH_REAL_KEY
 ```
+
+Pick or create the working project through onboarding or the project switcher after the daemon starts; it is no longer configured as a global workspace root in the config file.
 
 Then start the daemon and local web UI:
 

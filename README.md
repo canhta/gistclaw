@@ -28,7 +28,7 @@ Today the repo already ships a working daemon, CLI, local web control plane, rep
 - Tools: built-in web fetch, optional Tavily search, optional MCP stdio tools.
 - Live external surfaces: Telegram DM and WhatsApp.
 - The repo includes a default team definition in [teams/default/team.yaml](teams/default/team.yaml).
-- The Team page supports named per-project team profiles under `.gistclaw/teams/<profile>/`.
+- The Team page supports named per-project team profiles under `storage_root/projects/<project-id>/teams/<profile>/`, with the machine default under `storage_root/teams/default/`.
 
 ## Quick Start
 
