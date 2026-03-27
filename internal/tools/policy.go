@@ -29,9 +29,9 @@ func (p *Policy) decide(agent model.AgentProfile, spec model.ToolSpec, effect st
 		if !hasCapability(agent.Capabilities, model.CapSpawn) {
 			return model.ToolDecision{Mode: model.DecisionDeny, Reason: "spawn capability required"}
 		}
-	case "workspace_apply":
-		if !hasCapability(agent.Capabilities, model.CapWorkspaceWrite) {
-			return model.ToolDecision{Mode: model.DecisionDeny, Reason: "workspace_write capability required"}
+	case "scoped_apply":
+		if !hasCapability(agent.Capabilities, model.CapScopedWrite) {
+			return model.ToolDecision{Mode: model.DecisionDeny, Reason: "scoped_write capability required"}
 		}
 	}
 
@@ -50,16 +50,16 @@ func (p *Policy) decide(agent model.AgentProfile, spec model.ToolSpec, effect st
 			Mode:   model.DecisionDeny,
 			Reason: "profile denies risky tools",
 		}
-	case "workspace_write":
+	case "scoped_write":
 		if (spec.Name == "shell_exec" || spec.Name == "coder_exec") && effect == effectExecWrite {
 			return model.ToolDecision{
 				Mode:   model.DecisionAsk,
-				Reason: "workspace_write requires approval for mutating shell commands",
+				Reason: "scoped_write requires approval for mutating shell commands",
 			}
 		}
 		return model.ToolDecision{
 			Mode:   model.DecisionAllow,
-			Reason: "workspace_write allows workspace mutations",
+			Reason: "scoped_write allows scoped mutations",
 		}
 	case "operator_facing", "elevated":
 		if (spec.Name == "shell_exec" || spec.Name == "coder_exec") && effect == effectExecWrite {

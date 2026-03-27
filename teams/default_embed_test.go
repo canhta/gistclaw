@@ -38,7 +38,7 @@ func TestDefault(t *testing.T) {
 		text := string(body)
 		for _, want := range []string{
 			"must route external research through researcher",
-			"must route workspace writes through patcher",
+			"must route scoped writes through patcher",
 			"must not claim a specialist acted unless a child run exists",
 			"may answer obvious yes/no continue questions on behalf of the team",
 			"must not ask the operator for reversible workflow choices that can be decided from task context",

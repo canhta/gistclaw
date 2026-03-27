@@ -61,31 +61,31 @@ func TestPolicy_ReadOnlyProfileDeniesWrite(t *testing.T) {
 	}
 }
 
-func TestPolicy_WorkspaceWriteProfileAsksForShellExec(t *testing.T) {
-	p := &Policy{Profile: "workspace_write"}
+func TestPolicy_ScopedWriteProfileAsksForShellExec(t *testing.T) {
+	p := &Policy{Profile: "scoped_write"}
 	agent := model.AgentProfile{
-		Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
-		ToolProfile:  "workspace_write",
+		Capabilities: []model.AgentCapability{model.CapScopedWrite},
+		ToolProfile:  "scoped_write",
 	}
 	spec := model.ToolSpec{Name: "shell_exec", Risk: model.RiskHigh}
 
 	decision := p.Decide(agent, model.RunProfile{}, spec)
 	if decision.Mode != model.DecisionAsk {
-		t.Fatalf("expected ask for shell_exec with workspace_write profile, got %s", decision.Mode)
+		t.Fatalf("expected ask for shell_exec with scoped_write profile, got %s", decision.Mode)
 	}
 }
 
-func TestPolicy_WorkspaceWriteProfileAsksForCoderExec(t *testing.T) {
-	p := &Policy{Profile: "workspace_write"}
+func TestPolicy_ScopedWriteProfileAsksForCoderExec(t *testing.T) {
+	p := &Policy{Profile: "scoped_write"}
 	agent := model.AgentProfile{
-		Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
-		ToolProfile:  "workspace_write",
+		Capabilities: []model.AgentCapability{model.CapScopedWrite},
+		ToolProfile:  "scoped_write",
 	}
 	spec := model.ToolSpec{Name: "coder_exec", Risk: model.RiskHigh, SideEffect: effectExecWrite}
 
 	decision := p.Decide(agent, model.RunProfile{}, spec)
 	if decision.Mode != model.DecisionAsk {
-		t.Fatalf("expected ask for coder_exec with workspace_write profile, got %s", decision.Mode)
+		t.Fatalf("expected ask for coder_exec with scoped_write profile, got %s", decision.Mode)
 	}
 }
 
@@ -268,32 +268,32 @@ func TestApproval_SingleUse(t *testing.T) {
 
 func TestComputeFingerprint_BindsBindingJSON(t *testing.T) {
 	first := computeFingerprint(
-		"workspace_apply",
+		"scoped_apply",
 		[]byte(`{"path":"README.md"}`),
-		[]byte(`{"tool_name":"workspace_apply","operands":["README.md"]}`),
+		[]byte(`{"tool_name":"scoped_apply","operands":["README.md"]}`),
 	)
 	second := computeFingerprint(
-		"workspace_apply",
+		"scoped_apply",
 		[]byte(`{"path":"README.md"}`),
-		[]byte(`{"tool_name":"workspace_apply","operands":["README.md"]}`),
+		[]byte(`{"tool_name":"scoped_apply","operands":["README.md"]}`),
 	)
 	if first != second {
 		t.Fatalf("expected deterministic fingerprint, got %q then %q", first, second)
 	}
 
 	changed := computeFingerprint(
-		"workspace_apply",
+		"scoped_apply",
 		[]byte(`{"path":"README.md"}`),
-		[]byte(`{"tool_name":"workspace_apply","operands":["main.go"]}`),
+		[]byte(`{"tool_name":"scoped_apply","operands":["main.go"]}`),
 	)
 	if changed == first {
 		t.Fatal("expected binding_json to affect fingerprint")
 	}
 }
 
-func TestWorkspaceApplier_RejectsEscapeAttempt(t *testing.T) {
+func TestScopedApplier_RejectsEscapeAttempt(t *testing.T) {
 	wsRoot := t.TempDir()
-	applier := NewWorkspaceApplier(wsRoot)
+	applier := NewScopedApplier(wsRoot)
 	ctx := context.Background()
 
 	changes := []model.FileChange{
@@ -306,9 +306,9 @@ func TestWorkspaceApplier_RejectsEscapeAttempt(t *testing.T) {
 	}
 }
 
-func TestWorkspaceApplier_AllowsValidPath(t *testing.T) {
+func TestScopedApplier_AllowsValidPath(t *testing.T) {
 	wsRoot := t.TempDir()
-	applier := NewWorkspaceApplier(wsRoot)
+	applier := NewScopedApplier(wsRoot)
 	ctx := context.Background()
 
 	changes := []model.FileChange{
@@ -324,16 +324,16 @@ func TestWorkspaceApplier_AllowsValidPath(t *testing.T) {
 	}
 }
 
-func TestWorkspaceApply_RequiresApprovedTicketForWorkerRun(t *testing.T) {
+func TestScopedApply_RequiresApprovedTicketForWorkerRun(t *testing.T) {
 	db := setupToolsDB(t)
 	ctx := context.Background()
 	workspaceRoot := t.TempDir()
 
 	ticket, err := CreateTicket(ctx, db, model.ApprovalRequest{
 		RunID:       "run-front",
-		ToolName:    "workspace_apply",
+		ToolName:    "scoped_apply",
 		ArgsJSON:    []byte(`{"path":"main.go"}`),
-		BindingJSON: []byte(`{"tool_name":"workspace_apply","operands":["main.go"]}`),
+		BindingJSON: []byte(`{"tool_name":"scoped_apply","operands":["main.go"]}`),
 	})
 	if err != nil {
 		t.Fatalf("CreateTicket failed: %v", err)
@@ -346,7 +346,7 @@ func TestWorkspaceApply_RequiresApprovedTicketForWorkerRun(t *testing.T) {
 		t.Fatalf("LoadTicket failed: %v", err)
 	}
 
-	applier := NewWorkspaceApplierWithDB(workspaceRoot, db)
+	applier := NewScopedApplierWithDB(workspaceRoot, db)
 	_, err = applier.Apply(ctx, "run-worker", ticket, []model.FileChange{
 		{Path: "main.go", Content: []byte("package main\n"), Op: "update"},
 	})

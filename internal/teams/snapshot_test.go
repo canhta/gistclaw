@@ -24,8 +24,8 @@ agents:
     can_spawn: []
     can_message: [assistant]
 `)
-	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: operator_facing\ndecision_boundaries:\n  - must route workspace writes through patcher\n")
-	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "tool_posture: workspace_write\n")
+	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: operator_facing\ndecision_boundaries:\n  - must route scoped writes through patcher\n")
+	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "tool_posture: scoped_write\n")
 
 	snapshot, err := LoadExecutionSnapshot(dir)
 	if err != nil {
@@ -48,7 +48,7 @@ agents:
 	if assistant.Role != "coordinator" {
 		t.Fatalf("expected assistant role coordinator, got %q", assistant.Role)
 	}
-	if !strings.Contains(assistant.Instructions, "must route workspace writes through patcher") {
+	if !strings.Contains(assistant.Instructions, "must route scoped writes through patcher") {
 		t.Fatalf("expected assistant instructions to contain delegation rule, got %q", assistant.Instructions)
 	}
 	if !hasCapability(assistant.Capabilities, model.CapOperatorFacing) {
@@ -65,11 +65,11 @@ agents:
 	}
 
 	patcher := snapshot.Agents["patcher"]
-	if patcher.ToolProfile != "workspace_write" {
-		t.Fatalf("expected patcher workspace_write, got %q", patcher.ToolProfile)
+	if patcher.ToolProfile != "scoped_write" {
+		t.Fatalf("expected patcher scoped_write, got %q", patcher.ToolProfile)
 	}
-	if !hasCapability(patcher.Capabilities, model.CapWorkspaceWrite) {
-		t.Fatalf("expected patcher workspace_write capability, got %+v", patcher.Capabilities)
+	if !hasCapability(patcher.Capabilities, model.CapScopedWrite) {
+		t.Fatalf("expected patcher scoped_write capability, got %+v", patcher.Capabilities)
 	}
 	if len(patcher.CanSpawn) != 0 {
 		t.Fatalf("expected patcher can_spawn empty, got %#v", patcher.CanSpawn)

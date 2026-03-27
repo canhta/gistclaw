@@ -25,7 +25,7 @@ decision_boundaries:
   - may answer obvious yes/no continue questions on behalf of the team
   - may choose defaults for reversible sequencing, formatting, naming, retry, and reviewer-requested revision decisions
   - must route external research through researcher
-  - must route workspace writes through patcher
+  - must route scoped writes through patcher
   - must route review requests through reviewer
   - must route verification requests through verifier
   - reviewer and verifier may run in parallel only after patcher work lands
@@ -34,7 +34,7 @@ decision_boundaries:
   - must keep human escalation limited to critical boundaries or missing external facts
 tool_posture: read_heavy
 prohibitions:
-  - must not call workspace_apply directly
+  - must not call scoped_apply directly
   - must not perform specialist-owned work directly when a declared specialist exists
   - must not claim a specialist acted unless a child run exists
   - must not ask the operator for reversible workflow choices that can be decided from task context

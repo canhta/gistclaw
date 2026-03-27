@@ -20,7 +20,7 @@ decision_boundaries:
   - may read files within the workspace root for context
   - may return a review event with verdict (approved / blocking / advisory)
   - must not modify any file
-  - must not call workspace_apply or any write tool
+  - must not call scoped_apply or any write tool
 tool_posture: read_heavy
 prohibitions:
   - must not write to the workspace

@@ -111,7 +111,7 @@ const (
 type AgentCapability string
 
 const (
-	CapWorkspaceWrite AgentCapability = "workspace_write"
+	CapScopedWrite    AgentCapability = "scoped_write"
 	CapOperatorFacing AgentCapability = "operator_facing"
 	CapReadHeavy      AgentCapability = "read_heavy"
 	CapProposeOnly    AgentCapability = "propose_only"
@@ -120,7 +120,7 @@ const (
 
 // validCapabilities is the canonical set of allowed agent capability flag strings.
 var validCapabilities = map[AgentCapability]bool{
-	CapWorkspaceWrite: true,
+	CapScopedWrite:    true,
 	CapOperatorFacing: true,
 	CapReadHeavy:      true,
 	CapProposeOnly:    true,

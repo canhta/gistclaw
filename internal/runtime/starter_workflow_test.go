@@ -12,17 +12,17 @@ import (
 )
 
 // TestStarterWorkflow_PreviewOnly verifies that a preview-only run never emits
-// a workspace_apply event, but does emit a preview_completed event.
+// a scoped_apply event, but does emit a preview_completed event.
 func TestStarterWorkflow_PreviewOnly(t *testing.T) {
 	db, cs, mem, reg := setupMilestoneTestDeps(t)
 
-	// Provider returns a tool call that would normally trigger workspace apply.
+	// Provider returns a tool call that would normally trigger scoped apply.
 	prov := NewMockProvider([]GenerateResult{
 		{
 			Content: "I will apply a patch",
 			ToolCalls: []model.ToolCallRequest{{
 				ID:        "tc-001",
-				ToolName:  "workspace_apply",
+				ToolName:  "scoped_apply",
 				InputJSON: []byte(`{"path":"main.go","content":"package main\n"}`),
 			}},
 			StopReason: "tool_use",
@@ -38,7 +38,7 @@ func TestStarterWorkflow_PreviewOnly(t *testing.T) {
 		ConversationID: "conv-preview",
 		AgentID:        "coordinator",
 		Objective:      "Apply a patch to main.go",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 		PreviewOnly:    true,
 	})
 	if err != nil {
@@ -50,13 +50,13 @@ func TestStarterWorkflow_PreviewOnly(t *testing.T) {
 
 	var applyCount int
 	if err := db.RawDB().QueryRow(
-		"SELECT count(*) FROM events WHERE run_id = ? AND kind = 'workspace_apply'",
+		"SELECT count(*) FROM events WHERE run_id = ? AND kind = 'scoped_apply'",
 		run.ID,
 	).Scan(&applyCount); err != nil {
-		t.Fatalf("query workspace_apply events: %v", err)
+		t.Fatalf("query scoped_apply events: %v", err)
 	}
 	if applyCount != 0 {
-		t.Fatalf("preview-only run must not emit workspace_apply events, got %d", applyCount)
+		t.Fatalf("preview-only run must not emit scoped_apply events, got %d", applyCount)
 	}
 
 	var previewCount int
@@ -71,11 +71,11 @@ func TestStarterWorkflow_PreviewOnly(t *testing.T) {
 	}
 }
 
-// TestStarterWorkflow_ApplyWithoutApprovalRejected verifies that WorkspaceApplier.Apply
+// TestStarterWorkflow_ApplyWithoutApprovalRejected verifies that ScopedApplier.Apply
 // returns ErrNoApproval when no valid approved ticket is provided.
 func TestStarterWorkflow_ApplyWithoutApprovalRejected(t *testing.T) {
 	workspaceRoot := t.TempDir()
-	applier := tools.NewWorkspaceApplier(workspaceRoot)
+	applier := tools.NewScopedApplier(workspaceRoot)
 	ctx := context.Background()
 
 	_, err := applier.Apply(ctx, "run-no-approval", model.ApprovalTicket{}, []model.FileChange{
@@ -107,9 +107,9 @@ func TestStarterWorkflow_FingerprintMismatchRejected(t *testing.T) {
 	// Create and approve a ticket for path "a.go".
 	ticket, err := tools.CreateTicket(ctx, db, model.ApprovalRequest{
 		RunID:       "run-fp",
-		ToolName:    "workspace_apply",
+		ToolName:    "scoped_apply",
 		ArgsJSON:    []byte(`{"path":"a.go"}`),
-		BindingJSON: []byte(`{"tool_name":"workspace_apply","cwd":"` + workspaceRoot + `","operands":["a.go"],"mutating":true}`),
+		BindingJSON: []byte(`{"tool_name":"scoped_apply","cwd":"` + workspaceRoot + `","operands":["a.go"],"mutating":true}`),
 	})
 	if err != nil {
 		t.Fatalf("CreateTicket: %v", err)
@@ -125,7 +125,7 @@ func TestStarterWorkflow_FingerprintMismatchRejected(t *testing.T) {
 	}
 
 	// Try to apply with a DIFFERENT path — fingerprint will not match.
-	applier := tools.NewWorkspaceApplierWithDB(workspaceRoot, db)
+	applier := tools.NewScopedApplierWithDB(workspaceRoot, db)
 	_, err = applier.Apply(ctx, "run-fp", ticket, []model.FileChange{
 		{Path: "different.go", Content: []byte("package main\n")},
 	})
@@ -152,7 +152,7 @@ func TestStarterWorkflow_VerificationResultAttached(t *testing.T) {
 		ConversationID:    "conv-verify",
 		AgentID:           "verifier",
 		Objective:         "verify: run tests",
-		CWD:     t.TempDir(),
+		CWD:               t.TempDir(),
 		VerificationAgent: true,
 	})
 	if err != nil {
@@ -191,7 +191,7 @@ func TestStarterWorkflow_RepoPatchRunsAsWorkerFlow(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Prepare a patch and verify it.",
-		CWD: t.TempDir(),
+		CWD:           t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)

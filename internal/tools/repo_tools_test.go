@@ -381,10 +381,10 @@ func TestGitTools_InspectRepository(t *testing.T) {
 }
 
 func TestPolicy_DecideCall_HandlesShellEffects(t *testing.T) {
-	p := &Policy{Profile: "workspace_write"}
+	p := &Policy{Profile: "scoped_write"}
 	agent := model.AgentProfile{
-		Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
-		ToolProfile:  "workspace_write",
+		Capabilities: []model.AgentCapability{model.CapScopedWrite},
+		ToolProfile:  "scoped_write",
 	}
 
 	readDecision := p.DecideCall(agent, model.RunProfile{}, NewShellExecTool(30, 1024).Spec(), []byte(`{"command":"git status"}`))

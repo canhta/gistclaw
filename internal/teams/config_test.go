@@ -23,7 +23,7 @@ agents:
     can_message: [assistant]
 `)
 	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: operator_facing\ntone: direct\n")
-	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: workspace_write\n")
+	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: scoped_write\n")
 
 	cfg, err := LoadConfig(dir)
 	if err != nil {
@@ -65,7 +65,7 @@ agents:
     can_message: [assistant]
 `)
 	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: operator_facing\ntone: direct\n")
-	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: workspace_write\nnotes: edits files\n")
+	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: scoped_write\nnotes: edits files\n")
 
 	cfg, err := LoadConfig(dir)
 	if err != nil {
@@ -124,7 +124,7 @@ agents:
     can_message: [assistant]
 `)
 	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: operator_facing\ntone: direct\n")
-	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: workspace_write\n")
+	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: scoped_write\n")
 
 	cfg, err := LoadConfig(dir)
 	if err != nil {
@@ -186,7 +186,7 @@ agents:
     can_message: [assistant]
 `)
 	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: operator_facing\ntone: direct\n")
-	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: workspace_write\nnotes: edits files\n")
+	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: scoped_write\nnotes: edits files\n")
 
 	cfg, err := LoadConfig(dir)
 	if err != nil {

@@ -11,25 +11,25 @@ import (
 	"github.com/canhta/gistclaw/internal/store"
 )
 
-var ErrEscapeAttempt = fmt.Errorf("tools: path escapes workspace root")
-var ErrNoApproval = fmt.Errorf("tools: workspace apply requires an approved ticket")
+var ErrEscapeAttempt = fmt.Errorf("tools: path escapes allowed root")
+var ErrNoApproval = fmt.Errorf("tools: scoped apply requires an approved ticket")
 
-type WorkspaceApplier struct {
-	workspaceRoot string
-	db            *store.DB // optional; enables fingerprint validation when set
+type ScopedApplier struct {
+	writeRoot string
+	db        *store.DB // optional; enables fingerprint validation when set
 }
 
-func NewWorkspaceApplier(workspaceRoot string) *WorkspaceApplier {
-	return &WorkspaceApplier{workspaceRoot: workspaceRoot}
+func NewScopedApplier(writeRoot string) *ScopedApplier {
+	return &ScopedApplier{writeRoot: writeRoot}
 }
 
-// NewWorkspaceApplierWithDB returns a WorkspaceApplier that also validates
+// NewScopedApplierWithDB returns a ScopedApplier that also validates
 // the approval ticket fingerprint against the database before applying.
-func NewWorkspaceApplierWithDB(workspaceRoot string, db *store.DB) *WorkspaceApplier {
-	return &WorkspaceApplier{workspaceRoot: workspaceRoot, db: db}
+func NewScopedApplierWithDB(writeRoot string, db *store.DB) *ScopedApplier {
+	return &ScopedApplier{writeRoot: writeRoot, db: db}
 }
 
-func (a *WorkspaceApplier) Preview(_ context.Context, runID string, changes []model.FileChange) (model.ChangePreview, error) {
+func (a *ScopedApplier) Preview(_ context.Context, runID string, changes []model.FileChange) (model.ChangePreview, error) {
 	for _, change := range changes {
 		if err := a.validatePath(change.Path); err != nil {
 			return model.ChangePreview{}, err
@@ -47,7 +47,7 @@ func (a *WorkspaceApplier) Preview(_ context.Context, runID string, changes []mo
 //   - if the applier was constructed with a DB, the stored fingerprint must
 //     match the fingerprint computed from ticket.ToolName, ticket.ArgsJSON,
 //     and each change's target path (single-use: the ticket is consumed here)
-func (a *WorkspaceApplier) Apply(ctx context.Context, runID string, ticket model.ApprovalTicket, changes []model.FileChange) (model.ApplyResult, error) {
+func (a *ScopedApplier) Apply(ctx context.Context, runID string, ticket model.ApprovalTicket, changes []model.FileChange) (model.ApplyResult, error) {
 	if ticket.ID == "" || ticket.Status != "approved" {
 		return model.ApplyResult{}, ErrNoApproval
 	}
@@ -55,11 +55,10 @@ func (a *WorkspaceApplier) Apply(ctx context.Context, runID string, ticket model
 		return model.ApplyResult{}, ErrNoApproval
 	}
 
-	// If the applier has a DB reference, verify the stored fingerprint.
 	if a.db != nil {
-		bindingJSON, err := workspaceApplyBindingJSON(ticket.ToolName, changes)
+		bindingJSON, err := scopedApplyBindingJSON(ticket.ToolName, changes)
 		if err != nil {
-			return model.ApplyResult{}, fmt.Errorf("tools: encode workspace apply binding: %w", err)
+			return model.ApplyResult{}, fmt.Errorf("tools: encode scoped apply binding: %w", err)
 		}
 		expectedFP := computeFingerprint(ticket.ToolName, ticket.ArgsJSON, bindingJSON)
 		if err := VerifyTicket(ctx, a.db, ticket.ID, expectedFP); err != nil {
@@ -75,14 +74,14 @@ func (a *WorkspaceApplier) Apply(ctx context.Context, runID string, ticket model
 	return model.ApplyResult{Applied: true}, nil
 }
 
-func (a *WorkspaceApplier) validatePath(relPath string) error {
+func (a *ScopedApplier) validatePath(relPath string) error {
 	if strings.ContainsRune(relPath, 0) {
 		return ErrEscapeAttempt
 	}
 
-	joined := filepath.Join(a.workspaceRoot, relPath)
+	joined := filepath.Join(a.writeRoot, relPath)
 	cleaned := filepath.Clean(joined)
-	root := filepath.Clean(a.workspaceRoot)
+	root := filepath.Clean(a.writeRoot)
 
 	if cleaned != root && !strings.HasPrefix(cleaned, root+string(filepath.Separator)) {
 		return ErrEscapeAttempt
@@ -91,7 +90,7 @@ func (a *WorkspaceApplier) validatePath(relPath string) error {
 	return nil
 }
 
-func workspaceApplyBindingJSON(toolName string, changes []model.FileChange) ([]byte, error) {
+func scopedApplyBindingJSON(toolName string, changes []model.FileChange) ([]byte, error) {
 	operands := make([]string, 0, len(changes))
 	for _, change := range changes {
 		if strings.TrimSpace(change.Path) == "" {

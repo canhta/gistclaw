@@ -449,8 +449,8 @@ func workspaceWriteSnapshot() model.ExecutionSnapshot {
 		Agents: map[string]model.AgentProfile{
 			"patcher": {
 				AgentID:      "patcher",
-				ToolProfile:  "workspace_write",
-				Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
+				ToolProfile:  "scoped_write",
+				Capabilities: []model.AgentCapability{model.CapScopedWrite},
 			},
 		},
 	}

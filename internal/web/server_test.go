@@ -259,7 +259,7 @@ func TestRuns(t *testing.T) {
 			"Assigned Team",
 			"Repo Task Team",
 			"assistant",
-			"workspace_write",
+			"scoped_write",
 			"Source",
 			"GistClaw",
 			"Attention",
@@ -1350,7 +1350,7 @@ func TestTeam(t *testing.T) {
 			"patcher",
 			"reviewer",
 			"operator_facing",
-			"workspace_write",
+			"scoped_write",
 			`name="agent_0_tool_posture"`,
 			`name="agent_0_can_spawn"`,
 			`name="agent_0_can_message"`,
@@ -1566,8 +1566,8 @@ func TestTeam(t *testing.T) {
 		form.Del("agent_0_can_message")
 		form.Add("agent_0_can_message", "patcher")
 		form.Add("agent_0_can_message", "reviewer")
-		form.Set("agent_1_role", "workspace write specialist")
-		form.Set("agent_1_tool_posture", "workspace_write")
+		form.Set("agent_1_role", "scoped write specialist")
+		form.Set("agent_1_tool_posture", "scoped_write")
 		form.Del("agent_1_can_message")
 		form.Add("agent_1_can_message", "assistant")
 		form.Add("agent_1_can_message", "reviewer")
@@ -1797,7 +1797,7 @@ agents:
   - id: patcher
     soul_file: patcher.soul.yaml
     role: imported patcher
-    tool_posture: workspace_write
+    tool_posture: scoped_write
     can_spawn: []
     can_message: [reviewer]
   - id: assistant
@@ -4809,7 +4809,7 @@ agents:
     can_message: [assistant, patcher]
 `)
 	writeTestFile(t, filepath.Join(dir, "coordinator.soul.yaml"), "role: operator-facing coordinator\ntool_posture: operator_facing\n")
-	writeTestFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: workspace write specialist\ntool_posture: workspace_write\n")
+	writeTestFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: scoped write specialist\ntool_posture: scoped_write\n")
 	writeTestFile(t, filepath.Join(dir, "reviewer.soul.yaml"), "role: diff reviewer\ntool_posture: read_heavy\n")
 	return dir
 }

@@ -272,7 +272,7 @@ func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
 	}
 }
 
-func TestRunEngine_AdvertisesCoderExecToWorkspaceWriteAgent(t *testing.T) {
+func TestRunEngine_AdvertisesCoderExecToScopedWriteAgent(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "coder_exec", Risk: model.RiskHigh, SideEffect: "exec_write"}})
 	prov := NewMockProvider(
@@ -293,8 +293,8 @@ func TestRunEngine_AdvertisesCoderExecToWorkspaceWriteAgent(t *testing.T) {
 			Agents: map[string]model.AgentProfile{
 				"patcher": {
 					AgentID:      "patcher",
-					Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
-					ToolProfile:  "workspace_write",
+					Capabilities: []model.AgentCapability{model.CapScopedWrite},
+					ToolProfile:  "scoped_write",
 				},
 			},
 		}),
@@ -465,8 +465,8 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 			},
 			"patcher": {
 				AgentID:      "patcher",
-				Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
-				ToolProfile:  "workspace_write",
+				Capabilities: []model.AgentCapability{model.CapScopedWrite},
+				ToolProfile:  "scoped_write",
 			},
 		},
 	}); err != nil {
@@ -701,8 +701,8 @@ func TestRunEngine_SessionSpawnInterruptsParentWhenChildInterrupts(t *testing.T)
 			},
 			"patcher": {
 				AgentID:      "patcher",
-				Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
-				ToolProfile:  "workspace_write",
+				Capabilities: []model.AgentCapability{model.CapScopedWrite},
+				ToolProfile:  "scoped_write",
 			},
 		},
 	}); err != nil {
@@ -903,8 +903,8 @@ func TestRunEngine_ApprovalRequestedEmitsReplayDelta(t *testing.T) {
 			Agents: map[string]model.AgentProfile{
 				"patcher": {
 					AgentID:      "patcher",
-					Capabilities: []model.AgentCapability{model.CapWorkspaceWrite},
-					ToolProfile:  "workspace_write",
+					Capabilities: []model.AgentCapability{model.CapScopedWrite},
+					ToolProfile:  "scoped_write",
 				},
 			},
 		}),

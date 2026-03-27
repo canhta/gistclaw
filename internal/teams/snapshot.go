@@ -149,8 +149,8 @@ func writeSoulListItem(b *strings.Builder, value any, indent int) {
 
 func toolPostureCapability(toolPosture string) (model.AgentCapability, error) {
 	switch toolPosture {
-	case "workspace_write":
-		return model.CapWorkspaceWrite, nil
+	case "scoped_write":
+		return model.CapScopedWrite, nil
 	case "operator_facing":
 		return model.CapOperatorFacing, nil
 	case "read_heavy":

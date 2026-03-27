@@ -40,7 +40,7 @@ agents:
     can_message: [assistant]
 `)
 	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\ntool_posture: operator_facing\n")
-	writeFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: workspace_write\n")
+	writeFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: scoped_write\n")
 	return dir
 }
 
@@ -77,7 +77,7 @@ agents:
     can_message: [assistant]
 `)
 	writeFile(t, filepath.Join(teamDir, "assistant.soul.yaml"), "role: assistant\ntool_posture: operator_facing\n")
-	writeFile(t, filepath.Join(teamDir, "patcher.soul.yaml"), "role: patcher\ntool_posture: workspace_write\n")
+	writeFile(t, filepath.Join(teamDir, "patcher.soul.yaml"), "role: patcher\ntool_posture: scoped_write\n")
 	return root
 }
 

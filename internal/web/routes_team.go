@@ -537,7 +537,7 @@ func buildTeamLinkOptions(agents []teams.AgentConfig, currentIndex int, selected
 func buildToolPostureOptions(selected string) []teamOption {
 	values := []string{
 		"operator_facing",
-		"workspace_write",
+		"scoped_write",
 		"read_heavy",
 		"propose_only",
 	}

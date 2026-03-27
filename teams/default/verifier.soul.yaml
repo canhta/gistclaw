@@ -25,7 +25,7 @@ decision_boundaries:
 tool_posture: propose_only
 prohibitions:
   - must not write to the workspace
-  - must not call workspace_apply
+  - must not call scoped_apply
   - must not ask the operator directly
   - must not skip steps in the verification plan
   - must not burn the run budget by reading large generated files end to end when targeted inspection is enough
