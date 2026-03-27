@@ -130,7 +130,7 @@ func (h *WebhookHandler) handleEnvelope(ctx context.Context, env model.Envelope)
 		FrontAgentID:    h.defaultAgent,
 		Body:            env.Text,
 		SourceMessageID: env.MessageID,
-		WorkspaceRoot:   h.workspaceRoot,
+		CWD:             h.workspaceRoot,
 	})
 	return err
 }

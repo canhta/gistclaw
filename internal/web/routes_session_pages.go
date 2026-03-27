@@ -210,7 +210,7 @@ func (s *Server) loadSessionPageIndexData(r *http.Request) (sessionPageIndexData
 		return sessionPageIndexData{}, errors.New("failed to load active project")
 	}
 	filter.ProjectID = activeProject.ID
-	filter.WorkspaceRoot = activeProject.WorkspaceRoot
+	filter.WorkspaceRoot = activeProject.PrimaryPath
 	page, err := s.rt.ListAllSessionsPage(r.Context(), filter)
 	if err != nil {
 		return sessionPageIndexData{}, errors.New("failed to load sessions")

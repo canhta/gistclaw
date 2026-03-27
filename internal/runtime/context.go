@@ -21,7 +21,7 @@ type ContextAssemblyInput struct {
 	AgentID       string
 	Agent         model.AgentProfile
 	Objective     string
-	WorkspaceRoot string
+	CWD           string
 	MemoryView    memory.ContextView
 }
 
@@ -47,7 +47,7 @@ func newDefaultContextAssembler(
 }
 
 func (a *defaultContextAssembler) Assemble(ctx context.Context, input ContextAssemblyInput) (GenerateRequest, error) {
-	workspace, err := a.workspaceLoad.Load(ctx, input.WorkspaceRoot)
+	workspace, err := a.workspaceLoad.Load(ctx, input.CWD)
 	if err != nil {
 		return GenerateRequest{}, fmt.Errorf("assemble provider request: workspace context: %w", err)
 	}

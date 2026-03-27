@@ -113,7 +113,8 @@ type runStartedPayload struct {
 	TeamID                string `json:"team_id"`
 	ProjectID             string `json:"project_id"`
 	Objective             string `json:"objective"`
-	WorkspaceRoot         string `json:"workspace_root"`
+	CWD                   string `json:"cwd"`
+	AuthorityJSON         json.RawMessage `json:"authority_json"`
 	ExecutionSnapshotJSON []byte `json:"execution_snapshot_json"`
 }
 
@@ -203,12 +204,16 @@ func (s *ConversationStore) applyProjection(ctx context.Context, tx *sql.Tx, evt
 		if err := decodePayload(evt.PayloadJSON, &payload); err != nil {
 			return err
 		}
+		authorityJSON := payload.AuthorityJSON
+		if len(authorityJSON) == 0 {
+			authorityJSON = json.RawMessage(`{}`)
+		}
 		_, err := tx.ExecContext(ctx,
 			`INSERT INTO runs
-			 (id, conversation_id, agent_id, session_id, team_id, project_id, parent_run_id, objective, workspace_root, status, execution_snapshot_json, created_at, updated_at)
-			 VALUES (?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, 'active', ?, ?, ?)`,
+			 (id, conversation_id, agent_id, session_id, team_id, project_id, parent_run_id, objective, cwd, authority_json, status, execution_snapshot_json, created_at, updated_at)
+			 VALUES (?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, 'active', ?, ?, ?)`,
 			evt.RunID, evt.ConversationID, payload.AgentID, payload.SessionID, payload.TeamID, payload.ProjectID, evt.ParentRunID,
-			payload.Objective, payload.WorkspaceRoot, payload.ExecutionSnapshotJSON, evt.CreatedAt, evt.CreatedAt,
+			payload.Objective, payload.CWD, []byte(authorityJSON), payload.ExecutionSnapshotJSON, evt.CreatedAt, evt.CreatedAt,
 		)
 		return err
 	case "turn_completed":

@@ -3,12 +3,18 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 )
 
-func (r *Runtime) scopeConversationKey(ctx context.Context, key conversations.ConversationKey, workspaceRoot string) (conversations.ConversationKey, model.Project, error) {
+func (r *Runtime) scopeConversationKey(
+	ctx context.Context,
+	key conversations.ConversationKey,
+	projectID string,
+	cwd string,
+) (conversations.ConversationKey, model.Project, error) {
 	if key.ProjectID != "" {
 		project, err := loadProjectByID(ctx, r.store, key.ProjectID)
 		if err == nil {
@@ -16,11 +22,21 @@ func (r *Runtime) scopeConversationKey(ctx context.Context, key conversations.Co
 		}
 	}
 
-	workspaceRoot = normalizeWorkspaceRoot(workspaceRoot)
-	if workspaceRoot != "" {
-		project, err := RegisterProject(ctx, r.store, workspaceRoot, "", "runtime")
+	projectID = strings.TrimSpace(projectID)
+	if projectID != "" {
+		project, err := loadProjectByID(ctx, r.store, projectID)
 		if err != nil {
-			return conversations.ConversationKey{}, model.Project{}, fmt.Errorf("scope conversation key: register workspace: %w", err)
+			return conversations.ConversationKey{}, model.Project{}, fmt.Errorf("scope conversation key: load project: %w", err)
+		}
+		key.ProjectID = project.ID
+		return key, project, nil
+	}
+
+	cwd = normalizePrimaryPath(cwd)
+	if cwd != "" {
+		project, err := RegisterProjectPath(ctx, r.store, cwd, "", "runtime")
+		if err != nil {
+			return conversations.ConversationKey{}, model.Project{}, fmt.Errorf("scope conversation key: register cwd: %w", err)
 		}
 		key.ProjectID = project.ID
 		return key, project, nil
@@ -30,14 +46,8 @@ func (r *Runtime) scopeConversationKey(ctx context.Context, key conversations.Co
 	if err != nil {
 		return conversations.ConversationKey{}, model.Project{}, fmt.Errorf("scope conversation key: active project: %w", err)
 	}
-	if project.WorkspaceRoot == "" {
-		return key, model.Project{}, nil
-	}
 	if project.ID == "" {
-		project, err = RegisterProject(ctx, r.store, project.WorkspaceRoot, project.Name, "runtime")
-		if err != nil {
-			return conversations.ConversationKey{}, model.Project{}, fmt.Errorf("scope conversation key: register active project: %w", err)
-		}
+		return key, model.Project{}, nil
 	}
 	key.ProjectID = project.ID
 	return key, project, nil

@@ -48,7 +48,7 @@ func TestAcceptance_EndToEnd(t *testing.T) {
 		ConversationID: "conv-m1-e2e",
 		AgentID:        "agent-lead",
 		Objective:      "Review the codebase for common Go antipatterns",
-		WorkspaceRoot:  t.TempDir(),
+		CWD:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -157,7 +157,7 @@ func TestAcceptance_MemoryReadPathExercised(t *testing.T) {
 		ConversationID: "conv-mem-spy",
 		AgentID:        "agent-a",
 		Objective:      "memory test",
-		WorkspaceRoot:  t.TempDir(),
+		CWD:  t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -215,7 +215,7 @@ func TestAcceptance_FrontSessionCanSpawnAndReceiveAnnounce(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Review the docs and summarize the outcome.",
-		WorkspaceRoot: t.TempDir(),
+		CWD: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
@@ -289,7 +289,7 @@ func TestAcceptance_RuntimeExposesSessionDirectoryAndHistory(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Inspect the repo.",
-		WorkspaceRoot: t.TempDir(),
+		CWD: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
@@ -359,7 +359,7 @@ func TestAcceptance_FrontMailboxSpansMultipleRuns(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "First prompt",
-		WorkspaceRoot: workspaceRoot,
+		CWD: workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("first StartFrontSession failed: %v", err)
@@ -374,7 +374,7 @@ func TestAcceptance_FrontMailboxSpansMultipleRuns(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Second prompt",
-		WorkspaceRoot: workspaceRoot,
+		CWD: workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("second StartFrontSession failed: %v", err)
@@ -422,7 +422,7 @@ func TestAcceptance_FrontMailboxIncludesAssistantReplies(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "User prompt.",
-		WorkspaceRoot: t.TempDir(),
+		CWD: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
@@ -467,7 +467,7 @@ func TestAcceptance_FrontSessionQueuesOutboundIntentForExternalRoute(t *testing.
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "User prompt.",
-		WorkspaceRoot: t.TempDir(),
+		CWD: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)

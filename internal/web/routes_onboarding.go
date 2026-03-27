@@ -165,7 +165,7 @@ func (s *Server) handleOnboardingStep1Submit(w http.ResponseWriter, r *http.Requ
 			http.Error(w, "failed to load starter project", http.StatusInternalServerError)
 			return
 		}
-		if project.WorkspaceRoot == "" {
+		if project.PrimaryPath == "" {
 			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, "starter project is not ready yet")
 			return
 		}
@@ -183,7 +183,7 @@ func (s *Server) handleOnboardingStep1Submit(w http.ResponseWriter, r *http.Requ
 			http.Error(w, "failed to create project directory", http.StatusInternalServerError)
 			return
 		}
-		if _, err := runtime.ActivateWorkspace(r.Context(), s.db, workspaceRoot, "", "operator"); err != nil {
+		if _, err := runtime.ActivateProjectPath(r.Context(), s.db, workspaceRoot, "", "operator"); err != nil {
 			http.Error(w, "failed to save project", http.StatusInternalServerError)
 			return
 		}
@@ -199,7 +199,7 @@ func (s *Server) handleOnboardingStep1Submit(w http.ResponseWriter, r *http.Requ
 			return
 		}
 
-		if _, err := runtime.ActivateWorkspace(r.Context(), s.db, workspaceRoot, "", "operator"); err != nil {
+		if _, err := runtime.ActivateProjectPath(r.Context(), s.db, workspaceRoot, "", "operator"); err != nil {
 			http.Error(w, "failed to save workspace", http.StatusInternalServerError)
 			return
 		}
@@ -275,8 +275,12 @@ func validateNewWorkspacePath(path string) string {
 
 // handleOnboardingStep2 renders the repo-signal scan results.
 func (s *Server) handleOnboardingStep2(w http.ResponseWriter, r *http.Request) {
-	workspaceRoot := lookupSetting(s.db, "workspace_root")
-	candidates := scanRepoSignals(workspaceRoot)
+	project, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		http.Error(w, "failed to load active project", http.StatusInternalServerError)
+		return
+	}
+	candidates := scanRepoSignals(project.PrimaryPath)
 	s.renderTemplate(w, r, "Choose a Task", "onboarding_step2_body", map[string]any{
 		"Candidates": candidates,
 	})
@@ -303,12 +307,17 @@ func (s *Server) handleOnboardingStep3Submit(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	workspaceRoot := lookupSetting(s.db, "workspace_root")
+	project, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		s.renderOnboardingStep3(w, r, http.StatusServiceUnavailable, "Unable to load the active project. Check the runtime configuration and try again.", task)
+		return
+	}
 	run, err := s.rt.StartAsync(r.Context(), runtime.StartRun{
 		ConversationID: "onboarding",
 		AgentID:        "coordinator",
 		Objective:      task,
-		WorkspaceRoot:  workspaceRoot,
+		ProjectID:      project.ID,
+		CWD:            project.PrimaryPath,
 		AccountID:      "local",
 		PreviewOnly:    true,
 	})
@@ -354,13 +363,17 @@ func (s *Server) renderOnboardingStep1(w http.ResponseWriter, r *http.Request, s
 	s.renderTemplateStatus(w, r, status, "Choose Project", "onboarding_step1_body", onboardingStep1Data{
 		Error:               errMsg,
 		ActiveProjectName:   project.Name,
-		ActiveWorkspaceRoot: project.WorkspaceRoot,
+		ActiveWorkspaceRoot: project.PrimaryPath,
 	})
 }
 
 func (s *Server) renderOnboardingStep3(w http.ResponseWriter, r *http.Request, status int, errMsg, selectedTask string) {
-	workspaceRoot := lookupSetting(s.db, "workspace_root")
-	candidates := scanRepoSignals(workspaceRoot)
+	project, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		http.Error(w, "failed to load active project", http.StatusInternalServerError)
+		return
+	}
+	candidates := scanRepoSignals(project.PrimaryPath)
 	s.renderTemplateStatus(w, r, status, "Select Task", "onboarding_step3_body", onboardingStep3Data{
 		Candidates:   candidates,
 		Error:        errMsg,

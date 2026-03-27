@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -13,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -80,7 +82,8 @@ type StartRun struct {
 	TeamID                string
 	ProjectID             string
 	Objective             string
-	WorkspaceRoot         string
+	CWD                   string
+	AuthorityJSON         []byte
 	AccountID             string
 	ExecutionSnapshotJSON []byte
 	// PreviewOnly instructs the run engine to skip workspace apply calls and
@@ -261,7 +264,7 @@ func startRunLoopOpts(runID string, cmd StartRun) runLoopOpts {
 		agentID:           cmd.AgentID,
 		sessionID:         cmd.SessionID,
 		objective:         cmd.Objective,
-		workspaceRoot:     cmd.WorkspaceRoot,
+		cwd:               cmd.CWD,
 		previewOnly:       cmd.PreviewOnly,
 		verificationAgent: cmd.VerificationAgent,
 	}
@@ -335,15 +338,25 @@ func (r *Runtime) finishRunStart(ctx context.Context, runID, parentRunID string,
 }
 
 func (r *Runtime) prepareStartRun(ctx context.Context, parentRunID string, cmd StartRun) (StartRun, error) {
-	if cmd.ProjectID == "" && cmd.WorkspaceRoot != "" {
-		project, err := RegisterProject(ctx, r.store, cmd.WorkspaceRoot, "", "runtime")
+	cmd.CWD = normalizePrimaryPath(cmd.CWD)
+	cmd.AuthorityJSON = normalizeRuntimeAuthorityJSON(cmd.AuthorityJSON)
+	if cmd.ProjectID == "" && cmd.CWD != "" {
+		project, err := RegisterProjectPath(ctx, r.store, cmd.CWD, "", "runtime")
 		if err != nil {
-			return StartRun{}, fmt.Errorf("prepare run start: register workspace: %w", err)
+			return StartRun{}, fmt.Errorf("prepare run start: register cwd: %w", err)
 		}
 		cmd.ProjectID = project.ID
-		cmd.WorkspaceRoot = project.WorkspaceRoot
 	}
-	if cmd.ProjectID == "" || cmd.WorkspaceRoot == "" {
+	if cmd.ProjectID != "" && cmd.CWD == "" {
+		project, err := loadProjectByID(ctx, r.store, cmd.ProjectID)
+		if err != nil && err != sql.ErrNoRows {
+			return StartRun{}, fmt.Errorf("prepare run start: load project cwd: %w", err)
+		}
+		if err == nil {
+			cmd.CWD = project.PrimaryPath
+		}
+	}
+	if cmd.ProjectID == "" || cmd.CWD == "" {
 		project, err := ActiveProject(ctx, r.store)
 		if err != nil {
 			return StartRun{}, fmt.Errorf("prepare run start: resolve active project: %w", err)
@@ -351,8 +364,8 @@ func (r *Runtime) prepareStartRun(ctx context.Context, parentRunID string, cmd S
 		if cmd.ProjectID == "" && project.ID != "" {
 			cmd.ProjectID = project.ID
 		}
-		if cmd.WorkspaceRoot == "" && project.WorkspaceRoot != "" {
-			cmd.WorkspaceRoot = project.WorkspaceRoot
+		if cmd.CWD == "" && project.PrimaryPath != "" {
+			cmd.CWD = project.PrimaryPath
 		}
 	}
 	if len(cmd.ExecutionSnapshotJSON) == 0 {
@@ -410,7 +423,8 @@ func newRunStartedEvent(conversationID, runID, parentRunID string, cmd StartRun,
 		"team_id":                 cmd.TeamID,
 		"project_id":              cmd.ProjectID,
 		"objective":               cmd.Objective,
-		"workspace_root":          cmd.WorkspaceRoot,
+		"cwd":                     cmd.CWD,
+		"authority_json":          json.RawMessage(cmd.AuthorityJSON),
 		"execution_snapshot_json": cmd.ExecutionSnapshotJSON,
 	})
 	if err != nil {
@@ -434,7 +448,7 @@ type runLoopOpts struct {
 	agentID           string
 	sessionID         string
 	objective         string
-	workspaceRoot     string
+	cwd               string
 	previewOnly       bool
 	verificationAgent bool
 }
@@ -500,9 +514,9 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 	if objective == "" {
 		objective = run.Objective
 	}
-	workspaceRoot := opts.workspaceRoot
-	if workspaceRoot == "" {
-		workspaceRoot = run.WorkspaceRoot
+	cwd := opts.cwd
+	if cwd == "" {
+		cwd = run.CWD
 	}
 	projectID := run.ProjectID
 	cumulativeInput := run.InputTokens
@@ -587,7 +601,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			AgentID:       agentID,
 			Agent:         agentProfile,
 			Objective:     objective,
-			WorkspaceRoot: workspaceRoot,
+			CWD:           cwd,
 			MemoryView:    contextView,
 		})
 		if err != nil {
@@ -681,7 +695,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 		}
 
 		if len(result.ToolCalls) > 0 {
-			toolOutcome, err := r.executeToolCalls(ctx, runID, conversationID, agentID, sessionID, workspaceRoot, result.ToolCalls)
+			toolOutcome, err := r.executeToolCalls(ctx, runID, conversationID, agentID, sessionID, cwd, result.ToolCalls)
 			if err != nil {
 				return model.Run{}, err
 			}
@@ -790,7 +804,7 @@ func (r *Runtime) executeToolCalls(
 	conversationID string,
 	agentID string,
 	sessionID string,
-	workspaceRoot string,
+	cwd string,
 	toolCalls []model.ToolCallRequest,
 ) (toolCallOutcome, error) {
 	outcome := toolCallOutcome{
@@ -806,7 +820,7 @@ func (r *Runtime) executeToolCalls(
 	for _, tc := range toolCalls {
 		tool, ok := r.tools.Get(tc.ToolName)
 		if !ok {
-			event, _, err := r.recordToolCall(ctx, conversationID, runID, sessionID, workspaceRoot, agent, tc, nil, model.DecisionDeny, "tool not found", "")
+			event, _, err := r.recordToolCall(ctx, conversationID, runID, sessionID, cwd, agent, tc, nil, model.DecisionDeny, "tool not found", "")
 			if err != nil {
 				return outcome, err
 			}
@@ -817,7 +831,7 @@ func (r *Runtime) executeToolCalls(
 		toolDecision := policy.DecideCall(agent, runProfile, tool.Spec(), tc.InputJSON)
 		switch toolDecision.Mode {
 		case model.DecisionAllow:
-			event, result, err := r.recordToolCall(ctx, conversationID, runID, sessionID, workspaceRoot, agent, tc, tool, model.DecisionAllow, "", "")
+			event, result, err := r.recordToolCall(ctx, conversationID, runID, sessionID, cwd, agent, tc, tool, model.DecisionAllow, "", "")
 			if err != nil {
 				return outcome, err
 			}
@@ -827,11 +841,15 @@ func (r *Runtime) executeToolCalls(
 				return outcome, nil
 			}
 		case model.DecisionAsk:
+			bindingJSON, err := approvalBindingJSON(tc.ToolName, cwd, tool.Spec())
+			if err != nil {
+				return outcome, fmt.Errorf("create approval binding: %w", err)
+			}
 			ticket, err := tools.CreateTicket(ctx, r.store, model.ApprovalRequest{
-				RunID:      runID,
-				ToolName:   tc.ToolName,
-				ArgsJSON:   tc.InputJSON,
-				TargetPath: tools.ApprovalTargetPath(tc.ToolName, tc.InputJSON),
+				RunID:       runID,
+				ToolName:    tc.ToolName,
+				ArgsJSON:    tc.InputJSON,
+				BindingJSON: bindingJSON,
 			})
 			if err != nil {
 				return outcome, fmt.Errorf("create approval ticket: %w", err)
@@ -842,7 +860,7 @@ func (r *Runtime) executeToolCalls(
 			outcome.paused = true
 			return outcome, nil
 		default:
-			event, _, err := r.recordToolCall(ctx, conversationID, runID, sessionID, workspaceRoot, agent, tc, tool, model.DecisionDeny, toolDecision.Reason, "")
+			event, _, err := r.recordToolCall(ctx, conversationID, runID, sessionID, cwd, agent, tc, tool, model.DecisionDeny, toolDecision.Reason, "")
 			if err != nil {
 				return outcome, err
 			}
@@ -933,7 +951,7 @@ func (r *Runtime) recordToolCall(
 	conversationID string,
 	runID string,
 	sessionID string,
-	workspaceRoot string,
+	cwd string,
 	agent model.AgentProfile,
 	tc model.ToolCallRequest,
 	tool tools.Tool,
@@ -947,7 +965,7 @@ func (r *Runtime) recordToolCall(
 			result.Error = "tool not found"
 		} else {
 			invokeCtx := tools.WithInvocationContext(ctx, tools.InvocationContext{
-				WorkspaceRoot: workspaceRoot,
+				WorkspaceRoot: cwd,
 				SessionID:     sessionID,
 				Agent:         agent,
 				ApprovalID:    approvalID,
@@ -1016,7 +1034,7 @@ func (r *Runtime) appendApprovalRequested(
 		"tool_call_id": tc.ID,
 		"tool_name":    tc.ToolName,
 		"input_json":   json.RawMessage(tc.InputJSON),
-		"target_path":  ticket.TargetPath,
+		"binding_json": json.RawMessage(ticket.BindingJSON),
 		"reason":       reason,
 	})
 	if err != nil {
@@ -1367,7 +1385,7 @@ func (r *Runtime) resumeParentAfterChildTerminal(ctx context.Context, child mode
 		agentID:           parent.AgentID,
 		sessionID:         parent.SessionID,
 		objective:         parent.Objective,
-		workspaceRoot:     parent.WorkspaceRoot,
+		cwd:               parent.CWD,
 		verificationAgent: false,
 	})
 	return err
@@ -1546,7 +1564,7 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 	var status string
 	err := r.store.RawDB().QueryRowContext(ctx,
 		`SELECT id, conversation_id, agent_id, COALESCE(session_id, ''), COALESCE(team_id, ''), COALESCE(project_id, ''), COALESCE(parent_run_id, ''),
-		 COALESCE(objective, ''), COALESCE(workspace_root, ''), status, COALESCE(execution_snapshot_json, x''),
+		 COALESCE(objective, ''), COALESCE(cwd, ''), COALESCE(authority_json, x'7b7d'), status, COALESCE(execution_snapshot_json, x''),
 		 input_tokens, output_tokens, COALESCE(model_lane, ''), COALESCE(model_id, ''), created_at, updated_at
 		 FROM runs WHERE id = ?`,
 		runID,
@@ -1559,7 +1577,8 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 		&run.ProjectID,
 		&run.ParentRunID,
 		&run.Objective,
-		&run.WorkspaceRoot,
+		&run.CWD,
+		&run.AuthorityJSON,
 		&status,
 		&run.ExecutionSnapshotJSON,
 		&run.InputTokens,
@@ -1678,7 +1697,7 @@ func (r *Runtime) queueOutboundIntent(
 // SubmitTask starts a new root run via the web interface, resolving the
 // web conversation key internally. This is the canonical entry point for
 // write-path web handlers.
-func (r *Runtime) SubmitTask(ctx context.Context, objective, workspaceRoot string) (model.Run, error) {
+func (r *Runtime) SubmitTask(ctx context.Context, objective, cwd string) (model.Run, error) {
 	return r.ReceiveInboundMessage(ctx, InboundMessageCommand{
 		ConversationKey: conversations.ConversationKey{
 			ConnectorID: "web",
@@ -1686,9 +1705,9 @@ func (r *Runtime) SubmitTask(ctx context.Context, objective, workspaceRoot strin
 			ExternalID:  "default",
 			ThreadID:    "main",
 		},
-		FrontAgentID:  "assistant",
-		Body:          objective,
-		WorkspaceRoot: workspaceRoot,
+		FrontAgentID: "assistant",
+		Body:         objective,
+		CWD:          cwd,
 	})
 }
 
@@ -1795,7 +1814,7 @@ func (r *Runtime) finishApprovalResolution(ctx context.Context, prepared approva
 			return err
 		}
 		tool, _ := r.tools.Get(ticket.ToolName)
-		_, result, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.WorkspaceRoot, agent, call, tool, model.DecisionAllow, "", ticket.ID)
+		_, result, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.CWD, agent, call, tool, model.DecisionAllow, "", ticket.ID)
 		if err != nil {
 			return err
 		}
@@ -1812,7 +1831,7 @@ func (r *Runtime) finishApprovalResolution(ctx context.Context, prepared approva
 			agentID:           run.AgentID,
 			sessionID:         run.SessionID,
 			objective:         run.Objective,
-			workspaceRoot:     run.WorkspaceRoot,
+			cwd:               run.CWD,
 			verificationAgent: false,
 		})
 		if err != nil {
@@ -1824,7 +1843,7 @@ func (r *Runtime) finishApprovalResolution(ctx context.Context, prepared approva
 		if err != nil {
 			return err
 		}
-		if _, _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.WorkspaceRoot, agent, call, nil, model.DecisionDeny, "approval denied", ticket.ID); err != nil {
+		if _, _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.CWD, agent, call, nil, model.DecisionDeny, "approval denied", ticket.ID); err != nil {
 			return err
 		}
 		interrupted, err := r.interruptRun(ctx, run)
@@ -1840,13 +1859,6 @@ func (r *Runtime) finishApprovalResolution(ctx context.Context, prepared approva
 // UpdateSettings persists operator-editable settings to the database.
 // The admin_token key is explicitly rejected to prevent accidental exposure.
 func (r *Runtime) UpdateSettings(ctx context.Context, updates map[string]string) error {
-	if workspaceRoot, ok := updates["workspace_root"]; ok {
-		project, err := ActivateWorkspace(ctx, r.store, workspaceRoot, "", "operator")
-		if err != nil {
-			return fmt.Errorf("runtime: update workspace_root: %w", err)
-		}
-		updates["workspace_root"] = project.WorkspaceRoot
-	}
 	for key, value := range updates {
 		if key == "admin_token" {
 			return fmt.Errorf("runtime: admin_token cannot be updated via settings")
@@ -1864,6 +1876,22 @@ func (r *Runtime) UpdateSettings(ctx context.Context, updates map[string]string)
 		return err
 	}
 	return nil
+}
+
+func normalizeRuntimeAuthorityJSON(raw []byte) []byte {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return []byte("{}")
+	}
+	return append([]byte(nil), raw...)
+}
+
+func approvalBindingJSON(toolName, cwd string, spec model.ToolSpec) ([]byte, error) {
+	binding := authority.Binding{
+		ToolName: toolName,
+		CWD:      cwd,
+		Mutating: strings.TrimSpace(spec.SideEffect) != "" && spec.SideEffect != "read",
+	}
+	return json.Marshal(binding)
 }
 
 func generateID() string {

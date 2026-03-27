@@ -215,7 +215,8 @@ func TestConversationStore_AppendEventProjectsRunLifecycle(t *testing.T) {
 	payload, err := json.Marshal(map[string]any{
 		"agent_id":       "agent-a",
 		"objective":      "ship it",
-		"workspace_root": t.TempDir(),
+		"cwd":            t.TempDir(),
+		"authority_json": json.RawMessage(`{"approval_mode":"prompt"}`),
 	})
 	if err != nil {
 		t.Fatalf("marshal payload: %v", err)
@@ -315,7 +316,8 @@ func TestConversationStore_AppendEventProjectsApprovalLifecycle(t *testing.T) {
 	startPayload, err := json.Marshal(map[string]any{
 		"agent_id":       "agent-a",
 		"objective":      "edit repo",
-		"workspace_root": t.TempDir(),
+		"cwd":            t.TempDir(),
+		"authority_json": json.RawMessage(`{"approval_mode":"prompt"}`),
 	})
 	if err != nil {
 		t.Fatalf("marshal start payload: %v", err)
@@ -518,7 +520,8 @@ func TestConversationStore_AppendEventProjectsRunSessionID(t *testing.T) {
 	startPayload, err := json.Marshal(map[string]any{
 		"agent_id":       "assistant",
 		"objective":      "Help with the repo",
-		"workspace_root": "/tmp/work",
+		"cwd":            "/tmp/work",
+		"authority_json": json.RawMessage(`{"approval_mode":"prompt"}`),
 		"session_id":     "sess-front",
 	})
 	if err != nil {
@@ -750,9 +753,10 @@ func TestConversationStore_AppendEventProjectsDeliveryRedrive(t *testing.T) {
 
 	_, err := db.RawDB().ExecContext(ctx,
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, session_id, objective, workspace_root, status, created_at, updated_at)
-		 VALUES ('run-front', 'conv-redrive', 'assistant', 'sess-front', 'inspect repo', ?, 'completed', datetime('now'), datetime('now'))`,
+		 (id, conversation_id, agent_id, session_id, objective, cwd, authority_json, status, created_at, updated_at)
+		 VALUES ('run-front', 'conv-redrive', 'assistant', 'sess-front', 'inspect repo', ?, ?, 'completed', datetime('now'), datetime('now'))`,
 		t.TempDir(),
+		[]byte(`{"approval_mode":"prompt"}`),
 	)
 	if err != nil {
 		t.Fatalf("insert run: %v", err)

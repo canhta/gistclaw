@@ -29,7 +29,7 @@ func TestRunEngine_ApprovalRequestCreatesTicketAndPausesRun(t *testing.T) {
 		ConversationID:        "conv-approval-pause",
 		AgentID:               "patcher",
 		Objective:             "mutate shell",
-		WorkspaceRoot:         workspaceRoot,
+		CWD:         workspaceRoot,
 		ExecutionSnapshotJSON: mustSnapshotJSON(t, workspaceWriteSnapshot()),
 	})
 	if err != nil {
@@ -85,7 +85,7 @@ func TestResolveApproval_ApprovedExecutesToolAndResumesRun(t *testing.T) {
 		ConversationID:        "conv-approval-approve",
 		AgentID:               "patcher",
 		Objective:             "mutate shell",
-		WorkspaceRoot:         workspaceRoot,
+		CWD:         workspaceRoot,
 		ExecutionSnapshotJSON: mustSnapshotJSON(t, workspaceWriteSnapshot()),
 	})
 	if err != nil {
@@ -164,7 +164,7 @@ func TestResolveApproval_ApprovedCoderExecutesToolAndResumesRun(t *testing.T) {
 		ConversationID:        "conv-approval-coder",
 		AgentID:               "patcher",
 		Objective:             "mutate via coder",
-		WorkspaceRoot:         workspaceRoot,
+		CWD:         workspaceRoot,
 		ExecutionSnapshotJSON: mustSnapshotJSON(t, workspaceWriteSnapshot()),
 	})
 	if err != nil {
@@ -238,7 +238,7 @@ func TestResolveApproval_ApprovedShellExecRunsApprovedCommand(t *testing.T) {
 		ConversationID:        "conv-approval-approved-shell",
 		AgentID:               "patcher",
 		Objective:             "use approved shell syntax",
-		WorkspaceRoot:         workspaceRoot,
+		CWD:         workspaceRoot,
 		ExecutionSnapshotJSON: mustSnapshotJSON(t, workspaceWriteSnapshot()),
 	})
 	if err != nil {
@@ -294,7 +294,7 @@ func TestResolveApproval_ApprovedToolErrorInterruptsRunWithoutResumingProvider(t
 		ConversationID:        "conv-approval-error",
 		AgentID:               "patcher",
 		Objective:             "mutate shell with failing command",
-		WorkspaceRoot:         workspaceRoot,
+		CWD:         workspaceRoot,
 		ExecutionSnapshotJSON: mustSnapshotJSON(t, workspaceWriteSnapshot()),
 	})
 	if err != nil {
@@ -363,7 +363,7 @@ func TestResolveApproval_DeniedInterruptsRun(t *testing.T) {
 		ConversationID:        "conv-approval-deny",
 		AgentID:               "patcher",
 		Objective:             "mutate shell",
-		WorkspaceRoot:         workspaceRoot,
+		CWD:         workspaceRoot,
 		ExecutionSnapshotJSON: mustSnapshotJSON(t, workspaceWriteSnapshot()),
 	})
 	if err != nil {

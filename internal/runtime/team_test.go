@@ -16,7 +16,7 @@ func TestRuntime_TeamConfigUsesActiveProjectWorkspace(t *testing.T) {
 
 	alphaRoot := t.TempDir()
 	writeRuntimeTeamDir(t, alphaRoot, "Alpha Team")
-	alphaProject, err := ActivateWorkspace(ctx, db, alphaRoot, "alpha", "operator")
+	alphaProject, err := ActivateProjectPath(ctx, db, alphaRoot, "alpha", "operator")
 	if err != nil {
 		t.Fatalf("activate alpha project: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestRuntime_UpdateTeamWritesIntoActiveProjectWorkspace(t *testing.T) {
 
 	workspaceRoot := t.TempDir()
 	writeRuntimeTeamDir(t, workspaceRoot, "Alpha Team")
-	project, err := ActivateWorkspace(ctx, db, workspaceRoot, "alpha", "operator")
+	project, err := ActivateProjectPath(ctx, db, workspaceRoot, "alpha", "operator")
 	if err != nil {
 		t.Fatalf("activate project: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestRuntime_UpdateTeamWritesIntoActiveProjectWorkspace(t *testing.T) {
 		ConversationID: "conv-team",
 		AgentID:        "assistant",
 		Objective:      "use updated team",
-		WorkspaceRoot:  workspaceRoot,
+		CWD:  workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("prepareStartRun: %v", err)
@@ -94,7 +94,7 @@ func TestRuntime_TeamConfigFallsBackToConfiguredTeamDirWhenWorkspaceCopyMissing(
 	rt.SetTeamDir(fallbackTeamDir)
 
 	workspaceRoot := t.TempDir()
-	project, err := ActivateWorkspace(ctx, db, workspaceRoot, "workspace-without-team-copy", "operator")
+	project, err := ActivateProjectPath(ctx, db, workspaceRoot, "workspace-without-team-copy", "operator")
 	if err != nil {
 		t.Fatalf("activate project: %v", err)
 	}

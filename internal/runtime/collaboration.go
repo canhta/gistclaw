@@ -18,7 +18,8 @@ type StartFrontSession struct {
 	ConversationKey conversations.ConversationKey
 	FrontAgentID    string
 	InitialPrompt   string
-	WorkspaceRoot   string
+	ProjectID       string
+	CWD             string
 }
 
 type InboundMessageCommand struct {
@@ -26,7 +27,8 @@ type InboundMessageCommand struct {
 	FrontAgentID    string
 	Body            string
 	SourceMessageID string
-	WorkspaceRoot   string
+	ProjectID       string
+	CWD             string
 }
 
 type SpawnCommand struct {
@@ -60,13 +62,16 @@ type SendSessionCommand struct {
 }
 
 func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) (model.Run, error) {
-	scopedKey, project, err := r.scopeConversationKey(ctx, cmd.ConversationKey, cmd.WorkspaceRoot)
+	scopedKey, project, err := r.scopeConversationKey(ctx, cmd.ConversationKey, cmd.ProjectID, cmd.CWD)
 	if err != nil {
 		return model.Run{}, err
 	}
 	cmd.ConversationKey = scopedKey
-	if cmd.WorkspaceRoot == "" {
-		cmd.WorkspaceRoot = project.WorkspaceRoot
+	if cmd.ProjectID == "" {
+		cmd.ProjectID = project.ID
+	}
+	if cmd.CWD == "" {
+		cmd.CWD = project.PrimaryPath
 	}
 
 	conv, err := r.convStore.Resolve(ctx, cmd.ConversationKey)
@@ -85,8 +90,9 @@ func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) 
 		ConversationID: conv.ID,
 		AgentID:        cmd.FrontAgentID,
 		SessionID:      sessionID,
+		ProjectID:      cmd.ProjectID,
 		Objective:      cmd.InitialPrompt,
-		WorkspaceRoot:  cmd.WorkspaceRoot,
+		CWD:            cmd.CWD,
 		AccountID:      cmd.ConversationKey.AccountID,
 	}
 	if err := r.createRun(ctx, runID, "", start); err != nil {
@@ -125,7 +131,7 @@ func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) 
 		agentID:        cmd.FrontAgentID,
 		sessionID:      sessionID,
 		objective:      cmd.InitialPrompt,
-		workspaceRoot:  cmd.WorkspaceRoot,
+		cwd:            cmd.CWD,
 	})
 }
 
@@ -138,13 +144,16 @@ func (r *Runtime) ReceiveInboundMessageAsync(ctx context.Context, cmd InboundMes
 }
 
 func (r *Runtime) receiveInboundMessage(ctx context.Context, cmd InboundMessageCommand, detached bool) (model.Run, error) {
-	scopedKey, project, err := r.scopeConversationKey(ctx, cmd.ConversationKey, cmd.WorkspaceRoot)
+	scopedKey, project, err := r.scopeConversationKey(ctx, cmd.ConversationKey, cmd.ProjectID, cmd.CWD)
 	if err != nil {
 		return model.Run{}, err
 	}
 	cmd.ConversationKey = scopedKey
-	if cmd.WorkspaceRoot == "" {
-		cmd.WorkspaceRoot = project.WorkspaceRoot
+	if cmd.ProjectID == "" {
+		cmd.ProjectID = project.ID
+	}
+	if cmd.CWD == "" {
+		cmd.CWD = project.PrimaryPath
 	}
 
 	conv, err := r.convStore.Resolve(ctx, cmd.ConversationKey)
@@ -181,7 +190,8 @@ func (r *Runtime) receiveInboundMessage(ctx context.Context, cmd InboundMessageC
 		createBinding:   createBinding,
 		agentID:         cmd.FrontAgentID,
 		body:            cmd.Body,
-		workspaceRoot:   cmd.WorkspaceRoot,
+		projectID:       cmd.ProjectID,
+		cwd:             cmd.CWD,
 		key:             cmd.ConversationKey,
 		threadID:        threadID,
 		sourceMessageID: cmd.SourceMessageID,
@@ -217,8 +227,9 @@ func (r *Runtime) Spawn(ctx context.Context, cmd SpawnCommand) (model.Run, error
 		ConversationID: controllerSession.ConversationID,
 		AgentID:        cmd.AgentID,
 		SessionID:      workerSessionID,
+		ProjectID:      controllerRun.ProjectID,
 		Objective:      cmd.Prompt,
-		WorkspaceRoot:  controllerRun.WorkspaceRoot,
+		CWD:            controllerRun.CWD,
 	}
 	if err := r.createRun(ctx, runID, controllerRun.ID, start); err != nil {
 		return model.Run{}, err
@@ -259,7 +270,7 @@ func (r *Runtime) Spawn(ctx context.Context, cmd SpawnCommand) (model.Run, error
 		agentID:        cmd.AgentID,
 		sessionID:      workerSessionID,
 		objective:      cmd.Prompt,
-		workspaceRoot:  controllerRun.WorkspaceRoot,
+		cwd:            controllerRun.CWD,
 	})
 }
 
@@ -350,8 +361,9 @@ func (r *Runtime) sendSession(ctx context.Context, opts sendSessionOptions) (mod
 		ConversationID: targetSession.ConversationID,
 		AgentID:        targetSession.AgentID,
 		SessionID:      targetSession.ID,
+		ProjectID:      targetRun.ProjectID,
 		Objective:      opts.body,
-		WorkspaceRoot:  targetRun.WorkspaceRoot,
+		CWD:            targetRun.CWD,
 	}
 	if err := r.createRun(ctx, runID, parentRunID, start); err != nil {
 		return model.Run{}, err
@@ -375,7 +387,7 @@ func (r *Runtime) sendSession(ctx context.Context, opts sendSessionOptions) (mod
 		agentID:        targetSession.AgentID,
 		sessionID:      targetSession.ID,
 		objective:      opts.body,
-		workspaceRoot:  targetRun.WorkspaceRoot,
+		cwd:            targetRun.CWD,
 	})
 }
 
@@ -432,8 +444,8 @@ func (r *Runtime) loadPreferredRunForSession(ctx context.Context, sessionID stri
 	var run model.Run
 	var status string
 	err := r.store.RawDB().QueryRowContext(ctx,
-		`SELECT id, conversation_id, agent_id, COALESCE(session_id, ''), COALESCE(team_id, ''), COALESCE(parent_run_id, ''),
-		        COALESCE(objective, ''), COALESCE(workspace_root, ''), status, COALESCE(execution_snapshot_json, x''),
+		`SELECT id, conversation_id, agent_id, COALESCE(session_id, ''), COALESCE(team_id, ''), COALESCE(project_id, ''), COALESCE(parent_run_id, ''),
+		        COALESCE(objective, ''), COALESCE(cwd, ''), COALESCE(authority_json, x'7b7d'), status, COALESCE(execution_snapshot_json, x''),
 		        input_tokens, output_tokens, created_at, updated_at
 		 FROM runs
 		 WHERE session_id = ?
@@ -453,9 +465,11 @@ func (r *Runtime) loadPreferredRunForSession(ctx context.Context, sessionID stri
 		&run.AgentID,
 		&run.SessionID,
 		&run.TeamID,
+		&run.ProjectID,
 		&run.ParentRunID,
 		&run.Objective,
-		&run.WorkspaceRoot,
+		&run.CWD,
+		&run.AuthorityJSON,
 		&status,
 		&run.ExecutionSnapshotJSON,
 		&run.InputTokens,
@@ -573,7 +587,8 @@ type inboundRunOptions struct {
 	createBinding   bool
 	agentID         string
 	body            string
-	workspaceRoot   string
+	projectID       string
+	cwd             string
 	key             conversations.ConversationKey
 	threadID        string
 	sourceMessageID string
@@ -609,8 +624,9 @@ func (r *Runtime) prepareInboundRun(ctx context.Context, opts inboundRunOptions)
 		ConversationID: opts.conversationID,
 		AgentID:        opts.agentID,
 		SessionID:      opts.sessionID,
+		ProjectID:      opts.projectID,
 		Objective:      opts.body,
-		WorkspaceRoot:  opts.workspaceRoot,
+		CWD:            opts.cwd,
 		AccountID:      opts.key.AccountID,
 	}
 	start, err := r.prepareStartRun(ctx, "", start)
@@ -712,7 +728,7 @@ func (r *Runtime) prepareInboundRun(ctx context.Context, opts inboundRunOptions)
 			agentID:        opts.agentID,
 			sessionID:      opts.sessionID,
 			objective:      opts.body,
-			workspaceRoot:  opts.workspaceRoot,
+			cwd:            opts.cwd,
 		},
 	}, nil
 }

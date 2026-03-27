@@ -38,7 +38,7 @@ func TestStarterWorkflow_PreviewOnly(t *testing.T) {
 		ConversationID: "conv-preview",
 		AgentID:        "coordinator",
 		Objective:      "Apply a patch to main.go",
-		WorkspaceRoot:  t.TempDir(),
+		CWD:  t.TempDir(),
 		PreviewOnly:    true,
 	})
 	if err != nil {
@@ -106,10 +106,10 @@ func TestStarterWorkflow_FingerprintMismatchRejected(t *testing.T) {
 
 	// Create and approve a ticket for path "a.go".
 	ticket, err := tools.CreateTicket(ctx, db, model.ApprovalRequest{
-		RunID:      "run-fp",
-		ToolName:   "workspace_apply",
-		ArgsJSON:   []byte(`{"path":"a.go"}`),
-		TargetPath: "a.go",
+		RunID:       "run-fp",
+		ToolName:    "workspace_apply",
+		ArgsJSON:    []byte(`{"path":"a.go"}`),
+		BindingJSON: []byte(`{"tool_name":"workspace_apply","cwd":"` + workspaceRoot + `","operands":["a.go"],"mutating":true}`),
 	})
 	if err != nil {
 		t.Fatalf("CreateTicket: %v", err)
@@ -152,7 +152,7 @@ func TestStarterWorkflow_VerificationResultAttached(t *testing.T) {
 		ConversationID:    "conv-verify",
 		AgentID:           "verifier",
 		Objective:         "verify: run tests",
-		WorkspaceRoot:     t.TempDir(),
+		CWD:     t.TempDir(),
 		VerificationAgent: true,
 	})
 	if err != nil {
@@ -191,7 +191,7 @@ func TestStarterWorkflow_RepoPatchRunsAsWorkerFlow(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Prepare a patch and verify it.",
-		WorkspaceRoot: t.TempDir(),
+		CWD: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)

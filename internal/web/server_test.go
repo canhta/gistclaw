@@ -859,7 +859,7 @@ func TestSessionsProjectScoping(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "review the seo project",
-			WorkspaceRoot: otherRoot,
+			CWD: otherRoot,
 		})
 		if err != nil {
 			t.Fatalf("start other-project front session: %v", err)
@@ -895,7 +895,7 @@ func TestSessionsProjectScoping(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "review the seo project",
-			WorkspaceRoot: otherRoot,
+			CWD: otherRoot,
 		})
 		if err != nil {
 			t.Fatalf("start other-project front session: %v", err)
@@ -958,7 +958,7 @@ func TestRoutesDeliveriesProjectScoping(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "inspect other delivery",
-		WorkspaceRoot: otherRoot,
+		CWD: otherRoot,
 	})
 	if err != nil {
 		t.Fatalf("start other-project route flow: %v", err)
@@ -1010,7 +1010,7 @@ func TestProjectScopedAPIAccess(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "review the seo project",
-			WorkspaceRoot: otherRoot,
+			CWD: otherRoot,
 		})
 		if err != nil {
 			t.Fatalf("start other-project front session: %v", err)
@@ -1039,7 +1039,7 @@ func TestProjectScopedAPIAccess(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "inspect other route",
-			WorkspaceRoot: otherRoot,
+			CWD: otherRoot,
 		})
 		if err != nil {
 			t.Fatalf("start other-project route flow: %v", err)
@@ -1077,7 +1077,7 @@ func TestProjectScopedAPIAccess(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "inspect other delivery",
-			WorkspaceRoot: otherRoot,
+			CWD: otherRoot,
 		})
 		if err != nil {
 			t.Fatalf("start other-project delivery flow: %v", err)
@@ -1613,7 +1613,7 @@ func TestTeam(t *testing.T) {
 			ConversationID: "conv-team-refresh",
 			AgentID:        "reviewer",
 			Objective:      "confirm refreshed snapshot",
-			WorkspaceRoot:  h.workspaceRoot,
+			CWD:            h.workspaceRoot,
 			PreviewOnly:    true,
 		})
 		if err != nil {
@@ -2072,7 +2072,7 @@ func TestApprovalsResolve(t *testing.T) {
 			ConversationID: "conv-approval-web-async",
 			AgentID:        "patcher",
 			Objective:      "mutate via coder",
-			WorkspaceRoot:  h.workspaceRoot,
+			CWD:  h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("Start failed: %v", err)
@@ -2846,7 +2846,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect the repo.",
-			WorkspaceRoot: h.workspaceRoot,
+			CWD: h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession telegram failed: %v", err)
@@ -2860,7 +2860,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect WhatsApp.",
-			WorkspaceRoot: h.workspaceRoot,
+			CWD: h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession whatsapp failed: %v", err)
@@ -2968,7 +2968,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect the repo.",
-			WorkspaceRoot: h.workspaceRoot,
+			CWD: h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession failed: %v", err)
@@ -3044,7 +3044,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect Telegram.",
-			WorkspaceRoot: h.workspaceRoot,
+			CWD: h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession telegram failed: %v", err)
@@ -3058,7 +3058,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect WhatsApp.",
-			WorkspaceRoot: h.workspaceRoot,
+			CWD: h.workspaceRoot,
 		}); err != nil {
 			t.Fatalf("StartFrontSession whatsapp failed: %v", err)
 		}
@@ -3138,7 +3138,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect Telegram.",
-			WorkspaceRoot: h.workspaceRoot,
+			CWD: h.workspaceRoot,
 		}); err != nil {
 			t.Fatalf("StartFrontSession telegram failed: %v", err)
 		}
@@ -3217,7 +3217,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect Telegram.",
-			WorkspaceRoot: h.workspaceRoot,
+			CWD: h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession telegram failed: %v", err)
@@ -3339,7 +3339,7 @@ func TestSessionAPI(t *testing.T) {
 				ConversationKey: key,
 				FrontAgentID:    "assistant",
 				InitialPrompt:   "Inspect the repo.",
-				WorkspaceRoot:   h.workspaceRoot,
+				CWD:   h.workspaceRoot,
 			})
 			if err != nil {
 				t.Fatalf("StartFrontSession %d failed: %v", i, err)
@@ -3455,7 +3455,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect the repo.",
-			WorkspaceRoot: h.workspaceRoot,
+			CWD: h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession failed: %v", err)
@@ -3500,7 +3500,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect the repo.",
-			WorkspaceRoot: h.workspaceRoot,
+			CWD: h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession failed: %v", err)
@@ -3644,7 +3644,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect the repo.",
-			WorkspaceRoot: h.workspaceRoot,
+			CWD: h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession failed: %v", err)
@@ -3722,7 +3722,7 @@ func TestSessionAPI(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect the repo.",
-			WorkspaceRoot: h.workspaceRoot,
+			CWD: h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession failed: %v", err)
@@ -3862,7 +3862,7 @@ func TestRoutesDeliveriesPage(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect WhatsApp.",
-			WorkspaceRoot: h.workspaceRoot,
+			CWD: h.workspaceRoot,
 		}); err != nil {
 			t.Fatalf("StartFrontSession whatsapp failed: %v", err)
 		}
@@ -3902,7 +3902,7 @@ func TestRoutesDeliveriesPage(t *testing.T) {
 			},
 			FrontAgentID:  "assistant",
 			InitialPrompt: "Inspect Telegram 2.",
-			WorkspaceRoot: h.workspaceRoot,
+			CWD: h.workspaceRoot,
 		})
 		if err != nil {
 			t.Fatalf("StartFrontSession second telegram failed: %v", err)
@@ -4252,7 +4252,7 @@ func TestSessionPages(t *testing.T) {
 				ConversationKey: key,
 				FrontAgentID:    "assistant",
 				InitialPrompt:   "Inspect the repo.",
-				WorkspaceRoot:   h.workspaceRoot,
+				CWD:   h.workspaceRoot,
 			})
 			if err != nil {
 				t.Fatalf("StartFrontSession %d failed: %v", i, err)
@@ -4554,8 +4554,8 @@ func newServerHarnessWithProviderAndConnectorHealth(t *testing.T, prov runtime.P
 	teamDir := writeTeamFixture(t)
 	const activeProjectID = "proj-primary"
 	if _, err := db.RawDB().Exec(
-		`INSERT INTO projects (id, name, workspace_root, source, created_at, last_used_at)
-		 VALUES (?, ?, ?, 'starter', datetime('now'), datetime('now'))`,
+		`INSERT INTO projects (id, name, primary_path, roots_json, policy_json, source, created_at, last_used_at)
+		 VALUES (?, ?, ?, '{}', '{}', 'starter', datetime('now'), datetime('now'))`,
 		activeProjectID, "starter-project", workspaceRoot,
 	); err != nil {
 		t.Fatalf("seed primary project: %v", err)
@@ -4632,8 +4632,8 @@ func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, e
 	teamDir := writeTeamFixture(t)
 	const activeProjectID = "proj-primary"
 	if _, err := db.RawDB().Exec(
-		`INSERT INTO projects (id, name, workspace_root, source, created_at, last_used_at)
-		 VALUES (?, ?, ?, 'starter', datetime('now'), datetime('now'))`,
+		`INSERT INTO projects (id, name, primary_path, roots_json, policy_json, source, created_at, last_used_at)
+		 VALUES (?, ?, ?, '{}', '{}', 'starter', datetime('now'), datetime('now'))`,
 		activeProjectID, "starter-project", workspaceRoot,
 	); err != nil {
 		t.Fatalf("seed primary project: %v", err)
@@ -4978,7 +4978,7 @@ func (h *serverHarness) seedRoutesDeliveriesData(t *testing.T) (model.Run, model
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Inspect Telegram.",
-		WorkspaceRoot: h.workspaceRoot,
+		CWD: h.workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession telegram failed: %v", err)
@@ -5116,7 +5116,7 @@ func (h *serverHarness) startFrontSession(t *testing.T, prompt string) model.Run
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: prompt,
-		WorkspaceRoot: h.workspaceRoot,
+		CWD: h.workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)

@@ -9,12 +9,22 @@ import (
 	"github.com/canhta/gistclaw/internal/model"
 )
 
-func TestPrepareStartRun_UsesActiveWorkspaceWhenWorkspaceRootOmitted(t *testing.T) {
+func TestPrepareStartRun_UsesActiveProjectPrimaryPathWhenCWDOmitted(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
+	projectID := generateID()
+	primaryPath := "/tmp/project-alpha"
 	if _, err := db.RawDB().Exec(
-		`INSERT INTO settings (key, value, updated_at) VALUES ('workspace_root', '/tmp/project-alpha', datetime('now'))`,
+		`INSERT INTO projects (id, name, primary_path, roots_json, policy_json, source, created_at, last_used_at)
+		 VALUES (?, ?, ?, '{}', '{}', 'operator', datetime('now'), datetime('now'))`,
+		projectID, "project-alpha", primaryPath,
 	); err != nil {
-		t.Fatalf("seed workspace_root: %v", err)
+		t.Fatalf("seed project: %v", err)
+	}
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO settings (key, value, updated_at) VALUES ('active_project_id', ?, datetime('now'))`,
+		projectID,
+	); err != nil {
+		t.Fatalf("seed active_project_id: %v", err)
 	}
 
 	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
@@ -27,21 +37,27 @@ func TestPrepareStartRun_UsesActiveWorkspaceWhenWorkspaceRootOmitted(t *testing.
 	if err != nil {
 		t.Fatalf("prepareStartRun: %v", err)
 	}
-	if cmd.WorkspaceRoot != "/tmp/project-alpha" {
-		t.Fatalf("expected omitted workspace_root to resolve to active workspace, got %q", cmd.WorkspaceRoot)
+	if cmd.ProjectID != projectID {
+		t.Fatalf("project id = %q, want %q", cmd.ProjectID, projectID)
+	}
+	if cmd.CWD != primaryPath {
+		t.Fatalf("cwd = %q, want %q", cmd.CWD, primaryPath)
 	}
 }
 
-func TestActivateWorkspace_RegistersAndActivatesProject(t *testing.T) {
+func TestActivateProjectPath_RegistersAndActivatesProjectWithoutCreatingRepo(t *testing.T) {
 	db, _, _, _ := setupRunTestDeps(t)
-	workspaceRoot := filepath.Join(t.TempDir(), "project-alpha")
+	primaryPath := filepath.Join(t.TempDir(), "project-alpha", "nested")
 
-	project, err := ActivateWorkspace(context.Background(), db, workspaceRoot, "seo-test", "operator")
+	project, err := ActivateProjectPath(context.Background(), db, primaryPath, "seo-test", "operator")
 	if err != nil {
-		t.Fatalf("ActivateWorkspace: %v", err)
+		t.Fatalf("ActivateProjectPath: %v", err)
 	}
 	if project.ID == "" {
 		t.Fatal("expected activated project id to be set")
+	}
+	if project.PrimaryPath != primaryPath {
+		t.Fatalf("primary_path = %q, want %q", project.PrimaryPath, primaryPath)
 	}
 
 	active, err := ActiveProject(context.Background(), db)
@@ -51,8 +67,8 @@ func TestActivateWorkspace_RegistersAndActivatesProject(t *testing.T) {
 	if active.ID != project.ID {
 		t.Fatalf("expected active project %q, got %q", project.ID, active.ID)
 	}
-	if active.WorkspaceRoot != workspaceRoot {
-		t.Fatalf("expected active workspace root %q, got %q", workspaceRoot, active.WorkspaceRoot)
+	if active.PrimaryPath != primaryPath {
+		t.Fatalf("active primary_path = %q, want %q", active.PrimaryPath, primaryPath)
 	}
 
 	projects, err := ListProjects(context.Background(), db)
@@ -65,64 +81,36 @@ func TestActivateWorkspace_RegistersAndActivatesProject(t *testing.T) {
 	if projects[0].Name != "seo-test" {
 		t.Fatalf("expected project name %q, got %q", "seo-test", projects[0].Name)
 	}
-	if _, err := os.Stat(filepath.Join(workspaceRoot, ".git")); err != nil {
-		t.Fatalf("expected activated workspace to be initialized as a git repo: %v", err)
+	if _, err := os.Stat(primaryPath); !os.IsNotExist(err) {
+		t.Fatalf("expected activation to keep %q as metadata only, stat err = %v", primaryPath, err)
 	}
 }
 
-func TestRegisterProject_ReusesExistingWorkspace(t *testing.T) {
+func TestRegisterProjectPath_ReusesExistingPrimaryPath(t *testing.T) {
 	db, _, _, _ := setupRunTestDeps(t)
 
-	first, err := RegisterProject(context.Background(), db, "/tmp/project-alpha", "alpha", "starter")
+	first, err := RegisterProjectPath(context.Background(), db, "/tmp/project-alpha", "alpha", "starter")
 	if err != nil {
-		t.Fatalf("first RegisterProject: %v", err)
+		t.Fatalf("first RegisterProjectPath: %v", err)
 	}
-	second, err := RegisterProject(context.Background(), db, "/tmp/project-alpha", "override", "operator")
+	second, err := RegisterProjectPath(context.Background(), db, "/tmp/project-alpha", "override", "operator")
 	if err != nil {
-		t.Fatalf("second RegisterProject: %v", err)
+		t.Fatalf("second RegisterProjectPath: %v", err)
 	}
 	if first.ID != second.ID {
-		t.Fatalf("expected duplicate workspace registration to reuse %q, got %q", first.ID, second.ID)
+		t.Fatalf("expected duplicate primary_path registration to reuse %q, got %q", first.ID, second.ID)
 	}
 }
 
-func TestActiveProject_FallsBackToLegacyWorkspaceSetting(t *testing.T) {
+func TestActiveProject_ReturnsEmptyWithoutActivation(t *testing.T) {
 	db, _, _, _ := setupRunTestDeps(t)
-	if _, err := db.RawDB().Exec(
-		`INSERT INTO settings (key, value, updated_at) VALUES ('workspace_root', '/tmp/legacy-project', datetime('now'))`,
-	); err != nil {
-		t.Fatalf("seed workspace_root: %v", err)
-	}
 
 	project, err := ActiveProject(context.Background(), db)
 	if err != nil {
 		t.Fatalf("ActiveProject: %v", err)
 	}
-	if project.ID != "" {
-		t.Fatalf("expected legacy fallback to have no stored project id, got %q", project.ID)
-	}
-	if project.Name != "legacy-project" {
-		t.Fatalf("expected legacy fallback name %q, got %q", "legacy-project", project.Name)
-	}
-}
-
-func TestListProjects_FallsBackToLegacyWorkspaceSetting(t *testing.T) {
-	db, _, _, _ := setupRunTestDeps(t)
-	if _, err := db.RawDB().Exec(
-		`INSERT INTO settings (key, value, updated_at) VALUES ('workspace_root', '/tmp/legacy-project', datetime('now'))`,
-	); err != nil {
-		t.Fatalf("seed workspace_root: %v", err)
-	}
-
-	projects, err := ListProjects(context.Background(), db)
-	if err != nil {
-		t.Fatalf("ListProjects: %v", err)
-	}
-	if len(projects) != 1 {
-		t.Fatalf("expected 1 legacy project fallback, got %d", len(projects))
-	}
-	if projects[0].WorkspaceRoot != "/tmp/legacy-project" {
-		t.Fatalf("expected legacy workspace root %q, got %q", "/tmp/legacy-project", projects[0].WorkspaceRoot)
+	if project != (model.Project{}) {
+		t.Fatalf("expected no active project, got %#v", project)
 	}
 }
 
@@ -136,11 +124,11 @@ func TestSetActiveProject_RejectsUnknownProject(t *testing.T) {
 
 func TestActiveProjectTeamProfile_DefaultsToDefault(t *testing.T) {
 	db, _, _, _ := setupRunTestDeps(t)
-	workspaceRoot := filepath.Join(t.TempDir(), "project-alpha")
+	primaryPath := filepath.Join(t.TempDir(), "project-alpha")
 
-	project, err := ActivateWorkspace(context.Background(), db, workspaceRoot, "alpha", "operator")
+	project, err := ActivateProjectPath(context.Background(), db, primaryPath, "alpha", "operator")
 	if err != nil {
-		t.Fatalf("ActivateWorkspace: %v", err)
+		t.Fatalf("ActivateProjectPath: %v", err)
 	}
 	if err := SetActiveProject(context.Background(), db, project.ID); err != nil {
 		t.Fatalf("SetActiveProject: %v", err)
@@ -157,16 +145,16 @@ func TestActiveProjectTeamProfile_DefaultsToDefault(t *testing.T) {
 
 func TestSetActiveProjectTeamProfile_PersistsPerProject(t *testing.T) {
 	db, _, _, _ := setupRunTestDeps(t)
-	alphaRoot := filepath.Join(t.TempDir(), "project-alpha")
-	betaRoot := filepath.Join(t.TempDir(), "project-beta")
+	alphaPath := filepath.Join(t.TempDir(), "project-alpha")
+	betaPath := filepath.Join(t.TempDir(), "project-beta")
 
-	alpha, err := ActivateWorkspace(context.Background(), db, alphaRoot, "alpha", "operator")
+	alpha, err := ActivateProjectPath(context.Background(), db, alphaPath, "alpha", "operator")
 	if err != nil {
-		t.Fatalf("ActivateWorkspace alpha: %v", err)
+		t.Fatalf("ActivateProjectPath alpha: %v", err)
 	}
-	beta, err := ActivateWorkspace(context.Background(), db, betaRoot, "beta", "operator")
+	beta, err := ActivateProjectPath(context.Background(), db, betaPath, "beta", "operator")
 	if err != nil {
-		t.Fatalf("ActivateWorkspace beta: %v", err)
+		t.Fatalf("ActivateProjectPath beta: %v", err)
 	}
 
 	if err := SetActiveProjectTeamProfile(context.Background(), db, alpha.ID, "review"); err != nil {

@@ -26,7 +26,8 @@ func (d schedulerRuntimeDispatcher) DispatchScheduled(ctx context.Context, cmd s
 		FrontAgentID:    cmd.FrontAgentID,
 		Body:            cmd.Body,
 		SourceMessageID: cmd.SourceMessageID,
-		WorkspaceRoot:   cmd.WorkspaceRoot,
+		ProjectID:       cmd.ProjectID,
+		CWD:             cmd.CWD,
 	})
 }
 
@@ -35,11 +36,12 @@ func (a *App) CreateSchedule(ctx context.Context, in scheduler.CreateScheduleInp
 		return scheduler.Schedule{}, fmt.Errorf("scheduler is not configured")
 	}
 
-	workspaceRoot, err := a.resolveScheduleWorkspace(ctx, in.WorkspaceRoot)
+	projectID, cwd, err := a.resolveScheduleProject(ctx, in.ProjectID, in.CWD)
 	if err != nil {
 		return scheduler.Schedule{}, err
 	}
-	in.WorkspaceRoot = workspaceRoot
+	in.ProjectID = projectID
+	in.CWD = cwd
 	return a.scheduler.CreateSchedule(ctx, in)
 }
 
@@ -47,12 +49,23 @@ func (a *App) UpdateSchedule(ctx context.Context, scheduleID string, patch sched
 	if a.scheduler == nil {
 		return scheduler.Schedule{}, fmt.Errorf("scheduler is not configured")
 	}
-	if patch.WorkspaceRoot != nil {
-		workspaceRoot, err := a.resolveScheduleWorkspace(ctx, *patch.WorkspaceRoot)
+	if patch.ProjectID != nil || patch.CWD != nil {
+		projectID := ""
+		if patch.ProjectID != nil {
+			projectID = *patch.ProjectID
+		}
+		cwd := ""
+		if patch.CWD != nil {
+			cwd = *patch.CWD
+		}
+		resolvedProjectID, resolvedCWD, err := a.resolveScheduleProject(ctx, projectID, cwd)
 		if err != nil {
 			return scheduler.Schedule{}, err
 		}
-		patch.WorkspaceRoot = &workspaceRoot
+		if patch.ProjectID != nil || resolvedProjectID != "" {
+			patch.ProjectID = &resolvedProjectID
+		}
+		patch.CWD = &resolvedCWD
 	}
 	return a.scheduler.UpdateSchedule(ctx, scheduleID, patch)
 }
@@ -111,27 +124,35 @@ func (a *App) RunScheduleNow(ctx context.Context, scheduleID string) (*scheduler
 	return a.scheduler.RunNow(ctx, scheduleID)
 }
 
-func (a *App) resolveScheduleWorkspace(ctx context.Context, workspaceRoot string) (string, error) {
-	workspaceRoot = strings.TrimSpace(workspaceRoot)
-	if workspaceRoot != "" {
-		project, err := runtime.RegisterProject(ctx, a.db, workspaceRoot, "", "scheduler")
-		if err != nil {
-			return "", err
-		}
-		return project.WorkspaceRoot, nil
+func (a *App) resolveScheduleProject(ctx context.Context, projectID, cwd string) (string, string, error) {
+	projectID = strings.TrimSpace(projectID)
+	cwd = strings.TrimSpace(cwd)
+	if projectID != "" && cwd != "" {
+		return projectID, cwd, nil
 	}
-
+	if projectID != "" {
+		project, err := runtime.ActiveProject(ctx, a.db)
+		if err != nil {
+			return "", "", err
+		}
+		if project.ID == projectID && strings.TrimSpace(project.PrimaryPath) != "" {
+			return project.ID, project.PrimaryPath, nil
+		}
+		return projectID, cwd, nil
+	}
+	if cwd != "" {
+		project, err := runtime.RegisterProjectPath(ctx, a.db, cwd, "", "scheduler")
+		if err != nil {
+			return "", "", err
+		}
+		return project.ID, project.PrimaryPath, nil
+	}
 	project, err := runtime.ActiveProject(ctx, a.db)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	if strings.TrimSpace(project.WorkspaceRoot) == "" {
-		return "", fmt.Errorf("schedule workspace is required")
+	if strings.TrimSpace(project.PrimaryPath) == "" {
+		return "", "", fmt.Errorf("schedule cwd is required")
 	}
-
-	project, err = runtime.RegisterProject(ctx, a.db, project.WorkspaceRoot, project.Name, "scheduler")
-	if err != nil {
-		return "", err
-	}
-	return project.WorkspaceRoot, nil
+	return project.ID, project.PrimaryPath, nil
 }

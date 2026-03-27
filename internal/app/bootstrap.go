@@ -77,7 +77,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	cfg.WorkspaceRoot = project.WorkspaceRoot
+	cfg.WorkspaceRoot = project.PrimaryPath
 
 	teamDir, err := prepareTeamDir(cfg)
 	if err != nil {
@@ -349,17 +349,10 @@ func ensureProjectState(ctx context.Context, db *store.DB, cfg Config) (model.Pr
 		}
 		return activeProject, nil
 	}
-	if activeProject.WorkspaceRoot != "" {
-		project, err := runtime.ActivateWorkspace(ctx, db, activeProject.WorkspaceRoot, activeProject.Name, "migrated")
-		if err != nil {
-			return model.Project{}, fmt.Errorf("bootstrap: migrate legacy workspace: %w", err)
-		}
-		return project, nil
-	}
 	if cfg.WorkspaceRoot != "" {
-		project, err := runtime.ActivateWorkspace(ctx, db, cfg.WorkspaceRoot, "", "config")
+		project, err := runtime.ActivateProjectPath(ctx, db, cfg.WorkspaceRoot, "", "config")
 		if err != nil {
-			return model.Project{}, fmt.Errorf("bootstrap: activate configured workspace: %w", err)
+			return model.Project{}, fmt.Errorf("bootstrap: activate configured project path: %w", err)
 		}
 		return project, nil
 	}
@@ -402,7 +395,7 @@ func createStarterProject(ctx context.Context, db *store.DB) (model.Project, err
 			}
 			return model.Project{}, fmt.Errorf("bootstrap: create starter workspace: %w", err)
 		}
-		project, err := runtime.ActivateWorkspace(ctx, db, workspaceRoot, name, "starter")
+		project, err := runtime.ActivateProjectPath(ctx, db, workspaceRoot, name, "starter")
 		if err != nil {
 			return model.Project{}, fmt.Errorf("bootstrap: activate starter project: %w", err)
 		}

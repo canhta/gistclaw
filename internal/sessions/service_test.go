@@ -219,11 +219,12 @@ func TestService_ListSessionOutboundIntentsAndFailures(t *testing.T) {
 	if _, err := svc.db.RawDB().ExecContext(
 		ctx,
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, session_id, objective, workspace_root, status, created_at, updated_at)
-		 VALUES ('run-front', ?, 'assistant', ?, 'Inspect the repo', ?, 'completed', datetime('now', '-2 minutes'), datetime('now', '-2 minutes'))`,
+		 (id, conversation_id, agent_id, session_id, objective, cwd, authority_json, status, created_at, updated_at)
+		 VALUES ('run-front', ?, 'assistant', ?, 'Inspect the repo', ?, ?, 'completed', datetime('now', '-2 minutes'), datetime('now', '-2 minutes'))`,
 		front.ConversationID,
 		front.ID,
 		t.TempDir(),
+		[]byte(`{"approval_mode":"prompt"}`),
 	); err != nil {
 		t.Fatalf("insert run: %v", err)
 	}
@@ -288,11 +289,12 @@ func TestService_ListSessionDeliveryFailuresHidesResolvedFailures(t *testing.T) 
 	if _, err := svc.db.RawDB().ExecContext(
 		ctx,
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, session_id, objective, workspace_root, status, created_at, updated_at)
-		 VALUES ('run-front', ?, 'assistant', ?, 'Inspect the repo', ?, 'completed', datetime('now', '-2 minutes'), datetime('now', '-2 minutes'))`,
+		 (id, conversation_id, agent_id, session_id, objective, cwd, authority_json, status, created_at, updated_at)
+		 VALUES ('run-front', ?, 'assistant', ?, 'Inspect the repo', ?, ?, 'completed', datetime('now', '-2 minutes'), datetime('now', '-2 minutes'))`,
 		front.ConversationID,
 		front.ID,
 		t.TempDir(),
+		[]byte(`{"approval_mode":"prompt"}`),
 	); err != nil {
 		t.Fatalf("insert run: %v", err)
 	}
@@ -343,16 +345,18 @@ func TestService_ListConnectorDeliveryHealth(t *testing.T) {
 	if _, err := svc.db.RawDB().ExecContext(
 		ctx,
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, session_id, objective, workspace_root, status, created_at, updated_at)
+		 (id, conversation_id, agent_id, session_id, objective, cwd, authority_json, status, created_at, updated_at)
 		 VALUES
-		 ('run-telegram', ?, 'assistant', ?, 'Inspect Telegram', ?, 'completed', datetime('now', '-5 minutes'), datetime('now', '-5 minutes')),
-		 ('run-whatsapp', ?, 'assistant', ?, 'Inspect WhatsApp', ?, 'completed', datetime('now', '-5 minutes'), datetime('now', '-5 minutes'))`,
+		 ('run-telegram', ?, 'assistant', ?, 'Inspect Telegram', ?, ?, 'completed', datetime('now', '-5 minutes'), datetime('now', '-5 minutes')),
+		 ('run-whatsapp', ?, 'assistant', ?, 'Inspect WhatsApp', ?, ?, 'completed', datetime('now', '-5 minutes'), datetime('now', '-5 minutes'))`,
 		frontTelegram.ConversationID,
 		frontTelegram.ID,
 		t.TempDir(),
+		[]byte(`{"approval_mode":"prompt"}`),
 		frontWhatsApp.ConversationID,
 		frontWhatsApp.ID,
 		t.TempDir(),
+		[]byte(`{"approval_mode":"prompt"}`),
 	); err != nil {
 		t.Fatalf("insert runs: %v", err)
 	}
@@ -419,16 +423,18 @@ func TestService_ListDeliveryQueue(t *testing.T) {
 	if _, err := svc.db.RawDB().ExecContext(
 		ctx,
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, session_id, objective, workspace_root, status, created_at, updated_at)
+		 (id, conversation_id, agent_id, session_id, objective, cwd, authority_json, status, created_at, updated_at)
 		 VALUES
-		 ('run-telegram', ?, 'assistant', ?, 'Inspect Telegram', ?, 'completed', datetime('now', '-5 minutes'), datetime('now', '-5 minutes')),
-		 ('run-whatsapp', ?, 'assistant', ?, 'Inspect WhatsApp', ?, 'completed', datetime('now', '-4 minutes'), datetime('now', '-4 minutes'))`,
+		 ('run-telegram', ?, 'assistant', ?, 'Inspect Telegram', ?, ?, 'completed', datetime('now', '-5 minutes'), datetime('now', '-5 minutes')),
+		 ('run-whatsapp', ?, 'assistant', ?, 'Inspect WhatsApp', ?, ?, 'completed', datetime('now', '-4 minutes'), datetime('now', '-4 minutes'))`,
 		frontTelegram.ConversationID,
 		frontTelegram.ID,
 		t.TempDir(),
+		[]byte(`{"approval_mode":"prompt"}`),
 		frontWhatsApp.ConversationID,
 		frontWhatsApp.ID,
 		t.TempDir(),
+		[]byte(`{"approval_mode":"prompt"}`),
 	); err != nil {
 		t.Fatalf("insert runs: %v", err)
 	}
@@ -481,16 +487,18 @@ func TestService_ListDeliveryQueueAppliesQueryAndAllStatus(t *testing.T) {
 	if _, err := svc.db.RawDB().ExecContext(
 		ctx,
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, session_id, team_id, objective, workspace_root, status, created_at, updated_at)
+		 (id, conversation_id, agent_id, session_id, team_id, objective, cwd, authority_json, status, created_at, updated_at)
 		 VALUES
-		 ('run-telegram', ?, 'assistant', ?, 'team-a', 'Inspect Telegram', ?, 'completed', datetime('now'), datetime('now')),
-		 ('run-whatsapp', ?, 'assistant', ?, 'team-a', 'Inspect WhatsApp', ?, 'completed', datetime('now'), datetime('now'))`,
+		 ('run-telegram', ?, 'assistant', ?, 'team-a', 'Inspect Telegram', ?, ?, 'completed', datetime('now'), datetime('now')),
+		 ('run-whatsapp', ?, 'assistant', ?, 'team-a', 'Inspect WhatsApp', ?, ?, 'completed', datetime('now'), datetime('now'))`,
 		frontTelegram.ConversationID,
 		frontTelegram.ID,
 		t.TempDir(),
+		[]byte(`{"approval_mode":"prompt"}`),
 		frontWhatsApp.ConversationID,
 		frontWhatsApp.ID,
 		t.TempDir(),
+		[]byte(`{"approval_mode":"prompt"}`),
 	); err != nil {
 		t.Fatalf("insert runs: %v", err)
 	}
@@ -1065,20 +1073,23 @@ func TestService_ListDeliveryQueuePageSupportsCursorPagination(t *testing.T) {
 	if _, err := svc.db.RawDB().ExecContext(
 		ctx,
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, session_id, team_id, objective, workspace_root, status, created_at, updated_at)
+		 (id, conversation_id, agent_id, session_id, team_id, objective, cwd, authority_json, status, created_at, updated_at)
 		 VALUES
-		 ('run-retrying', ?, 'assistant', ?, 'team-a', 'Retrying', ?, 'completed', datetime('now'), datetime('now')),
-		 ('run-pending', ?, 'assistant', ?, 'team-a', 'Pending', ?, 'completed', datetime('now'), datetime('now')),
-		 ('run-terminal', ?, 'assistant', ?, 'team-a', 'Terminal', ?, 'completed', datetime('now'), datetime('now'))`,
+		 ('run-retrying', ?, 'assistant', ?, 'team-a', 'Retrying', ?, ?, 'completed', datetime('now'), datetime('now')),
+		 ('run-pending', ?, 'assistant', ?, 'team-a', 'Pending', ?, ?, 'completed', datetime('now'), datetime('now')),
+		 ('run-terminal', ?, 'assistant', ?, 'team-a', 'Terminal', ?, ?, 'completed', datetime('now'), datetime('now'))`,
 		front.ConversationID,
 		front.ID,
 		t.TempDir(),
+		[]byte(`{"approval_mode":"prompt"}`),
 		front.ConversationID,
 		front.ID,
 		t.TempDir(),
+		[]byte(`{"approval_mode":"prompt"}`),
 		front.ConversationID,
 		front.ID,
 		t.TempDir(),
+		[]byte(`{"approval_mode":"prompt"}`),
 	); err != nil {
 		t.Fatalf("insert runs: %v", err)
 	}

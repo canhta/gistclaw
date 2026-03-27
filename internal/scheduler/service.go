@@ -20,7 +20,9 @@ type DispatchCommand struct {
 	FrontAgentID    string
 	Body            string
 	SourceMessageID string
-	WorkspaceRoot   string
+	ProjectID       string
+	CWD             string
+	AuthorityJSON   []byte
 }
 
 type Dispatcher interface {
@@ -253,7 +255,9 @@ func (s *Service) dispatchClaimedOccurrence(ctx context.Context, claimed Claimed
 		FrontAgentID:    "assistant",
 		Body:            claimed.Schedule.Objective,
 		SourceMessageID: claimed.Occurrence.ID,
-		WorkspaceRoot:   claimed.Schedule.WorkspaceRoot,
+		ProjectID:       claimed.Schedule.ProjectID,
+		CWD:             claimed.Schedule.CWD,
+		AuthorityJSON:   claimed.Schedule.AuthorityJSON,
 	})
 	if err == nil {
 		if err := s.store.MarkOccurrenceAccepted(ctx, claimed.Occurrence.ID, run, now); err != nil {

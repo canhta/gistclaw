@@ -44,7 +44,7 @@ func (a *App) RunTask(ctx context.Context, objective string) (model.Run, error) 
 		ConversationID: conv.ID,
 		AgentID:        "cli-operator",
 		Objective:      objective,
-		WorkspaceRoot:  a.cfg.WorkspaceRoot,
+		CWD:            a.cfg.WorkspaceRoot,
 		AccountID:      "local",
 	})
 }
@@ -78,7 +78,7 @@ func (a *App) InspectStatus(ctx context.Context) (Status, error) {
 func (a *App) ListRuns(ctx context.Context) ([]model.Run, error) {
 	rows, err := a.db.RawDB().QueryContext(ctx,
 		`SELECT id, conversation_id, agent_id, COALESCE(team_id, ''), COALESCE(parent_run_id, ''),
-		        COALESCE(objective, ''), COALESCE(workspace_root, ''), status,
+		        COALESCE(objective, ''), COALESCE(cwd, ''), status,
 		        input_tokens, output_tokens, created_at, updated_at
 		 FROM runs
 		 ORDER BY created_at DESC`,
@@ -99,7 +99,7 @@ func (a *App) ListRuns(ctx context.Context) ([]model.Run, error) {
 			&run.TeamID,
 			&run.ParentRunID,
 			&run.Objective,
-			&run.WorkspaceRoot,
+			&run.CWD,
 			&status,
 			&run.InputTokens,
 			&run.OutputTokens,

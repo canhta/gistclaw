@@ -26,8 +26,8 @@ func TestRecovery_InterruptedRunsReconciled(t *testing.T) {
 		t.Fatalf("insert conversation: %v", err)
 	}
 	_, err = db.RawDB().ExecContext(ctx,
-		`INSERT INTO runs (id, conversation_id, agent_id, team_id, objective, workspace_root, status, created_at, updated_at)
-		 VALUES ('run-crashed', 'conv-crash', 'coordinator', 'team-1', 'test', '/tmp', 'active', datetime('now'), datetime('now'))`)
+		`INSERT INTO runs (id, conversation_id, agent_id, team_id, objective, cwd, authority_json, status, created_at, updated_at)
+		 VALUES ('run-crashed', 'conv-crash', 'coordinator', 'team-1', 'test', '/tmp', '{}', 'active', datetime('now'), datetime('now'))`)
 	if err != nil {
 		t.Fatalf("insert run: %v", err)
 	}
@@ -73,8 +73,8 @@ func TestRecovery_StaleApprovalsExpired(t *testing.T) {
 
 	// Insert a stale pending approval (created 25 hours ago).
 	_, err := db.RawDB().ExecContext(ctx,
-		`INSERT INTO approvals (id, run_id, tool_name, args_json, target_path, fingerprint, status, created_at)
-		 VALUES ('approval-stale', 'run-old', 'bash', x'', '/tmp', 'fp-stale', 'pending', datetime('now', '-25 hours'))`)
+		`INSERT INTO approvals (id, run_id, tool_name, args_json, binding_json, fingerprint, status, created_at)
+		 VALUES ('approval-stale', 'run-old', 'bash', x'', '{}', 'fp-stale', 'pending', datetime('now', '-25 hours'))`)
 	if err != nil {
 		t.Fatalf("insert stale approval: %v", err)
 	}
@@ -105,16 +105,16 @@ func TestRecovery_DetachedPendingApprovalsExpired(t *testing.T) {
 	ctx := context.Background()
 
 	_, err := db.RawDB().ExecContext(ctx,
-		`INSERT INTO runs (id, conversation_id, agent_id, team_id, objective, workspace_root, status, created_at, updated_at)
-		 VALUES ('run-interrupted-with-approval', 'conv-detached', 'patcher', 'team-1', 'write file', '/tmp', 'interrupted', datetime('now'), datetime('now')),
-		        ('run-needs-approval', 'conv-live', 'patcher', 'team-1', 'write file', '/tmp', 'needs_approval', datetime('now'), datetime('now'))`)
+		`INSERT INTO runs (id, conversation_id, agent_id, team_id, objective, cwd, authority_json, status, created_at, updated_at)
+		 VALUES ('run-interrupted-with-approval', 'conv-detached', 'patcher', 'team-1', 'write file', '/tmp', '{}', 'interrupted', datetime('now'), datetime('now')),
+		        ('run-needs-approval', 'conv-live', 'patcher', 'team-1', 'write file', '/tmp', '{}', 'needs_approval', datetime('now'), datetime('now'))`)
 	if err != nil {
 		t.Fatalf("insert runs: %v", err)
 	}
 	_, err = db.RawDB().ExecContext(ctx,
-		`INSERT INTO approvals (id, run_id, tool_name, args_json, target_path, fingerprint, status, created_at)
-		 VALUES ('approval-detached', 'run-interrupted-with-approval', 'bash', x'', '/tmp', 'fp-detached', 'pending', datetime('now')),
-		        ('approval-live', 'run-needs-approval', 'bash', x'', '/tmp', 'fp-live', 'pending', datetime('now'))`)
+		`INSERT INTO approvals (id, run_id, tool_name, args_json, binding_json, fingerprint, status, created_at)
+		 VALUES ('approval-detached', 'run-interrupted-with-approval', 'bash', x'', '{}', 'fp-detached', 'pending', datetime('now')),
+		        ('approval-live', 'run-needs-approval', 'bash', x'', '{}', 'fp-live', 'pending', datetime('now'))`)
 	if err != nil {
 		t.Fatalf("insert approvals: %v", err)
 	}

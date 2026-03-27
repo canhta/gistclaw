@@ -20,12 +20,12 @@ func (r *Runtime) resolveTeamDir(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if project.WorkspaceRoot != "" {
+	if project.PrimaryPath != "" {
 		profile, err := ActiveProjectTeamProfile(ctx, r.store)
 		if err != nil {
 			return "", err
 		}
-		teamDir := teams.ProfileDir(project.WorkspaceRoot, profile)
+		teamDir := teams.ProfileDir(project.PrimaryPath, profile)
 		if _, statErr := os.Stat(filepath.Join(teamDir, "team.yaml")); statErr == nil {
 			return teamDir, nil
 		}

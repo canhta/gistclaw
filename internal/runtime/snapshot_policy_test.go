@@ -41,7 +41,7 @@ func TestRunEngine_UsesExecutionSnapshotToolProfileForPolicy(t *testing.T) {
 		ConversationID:        "conv-snapshot-policy",
 		AgentID:               "reviewer",
 		Objective:             "attempt write",
-		WorkspaceRoot:         t.TempDir(),
+		CWD:         t.TempDir(),
 		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{TeamID: "default", Agents: map[string]model.AgentProfile{"reviewer": {AgentID: "reviewer", ToolProfile: "read_heavy", Capabilities: []model.AgentCapability{model.CapReadHeavy}}}}),
 	})
 	if err != nil {
@@ -119,7 +119,7 @@ func TestRuntime_DefaultExecutionSnapshotIsAppliedToChildSpawns(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "start",
-		WorkspaceRoot: t.TempDir(),
+		CWD: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)

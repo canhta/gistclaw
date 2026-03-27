@@ -36,7 +36,11 @@ func (s *Server) handleRunSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	workspaceRoot := lookupSetting(s.db, "workspace_root")
+	activeProject, err := runtime.ActiveProject(r.Context(), s.db)
+	if err != nil {
+		http.Error(w, "failed to load active project", http.StatusInternalServerError)
+		return
+	}
 	run, err := s.rt.ReceiveInboundMessageAsync(r.Context(), runtime.InboundMessageCommand{
 		ConversationKey: conversations.ConversationKey{
 			ConnectorID: "web",
@@ -44,9 +48,10 @@ func (s *Server) handleRunSubmit(w http.ResponseWriter, r *http.Request) {
 			ExternalID:  "assistant",
 			ThreadID:    "main",
 		},
-		FrontAgentID:  "assistant",
-		Body:          task,
-		WorkspaceRoot: workspaceRoot,
+		FrontAgentID: "assistant",
+		Body:         task,
+		ProjectID:    activeProject.ID,
+		CWD:          activeProject.PrimaryPath,
 	})
 	if err != nil {
 		http.Error(w, "failed to start run: "+err.Error(), http.StatusInternalServerError)

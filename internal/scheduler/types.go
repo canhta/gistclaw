@@ -34,7 +34,9 @@ type CreateScheduleInput struct {
 	ID            string
 	Name          string
 	Objective     string
-	WorkspaceRoot string
+	ProjectID     string
+	CWD           string
+	AuthorityJSON []byte
 	Spec          ScheduleSpec
 	Enabled       bool
 }
@@ -42,7 +44,9 @@ type CreateScheduleInput struct {
 type UpdateScheduleInput struct {
 	Name          *string
 	Objective     *string
-	WorkspaceRoot *string
+	ProjectID     *string
+	CWD           *string
+	AuthorityJSON *[]byte
 	Spec          *ScheduleSpec
 }
 
@@ -73,7 +77,9 @@ type Schedule struct {
 	ID                  string
 	Name                string
 	Objective           string
-	WorkspaceRoot       string
+	ProjectID           string
+	CWD                 string
+	AuthorityJSON       []byte
 	Spec                ScheduleSpec
 	Enabled             bool
 	NextRunAt           time.Time

@@ -31,7 +31,7 @@ func TestBudget_PerRunTokenCapStopsRun(t *testing.T) {
 		ConversationID: "conv-budget-cap",
 		AgentID:        "coordinator",
 		Objective:      "do something",
-		WorkspaceRoot:  t.TempDir(),
+		CWD:  t.TempDir(),
 		AccountID:      "local",
 	})
 	if err != nil {
@@ -96,7 +96,7 @@ func TestBudget_RunMarkedInterruptedNotFailed(t *testing.T) {
 		ConversationID: "conv-budget-interrupted",
 		AgentID:        "coordinator",
 		Objective:      "over budget test",
-		WorkspaceRoot:  t.TempDir(),
+		CWD:  t.TempDir(),
 		AccountID:      "local",
 	})
 	if err != nil {
@@ -136,7 +136,7 @@ func TestBudget_DailyCapRejectsStartRun(t *testing.T) {
 		ConversationID: "conv-daily-cap",
 		AgentID:        "coordinator",
 		Objective:      "should be rejected",
-		WorkspaceRoot:  t.TempDir(),
+		CWD:  t.TempDir(),
 		AccountID:      "local",
 	})
 	if err == nil {
@@ -192,7 +192,7 @@ func TestBudget_CapRaiseAppliesOnNextRun(t *testing.T) {
 		ConversationID: "conv-cap-raise-1",
 		AgentID:        "coordinator",
 		Objective:      "run 1",
-		WorkspaceRoot:  t.TempDir(),
+		CWD:  t.TempDir(),
 		AccountID:      "local",
 	})
 	if err != nil {
@@ -209,7 +209,7 @@ func TestBudget_CapRaiseAppliesOnNextRun(t *testing.T) {
 		ConversationID: "conv-cap-raise-2",
 		AgentID:        "coordinator",
 		Objective:      "run 2",
-		WorkspaceRoot:  t.TempDir(),
+		CWD:  t.TempDir(),
 		AccountID:      "local",
 	})
 	if err != nil {

@@ -46,7 +46,7 @@ func startFrontRun(t *testing.T, rt *Runtime, prompt string) model.Run {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: prompt,
-		WorkspaceRoot: t.TempDir(),
+		CWD: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
@@ -99,7 +99,7 @@ func TestRuntime_StartFrontSessionCreatesFrontRunAndSession(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Help me inspect this repo",
-		WorkspaceRoot: t.TempDir(),
+		CWD: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -207,13 +207,13 @@ func TestRuntime_StartFrontSessionScopesSameConversationKeyByProject(t *testing.
 
 	alphaRoot := filepath.Join(t.TempDir(), "alpha-project")
 	writeRuntimeTeamFixture(t, alphaRoot, "Alpha Team")
-	alphaProject, err := ActivateWorkspace(ctx, db, alphaRoot, "alpha-project", "operator")
+	alphaProject, err := ActivateProjectPath(ctx, db, alphaRoot, "alpha-project", "operator")
 	if err != nil {
 		t.Fatalf("activate alpha project: %v", err)
 	}
 	betaRoot := filepath.Join(t.TempDir(), "beta-project")
 	writeRuntimeTeamFixture(t, betaRoot, "Beta Team")
-	betaProject, err := ActivateWorkspace(ctx, db, betaRoot, "beta-project", "operator")
+	betaProject, err := ActivateProjectPath(ctx, db, betaRoot, "beta-project", "operator")
 	if err != nil {
 		t.Fatalf("activate beta project: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestRuntime_StartFrontSessionScopesSameConversationKeyByProject(t *testing.
 		ConversationKey: key,
 		FrontAgentID:    "assistant",
 		InitialPrompt:   "inspect alpha",
-		WorkspaceRoot:   alphaRoot,
+		CWD:   alphaRoot,
 	})
 	if err != nil {
 		t.Fatalf("start alpha front session: %v", err)
@@ -244,7 +244,7 @@ func TestRuntime_StartFrontSessionScopesSameConversationKeyByProject(t *testing.
 		ConversationKey: key,
 		FrontAgentID:    "assistant",
 		InitialPrompt:   "inspect beta",
-		WorkspaceRoot:   betaRoot,
+		CWD:   betaRoot,
 	})
 	if err != nil {
 		t.Fatalf("start beta front session: %v", err)
@@ -394,7 +394,7 @@ func TestRuntime_StartFrontSessionIncludesWorkspaceContextInProviderInstructions
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "review the repo",
-		WorkspaceRoot: workspaceRoot,
+		CWD: workspaceRoot,
 	}); err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
 	}
@@ -426,7 +426,7 @@ func TestRuntime_StartFrontSessionReusesExistingAssistantSession(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Inspect the repo",
-		WorkspaceRoot: workspaceRoot,
+		CWD: workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("first StartFrontSession failed: %v", err)
@@ -440,7 +440,7 @@ func TestRuntime_StartFrontSessionReusesExistingAssistantSession(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Summarize the repo",
-		WorkspaceRoot: workspaceRoot,
+		CWD: workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("second StartFrontSession failed: %v", err)
@@ -568,7 +568,7 @@ func TestRuntime_AnnounceRejectsCrossConversationSessions(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Inspect repo two",
-		WorkspaceRoot: t.TempDir(),
+		CWD: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
@@ -709,7 +709,7 @@ func TestRuntime_ReceiveInboundMessageReusesBoundFrontSessionWithConnectorProven
 		FrontAgentID:    "assistant",
 		Body:            "Inspect the repo.",
 		SourceMessageID: "tg-1",
-		WorkspaceRoot:   workspaceRoot,
+		CWD:   workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("first ReceiveInboundMessage failed: %v", err)
@@ -725,7 +725,7 @@ func TestRuntime_ReceiveInboundMessageReusesBoundFrontSessionWithConnectorProven
 		FrontAgentID:    "assistant",
 		Body:            "What changed?",
 		SourceMessageID: "tg-2",
-		WorkspaceRoot:   workspaceRoot,
+		CWD:   workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("second ReceiveInboundMessage failed: %v", err)
@@ -775,7 +775,7 @@ func TestRuntime_ReceiveInboundMessageDedupesDuplicateSourceMessageID(t *testing
 		FrontAgentID:    "assistant",
 		Body:            "Inspect the repo.",
 		SourceMessageID: "tg-42",
-		WorkspaceRoot:   t.TempDir(),
+		CWD:   t.TempDir(),
 	}
 
 	first, err := rt.ReceiveInboundMessage(context.Background(), cmd)
@@ -849,7 +849,7 @@ func TestRuntime_ReceiveInboundMessagePromotesNaturalPromptPreferencesIntoProjec
 			"Keep the tone technical and avoid marketing fluff. " +
 			"If tooling is needed, prefer bun-based workflows and keep lockfile churn isolated. " +
 			"Use Codex CLI for code changes.",
-		WorkspaceRoot: workspaceRoot,
+		CWD: workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("ReceiveInboundMessage failed: %v", err)
@@ -890,7 +890,7 @@ func TestRuntime_RetrySessionDeliveryRequeuesTerminalIntent(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Inspect the repo.",
-		WorkspaceRoot: t.TempDir(),
+		CWD: t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)

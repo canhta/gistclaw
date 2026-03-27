@@ -260,7 +260,7 @@ func (s *Server) projectLayoutData(r *http.Request) (shellProjectLayout, error) 
 
 	layout := shellProjectLayout{
 		ActiveName:          project.Name,
-		ActiveWorkspaceRoot: project.WorkspaceRoot,
+		ActiveWorkspaceRoot: project.PrimaryPath,
 	}
 	for _, candidate := range projects {
 		if candidate.ID == "" {
@@ -269,7 +269,7 @@ func (s *Server) projectLayoutData(r *http.Request) (shellProjectLayout, error) 
 		layout.Options = append(layout.Options, shellProjectOption{
 			ID:     candidate.ID,
 			Name:   candidate.Name,
-			Active: candidate.ID == project.ID || (project.ID == "" && candidate.WorkspaceRoot == project.WorkspaceRoot),
+			Active: candidate.ID == project.ID || (project.ID == "" && candidate.PrimaryPath == project.PrimaryPath),
 		})
 	}
 	return layout, nil

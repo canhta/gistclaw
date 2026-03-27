@@ -42,8 +42,8 @@ func (s *Store) CreateSchedule(ctx context.Context, in CreateScheduleInput) (Sch
 	if strings.TrimSpace(in.Objective) == "" {
 		return Schedule{}, fmt.Errorf("scheduler: create schedule: objective required")
 	}
-	if strings.TrimSpace(in.WorkspaceRoot) == "" {
-		return Schedule{}, fmt.Errorf("scheduler: create schedule: workspace_root required")
+	if strings.TrimSpace(in.CWD) == "" {
+		return Schedule{}, fmt.Errorf("scheduler: create schedule: cwd required")
 	}
 	if err := ValidateSpec(in.Spec); err != nil {
 		return Schedule{}, fmt.Errorf("scheduler: create schedule: %w", err)
@@ -68,16 +68,20 @@ func (s *Store) CreateSchedule(ctx context.Context, in CreateScheduleInput) (Sch
 		}
 	}
 
+	authorityJSON := normalizeAuthorityJSON(in.AuthorityJSON)
+
 	_, err := s.db.RawDB().ExecContext(ctx,
 		`INSERT INTO schedules
-		 (id, name, objective, workspace_root, schedule_kind, schedule_at, schedule_every_seconds,
+		 (id, name, objective, project_id, cwd, authority_json, schedule_kind, schedule_at, schedule_every_seconds,
 		  schedule_cron_expr, timezone, enabled, next_run_at, last_run_at, last_status, last_error,
 		  consecutive_failures, schedule_error_count, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '', '', 0, 0, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '', '', 0, 0, ?, ?)`,
 		id,
 		strings.TrimSpace(in.Name),
 		strings.TrimSpace(in.Objective),
-		strings.TrimSpace(in.WorkspaceRoot),
+		strings.TrimSpace(in.ProjectID),
+		strings.TrimSpace(in.CWD),
+		authorityJSON,
 		in.Spec.Kind,
 		strings.TrimSpace(in.Spec.At),
 		in.Spec.EverySeconds,
@@ -124,11 +128,17 @@ func (s *Store) UpdateSchedule(ctx context.Context, id string, patch UpdateSched
 			return Schedule{}, fmt.Errorf("scheduler: update schedule: objective required")
 		}
 	}
-	if patch.WorkspaceRoot != nil {
-		schedule.WorkspaceRoot = strings.TrimSpace(*patch.WorkspaceRoot)
-		if schedule.WorkspaceRoot == "" {
-			return Schedule{}, fmt.Errorf("scheduler: update schedule: workspace_root required")
+	if patch.ProjectID != nil {
+		schedule.ProjectID = strings.TrimSpace(*patch.ProjectID)
+	}
+	if patch.CWD != nil {
+		schedule.CWD = strings.TrimSpace(*patch.CWD)
+		if schedule.CWD == "" {
+			return Schedule{}, fmt.Errorf("scheduler: update schedule: cwd required")
 		}
+	}
+	if patch.AuthorityJSON != nil {
+		schedule.AuthorityJSON = normalizeAuthorityJSON(*patch.AuthorityJSON)
 	}
 
 	now := s.now().UTC()
@@ -150,12 +160,14 @@ func (s *Store) UpdateSchedule(ctx context.Context, id string, patch UpdateSched
 
 	_, err = s.db.RawDB().ExecContext(ctx,
 		`UPDATE schedules
-		    SET name = ?, objective = ?, workspace_root = ?, schedule_kind = ?, schedule_at = ?,
+		    SET name = ?, objective = ?, project_id = ?, cwd = ?, authority_json = ?, schedule_kind = ?, schedule_at = ?,
 		        schedule_every_seconds = ?, schedule_cron_expr = ?, timezone = ?, next_run_at = ?, updated_at = ?
 		  WHERE id = ?`,
 		schedule.Name,
 		schedule.Objective,
-		schedule.WorkspaceRoot,
+		schedule.ProjectID,
+		schedule.CWD,
+		schedule.AuthorityJSON,
 		schedule.Spec.Kind,
 		schedule.Spec.At,
 		schedule.Spec.EverySeconds,
@@ -174,7 +186,7 @@ func (s *Store) UpdateSchedule(ctx context.Context, id string, patch UpdateSched
 
 func (s *Store) ListSchedules(ctx context.Context) ([]Schedule, error) {
 	rows, err := s.db.RawDB().QueryContext(ctx,
-		`SELECT id, name, objective, workspace_root, schedule_kind, schedule_at, schedule_every_seconds,
+		`SELECT id, name, objective, project_id, cwd, authority_json, schedule_kind, schedule_at, schedule_every_seconds,
 		        schedule_cron_expr, timezone, enabled, next_run_at, last_run_at, last_status, last_error,
 		        consecutive_failures, schedule_error_count, created_at, updated_at
 		   FROM schedules
@@ -206,7 +218,7 @@ func (s *Store) ListDueSchedules(ctx context.Context, now time.Time, limit int) 
 	}
 
 	rows, err := s.db.RawDB().QueryContext(ctx,
-		`SELECT id, name, objective, workspace_root, schedule_kind, schedule_at, schedule_every_seconds,
+		`SELECT id, name, objective, project_id, cwd, authority_json, schedule_kind, schedule_at, schedule_every_seconds,
 		        schedule_cron_expr, timezone, enabled, next_run_at, last_run_at, last_status, last_error,
 		        consecutive_failures, schedule_error_count, created_at, updated_at
 		   FROM schedules
@@ -770,7 +782,7 @@ func (s *Store) SyncOccurrenceWithRun(ctx context.Context, occurrenceID string, 
 
 func (s *Store) RepairMissingNextRunAt(ctx context.Context, now time.Time) error {
 	rows, err := s.db.RawDB().QueryContext(ctx,
-		`SELECT id, name, objective, workspace_root, schedule_kind, schedule_at, schedule_every_seconds,
+		`SELECT id, name, objective, project_id, cwd, authority_json, schedule_kind, schedule_at, schedule_every_seconds,
 		        schedule_cron_expr, timezone, enabled, next_run_at, last_run_at, last_status, last_error,
 		        consecutive_failures, schedule_error_count, created_at, updated_at
 		   FROM schedules
@@ -813,7 +825,7 @@ func (s *Store) RepairMissingNextRunAt(ctx context.Context, now time.Time) error
 
 func loadScheduleRow(ctx context.Context, q queryRower, id string) (Schedule, error) {
 	return scanSchedule(q.QueryRowContext(ctx,
-		`SELECT id, name, objective, workspace_root, schedule_kind, schedule_at, schedule_every_seconds,
+		`SELECT id, name, objective, project_id, cwd, authority_json, schedule_kind, schedule_at, schedule_every_seconds,
 		        schedule_cron_expr, timezone, enabled, next_run_at, last_run_at, last_status, last_error,
 		        consecutive_failures, schedule_error_count, created_at, updated_at
 		   FROM schedules
@@ -833,7 +845,9 @@ func scanSchedule(scanner rowScanner) (Schedule, error) {
 		&schedule.ID,
 		&schedule.Name,
 		&schedule.Objective,
-		&schedule.WorkspaceRoot,
+		&schedule.ProjectID,
+		&schedule.CWD,
+		&schedule.AuthorityJSON,
 		&kind,
 		&schedule.Spec.At,
 		&schedule.Spec.EverySeconds,
@@ -865,6 +879,13 @@ func scanSchedule(scanner rowScanner) (Schedule, error) {
 	schedule.UpdatedAt = schedule.UpdatedAt.UTC()
 
 	return schedule, nil
+}
+
+func normalizeAuthorityJSON(raw []byte) []byte {
+	if len(raw) == 0 {
+		return []byte(`{}`)
+	}
+	return append([]byte(nil), raw...)
 }
 
 func scanOccurrence(scanner rowScanner) (Occurrence, error) {

@@ -216,13 +216,13 @@ func (s *Server) loadRoutesDeliveriesPageData(r *http.Request) (routesDeliveries
 	}
 	baseRouteFilter := sessions.RouteListFilter{
 		ProjectID:     activeProject.ID,
-		WorkspaceRoot: activeProject.WorkspaceRoot,
+		WorkspaceRoot: activeProject.PrimaryPath,
 		ConnectorID:   filters.ConnectorID,
 		Query:         filters.Query,
 	}
 	baseDeliveryFilter := sessions.DeliveryQueueFilter{
 		ProjectID:     activeProject.ID,
-		WorkspaceRoot: activeProject.WorkspaceRoot,
+		WorkspaceRoot: activeProject.PrimaryPath,
 		ConnectorID:   filters.ConnectorID,
 		Status:        filters.DeliveryStatus,
 		Query:         filters.Query,

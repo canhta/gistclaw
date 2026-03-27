@@ -38,8 +38,8 @@ func TestService_RunOnceDispatchesDueOccurrenceAndPersistsRunLink(t *testing.T) 
 			if cmd.Body != schedule.Objective {
 				t.Fatalf("body = %q, want %q", cmd.Body, schedule.Objective)
 			}
-			if cmd.WorkspaceRoot != schedule.WorkspaceRoot {
-				t.Fatalf("workspace_root = %q, want %q", cmd.WorkspaceRoot, schedule.WorkspaceRoot)
+			if cmd.CWD != schedule.CWD {
+				t.Fatalf("cwd = %q, want %q", cmd.CWD, schedule.CWD)
 			}
 			if cmd.SourceMessageID == "" {
 				t.Fatal("source_message_id is empty")
@@ -236,10 +236,10 @@ func TestService_ScheduleLifecycleOperations(t *testing.T) {
 	service.clock = func() time.Time { return now }
 
 	created, err := service.CreateSchedule(context.Background(), CreateScheduleInput{
-		ID:            "sched-manage",
-		Name:          "Hourly check",
-		Objective:     "Inspect repository state",
-		WorkspaceRoot: "/tmp/repo",
+		ID:        "sched-manage",
+		Name:      "Hourly check",
+		Objective: "Inspect repository state",
+		CWD:       "/tmp/repo",
 		Spec: ScheduleSpec{
 			Kind:         ScheduleKindEvery,
 			At:           "2026-03-26T09:00:00+07:00",

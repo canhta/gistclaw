@@ -4,8 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -22,41 +20,23 @@ func ActiveProject(ctx context.Context, db *store.DB) (model.Project, error) {
 	if err != nil {
 		return model.Project{}, err
 	}
-	if activeProjectID != "" {
-		project, err := loadProjectByID(ctx, db, activeProjectID)
-		if err == nil {
-			return project, nil
-		}
-		if err != sql.ErrNoRows {
-			return model.Project{}, fmt.Errorf("runtime: load active project: %w", err)
-		}
-	}
-
-	workspaceRoot, err := lookupProjectSetting(ctx, db, "workspace_root")
-	if err != nil {
-		return model.Project{}, err
-	}
-	if workspaceRoot == "" {
+	if activeProjectID == "" {
 		return model.Project{}, nil
 	}
 
-	project, err := loadProjectByWorkspaceRoot(ctx, db, workspaceRoot)
-	if err == nil {
-		return project, nil
+	project, err := loadProjectByID(ctx, db, activeProjectID)
+	if err == sql.ErrNoRows {
+		return model.Project{}, nil
 	}
-	if err != sql.ErrNoRows {
-		return model.Project{}, fmt.Errorf("runtime: load active project by workspace: %w", err)
+	if err != nil {
+		return model.Project{}, fmt.Errorf("runtime: load active project: %w", err)
 	}
-
-	return model.Project{
-		Name:          projectNameFromWorkspace(workspaceRoot),
-		WorkspaceRoot: workspaceRoot,
-	}, nil
+	return project, nil
 }
 
 func ListProjects(ctx context.Context, db *store.DB) ([]model.Project, error) {
 	rows, err := db.RawDB().QueryContext(ctx,
-		`SELECT id, name, workspace_root, source, created_at, last_used_at
+		`SELECT id, name, primary_path, roots_json, policy_json, source, created_at, last_used_at
 		 FROM projects
 		 ORDER BY last_used_at DESC, created_at DESC`,
 	)
@@ -71,7 +51,9 @@ func ListProjects(ctx context.Context, db *store.DB) ([]model.Project, error) {
 		if err := rows.Scan(
 			&project.ID,
 			&project.Name,
-			&project.WorkspaceRoot,
+			&project.PrimaryPath,
+			&project.RootsJSON,
+			&project.PolicyJSON,
 			&project.Source,
 			&project.CreatedAt,
 			&project.LastUsedAt,
@@ -83,25 +65,11 @@ func ListProjects(ctx context.Context, db *store.DB) ([]model.Project, error) {
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("runtime: iterate projects: %w", err)
 	}
-	if len(projects) > 0 {
-		return projects, nil
-	}
-
-	legacyWorkspace, err := lookupProjectSetting(ctx, db, "workspace_root")
-	if err != nil {
-		return nil, err
-	}
-	if legacyWorkspace == "" {
-		return nil, nil
-	}
-	return []model.Project{{
-		Name:          projectNameFromWorkspace(legacyWorkspace),
-		WorkspaceRoot: legacyWorkspace,
-	}}, nil
+	return projects, nil
 }
 
-func ActivateWorkspace(ctx context.Context, db *store.DB, workspaceRoot, name, source string) (model.Project, error) {
-	project, err := RegisterProject(ctx, db, workspaceRoot, name, source)
+func ActivateProjectPath(ctx context.Context, db *store.DB, primaryPath, name, source string) (model.Project, error) {
+	project, err := RegisterProjectPath(ctx, db, primaryPath, name, source)
 	if err != nil {
 		return model.Project{}, err
 	}
@@ -111,34 +79,31 @@ func ActivateWorkspace(ctx context.Context, db *store.DB, workspaceRoot, name, s
 	return project, nil
 }
 
-func RegisterProject(ctx context.Context, db *store.DB, workspaceRoot, name, source string) (model.Project, error) {
-	workspaceRoot = normalizeWorkspaceRoot(workspaceRoot)
-	if workspaceRoot == "" {
-		return model.Project{}, fmt.Errorf("runtime: workspace_root is required")
-	}
-	if err := ensureWorkspaceRepo(ctx, workspaceRoot); err != nil {
-		return model.Project{}, err
+func RegisterProjectPath(ctx context.Context, db *store.DB, primaryPath, name, source string) (model.Project, error) {
+	primaryPath = normalizePrimaryPath(primaryPath)
+	if primaryPath == "" {
+		return model.Project{}, fmt.Errorf("runtime: primary_path is required")
 	}
 	if name == "" {
-		name = projectNameFromWorkspace(workspaceRoot)
+		name = projectNameFromPath(primaryPath)
 	}
 	if source == "" {
 		source = "operator"
 	}
 
-	project, err := loadProjectByWorkspaceRoot(ctx, db, workspaceRoot)
+	project, err := loadProjectByPrimaryPath(ctx, db, primaryPath)
 	if err == nil {
 		return project, nil
 	}
 	if err != nil && err != sql.ErrNoRows {
-		return model.Project{}, fmt.Errorf("runtime: load project by workspace: %w", err)
+		return model.Project{}, fmt.Errorf("runtime: load project by primary_path: %w", err)
 	}
 
 	projectID := generateID()
 	if _, err := db.RawDB().ExecContext(ctx,
-		`INSERT INTO projects (id, name, workspace_root, source, created_at, last_used_at)
-		 VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))`,
-		projectID, name, workspaceRoot, source,
+		`INSERT INTO projects (id, name, primary_path, roots_json, policy_json, source, created_at, last_used_at)
+		 VALUES (?, ?, ?, '{}', '{}', ?, datetime('now'), datetime('now'))`,
+		projectID, name, primaryPath, source,
 	); err != nil {
 		return model.Project{}, fmt.Errorf("runtime: insert project: %w", err)
 	}
@@ -158,14 +123,8 @@ func SetActiveProject(ctx context.Context, db *store.DB, projectID string) error
 		}
 		return fmt.Errorf("runtime: load project for activation: %w", err)
 	}
-	if err := ensureWorkspaceRepo(ctx, project.WorkspaceRoot); err != nil {
-		return err
-	}
 
 	if err := upsertProjectSetting(ctx, db, "active_project_id", project.ID); err != nil {
-		return err
-	}
-	if err := upsertProjectSetting(ctx, db, "workspace_root", project.WorkspaceRoot); err != nil {
 		return err
 	}
 	if _, err := db.RawDB().ExecContext(ctx,
@@ -203,14 +162,16 @@ func upsertProjectSetting(ctx context.Context, db *store.DB, key, value string) 
 func loadProjectByID(ctx context.Context, db *store.DB, projectID string) (model.Project, error) {
 	var project model.Project
 	err := db.RawDB().QueryRowContext(ctx,
-		`SELECT id, name, workspace_root, source, created_at, last_used_at
+		`SELECT id, name, primary_path, roots_json, policy_json, source, created_at, last_used_at
 		 FROM projects
 		 WHERE id = ?`,
 		projectID,
 	).Scan(
 		&project.ID,
 		&project.Name,
-		&project.WorkspaceRoot,
+		&project.PrimaryPath,
+		&project.RootsJSON,
+		&project.PolicyJSON,
 		&project.Source,
 		&project.CreatedAt,
 		&project.LastUsedAt,
@@ -221,17 +182,19 @@ func loadProjectByID(ctx context.Context, db *store.DB, projectID string) (model
 	return project, nil
 }
 
-func loadProjectByWorkspaceRoot(ctx context.Context, db *store.DB, workspaceRoot string) (model.Project, error) {
+func loadProjectByPrimaryPath(ctx context.Context, db *store.DB, primaryPath string) (model.Project, error) {
 	var project model.Project
 	err := db.RawDB().QueryRowContext(ctx,
-		`SELECT id, name, workspace_root, source, created_at, last_used_at
+		`SELECT id, name, primary_path, roots_json, policy_json, source, created_at, last_used_at
 		 FROM projects
-		 WHERE workspace_root = ?`,
-		normalizeWorkspaceRoot(workspaceRoot),
+		 WHERE primary_path = ?`,
+		normalizePrimaryPath(primaryPath),
 	).Scan(
 		&project.ID,
 		&project.Name,
-		&project.WorkspaceRoot,
+		&project.PrimaryPath,
+		&project.RootsJSON,
+		&project.PolicyJSON,
 		&project.Source,
 		&project.CreatedAt,
 		&project.LastUsedAt,
@@ -242,45 +205,18 @@ func loadProjectByWorkspaceRoot(ctx context.Context, db *store.DB, workspaceRoot
 	return project, nil
 }
 
-func normalizeWorkspaceRoot(workspaceRoot string) string {
-	workspaceRoot = strings.TrimSpace(workspaceRoot)
-	if workspaceRoot == "" {
+func normalizePrimaryPath(primaryPath string) string {
+	primaryPath = strings.TrimSpace(primaryPath)
+	if primaryPath == "" {
 		return ""
 	}
-	return filepath.Clean(workspaceRoot)
+	return filepath.Clean(primaryPath)
 }
 
-func projectNameFromWorkspace(workspaceRoot string) string {
-	name := filepath.Base(normalizeWorkspaceRoot(workspaceRoot))
+func projectNameFromPath(primaryPath string) string {
+	name := filepath.Base(normalizePrimaryPath(primaryPath))
 	if name == "" || name == "." || name == string(filepath.Separator) {
 		return "project"
 	}
 	return name
-}
-
-func ensureWorkspaceRepo(ctx context.Context, workspaceRoot string) error {
-	if err := os.MkdirAll(workspaceRoot, 0o755); err != nil {
-		return fmt.Errorf("runtime: create workspace %q: %w", workspaceRoot, err)
-	}
-
-	gitDir := filepath.Join(workspaceRoot, ".git")
-	if info, err := os.Stat(gitDir); err == nil {
-		if !info.IsDir() {
-			return fmt.Errorf("runtime: git metadata path %q is not a directory", gitDir)
-		}
-		return nil
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("runtime: stat git metadata: %w", err)
-	}
-
-	cmd := exec.CommandContext(ctx, "git", "init", "--quiet", "-b", "main", workspaceRoot)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		detail := strings.TrimSpace(string(output))
-		if detail != "" {
-			return fmt.Errorf("runtime: git init %q: %w: %s", workspaceRoot, err, detail)
-		}
-		return fmt.Errorf("runtime: git init %q: %w", workspaceRoot, err)
-	}
-	return nil
 }

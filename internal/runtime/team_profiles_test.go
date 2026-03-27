@@ -19,7 +19,7 @@ func TestRuntime_TeamConfigUsesActiveProfileForProject(t *testing.T) {
 	writeRuntimeTeamProfile(t, workspaceRoot, "default", "Default Team")
 	writeRuntimeTeamProfile(t, workspaceRoot, "review", "Review Team")
 
-	project, err := ActivateWorkspace(ctx, db, workspaceRoot, "alpha", "operator")
+	project, err := ActivateProjectPath(ctx, db, workspaceRoot, "alpha", "operator")
 	if err != nil {
 		t.Fatalf("activate project: %v", err)
 	}
@@ -48,7 +48,7 @@ func TestRuntime_ChangingActiveProfileOnlyAffectsFutureRuns(t *testing.T) {
 	writeRuntimeTeamProfile(t, workspaceRoot, "default", "Default Team")
 	writeRuntimeTeamProfile(t, workspaceRoot, "review", "Review Team")
 
-	project, err := ActivateWorkspace(ctx, db, workspaceRoot, "alpha", "operator")
+	project, err := ActivateProjectPath(ctx, db, workspaceRoot, "alpha", "operator")
 	if err != nil {
 		t.Fatalf("activate project: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestRuntime_ChangingActiveProfileOnlyAffectsFutureRuns(t *testing.T) {
 		ConversationID: "conv-team-default",
 		AgentID:        "assistant",
 		Objective:      "use default team",
-		WorkspaceRoot:  workspaceRoot,
+		CWD:  workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("prepareStartRun default: %v", err)
@@ -74,7 +74,7 @@ func TestRuntime_ChangingActiveProfileOnlyAffectsFutureRuns(t *testing.T) {
 		ConversationID: "conv-team-review",
 		AgentID:        "assistant",
 		Objective:      "use review team",
-		WorkspaceRoot:  workspaceRoot,
+		CWD:  workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("prepareStartRun review: %v", err)
@@ -106,7 +106,7 @@ func TestRuntime_TeamProfileManagementMethods(t *testing.T) {
 	rt.SetTeamDir(filepath.Join(fallbackRoot, ".gistclaw", "teams", "default"))
 
 	workspaceRoot := t.TempDir()
-	project, err := ActivateWorkspace(ctx, db, workspaceRoot, "alpha", "operator")
+	project, err := ActivateProjectPath(ctx, db, workspaceRoot, "alpha", "operator")
 	if err != nil {
 		t.Fatalf("activate project: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestRuntime_DeleteTeamProfileRejectsActiveProfile(t *testing.T) {
 	workspaceRoot := t.TempDir()
 	writeRuntimeTeamProfile(t, workspaceRoot, "default", "Default Team")
 
-	project, err := ActivateWorkspace(ctx, db, workspaceRoot, "alpha", "operator")
+	project, err := ActivateProjectPath(ctx, db, workspaceRoot, "alpha", "operator")
 	if err != nil {
 		t.Fatalf("activate project: %v", err)
 	}

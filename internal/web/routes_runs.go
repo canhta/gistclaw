@@ -413,7 +413,7 @@ func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 		Paging:              paging,
 		QueueStrip:          buildRunQueueStrip(clusters),
 		ActiveProjectName:   activeProject.Name,
-		ActiveWorkspaceRoot: activeProject.WorkspaceRoot,
+		ActiveWorkspaceRoot: activeProject.PrimaryPath,
 	})
 }
 

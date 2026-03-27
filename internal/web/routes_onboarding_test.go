@@ -25,13 +25,13 @@ func newServerHarnessOnboardingPending(t *testing.T) *serverHarness {
 	return h
 }
 
-// newServerHarnessNoWorkspace returns a harness with no workspace_root setting
+// newServerHarnessNoWorkspace returns a harness with no active project
 // and no completed onboarding state.
 func newServerHarnessNoWorkspace(t *testing.T) *serverHarness {
 	t.Helper()
 	h := newServerHarnessOnboardingPending(t)
-	if _, err := h.db.RawDB().Exec("DELETE FROM settings WHERE key = 'workspace_root'"); err != nil {
-		t.Fatalf("remove workspace_root: %v", err)
+	if _, err := h.db.RawDB().Exec("DELETE FROM settings WHERE key = 'active_project_id'"); err != nil {
+		t.Fatalf("remove active_project_id: %v", err)
 	}
 	return h
 }

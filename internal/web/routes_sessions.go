@@ -92,7 +92,7 @@ func (s *Server) handleSessionsIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	filter := sessionListFilterFromRequest(r, 50)
 	filter.ProjectID = activeProject.ID
-	filter.WorkspaceRoot = activeProject.WorkspaceRoot
+	filter.WorkspaceRoot = activeProject.PrimaryPath
 	page, err := s.rt.ListAllSessionsPage(r.Context(), filter)
 	if err != nil {
 		http.Error(w, "failed to load sessions", http.StatusInternalServerError)
@@ -145,7 +145,7 @@ func (s *Server) handleRoutesIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	filter := routeListFilterFromRequest(r, 50)
 	filter.ProjectID = activeProject.ID
-	filter.WorkspaceRoot = activeProject.WorkspaceRoot
+	filter.WorkspaceRoot = activeProject.PrimaryPath
 	page, err := s.rt.ListRoutesPage(r.Context(), filter)
 	if err != nil {
 		http.Error(w, "failed to load routes", http.StatusInternalServerError)
@@ -211,7 +211,7 @@ func (s *Server) handleDeliveryIndex(w http.ResponseWriter, r *http.Request) {
 	}
 	filter := deliveryQueueFilterFromRequest(r, 50)
 	filter.ProjectID = activeProject.ID
-	filter.WorkspaceRoot = activeProject.WorkspaceRoot
+	filter.WorkspaceRoot = activeProject.PrimaryPath
 	page, err := s.rt.ListDeliveriesPage(r.Context(), filter)
 	if err != nil {
 		http.Error(w, "failed to load deliveries", http.StatusInternalServerError)

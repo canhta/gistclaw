@@ -44,10 +44,10 @@ func TestStore_CreateScheduleNormalizesSummaryFields(t *testing.T) {
 	s := newTestStore(t, now)
 
 	got, err := s.CreateSchedule(context.Background(), CreateScheduleInput{
-		ID:            "sched-create",
-		Name:          "Morning sync",
-		Objective:     "Check the repo state",
-		WorkspaceRoot: "/tmp/repo",
+		ID:        "sched-create",
+		Name:      "Morning sync",
+		Objective: "Check the repo state",
+		CWD:       "/tmp/repo",
 		Spec: ScheduleSpec{
 			Kind:         ScheduleKindEvery,
 			At:           "2026-03-26T09:00:00+07:00",
@@ -396,10 +396,10 @@ func TestStore_HealthFlagsInvalidSchedulesStuckDispatchingAndMissingNextRun(t *t
 	ctx := context.Background()
 
 	invalidSchedule, err := s.CreateSchedule(ctx, CreateScheduleInput{
-		ID:            "sched-health-invalid",
-		Name:          "Invalid cron",
-		Objective:     "Inspect invalid scheduler state",
-		WorkspaceRoot: "/tmp/repo",
+		ID:        "sched-health-invalid",
+		Name:      "Invalid cron",
+		Objective: "Inspect invalid scheduler state",
+		CWD:       "/tmp/repo",
 		Spec: ScheduleSpec{
 			Kind:     ScheduleKindCron,
 			CronExpr: "0 * * * *",
@@ -486,10 +486,10 @@ func mustCreateSchedule(t *testing.T, ctx context.Context, s *Store, id string) 
 	t.Helper()
 
 	schedule, err := s.CreateSchedule(ctx, CreateScheduleInput{
-		ID:            id,
-		Name:          id,
-		Objective:     "Check repository health",
-		WorkspaceRoot: "/tmp/repo",
+		ID:        id,
+		Name:      id,
+		Objective: "Check repository health",
+		CWD:       "/tmp/repo",
 		Spec: ScheduleSpec{
 			Kind:         ScheduleKindEvery,
 			At:           "2026-03-26T09:00:00+07:00",
