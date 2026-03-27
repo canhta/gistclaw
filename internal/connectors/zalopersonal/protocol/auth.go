@@ -66,10 +66,11 @@ func LoginQR(ctx context.Context, qrCallback func([]byte)) (*Credentials, error)
 	}
 
 	return &Credentials{
-		IMEI:      imei,
-		Cookie:    cookie,
-		UserAgent: sess.UserAgent,
-		Language:  &lang,
+		IMEI:        imei,
+		Cookie:      cookie,
+		UserAgent:   sess.UserAgent,
+		Language:    &lang,
+		DisplayName: strings.TrimSpace(userInfo.Info.Name),
 	}, nil
 }
 

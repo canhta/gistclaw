@@ -29,10 +29,11 @@ var DefaultBaseURL = url.URL{Scheme: "https", Host: "chat.zalo.me"}
 var defaultHTTPTransport http.RoundTripper = http.DefaultTransport
 
 type Credentials struct {
-	IMEI      string  `json:"imei"`
-	Cookie    string  `json:"cookie"`
-	UserAgent string  `json:"user_agent"`
-	Language  *string `json:"language,omitempty"`
+	IMEI        string  `json:"imei"`
+	Cookie      string  `json:"cookie"`
+	UserAgent   string  `json:"user_agent"`
+	Language    *string `json:"language,omitempty"`
+	DisplayName string  `json:"display_name,omitempty"`
 }
 
 func (c Credentials) IsValid() bool {

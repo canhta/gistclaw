@@ -10,6 +10,7 @@ import (
 
 	"github.com/canhta/gistclaw/internal/app"
 	"github.com/canhta/gistclaw/internal/connectors/zalopersonal"
+	"github.com/canhta/gistclaw/internal/connectors/zalopersonal/protocol"
 	"github.com/canhta/gistclaw/internal/store"
 )
 
@@ -159,6 +160,38 @@ func TestRun_AuthZaloPersonalInvalidSubcommandShowsUsage(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "Usage: gistclaw auth zalo-personal <login|logout>") {
 		t.Fatalf("expected zalo-personal usage, got:\n%s", stderr.String())
+	}
+}
+
+func TestZaloPersonalProtocolQRRunnerCopiesDisplayName(t *testing.T) {
+	lang := "vi"
+
+	oldLoginQR := zaloPersonalProtocolLoginQR
+	oldLoginWithCredentials := zaloPersonalProtocolLoginWithCredentials
+	t.Cleanup(func() {
+		zaloPersonalProtocolLoginQR = oldLoginQR
+		zaloPersonalProtocolLoginWithCredentials = oldLoginWithCredentials
+	})
+
+	zaloPersonalProtocolLoginQR = func(_ context.Context, _ func([]byte)) (*protocol.Credentials, error) {
+		return &protocol.Credentials{
+			IMEI:        "imei-123",
+			Cookie:      "zpw_sek=abc123",
+			UserAgent:   "Mozilla/5.0",
+			Language:    &lang,
+			DisplayName: "Canh",
+		}, nil
+	}
+	zaloPersonalProtocolLoginWithCredentials = func(_ context.Context, _ protocol.Credentials) (*protocol.Session, error) {
+		return &protocol.Session{UID: "123456789"}, nil
+	}
+
+	got, err := (zaloPersonalProtocolQRRunner{}).LoginQR(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("LoginQR: %v", err)
+	}
+	if got.DisplayName != "Canh" {
+		t.Fatalf("expected display name Canh, got %q", got.DisplayName)
 	}
 }
 

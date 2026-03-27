@@ -165,6 +165,9 @@ func TestLoginQRReturnsNotImplemented(t *testing.T) {
 	if creds.Language == nil || *creds.Language != DefaultLanguage {
 		t.Fatalf("expected default language %q, got %+v", DefaultLanguage, creds.Language)
 	}
+	if creds.DisplayName != "Canh" {
+		t.Fatalf("expected display name Canh, got %q", creds.DisplayName)
+	}
 	for _, want := range []string{"zpw_sek=abc123", "_ga=test"} {
 		if !containsCookie(creds.Cookie, want) {
 			t.Fatalf("expected cookie header %q to contain %q", creds.Cookie, want)

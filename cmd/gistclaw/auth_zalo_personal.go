@@ -17,18 +17,20 @@ import (
 const authZaloPersonalUsage = "Usage: gistclaw auth zalo-personal <login|logout>"
 
 var (
-	newZaloPersonalQRRunner  = func() app.ZaloPersonalQRLoginRunner { return zaloPersonalProtocolQRRunner{} }
-	zaloPersonalLoginTimeout = 2 * time.Minute
+	newZaloPersonalQRRunner                  = func() app.ZaloPersonalQRLoginRunner { return zaloPersonalProtocolQRRunner{} }
+	zaloPersonalProtocolLoginQR              = protocol.LoginQR
+	zaloPersonalProtocolLoginWithCredentials = protocol.LoginWithCredentials
+	zaloPersonalLoginTimeout                 = 2 * time.Minute
 )
 
 type zaloPersonalProtocolQRRunner struct{}
 
 func (zaloPersonalProtocolQRRunner) LoginQR(ctx context.Context, qrCallback func([]byte)) (zalopersonal.StoredCredentials, error) {
-	creds, err := protocol.LoginQR(ctx, qrCallback)
+	creds, err := zaloPersonalProtocolLoginQR(ctx, qrCallback)
 	if err != nil {
 		return zalopersonal.StoredCredentials{}, err
 	}
-	session, err := protocol.LoginWithCredentials(ctx, *creds)
+	session, err := zaloPersonalProtocolLoginWithCredentials(ctx, *creds)
 	if err != nil {
 		return zalopersonal.StoredCredentials{}, err
 	}
@@ -37,10 +39,11 @@ func (zaloPersonalProtocolQRRunner) LoginQR(ctx context.Context, qrCallback func
 	}
 
 	stored := zalopersonal.StoredCredentials{
-		AccountID: session.UID,
-		IMEI:      creds.IMEI,
-		Cookie:    creds.Cookie,
-		UserAgent: creds.UserAgent,
+		AccountID:   session.UID,
+		DisplayName: strings.TrimSpace(creds.DisplayName),
+		IMEI:        creds.IMEI,
+		Cookie:      creds.Cookie,
+		UserAgent:   creds.UserAgent,
 	}
 	if creds.Language != nil {
 		stored.Language = strings.TrimSpace(*creds.Language)
