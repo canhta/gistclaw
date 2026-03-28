@@ -5,9 +5,11 @@
 	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
 	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import WorkClusterPanel from '$lib/components/common/WorkClusterPanel.svelte';
+	import RunGraph from '$lib/components/graph/RunGraph.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
 	import { setInspectorItems } from '$lib/shell/inspector.svelte';
-	import type { WorkCreateResponse } from '$lib/types/api';
+	import type { WorkCreateResponse, WorkGraphResponse } from '$lib/types/api';
+	import { loadWorkGraph } from '$lib/work/load';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -42,6 +44,31 @@
 	let task = $state('');
 	let errorMessage = $state('');
 	let submitting = $state(false);
+
+	let graphData = $state<WorkGraphResponse | null>(null);
+	let graphError = $state('');
+
+	const singleActiveCluster = $derived(
+		data.work.clusters.length === 1 &&
+			!data.work.clusters[0].root.status_class.includes('completed')
+			? data.work.clusters[0]
+			: null
+	);
+
+	$effect(() => {
+		if (singleActiveCluster) {
+			graphError = '';
+			loadWorkGraph(fetch, singleActiveCluster.root.id)
+				.then((g) => {
+					graphData = g;
+				})
+				.catch(() => {
+					graphError = 'Unable to load run graph.';
+				});
+		} else {
+			graphData = null;
+		}
+	});
 
 	async function submit(event: SubmitEvent): Promise<void> {
 		event.preventDefault();
@@ -143,7 +170,9 @@
 		<div class="flex flex-wrap items-end justify-between gap-4">
 			<div>
 				<p class="gc-stamp">Live runs</p>
-				<h2 class="gc-section-title mt-3">Open the run that needs your attention</h2>
+				<h2 class="gc-section-title mt-3">
+					{singleActiveCluster ? 'Active run' : 'Open the run that needs your attention'}
+				</h2>
 			</div>
 			<p class="gc-machine">{data.work.clusters.length} visible clusters</p>
 		</div>
@@ -155,6 +184,19 @@
 				title="No active work yet"
 				message="Launch a task to open the first graph."
 			/>
+		{:else if singleActiveCluster && graphData}
+			<div class="mt-6">
+				<RunGraph graph={graphData} />
+			</div>
+		{:else if singleActiveCluster && graphError}
+			<div class="mt-6 gc-panel-soft border-[var(--gc-error)] px-4 py-4">
+				<p class="gc-copy text-[var(--gc-error)]">{graphError}</p>
+			</div>
+			<div class="mt-4 grid gap-4 xl:grid-cols-2">
+				{#each data.work.clusters as cluster (cluster.root.id)}
+					<WorkClusterPanel {cluster} />
+				{/each}
+			</div>
 		{:else}
 			<div class="mt-6 grid gap-4 xl:grid-cols-2">
 				{#each data.work.clusters as cluster (cluster.root.id)}
