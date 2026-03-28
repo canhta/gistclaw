@@ -25,6 +25,7 @@ import (
 	openaiprov "github.com/canhta/gistclaw/internal/providers/openai"
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
+	"github.com/canhta/gistclaw/internal/runtime/capabilities"
 	"github.com/canhta/gistclaw/internal/scheduler"
 	"github.com/canhta/gistclaw/internal/store"
 	"github.com/canhta/gistclaw/internal/teams"
@@ -92,7 +93,8 @@ func Bootstrap(cfg Config) (*App, error) {
 
 	convStore := conversations.NewConversationStore(db)
 	mem := memory.NewStore(db, convStore)
-	reg, toolCloser, err := buildToolRegistry(context.Background(), cfg, nil)
+	capabilityRegistry := capabilities.NewRegistry()
+	reg, toolCloser, err := buildToolRegistry(context.Background(), cfg, nil, capabilityRegistry)
 	if err != nil {
 		_ = db.Close()
 		return nil, err
@@ -140,6 +142,9 @@ func Bootstrap(cfg Config) (*App, error) {
 	}
 
 	connectors := buildConnectors(cfg, db, convStore, rt, whatsappHealth)
+	for _, connector := range connectors {
+		capabilityRegistry.RegisterConnector(connector)
+	}
 	connectorNotifier.SetConnectors(connectors)
 
 	application := &App{
@@ -152,6 +157,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		connectors: connectors,
 		toolCloser: toolCloser,
 	}
+	capabilityRegistry.RegisterAppAction("status", application)
 
 	webSrv, err := web.NewServer(web.Options{
 		DB:              db,
@@ -444,12 +450,22 @@ func replayWiring(db *store.DB) *replay.Service {
 	return replay.NewService(db)
 }
 
-func buildToolRegistry(ctx context.Context, cfg Config, factory tools.MCPFactory) (*tools.Registry, io.Closer, error) {
-	return tools.BuildRegistry(ctx, tools.BuildOptions{
+func buildToolRegistry(ctx context.Context, cfg Config, factory tools.MCPFactory, capabilityRegistry *capabilities.Registry) (*tools.Registry, io.Closer, error) {
+	opts := tools.BuildOptions{
 		Research:   cfg.Research,
 		MCP:        cfg.MCP,
 		MCPFactory: factory,
-	})
+	}
+	if capabilityRegistry != nil {
+		opts.Capabilities = tools.CapabilityHandlers{
+			DirectoryList: capabilityRegistry.DirectoryList,
+			ResolveTarget: capabilityRegistry.ResolveTarget,
+			Send:          capabilityRegistry.Send,
+			Status:        capabilityRegistry.Status,
+			AppAction:     capabilityRegistry.AppAction,
+		}
+	}
+	return tools.BuildRegistry(ctx, opts)
 }
 
 func (a *App) WebAddress() string {

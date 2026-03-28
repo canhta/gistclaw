@@ -10,6 +10,7 @@ import (
 
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime"
+	"github.com/canhta/gistclaw/internal/runtime/capabilities"
 	"github.com/canhta/gistclaw/internal/tools"
 )
 
@@ -600,7 +601,7 @@ func TestBuildToolRegistry_LoadsConfiguredMCPToolFromConfig(t *testing.T) {
 				{Name: "search_repositories", Description: "Search repos", InputSchemaJSON: `{"type":"object"}`},
 			},
 		},
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("buildToolRegistry: %v", err)
 	}
@@ -609,5 +610,29 @@ func TestBuildToolRegistry_LoadsConfiguredMCPToolFromConfig(t *testing.T) {
 	}
 	if _, ok := reg.Get("github_search_repositories"); !ok {
 		t.Fatal("expected configured MCP tool to be registered")
+	}
+}
+
+func TestBuildToolRegistry_RegistersCapabilityTools(t *testing.T) {
+	reg, closer, err := buildToolRegistry(context.Background(), Config{
+		Research: tools.ResearchConfig{},
+	}, nil, capabilities.NewRegistry())
+	if err != nil {
+		t.Fatalf("buildToolRegistry: %v", err)
+	}
+	if closer != nil {
+		defer closer.Close()
+	}
+
+	for _, name := range []string{
+		"connector_directory_list",
+		"connector_target_resolve",
+		"connector_send",
+		"connector_status",
+		"app_action",
+	} {
+		if _, ok := reg.Get(name); !ok {
+			t.Fatalf("expected capability tool %q to be registered", name)
+		}
 	}
 }

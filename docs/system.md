@@ -10,7 +10,7 @@ This document is the source of truth for what the repository ships today: packag
 - A journal-backed runtime that records runs, session collaboration, approvals, receipts, route bindings, and outbound delivery state in SQLite.
 - A SQLite-backed scheduler service for local scheduled tasks, occurrence history, restart repair, and CLI-first schedule management.
 - Provider adapters for Anthropic and OpenAI-compatible endpoints.
-- A tool registry with built-in web fetch, optional Tavily search, and optional MCP stdio tools.
+- A tool registry with built-in direct capability tools, web fetch, optional Tavily search, and optional MCP stdio tools.
 - Live external surfaces for Telegram DM, WhatsApp, and optional unofficial Zalo Personal messaging.
 - A default team definition under [teams/default/team.yaml](../teams/default/team.yaml).
 - Project-specific team profiles stored under `storage_root/projects/<project-id>/teams/`, with the machine fallback under `storage_root/teams/default/`.
@@ -25,6 +25,7 @@ This document is the source of truth for what the repository ships today: packag
 - The front assistant is direct-execution by default and receives a runtime execution recommendation (`direct`, `delegate`, or `parallelize`) before each provider turn.
 - Raw specialist spawning is now guarded by that recommendation, so tasks classified as `direct` must use local capabilities instead of spawning by default.
 - Structured delegation is available for specialist work, so the front assistant can request `research`, `write`, `review`, or `verify` work without choosing the worker topology itself.
+- Direct product actions now flow through generic capability tools such as `connector_directory_list`, `connector_target_resolve`, `connector_send`, `connector_status`, and `app_action`, backed by runtime capability adapters instead of prompt-only conventions.
 - Risky tool calls still require explicit approval before mutating writes are applied.
 - Connector-bound front sessions can surface blocked approvals as conversational gates, letting the same chat collect approval or denial and resume the run.
 - Outbound delivery can carry transport-agnostic action buttons so chat connectors may offer deterministic approval controls without leaving the active conversation.
@@ -96,6 +97,7 @@ internal/providers/openai/        OpenAI-compatible provider adapter
 internal/providers/providerutil/  shared provider helpers and error translation
 internal/replay/                  replay loading and receipt/preview projections
 internal/runtime/                 run loop, collaboration, approvals, routing, delivery recovery
+internal/runtime/capabilities/    generic direct capability registry for connector and app adapters
 internal/runtime/recommendation/  execution recommendation engine for direct, delegated, and parallel work
 internal/scheduler/               schedule definitions, claiming, repair, reconciliation, CLI-facing service
 internal/sessions/                session directory, routes, pagination, delivery listings

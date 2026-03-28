@@ -38,6 +38,8 @@ type Connector struct {
 	inbound                *InboundDispatcher
 	health                 *HealthState
 	login                  func(ctx context.Context, creds StoredCredentials) (*listenerSession, error)
+	listFriends            func(ctx context.Context, creds StoredCredentials) ([]protocol.FriendInfo, error)
+	listGroups             func(ctx context.Context, creds StoredCredentials) ([]protocol.GroupListInfo, error)
 	sendText               func(ctx context.Context, creds StoredCredentials, chatID, text string) error
 	newListener            func(sess *listenerSession) (SessionListener, error)
 	credentialPollInterval time.Duration
@@ -85,6 +87,30 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 		}
 		_, err = protocol.SendMessage(ctx, sess, chatID, connector.threadTypeForChat(chatID), text)
 		return err
+	}
+	connector.listFriends = func(ctx context.Context, creds StoredCredentials) ([]protocol.FriendInfo, error) {
+		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
+			IMEI:      creds.IMEI,
+			Cookie:    creds.Cookie,
+			UserAgent: creds.UserAgent,
+			Language:  optionalLanguage(creds.Language),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return protocol.FetchFriends(ctx, sess)
+	}
+	connector.listGroups = func(ctx context.Context, creds StoredCredentials) ([]protocol.GroupListInfo, error) {
+		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
+			IMEI:      creds.IMEI,
+			Cookie:    creds.Cookie,
+			UserAgent: creds.UserAgent,
+			Language:  optionalLanguage(creds.Language),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return protocol.FetchGroups(ctx, sess)
 	}
 	connector.newListener = func(sess *listenerSession) (SessionListener, error) {
 		return newProtocolSessionListener(sess)

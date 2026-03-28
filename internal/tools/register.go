@@ -8,9 +8,10 @@ import (
 )
 
 type BuildOptions struct {
-	Research   ResearchConfig
-	MCP        MCPOptions
-	MCPFactory MCPFactory
+	Research     ResearchConfig
+	MCP          MCPOptions
+	MCPFactory   MCPFactory
+	Capabilities CapabilityHandlers
 }
 
 func BuildRegistry(ctx context.Context, opts BuildOptions) (*Registry, io.Closer, error) {
@@ -19,6 +20,7 @@ func BuildRegistry(ctx context.Context, opts BuildOptions) (*Registry, io.Closer
 
 	registerRepoTools(reg)
 	reg.Register(NewWebFetchTool(newBoundedHTTPClient(researchTimeout(opts.Research)), defaultWebFetchBytes))
+	RegisterCapabilityTools(reg, opts.Capabilities)
 
 	research := normalizeResearchConfig(opts.Research)
 	if research.Provider != "" {

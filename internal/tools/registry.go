@@ -2,6 +2,7 @@ package tools
 
 import (
 	"context"
+	"sort"
 
 	"github.com/canhta/gistclaw/internal/model"
 )
@@ -34,5 +35,6 @@ func (r *Registry) List() []model.ToolSpec {
 	for _, tool := range r.tools {
 		specs = append(specs, tool.Spec())
 	}
+	sort.Slice(specs, func(i, j int) bool { return specs[i].Name < specs[j].Name })
 	return specs
 }

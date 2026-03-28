@@ -12,6 +12,7 @@ import (
 	authpkg "github.com/canhta/gistclaw/internal/auth"
 	"github.com/canhta/gistclaw/internal/connectors/zalopersonal"
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/runtime/capabilities"
 )
 
 type stubCommandConnector struct {
@@ -190,6 +191,26 @@ func TestApp_ConnectorHealthReturnsReporterSnapshots(t *testing.T) {
 	}
 	if snapshots[1].ConnectorID != "whatsapp" || snapshots[1].State != model.ConnectorHealthHealthy {
 		t.Fatalf("unexpected second snapshot: %+v", snapshots[1])
+	}
+}
+
+func TestApp_CapabilityAppActionStatus(t *testing.T) {
+	application := setupCommandApp(t)
+
+	result, err := application.CapabilityAppAction(context.Background(), capabilities.AppActionRequest{
+		Name: "status",
+	})
+	if err != nil {
+		t.Fatalf("CapabilityAppAction: %v", err)
+	}
+	if result.Name != "status" || result.Summary == "" {
+		t.Fatalf("unexpected app action result: %+v", result)
+	}
+	if got := result.Data["active_runs"]; got != 0 {
+		t.Fatalf("expected active_runs=0, got %+v", got)
+	}
+	if got := result.Data["pending_approvals"]; got != 0 {
+		t.Fatalf("expected pending_approvals=0, got %+v", got)
 	}
 }
 
