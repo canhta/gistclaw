@@ -1,10 +1,70 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import RunGraph from '$lib/components/graph/RunGraph.svelte';
+	import { connectEventStream } from '$lib/http/events';
+	import { loadWorkDetail } from '$lib/work/load';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
-	const detail = $derived(data.work);
+
+	let detailOverride = $state<PageData['work'] | null>(null);
+	const detail = $derived(detailOverride ?? data.work);
+	let liveStatusOverride = $state<string | null>(null);
+	const liveStatus = $derived(
+		liveStatusOverride ??
+			(detail.run.stream_url ? 'Live stream attached' : 'Live stream unavailable')
+	);
+	let liveError = $state('');
+
+	let refreshInFlight = false;
+	let refreshQueued = false;
+
+	$effect(() => {
+		detailOverride = null;
+		liveStatusOverride = null;
+		liveError = '';
+	});
+
+	async function refreshDetail(): Promise<void> {
+		if (refreshInFlight) {
+			refreshQueued = true;
+			return;
+		}
+
+		refreshInFlight = true;
+		try {
+			detailOverride = await loadWorkDetail(fetch, detail.run.id);
+			liveStatusOverride = null;
+			liveError = '';
+		} catch {
+			liveStatusOverride = 'Live stream stalled';
+			liveError = 'Unable to refresh the run detail from the browser API.';
+		} finally {
+			refreshInFlight = false;
+			if (refreshQueued) {
+				refreshQueued = false;
+				void refreshDetail();
+			}
+		}
+	}
+
+	onMount(() => {
+		if (!detail.run.stream_url) {
+			liveStatusOverride = 'Live stream unavailable';
+			return;
+		}
+
+		return connectEventStream(
+			detail.run.stream_url,
+			() => {
+				void refreshDetail();
+			},
+			() => {
+				liveStatusOverride = 'Live stream stalled';
+			}
+		);
+	});
 </script>
 
 <svelte:head>
@@ -54,6 +114,15 @@
 			>
 				Back to queue
 			</a>
+
+			<div class="gc-panel-soft mt-6 px-4 py-4">
+				<p class="gc-stamp">Live stream</p>
+				<h3 class="gc-panel-title mt-3 text-[1rem]">{liveStatus}</h3>
+				<p class="gc-machine mt-3 break-all">{detail.run.stream_url}</p>
+				{#if liveError}
+					<p class="gc-copy mt-3 text-[var(--gc-error)]">{liveError}</p>
+				{/if}
+			</div>
 		</div>
 	</section>
 
