@@ -10,6 +10,22 @@
 	function pressureLabel(item: RecoverDeliveryHealthResponse): string {
 		return `${item.pending_count} pending · ${item.retrying_count} retrying · ${item.terminal_count} terminal`;
 	}
+
+	function connectorToneClass(stateLabel: string): string {
+		const s = stateLabel.toLowerCase();
+		if (s.includes('error') || s.includes('down') || s.includes('fail')) return 'border-[var(--gc-error)]';
+		if (s.includes('degraded') || s.includes('warn') || s.includes('retry')) return 'border-[var(--gc-orange)]';
+		if (s.includes('connect') || s.includes('ok') || s.includes('active')) return 'border-[var(--gc-cyan)]';
+		return 'border-[var(--gc-border)]';
+	}
+
+	function connectorStatusTextClass(stateLabel: string): string {
+		const s = stateLabel.toLowerCase();
+		if (s.includes('error') || s.includes('down') || s.includes('fail')) return 'text-[var(--gc-error)]';
+		if (s.includes('degraded') || s.includes('warn') || s.includes('retry')) return 'text-[var(--gc-orange)]';
+		if (s.includes('connect') || s.includes('ok') || s.includes('active')) return 'text-[var(--gc-cyan)]';
+		return 'text-[var(--gc-text-secondary)]';
+	}
 </script>
 
 <svelte:head>
@@ -73,13 +89,10 @@
 							<div class="flex items-start justify-between gap-4">
 								<div>
 									<p class="gc-stamp">{session.role_label}</p>
-									<h3 class="gc-panel-title mt-3 text-[1rem]">{session.agent_id}</h3>
+									<h3 class="gc-panel-title mt-3 text-[1rem]">{session.role_label}</h3>
 								</div>
 								<p class="gc-machine">{session.status_label}</p>
 							</div>
-							<p class="gc-copy mt-4 text-[var(--gc-text-secondary)]">
-								Thread {session.conversation_id}
-							</p>
 							<p class="gc-machine mt-4">{session.updated_at_label}</p>
 						</a>
 					{/each}
@@ -89,25 +102,27 @@
 
 		<div class="grid gap-6">
 			<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-				<p class="gc-stamp">Channel health</p>
-				<div class="mt-4 grid gap-4">
-					{#each data.conversations.runtime_connectors as item (item.connector_id)}
-						<article class="gc-panel-soft px-4 py-4">
-							<p class="gc-stamp">{item.connector_id}</p>
-							<p class="gc-value mt-3">{item.state_label}</p>
-							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">{item.summary}</p>
-						</article>
-					{/each}
-				</div>
-			</div>
-
-			<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
 				<p class="gc-stamp">Delivery issues</p>
 				<div class="mt-4 grid gap-4">
 					{#each data.conversations.health as item (item.connector_id)}
 						<article class="gc-panel-soft px-4 py-4">
 							<p class="gc-stamp">{item.connector_id}</p>
 							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">{pressureLabel(item)}</p>
+						</article>
+					{/each}
+				</div>
+			</div>
+
+			<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
+				<p class="gc-stamp">Channel health</p>
+				<div class="mt-4 grid gap-4">
+					{#each data.conversations.runtime_connectors as item (item.connector_id)}
+						<article class={`gc-panel-soft px-4 py-4 ${connectorToneClass(item.state_label)}`}>
+							<div class="flex items-start justify-between gap-3">
+								<p class="gc-stamp">{item.connector_id.toUpperCase()}</p>
+								<p class={`gc-stamp ${connectorStatusTextClass(item.state_label)}`}>{item.state_label}</p>
+							</div>
+							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">{item.summary}</p>
 						</article>
 					{/each}
 				</div>
