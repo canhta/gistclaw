@@ -94,7 +94,7 @@ type conversationDetailFailureResponse struct {
 }
 
 func (s *Server) handleConversationsIndex(w http.ResponseWriter, r *http.Request) {
-	data, err := s.loadSessionPageIndexData(r)
+	data, err := s.loadConversationIndexData(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -143,7 +143,7 @@ func (s *Server) handleConversationsIndex(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleConversationDetail(w http.ResponseWriter, r *http.Request) {
-	data, status, err := s.loadSessionPageDetailData(r)
+	data, status, err := s.loadConversationDetailData(r)
 	if err != nil {
 		if status == http.StatusNotFound {
 			http.NotFound(w, r)
@@ -163,7 +163,7 @@ func (s *Server) handleConversationDetail(w http.ResponseWriter, r *http.Request
 	})
 }
 
-func buildConversationIndexItemResponses(items []sessionPageIndexItemView) []conversationIndexItemResponse {
+func buildConversationIndexItemResponses(items []conversationIndexItemView) []conversationIndexItemResponse {
 	resp := make([]conversationIndexItemResponse, 0, len(items))
 	for _, item := range items {
 		resp = append(resp, conversationIndexItemResponse(item))
@@ -171,11 +171,11 @@ func buildConversationIndexItemResponses(items []sessionPageIndexItemView) []con
 	return resp
 }
 
-func buildConversationDetailSessionResponse(item sessionPageDetailSessionView) conversationDetailSessionResponse {
+func buildConversationDetailSessionResponse(item conversationDetailSessionView) conversationDetailSessionResponse {
 	return conversationDetailSessionResponse(item)
 }
 
-func buildConversationDetailMessageResponses(items []sessionPageDetailMessageView) []conversationDetailMessageResponse {
+func buildConversationDetailMessageResponses(items []conversationDetailMessageView) []conversationDetailMessageResponse {
 	resp := make([]conversationDetailMessageResponse, 0, len(items))
 	for _, item := range items {
 		resp = append(resp, conversationDetailMessageResponse(item))
@@ -183,7 +183,7 @@ func buildConversationDetailMessageResponses(items []sessionPageDetailMessageVie
 	return resp
 }
 
-func buildConversationDetailRouteResponse(item *sessionPageDetailRouteView) *conversationDetailRouteResponse {
+func buildConversationDetailRouteResponse(item *conversationDetailRouteView) *conversationDetailRouteResponse {
 	if item == nil {
 		return nil
 	}
@@ -191,7 +191,7 @@ func buildConversationDetailRouteResponse(item *sessionPageDetailRouteView) *con
 	return &resp
 }
 
-func buildConversationDetailDeliveryResponses(items []sessionPageDetailDeliveryView) []conversationDetailDeliveryResponse {
+func buildConversationDetailDeliveryResponses(items []conversationDetailDeliveryView) []conversationDetailDeliveryResponse {
 	resp := make([]conversationDetailDeliveryResponse, 0, len(items))
 	for _, item := range items {
 		resp = append(resp, conversationDetailDeliveryResponse(item))
@@ -199,7 +199,7 @@ func buildConversationDetailDeliveryResponses(items []sessionPageDetailDeliveryV
 	return resp
 }
 
-func buildConversationDetailFailureResponses(items []sessionPageDetailFailureView) []conversationDetailFailureResponse {
+func buildConversationDetailFailureResponses(items []conversationDetailFailureView) []conversationDetailFailureResponse {
 	resp := make([]conversationDetailFailureResponse, 0, len(items))
 	for _, item := range items {
 		resp = append(resp, conversationDetailFailureResponse(item))

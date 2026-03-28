@@ -1,5 +1,9 @@
 # GistClaw
 
+<p>
+  <img src="docs/assets/readme-banner.svg" alt="GistClaw banner" width="100%" />
+</p>
+
 GistClaw is a local-first multi-agent runtime for software repo tasks.
 
 It gives you one assistant surface, lets that assistant coordinate specialist workers behind the scenes, asks for approval before risky repo changes, and keeps a replayable record of what happened.

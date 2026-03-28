@@ -3,6 +3,7 @@
 	import type { Snippet } from 'svelte';
 	import type { BootstrapNavItem, BootstrapProjectResponse } from '$lib/types/api';
 	import SurfaceIcon from '$lib/components/shell/SurfaceIcon.svelte';
+	import logo from '$lib/assets/logo.svg';
 
 	type InspectorItem = {
 		label: string;
@@ -51,7 +52,17 @@
 			class="border-b-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface)] xl:border-r-2 xl:border-b-0"
 		>
 			<div class="border-b-2 border-[var(--gc-border)] px-5 py-6">
-				<p class="gc-stamp">GistClaw</p>
+				<div class="flex items-start gap-3">
+					<img
+						src={logo}
+						alt="GistClaw logo"
+						class="h-12 w-12 border-2 border-[var(--gc-border-strong)] bg-[var(--gc-canvas)] p-1"
+					/>
+					<div>
+						<p class="gc-stamp">GistClaw</p>
+						<p class="gc-machine mt-2">local-first control deck</p>
+					</div>
+				</div>
 				<h1 class="gc-panel-title mt-3 text-[1.45rem]">{project.active_name}</h1>
 				<p class="gc-machine mt-3 break-all">{project.active_path}</p>
 			</div>

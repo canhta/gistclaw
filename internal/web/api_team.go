@@ -80,12 +80,29 @@ type teamMemberInput struct {
 }
 
 func (s *Server) handleTeamAPI(w http.ResponseWriter, r *http.Request) {
-	state, err := s.loadTeamPageState(r.Context())
+	state, err := s.loadTeamState(r.Context())
 	if err != nil {
 		http.Error(w, "failed to load team surface", http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusOK, buildTeamAPIResponse(state, ""))
+}
+
+func (s *Server) handleTeamExportAPI(w http.ResponseWriter, r *http.Request) {
+	cfg, err := s.loadTeamConfig(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	raw, err := teams.ExportEditableYAML(cfg)
+	if err != nil {
+		http.Error(w, "failed to export team file", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="team.yaml"`)
+	_, _ = w.Write(raw)
 }
 
 func (s *Server) handleTeamSelectAPI(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +125,7 @@ func (s *Server) handleTeamSelectAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": err.Error()})
 		return
 	}
-	state, err := s.loadTeamPageState(r.Context())
+	state, err := s.loadTeamState(r.Context())
 	if err != nil {
 		http.Error(w, "failed to reload team surface", http.StatusInternalServerError)
 		return
@@ -140,7 +157,7 @@ func (s *Server) handleTeamCreateAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": err.Error()})
 		return
 	}
-	state, err := s.loadTeamPageState(r.Context())
+	state, err := s.loadTeamState(r.Context())
 	if err != nil {
 		http.Error(w, "failed to reload team surface", http.StatusInternalServerError)
 		return
@@ -173,7 +190,7 @@ func (s *Server) handleTeamCloneAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": err.Error()})
 		return
 	}
-	state, err := s.loadTeamPageState(r.Context())
+	state, err := s.loadTeamState(r.Context())
 	if err != nil {
 		http.Error(w, "failed to reload team surface", http.StatusInternalServerError)
 		return
@@ -201,7 +218,7 @@ func (s *Server) handleTeamDeleteAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": err.Error()})
 		return
 	}
-	state, err := s.loadTeamPageState(r.Context())
+	state, err := s.loadTeamState(r.Context())
 	if err != nil {
 		http.Error(w, "failed to reload team surface", http.StatusInternalServerError)
 		return
@@ -226,7 +243,7 @@ func (s *Server) handleTeamSaveAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": err.Error()})
 		return
 	}
-	state, err := s.loadTeamPageState(r.Context())
+	state, err := s.loadTeamState(r.Context())
 	if err != nil {
 		http.Error(w, "failed to reload team surface", http.StatusInternalServerError)
 		return
@@ -245,7 +262,7 @@ func (s *Server) handleTeamImportAPI(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": err.Error()})
 		return
 	}
-	state, err := s.loadTeamPageState(r.Context())
+	state, err := s.loadTeamState(r.Context())
 	if err != nil {
 		http.Error(w, "failed to load team surface", http.StatusInternalServerError)
 		return
@@ -254,7 +271,7 @@ func (s *Server) handleTeamImportAPI(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, buildTeamAPIResponse(state, "Imported file loaded. Save Team to apply the change."))
 }
 
-func buildTeamAPIResponse(state teamPageState, notice string) teamAPIResponse {
+func buildTeamAPIResponse(state teamState, notice string) teamAPIResponse {
 	activeProfileID := state.ActiveProfile
 	if activeProfileID == "" {
 		activeProfileID = teams.DefaultProfileName

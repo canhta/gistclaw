@@ -61,13 +61,17 @@ Run: `make coverage`
 
 ## Code style
 
-Run `make fmt` before committing. The pre-commit hook runs `goimports` plus staged-file `golangci-lint --fast-only` checks automatically via lefthook, and the pre-push hook runs full `make lint` plus `make coverage`.
+Run `make fmt` before committing. The pre-commit hook runs `goimports` plus staged-file `golangci-lint --fast-only` checks for Go changes and `bun run lint && bun run check` for staged frontend changes. The pre-push hook runs full Go plus frontend verification through `make prepush`.
 
 Before handing work off, run:
 
 - `make lint`
 - `go test ./...`
 - `go test -cover ./...`
+- `cd frontend && bun run check`
+- `cd frontend && bun run lint`
+- `cd frontend && bun run test:unit -- --run`
+- `cd frontend && bun run build`
 
 ## Submitting changes
 

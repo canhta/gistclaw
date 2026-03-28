@@ -13,14 +13,6 @@ import (
 	"github.com/canhta/gistclaw/internal/sessions"
 )
 
-type sessionListResponse struct {
-	Sessions   []model.Session `json:"sessions"`
-	NextCursor string          `json:"next_cursor,omitempty"`
-	PrevCursor string          `json:"prev_cursor,omitempty"`
-	HasNext    bool            `json:"has_next"`
-	HasPrev    bool            `json:"has_prev"`
-}
-
 type connectorDeliveryHealthResponse struct {
 	Connectors        []model.ConnectorDeliveryHealth `json:"connectors"`
 	RuntimeConnectors []model.ConnectorHealthSnapshot `json:"runtime_connectors,omitempty"`
@@ -58,14 +50,6 @@ type deliveryQueueResponse struct {
 	HasPrev    bool                      `json:"has_prev"`
 }
 
-type sessionMailboxResponse struct {
-	Session          model.Session           `json:"session"`
-	Messages         []model.SessionMessage  `json:"messages"`
-	Route            *model.SessionRoute     `json:"route,omitempty"`
-	Deliveries       []model.OutboundIntent  `json:"deliveries,omitempty"`
-	DeliveryFailures []model.DeliveryFailure `json:"delivery_failures,omitempty"`
-}
-
 type sessionSendRequest struct {
 	Body          string `json:"body"`
 	FromSessionID string `json:"from_session_id"`
@@ -77,34 +61,6 @@ type sessionSendResponse struct {
 
 type sessionRetryDeliveryResponse struct {
 	Delivery model.OutboundIntent `json:"delivery"`
-}
-
-func (s *Server) handleSessionsIndex(w http.ResponseWriter, r *http.Request) {
-	if s.rt == nil {
-		http.Error(w, "runtime not configured", http.StatusInternalServerError)
-		return
-	}
-
-	activeProject, err := runtime.ActiveProject(r.Context(), s.db)
-	if err != nil {
-		http.Error(w, "failed to load active project", http.StatusInternalServerError)
-		return
-	}
-	filter := sessionListFilterFromRequest(r, 50)
-	filter.ProjectID = activeProject.ID
-	page, err := s.rt.ListAllSessionsPage(r.Context(), filter)
-	if err != nil {
-		http.Error(w, "failed to load sessions", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, sessionListResponse{
-		Sessions:   page.Items,
-		NextCursor: page.NextCursor,
-		PrevCursor: page.PrevCursor,
-		HasNext:    page.HasNext,
-		HasPrev:    page.HasPrev,
-	})
 }
 
 func (s *Server) handleDeliveryHealth(w http.ResponseWriter, r *http.Request) {
@@ -307,56 +263,6 @@ func (s *Server) handleRouteSend(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, sessionSendResponse{Run: run})
-}
-
-func (s *Server) handleSessionDetail(w http.ResponseWriter, r *http.Request) {
-	if s.rt == nil {
-		http.Error(w, "runtime not configured", http.StatusInternalServerError)
-		return
-	}
-
-	sessionID := r.PathValue("id")
-	visible, err := s.sessionVisibleInActiveProject(r.Context(), sessionID)
-	if err != nil {
-		http.Error(w, "failed to load session", http.StatusInternalServerError)
-		return
-	}
-	if !visible {
-		http.NotFound(w, r)
-		return
-	}
-	session, messages, err := s.rt.SessionHistory(r.Context(), sessionID, requestLimit(r, 100))
-	if err != nil {
-		if errors.Is(err, sessions.ErrSessionNotFound) {
-			http.NotFound(w, r)
-			return
-		}
-		http.Error(w, "failed to load session", http.StatusInternalServerError)
-		return
-	}
-
-	var route *model.SessionRoute
-	loadedRoute, err := sessions.NewService(s.db, nil).LoadRouteBySession(r.Context(), sessionID)
-	if err == nil {
-		route = &loadedRoute
-	} else if !errors.Is(err, sessions.ErrSessionRouteNotFound) {
-		http.Error(w, "failed to load session route", http.StatusInternalServerError)
-		return
-	}
-
-	deliveries, failures, err := s.rt.SessionDeliveryState(r.Context(), sessionID, requestLimit(r, 25))
-	if err != nil {
-		http.Error(w, "failed to load session delivery state", http.StatusInternalServerError)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, sessionMailboxResponse{
-		Session:          session,
-		Messages:         messages,
-		Route:            route,
-		Deliveries:       deliveries,
-		DeliveryFailures: failures,
-	})
 }
 
 func (s *Server) handleSessionSend(w http.ResponseWriter, r *http.Request) {

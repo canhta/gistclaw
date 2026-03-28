@@ -3,7 +3,7 @@
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { surfaceForPath } from '$lib/config/surfaces';
 	import './layout.css';
-	import favicon from '$lib/assets/favicon.svg';
+	import logo from '$lib/assets/logo.svg';
 	import type { LayoutData } from './$types';
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
@@ -16,7 +16,7 @@
 	);
 </script>
 
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
+<svelte:head><link rel="icon" href={logo} /></svelte:head>
 
 {#if showShell}
 	<AppShell

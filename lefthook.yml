@@ -10,7 +10,5 @@ pre-commit:
 
 pre-push:
   jobs:
-    - name: lint
-      run: make lint
-    - name: coverage
-      run: make coverage
+    - name: repo-verify
+      run: make prepush

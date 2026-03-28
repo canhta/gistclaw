@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolveEntryHref } from '$lib/bootstrap/load';
 	import { HTTPError, requestJSON } from '$lib/http/client';
+	import logo from '$lib/assets/logo.svg';
 	import type { AuthLoginResponse } from '$lib/types/api';
 	import type { PageData } from './$types';
 
@@ -67,7 +68,17 @@
 <div class="flex min-h-screen items-center justify-center px-4 py-8 lg:px-8">
 	<div class="grid w-full max-w-6xl gap-6 xl:grid-cols-[minmax(0,1.2fr)_28rem]">
 		<section class="gc-panel px-6 py-6 lg:px-8 lg:py-8">
-			<p class="gc-stamp">Browser access</p>
+			<div class="flex items-start gap-4">
+				<img
+					src={logo}
+					alt="GistClaw logo"
+					class="h-16 w-16 border-2 border-[var(--gc-border-strong)] bg-[var(--gc-canvas)] p-1"
+				/>
+				<div>
+					<p class="gc-stamp">Browser access</p>
+					<p class="gc-machine mt-2">GistClaw identity</p>
+				</div>
+			</div>
 			<h1 class="gc-page-title mt-4">Bring the local machine under operator control</h1>
 			<p class="gc-copy mt-5 max-w-2xl text-[var(--gc-text-secondary)]">
 				Sign in to open the GistClaw control deck. The runtime stays local-first, while this browser

@@ -2,17 +2,13 @@ package web
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -377,7 +373,7 @@ func TestRuns(t *testing.T) {
 		if resp.ID != "run-child-approval-node" {
 			t.Fatalf("unexpected node detail identity: %+v", resp)
 		}
-		if resp.SessionURL != "/operate/sessions/sess-child-approval-node" {
+		if resp.SessionURL != "/conversations/sess-child-approval-node" {
 			t.Fatalf("expected session detail URL, got %+v", resp)
 		}
 		if resp.Approval.ID != approvalID {
@@ -398,7 +394,7 @@ func TestRuns(t *testing.T) {
 		if resp.Approval.RequestedAtLabel != "2026-03-25 08:07:00 UTC" {
 			t.Fatalf("expected requested-at label, got %+v", resp.Approval)
 		}
-		if resp.Approval.ResolveURL != "/recover/approvals/"+approvalID+"/resolve" {
+		if resp.Approval.ResolveURL != "/api/recover/approvals/"+approvalID+"/resolve" {
 			t.Fatalf("expected approval resolve URL, got %+v", resp.Approval)
 		}
 	})
@@ -418,7 +414,7 @@ func TestRuns(t *testing.T) {
 }
 
 func TestSessionsProjectScoping(t *testing.T) {
-	t.Run("sessions page hides other project sessions", func(t *testing.T) {
+	t.Run("conversations index hides other project sessions", func(t *testing.T) {
 		h := newServerHarness(t)
 		mainRun := h.startFrontSession(t, "review the main project")
 
@@ -440,23 +436,39 @@ func TestSessionsProjectScoping(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/sessions", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/conversations", nil)
 
 		h.server.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		body := rr.Body.String()
-		if !strings.Contains(body, mainRun.SessionID) {
-			t.Fatalf("expected active project session to be visible, got:\n%s", body)
+
+		var resp struct {
+			Sessions []struct {
+				ID             string `json:"id"`
+				ConversationID string `json:"conversation_id"`
+			} `json:"sessions"`
 		}
-		if strings.Contains(body, otherRun.SessionID) || strings.Contains(body, otherRun.ConversationID) {
-			t.Fatalf("expected other project session to be hidden, got:\n%s", body)
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode conversations index: %v", err)
+		}
+
+		foundMain := false
+		for _, item := range resp.Sessions {
+			if item.ID == mainRun.SessionID {
+				foundMain = true
+			}
+			if item.ID == otherRun.SessionID || item.ConversationID == otherRun.ConversationID {
+				t.Fatalf("expected other project session to be hidden, got %+v", resp.Sessions)
+			}
+		}
+		if !foundMain {
+			t.Fatalf("expected active project session to be visible, got %+v", resp.Sessions)
 		}
 	})
 
-	t.Run("session detail hides other project session", func(t *testing.T) {
+	t.Run("conversation detail hides other project session", func(t *testing.T) {
 		h := newServerHarness(t)
 		otherRoot := t.TempDir()
 		h.insertProject(t, "seo-test", otherRoot)
@@ -476,7 +488,7 @@ func TestSessionsProjectScoping(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/sessions/"+otherRun.SessionID, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/conversations/"+otherRun.SessionID, nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -485,7 +497,7 @@ func TestSessionsProjectScoping(t *testing.T) {
 		}
 	})
 
-	t.Run("team page follows active project storage", func(t *testing.T) {
+	t.Run("team api follows active project storage", func(t *testing.T) {
 		h := newServerHarness(t)
 		otherRoot := t.TempDir()
 		otherProjectID := h.insertProject(t, "seo-test", otherRoot)
@@ -505,7 +517,7 @@ agents:
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/configure/team", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/team", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -555,7 +567,7 @@ func TestRoutesDeliveriesProjectScoping(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/recover/routes-deliveries?connector_id=telegram&route_status=all&delivery_status=all", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/recover?connector_id=telegram&route_status=all&delivery_status=all", nil)
 
 	h.server.ServeHTTP(rr, req)
 
@@ -592,7 +604,7 @@ func TestProjectScopedAPIAccess(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+otherRun.SessionID, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/conversations/"+otherRun.SessionID, nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -784,784 +796,40 @@ func TestPageRouteMap(t *testing.T) {
 	})
 }
 
-func TestApprovals(t *testing.T) {
-	t.Run("page renders approvals", func(t *testing.T) {
-		h := newServerHarness(t)
-		h.insertApprovalAt(t, "run-approval-ui", "apply_patch", "internal/web/templates/team.html", "pending", "", "2026-03-25 10:00:00")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/recover/approvals", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-		body := rr.Body.String()
-		for _, want := range []string{
-			"Approvals",
-			`class="approval-filter-grid"`,
-			`filter-action-group`,
-			`class="approval-filter-actions"`,
-			`class="field-label field-label-ghost"`,
-			`approval-card-actions`,
-			`data-confirm="Allow this change?"`,
-			`data-confirm="Deny this change?"`,
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected approvals page to contain %q:\n%s", want, body)
-			}
-		}
-	})
-
-	t.Run("page formats resolved approval metadata", func(t *testing.T) {
-		h := newServerHarness(t)
-		h.insertApprovalAt(t, "run-approval-resolved", "bash", "/tmp/fix.sh", "approved", "operator", "2026-03-25 10:00:00")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/recover/approvals?status=approved", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		for _, want := range []string{"Approved", "2026-03-25 10:00:00 UTC", "by operator"} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected resolved approval metadata %q:\n%s", want, body)
-			}
-		}
-		if strings.Contains(body, "2026-03-25T10:00:00Z") {
-			t.Fatalf("expected resolved approval timestamp to be human-formatted:\n%s", body)
-		}
-	})
-
-	t.Run("page renders empty recovery state", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/recover/approvals", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-		for _, want := range []string{"Nothing is waiting on your approval.", `href="/work"`} {
-			if !strings.Contains(rr.Body.String(), want) {
-				t.Fatalf("expected empty approvals state to contain %q, got:\n%s", want, rr.Body.String())
-			}
-		}
-	})
-
-	t.Run("page filters and paginates approvals", func(t *testing.T) {
-		h := newServerHarness(t)
-		h.insertApprovalAt(t, "run-approval-new", "bash", "/tmp/new", "pending", "", "2026-03-25 10:00:00")
-		h.insertApprovalAt(t, "run-approval-mid", "git", "/tmp/mid", "approved", "operator", "2026-03-25 09:00:00")
-		h.insertApprovalAt(t, "run-approval-old", "bash", "/tmp/old", "pending", "", "2026-03-25 08:00:00")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/recover/approvals?q=bash&status=pending&limit=1", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-		body := rr.Body.String()
-		if !strings.Contains(body, `action="/recover/approvals/ticket-run-approval-new/resolve"`) {
-			t.Fatalf("expected first approval page to contain newest pending approval, got:\n%s", body)
-		}
-		if strings.Contains(body, `action="/recover/approvals/ticket-run-approval-mid/resolve"`) || strings.Contains(body, `action="/recover/approvals/ticket-run-approval-old/resolve"`) {
-			t.Fatalf("expected first approval page to contain only newest filtered approval, got:\n%s", body)
-		}
-		if !strings.Contains(body, "direction=next") || !strings.Contains(body, "limit=1") {
-			t.Fatalf("expected next-page controls in first approval page, got:\n%s", body)
-		}
-
-		rr = httptest.NewRecorder()
-		req = httptest.NewRequest(http.MethodGet, "/recover/approvals?q=bash&status=pending&limit=1&cursor=2026-03-25+10%3A00%3A00%7Cticket-run-approval-new&direction=next", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected second approval page 200, got %d", rr.Code)
-		}
-		body = rr.Body.String()
-		if !strings.Contains(body, `action="/recover/approvals/ticket-run-approval-old/resolve"`) {
-			t.Fatalf("expected second approval page to contain older pending approval, got:\n%s", body)
-		}
-		if strings.Contains(body, `action="/recover/approvals/ticket-run-approval-new/resolve"`) || strings.Contains(body, `action="/recover/approvals/ticket-run-approval-mid/resolve"`) {
-			t.Fatalf("expected second approval page to contain only older filtered approval, got:\n%s", body)
-		}
-	})
-}
-
-func TestSettings(t *testing.T) {
-	h := newServerHarness(t)
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/configure/settings", nil)
-
-	h.server.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", rr.Code)
-	}
-	if !strings.Contains(rr.Body.String(), "Settings") {
-		t.Fatalf("expected settings page, got:\n%s", rr.Body.String())
-	}
-	if !strings.Contains(rr.Body.String(), "Browser access, limits, and machine credentials.") {
-		t.Fatalf("expected settings page to use the new machine/browser copy, got:\n%s", rr.Body.String())
-	}
-	if strings.Contains(rr.Body.String(), "Team composition now lives in Configure &gt; Team.") {
-		t.Fatalf("expected settings page to drop the old team guidance, got:\n%s", rr.Body.String())
-	}
-}
-
-func TestTeam(t *testing.T) {
-	t.Run("team page renders configured default team", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/configure/team", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-
-		body := rr.Body.String()
-		for _, want := range []string{
-			"Team",
-			"Repo Task Team",
-			"Active Setup",
-			"Create Setup",
-			"Copy Setup",
-			"Delete Setup",
-			"Lead agent",
-			"Base Profile",
-			"Tool Families",
-			"Delegation Kinds",
-			"Specialist Visibility",
-			"Can Message",
-			"assistant",
-			"patcher",
-			"reviewer",
-			"operator",
-			"write",
-			`name="agent_0_base_profile"`,
-			`name="agent_0_tool_families"`,
-			`name="agent_0_delegation_kinds"`,
-			`name="agent_0_specialist_summary_visibility"`,
-			`name="agent_0_can_message"`,
-			`name="agent_0_id"`,
-			`name="agent_0_soul_file"`,
-			`type="checkbox"`,
-			`name="active_profile"`,
-			`name="create_profile_name"`,
-			`name="clone_source_profile"`,
-			`name="clone_profile_name"`,
-			`name="delete_profile_name"`,
-			`<option value="operator"`,
-			`value="write"`,
-			`value="reviewer" checked`,
-			`Add Agent`,
-			`/configure/team/export`,
-			`name="import_file"`,
-			`type="hidden" name="agent_count" value="3"`,
-			`class="team-summary-head"`,
-			`class="team-file-tools"`,
-			`class="team-primary-actions"`,
-			`class="team-utility-bar"`,
-			`data-confirm="Use this setup?"`,
-			`data-confirm="Create this setup?"`,
-			`data-confirm="Copy this setup?"`,
-			`data-confirm="Delete this setup?"`,
-			`data-confirm="Add another agent?"`,
-			`data-confirm="Import this setup file? Unsaved edits will be replaced."`,
-			`data-confirm="Remove assistant from this setup? Save to apply the change."`,
-			`data-confirm="Save this setup?"`,
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected body to contain %q:\n%s", want, body)
-			}
-		}
-		for _, unwanted := range []string{
-			`name="agent_0_can_message" type="text"`,
-		} {
-			if strings.Contains(body, unwanted) {
-				t.Fatalf("expected team page to avoid free-text relationship fields %q:\n%s", unwanted, body)
-			}
-		}
-	})
-
-	t.Run("profile selection switches the editor to the selected profile", func(t *testing.T) {
-		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/configure/team")
-
-		if err := teams.CreateProfile(h.projectProfilesRoot(), "review"); err != nil {
-			t.Fatalf("CreateProfile: %v", err)
-		}
-		reviewDir := teams.ProfileDir(h.projectProfilesRoot(), "review")
-		cfg, err := teams.LoadConfig(reviewDir)
-		if err != nil {
-			t.Fatalf("LoadConfig review: %v", err)
-		}
-		cfg.Name = "Review Team"
-		if err := teams.WriteConfig(reviewDir, cfg); err != nil {
-			t.Fatalf("WriteConfig review: %v", err)
-		}
-
-		form := url.Values{
-			"intent":         {"select_profile"},
-			"active_profile": {"review"},
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", "http://example.com")
-		req.Host = "example.com"
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		profile, err := h.rt.ActiveTeamProfile(context.Background())
-		if err != nil {
-			t.Fatalf("ActiveTeamProfile: %v", err)
-		}
-		if profile != "review" {
-			t.Fatalf("expected active profile %q, got %q", "review", profile)
-		}
-
-		rr = httptest.NewRecorder()
-		req = httptest.NewRequest(http.MethodGet, "/configure/team", nil)
-		h.server.ServeHTTP(rr, req)
-		if !strings.Contains(rr.Body.String(), "Review Team") {
-			t.Fatalf("expected team page to load selected review profile:\n%s", rr.Body.String())
-		}
-	})
-
-	t.Run("profile create seeds a new profile and selects it", func(t *testing.T) {
-		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/configure/team")
-
-		form := url.Values{
-			"intent":              {"create_profile"},
-			"create_profile_name": {"review"},
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", "http://example.com")
-		req.Host = "example.com"
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		if _, err := os.Stat(filepath.Join(teams.ProfileDir(h.projectProfilesRoot(), "review"), "team.yaml")); err != nil {
-			t.Fatalf("expected new profile team.yaml: %v", err)
-		}
-		profile, err := h.rt.ActiveTeamProfile(context.Background())
-		if err != nil {
-			t.Fatalf("ActiveTeamProfile: %v", err)
-		}
-		if profile != "review" {
-			t.Fatalf("expected active profile %q, got %q", "review", profile)
-		}
-	})
-
-	t.Run("profile clone copies the source profile and selects the clone", func(t *testing.T) {
-		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/configure/team")
-
-		form := url.Values{
-			"intent":               {"clone_profile"},
-			"clone_source_profile": {"default"},
-			"clone_profile_name":   {"review"},
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", "http://example.com")
-		req.Host = "example.com"
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		cloned, err := teams.LoadConfig(teams.ProfileDir(h.projectProfilesRoot(), "review"))
-		if err != nil {
-			t.Fatalf("LoadConfig cloned profile: %v", err)
-		}
-		if cloned.Name != "Repo Task Team" {
-			t.Fatalf("expected cloned team name %q, got %q", "Repo Task Team", cloned.Name)
-		}
-		profile, err := h.rt.ActiveTeamProfile(context.Background())
-		if err != nil {
-			t.Fatalf("ActiveTeamProfile: %v", err)
-		}
-		if profile != "review" {
-			t.Fatalf("expected active profile %q, got %q", "review", profile)
-		}
-	})
-
-	t.Run("profile delete removes an inactive profile", func(t *testing.T) {
-		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/configure/team")
-
-		if err := teams.CreateProfile(h.projectProfilesRoot(), "review"); err != nil {
-			t.Fatalf("CreateProfile: %v", err)
-		}
-
-		form := url.Values{
-			"intent":              {"delete_profile"},
-			"delete_profile_name": {"review"},
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", "http://example.com")
-		req.Host = "example.com"
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		if _, err := os.Stat(teams.ProfileDir(h.projectProfilesRoot(), "review")); !os.IsNotExist(err) {
-			t.Fatalf("expected deleted profile dir to be removed, err=%v", err)
-		}
-	})
-
-	t.Run("team update rewrites default team and refreshes runtime snapshot", func(t *testing.T) {
-		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/configure/team")
-
-		cfg, err := teams.LoadConfig(h.teamDir)
-		if err != nil {
-			t.Fatalf("load config: %v", err)
-		}
-		form := teamFormValues(cfg)
-		form.Set("intent", "save")
-		form.Set("name", "Platform Crew")
-		form.Set("front_agent", "reviewer")
-		form.Set("agent_0_role", "front assistant")
-		form.Set("agent_0_base_profile", "operator")
-		form.Del("agent_0_tool_families")
-		form.Add("agent_0_tool_families", "repo_read")
-		form.Add("agent_0_tool_families", "runtime_capability")
-		form.Add("agent_0_tool_families", "delegate")
-		form.Del("agent_0_delegation_kinds")
-		form.Add("agent_0_delegation_kinds", "write")
-		form.Add("agent_0_delegation_kinds", "review")
-		form.Set("agent_0_specialist_summary_visibility", "full")
-		form.Del("agent_0_can_message")
-		form.Add("agent_0_can_message", "patcher")
-		form.Add("agent_0_can_message", "reviewer")
-		form.Set("agent_1_role", "scoped write specialist")
-		form.Set("agent_1_base_profile", "write")
-		form.Del("agent_1_tool_families")
-		form.Add("agent_1_tool_families", "repo_read")
-		form.Add("agent_1_tool_families", "repo_write")
-		form.Del("agent_1_can_message")
-		form.Add("agent_1_can_message", "assistant")
-		form.Add("agent_1_can_message", "reviewer")
-		form.Set("agent_1_specialist_summary_visibility", "basic")
-		form.Set("agent_2_role", "diff reviewer")
-		form.Set("agent_2_base_profile", "review")
-		form.Del("agent_2_tool_families")
-		form.Add("agent_2_tool_families", "repo_read")
-		form.Add("agent_2_tool_families", "diff_review")
-		form.Del("agent_2_can_message")
-		form.Add("agent_2_can_message", "assistant")
-		form.Add("agent_2_can_message", "patcher")
-		form.Set("agent_2_specialist_summary_visibility", "basic")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", "http://example.com")
-		req.Host = "example.com"
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		if rr.Header().Get("Location") != "/configure/team" {
-			t.Fatalf("expected redirect to /configure/team, got %q", rr.Header().Get("Location"))
-		}
-
-		specData, err := os.ReadFile(filepath.Join(h.projectProfileDir("default"), "team.yaml"))
-		if err != nil {
-			t.Fatalf("read team file: %v", err)
-		}
-		spec, err := teams.LoadSpec(specData)
-		if err != nil {
-			t.Fatalf("load team spec: %v", err)
-		}
-		if spec.Name != "Platform Crew" {
-			t.Fatalf("expected updated team name, got %q", spec.Name)
-		}
-		if spec.FrontAgent != "reviewer" {
-			t.Fatalf("expected updated front agent, got %q", spec.FrontAgent)
-		}
-		if spec.Agents[0].BaseProfile != model.BaseProfileOperator {
-			t.Fatalf("expected assistant base_profile %q, got %q", model.BaseProfileOperator, spec.Agents[0].BaseProfile)
-		}
-		if got := spec.Agents[0].ToolFamilies; len(got) != 3 || got[0] != model.ToolFamilyRepoRead || got[1] != model.ToolFamilyRuntimeCapability || got[2] != model.ToolFamilyDelegate {
-			t.Fatalf("expected assistant tool families [repo_read runtime_capability delegate], got %#v", got)
-		}
-		if got := spec.Agents[0].DelegationKinds; len(got) != 2 || got[0] != model.DelegationKindWrite || got[1] != model.DelegationKindReview {
-			t.Fatalf("expected assistant delegation kinds [write review], got %#v", got)
-		}
-		if got := spec.Agents[2].CanMessage; len(got) != 2 || got[0] != "assistant" || got[1] != "patcher" {
-			t.Fatalf("expected reviewer can_message [assistant patcher], got %#v", got)
-		}
-
-		run, err := h.rt.Start(context.Background(), runtime.StartRun{
-			ConversationID: "conv-team-refresh",
-			AgentID:        "reviewer",
-			Objective:      "confirm refreshed snapshot",
-			CWD:            h.workspaceRoot,
-			PreviewOnly:    true,
-		})
-		if err != nil {
-			t.Fatalf("start run with refreshed snapshot: %v", err)
-		}
-		if run.TeamID != "Platform Crew" {
-			t.Fatalf("expected refreshed runtime team id, got %q", run.TeamID)
-		}
-	})
-
-	t.Run("add member reshapes editor without persisting until save", func(t *testing.T) {
-		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/configure/team")
-
-		cfg, err := teams.LoadConfig(h.teamDir)
-		if err != nil {
-			t.Fatalf("load config: %v", err)
-		}
-		form := teamFormValues(cfg)
-		form.Set("intent", "add_member")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", "http://example.com")
-		req.Host = "example.com"
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		for _, want := range []string{
-			"New member added. Save Team to apply the change.",
-			`name="agent_3_id"`,
-			`value="agent_1"`,
-			`value="agent_1.soul.yaml"`,
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected add-member response to contain %q:\n%s", want, body)
-			}
-		}
-
-		reloaded, err := teams.LoadConfig(h.teamDir)
-		if err != nil {
-			t.Fatalf("reload config: %v", err)
-		}
-		if len(reloaded.Agents) != 3 {
-			t.Fatalf("expected add-member action to keep stored team unchanged until save, got %d agents", len(reloaded.Agents))
-		}
-	})
-
-	t.Run("remove member blocks deleting current front agent without reassignment", func(t *testing.T) {
-		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/configure/team")
-
-		cfg, err := teams.LoadConfig(h.teamDir)
-		if err != nil {
-			t.Fatalf("load config: %v", err)
-		}
-		form := teamFormValues(cfg)
-		form.Set("intent", "remove_member")
-		form.Set("remove_agent_index", "0")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", "http://example.com")
-		req.Host = "example.com"
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusUnprocessableEntity {
-			t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		if !strings.Contains(rr.Body.String(), "choose another front agent before removing assistant") {
-			t.Fatalf("expected front-agent guardrail, got:\n%s", rr.Body.String())
-		}
-	})
-
-	t.Run("remove member with reassigned front agent updates editor state", func(t *testing.T) {
-		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/configure/team")
-
-		cfg, err := teams.LoadConfig(h.teamDir)
-		if err != nil {
-			t.Fatalf("load config: %v", err)
-		}
-		form := teamFormValues(cfg)
-		form.Set("front_agent", "patcher")
-		form.Set("intent", "remove_member")
-		form.Set("remove_agent_index", "0")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", "http://example.com")
-		req.Host = "example.com"
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		if strings.Contains(body, `name="agent_0_id" value="assistant"`) {
-			t.Fatalf("expected removed assistant to be absent from unsaved editor state:\n%s", body)
-		}
-		for _, want := range []string{
-			"Member removed. Save Team to apply the change.",
-			`type="hidden" name="agent_count" value="2"`,
-			`<option value="patcher" selected>`,
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected remove-member response to contain %q:\n%s", want, body)
-			}
-		}
-	})
-
-	t.Run("team export downloads editable team file", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/configure/team/export", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		if got := rr.Header().Get("Content-Disposition"); !strings.Contains(got, "attachment") || !strings.Contains(got, "team.yaml") {
-			t.Fatalf("expected attachment header for team export, got %q", got)
-		}
-		for _, want := range []string{
-			"name: Repo Task Team",
-			"role: front assistant",
-			"base_profile: operator",
-			"tool_families:",
-			"soul_file: assistant.soul.yaml",
-		} {
-			if !strings.Contains(rr.Body.String(), want) {
-				t.Fatalf("expected export to contain %q:\n%s", want, rr.Body.String())
-			}
-		}
-	})
-
-	t.Run("team import loads editable team file into the editor", func(t *testing.T) {
-		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "/configure/team")
-
-		var body bytes.Buffer
-		writer := multipart.NewWriter(&body)
-		if err := writer.WriteField("intent", "import"); err != nil {
-			t.Fatalf("write intent field: %v", err)
-		}
-		part, err := writer.CreateFormFile("import_file", "team.yaml")
-		if err != nil {
-			t.Fatalf("create import file: %v", err)
-		}
-		imported := `
-name: Imported Crew
-front_agent: reviewer
-agents:
-  - id: reviewer
-    soul_file: reviewer.soul.yaml
-    role: imported reviewer
-    base_profile: review
-    tool_families: [repo_read, diff_review]
-    can_message: [assistant, patcher]
-    specialist_summary_visibility: basic
-  - id: patcher
-    soul_file: patcher.soul.yaml
-    role: imported patcher
-    base_profile: write
-    tool_families: [repo_read, repo_write]
-    can_message: [reviewer]
-    specialist_summary_visibility: basic
-  - id: assistant
-    soul_file: assistant.soul.yaml
-    role: imported assistant
-    base_profile: operator
-    tool_families: [repo_read, runtime_capability, delegate]
-    delegation_kinds: [write, review]
-    can_message: [patcher, reviewer]
-    specialist_summary_visibility: full
-  - id: researcher
-    role: imported researcher
-    base_profile: research
-    tool_families: [repo_read, web_read]
-    can_message: [assistant]
-    specialist_summary_visibility: basic
-`
-		if _, err := part.Write([]byte(imported)); err != nil {
-			t.Fatalf("write import file: %v", err)
-		}
-		if err := writer.Close(); err != nil {
-			t.Fatalf("close multipart writer: %v", err)
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/configure/team", &body)
-		req.Header.Set("Content-Type", writer.FormDataContentType())
-		req.Header.Set("Origin", "http://example.com")
-		req.Host = "example.com"
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		html := rr.Body.String()
-		for _, want := range []string{
-			"Imported file loaded. Save Team to apply the change.",
-			"Imported Crew",
-			`name="agent_3_id"`,
-			`value="researcher"`,
-			`value="researcher.soul.yaml"`,
-			`<option value="reviewer" selected>`,
-			`value="web_read" checked`,
-		} {
-			if !strings.Contains(html, want) {
-				t.Fatalf("expected import response to contain %q:\n%s", want, html)
-			}
-		}
-
-		reloaded, err := teams.LoadConfig(h.teamDir)
-		if err != nil {
-			t.Fatalf("reload config: %v", err)
-		}
-		if reloaded.Name != "Repo Task Team" || len(reloaded.Agents) != 3 {
-			t.Fatalf("expected import to keep stored team unchanged until save, got %+v", reloaded)
-		}
-	})
-}
-
-func TestWebhooks(t *testing.T) {
-	t.Run("whatsapp webhook route is absent when not configured", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/webhooks/whatsapp", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusNotFound {
-			t.Fatalf("expected 404, got %d", rr.Code)
-		}
-	})
-}
-
-func TestRunSubmit(t *testing.T) {
-	t.Run("legacy start-task route is unavailable on GET", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/start-task", nil)
-		req.Header.Set("Authorization", "Bearer "+h.adminToken)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusNotFound {
-			t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
-		}
-	})
-
-	t.Run("legacy start-task route is unavailable on POST", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task="))
-		req.Header.Set("Authorization", "Bearer "+h.adminToken)
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusNotFound {
-			t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
-		}
-	})
-}
-
 func TestApprovalsResolve(t *testing.T) {
-	t.Run("approve redirects to approvals list", func(t *testing.T) {
+	t.Run("approve returns json", func(t *testing.T) {
 		h := newServerHarness(t)
 		ticketID := h.insertApproval(t, "run-approve", "bash", "echo hi")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/recover/approvals/"+ticketID+"/resolve",
+		req := httptest.NewRequest(http.MethodPost, "/api/recover/approvals/"+ticketID+"/resolve",
 			strings.NewReader("decision=approved"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
 
 		h.server.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
-		}
-		if rr.Header().Get("Location") != "/recover/approvals" {
-			t.Fatalf("expected redirect to /recover/approvals, got %q", rr.Header().Get("Location"))
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d\nbody: %s", rr.Code, rr.Body.String())
 		}
 	})
 
-	t.Run("deny redirects to approvals list", func(t *testing.T) {
+	t.Run("deny returns json", func(t *testing.T) {
 		h := newServerHarness(t)
 		ticketID := h.insertApproval(t, "run-deny", "bash", "rm -rf /")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/recover/approvals/"+ticketID+"/resolve",
+		req := httptest.NewRequest(http.MethodPost, "/api/recover/approvals/"+ticketID+"/resolve",
 			strings.NewReader("decision=denied"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Accept", "application/json")
 
 		h.server.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d\nbody: %s", rr.Code, rr.Body.String())
 		}
 	})
 
@@ -1570,7 +838,7 @@ func TestApprovalsResolve(t *testing.T) {
 		ticketID := h.insertApproval(t, "run-approve-json", "bash", "echo hi")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/recover/approvals/"+ticketID+"/resolve",
+		req := httptest.NewRequest(http.MethodPost, "/api/recover/approvals/"+ticketID+"/resolve",
 			strings.NewReader("decision=approved"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1639,7 +907,7 @@ func TestApprovalsResolve(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/recover/approvals/"+ticketID+"/resolve", strings.NewReader("decision=approved"))
+		req := httptest.NewRequest(http.MethodPost, "/api/recover/approvals/"+ticketID+"/resolve", strings.NewReader("decision=approved"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		req.Header.Set("Accept", "application/json")
@@ -1704,7 +972,7 @@ func TestApprovalsResolve(t *testing.T) {
 		ticketID := h.insertApproval(t, "run-bad", "bash", "echo")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/recover/approvals/"+ticketID+"/resolve",
+		req := httptest.NewRequest(http.MethodPost, "/api/recover/approvals/"+ticketID+"/resolve",
 			strings.NewReader("decision=maybe"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -1713,63 +981,6 @@ func TestApprovalsResolve(t *testing.T) {
 
 		if rr.Code != http.StatusBadRequest {
 			t.Fatalf("expected 400, got %d", rr.Code)
-		}
-	})
-}
-
-func TestSettingsUpdate(t *testing.T) {
-	t.Run("update permission settings redirects to settings", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/configure/settings",
-			strings.NewReader("approval_mode=auto_approve&host_access_mode=elevated"))
-		req.Header.Set("Authorization", "Bearer "+h.adminToken)
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
-		}
-		if rr.Header().Get("Location") != "/configure/settings" {
-			t.Fatalf("expected redirect to /configure/settings, got %q", rr.Header().Get("Location"))
-		}
-	})
-
-	t.Run("settings page masks admin token", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/configure/settings", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-		// The raw admin token must not appear verbatim in the page
-		if strings.Contains(rr.Body.String(), h.adminToken) {
-			t.Fatalf("raw admin token should not appear in settings page")
-		}
-	})
-
-	t.Run("settings page shows storage root and permission controls", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/configure/settings", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-		body := rr.Body.String()
-		for _, want := range []string{"Storage Root", "Approval Mode", "Host Access Mode"} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected settings page copy %q, got:\n%s", want, body)
-			}
 		}
 	})
 }
@@ -1887,12 +1098,13 @@ func TestActionPaths(t *testing.T) {
 		{name: "run events", got: runEventsPath("run 1"), want: "/api/work/run%201/events"},
 		{name: "run node detail template", got: runNodeDetailTemplatePath("run 1"), want: "/api/work/run%201/nodes/__RUN_ID__"},
 		{name: "work dismiss", got: workDismissPath("run 1", "interrupted"), want: "/api/work/run%201/dismiss"},
-		{name: "session message", got: sessionMessagePath("session 1"), want: "/operate/sessions/session%201/messages"},
-		{name: "session retry delivery", got: sessionRetryDeliveryPath("session 1", "delivery/1"), want: "/operate/sessions/session%201/deliveries/delivery%2F1/retry"},
-		{name: "approval resolve", got: approvalResolvePath("approval/1"), want: "/recover/approvals/approval%2F1/resolve"},
-		{name: "route send", got: routeSendPath("route 1"), want: "/recover/routes-deliveries/routes/route%201/messages"},
-		{name: "route deactivate", got: routeDeactivatePath("route 1"), want: "/recover/routes-deliveries/routes/route%201/deactivate"},
-		{name: "delivery retry", got: deliveryRetryPath("delivery/1"), want: "/recover/routes-deliveries/deliveries/delivery%2F1/retry"},
+		{name: "session detail", got: sessionDetailPath("session 1"), want: "/conversations/session%201"},
+		{name: "session message", got: sessionMessagePath("session 1"), want: "/api/conversations/session%201/messages"},
+		{name: "session retry delivery", got: sessionRetryDeliveryPath("session 1", "delivery/1"), want: "/api/conversations/session%201/deliveries/delivery%2F1/retry"},
+		{name: "approval resolve", got: approvalResolvePath("approval/1"), want: "/api/recover/approvals/approval%2F1/resolve"},
+		{name: "route send", got: routeSendPath("route 1"), want: "/api/recover/routes/route%201/messages"},
+		{name: "route deactivate", got: routeDeactivatePath("route 1"), want: "/api/recover/routes/route%201/deactivate"},
+		{name: "delivery retry", got: deliveryRetryPath("delivery/1"), want: "/api/recover/deliveries/delivery%2F1/retry"},
 	}
 
 	for _, tc := range cases {
@@ -1964,37 +1176,6 @@ func TestProjectLayoutData_UsesActiveProjectOnly(t *testing.T) {
 	if len(layout.Options) != 0 {
 		t.Fatalf("expected no switcher options without an active project, got %d", len(layout.Options))
 	}
-}
-
-func TestSettingsBudget(t *testing.T) {
-	t.Run("settings page shows budget fields", func(t *testing.T) {
-		h := newServerHarness(t)
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/configure/settings", nil)
-		h.server.ServeHTTP(rr, req)
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-		body := rr.Body.String()
-		for _, want := range []string{"per_run_token_budget", "daily_cost_cap_usd"} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("settings page missing %q field", want)
-			}
-		}
-	})
-
-	t.Run("update budget settings redirects to settings", func(t *testing.T) {
-		h := newServerHarness(t)
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/configure/settings",
-			strings.NewReader("per_run_token_budget=100000&daily_cost_cap_usd=5.0"))
-		req.Header.Set("Authorization", "Bearer "+h.adminToken)
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		h.server.ServeHTTP(rr, req)
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
-		}
-	})
 }
 
 func TestAdminToken(t *testing.T) {
@@ -2766,7 +1947,7 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/conversations", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -2778,7 +1959,9 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		var resp struct {
-			Sessions []model.Session `json:"sessions"`
+			Sessions []struct {
+				ID string `json:"id"`
+			} `json:"sessions"`
 		}
 		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("decode response: %v", err)
@@ -2797,7 +1980,7 @@ func TestSessionAPI(t *testing.T) {
 		worker := h.spawnWorkerSession(t, front.SessionID, "researcher", "Inspect docs.")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/sessions?role=worker&q=researcher", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/conversations?role=worker&q=researcher", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -2806,7 +1989,9 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		var resp struct {
-			Sessions []model.Session `json:"sessions"`
+			Sessions []struct {
+				ID string `json:"id"`
+			} `json:"sessions"`
 		}
 		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("decode response: %v", err)
@@ -2849,18 +2034,22 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/sessions?limit=1", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/conversations?limit=1", nil)
 		h.server.ServeHTTP(rr, req)
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 		}
 
 		var first struct {
-			Sessions   []model.Session `json:"sessions"`
-			NextCursor string          `json:"next_cursor"`
-			PrevCursor string          `json:"prev_cursor"`
-			HasNext    bool            `json:"has_next"`
-			HasPrev    bool            `json:"has_prev"`
+			Sessions []struct {
+				ID string `json:"id"`
+			} `json:"sessions"`
+			Paging struct {
+				NextURL string `json:"next_url"`
+				PrevURL string `json:"prev_url"`
+				HasNext bool   `json:"has_next"`
+				HasPrev bool   `json:"has_prev"`
+			} `json:"paging"`
 		}
 		if err := json.Unmarshal(rr.Body.Bytes(), &first); err != nil {
 			t.Fatalf("decode first page: %v", err)
@@ -2868,23 +2057,27 @@ func TestSessionAPI(t *testing.T) {
 		if len(first.Sessions) != 1 || first.Sessions[0].ID != runs[2].SessionID {
 			t.Fatalf("expected newest session first, got %+v", first.Sessions)
 		}
-		if !first.HasNext || first.NextCursor == "" || first.HasPrev || first.PrevCursor != "" {
+		if !first.Paging.HasNext || first.Paging.NextURL == "" || first.Paging.HasPrev || first.Paging.PrevURL != "" {
 			t.Fatalf("unexpected first page metadata: %+v", first)
 		}
 
 		rr = httptest.NewRecorder()
-		req = httptest.NewRequest(http.MethodGet, "/api/sessions?limit=1&cursor="+url.QueryEscape(first.NextCursor)+"&direction=next", nil)
+		req = httptest.NewRequest(http.MethodGet, first.Paging.NextURL, nil)
 		h.server.ServeHTTP(rr, req)
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 		}
 
 		var second struct {
-			Sessions   []model.Session `json:"sessions"`
-			NextCursor string          `json:"next_cursor"`
-			PrevCursor string          `json:"prev_cursor"`
-			HasNext    bool            `json:"has_next"`
-			HasPrev    bool            `json:"has_prev"`
+			Sessions []struct {
+				ID string `json:"id"`
+			} `json:"sessions"`
+			Paging struct {
+				NextURL string `json:"next_url"`
+				PrevURL string `json:"prev_url"`
+				HasNext bool   `json:"has_next"`
+				HasPrev bool   `json:"has_prev"`
+			} `json:"paging"`
 		}
 		if err := json.Unmarshal(rr.Body.Bytes(), &second); err != nil {
 			t.Fatalf("decode second page: %v", err)
@@ -2892,7 +2085,7 @@ func TestSessionAPI(t *testing.T) {
 		if len(second.Sessions) != 1 || second.Sessions[0].ID != runs[1].SessionID {
 			t.Fatalf("expected middle session second, got %+v", second.Sessions)
 		}
-		if !second.HasPrev || second.PrevCursor == "" {
+		if !second.Paging.HasPrev || second.Paging.PrevURL == "" {
 			t.Fatalf("expected previous cursor on second page, got %+v", second)
 		}
 	})
@@ -2910,7 +2103,7 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+front.SessionID, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/conversations/"+front.SessionID, nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -2919,8 +2112,12 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		var resp struct {
-			Session  model.Session          `json:"session"`
-			Messages []model.SessionMessage `json:"messages"`
+			Session struct {
+				ID string `json:"id"`
+			} `json:"session"`
+			Messages []struct {
+				Body runStructuredTextView `json:"body"`
+			} `json:"messages"`
 		}
 		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("decode response: %v", err)
@@ -2931,8 +2128,8 @@ func TestSessionAPI(t *testing.T) {
 		if len(resp.Messages) != 3 {
 			t.Fatalf("expected 3 mailbox messages, got %d", len(resp.Messages))
 		}
-		if resp.Messages[0].Body != "Inspect the repo." || resp.Messages[1].Body != "mock response" || resp.Messages[2].Body != "Docs inspected." {
-			t.Fatalf("unexpected mailbox bodies: %q / %q / %q", resp.Messages[0].Body, resp.Messages[1].Body, resp.Messages[2].Body)
+		if resp.Messages[0].Body.PlainText != "Inspect the repo." || resp.Messages[1].Body.PlainText != "mock response" || resp.Messages[2].Body.PlainText != "Docs inspected." {
+			t.Fatalf("unexpected mailbox bodies: %q / %q / %q", resp.Messages[0].Body.PlainText, resp.Messages[1].Body.PlainText, resp.Messages[2].Body.PlainText)
 		}
 	})
 
@@ -2954,7 +2151,7 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+run.SessionID, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/conversations/"+run.SessionID, nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -2963,7 +2160,11 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		var resp struct {
-			Route *model.SessionRoute `json:"route"`
+			Route *struct {
+				ConnectorID string `json:"connector_id"`
+				ThreadID    string `json:"thread_id"`
+				ExternalID  string `json:"external_id"`
+			} `json:"route"`
 		}
 		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("decode response: %v", err)
@@ -3030,7 +2231,7 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/sessions/"+run.SessionID, nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/conversations/"+run.SessionID, nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -3039,8 +2240,15 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		var resp struct {
-			Deliveries       []model.OutboundIntent  `json:"deliveries"`
-			DeliveryFailures []model.DeliveryFailure `json:"delivery_failures"`
+			Deliveries []struct {
+				ID          string `json:"id"`
+				ConnectorID string `json:"connector_id"`
+				Status      string `json:"status"`
+			} `json:"deliveries"`
+			DeliveryFailures []struct {
+				ConnectorID string `json:"connector_id"`
+				Error       string `json:"error"`
+			} `json:"delivery_failures"`
 		}
 		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("decode response: %v", err)
@@ -3048,16 +2256,13 @@ func TestSessionAPI(t *testing.T) {
 		if len(resp.Deliveries) != 1 {
 			t.Fatalf("expected 1 delivery, got %d", len(resp.Deliveries))
 		}
-		if resp.Deliveries[0].RunID != run.ID || resp.Deliveries[0].Status != "terminal" {
+		if resp.Deliveries[0].ID != intentID || resp.Deliveries[0].Status != "terminal" || resp.Deliveries[0].ConnectorID != "telegram" {
 			t.Fatalf("unexpected delivery payload: %+v", resp.Deliveries[0])
 		}
 		if len(resp.DeliveryFailures) != 1 {
 			t.Fatalf("expected 1 delivery failure, got %d", len(resp.DeliveryFailures))
 		}
-		if resp.DeliveryFailures[0].RunID != run.ID || resp.DeliveryFailures[0].ConnectorID != "telegram" {
-			t.Fatalf("unexpected delivery failure identity: %+v", resp.DeliveryFailures[0])
-		}
-		if resp.DeliveryFailures[0].Error != "delivery failed" {
+		if resp.DeliveryFailures[0].ConnectorID != "telegram" || resp.DeliveryFailures[0].Error != "delivery failed" {
 			t.Fatalf("unexpected delivery failure error: %+v", resp.DeliveryFailures[0])
 		}
 	})
@@ -3066,7 +2271,7 @@ func TestSessionAPI(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/api/sessions/missing", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/conversations/missing", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -3080,7 +2285,7 @@ func TestSessionAPI(t *testing.T) {
 		front := h.startFrontSession(t, "Inspect the repo.")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/sessions/"+front.SessionID+"/messages",
+		req := httptest.NewRequest(http.MethodPost, "/api/conversations/"+front.SessionID+"/messages",
 			strings.NewReader(`{"body":"What changed?"}`))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/json")
@@ -3105,14 +2310,16 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		detail := httptest.NewRecorder()
-		detailReq := httptest.NewRequest(http.MethodGet, "/api/sessions/"+front.SessionID, nil)
+		detailReq := httptest.NewRequest(http.MethodGet, "/api/conversations/"+front.SessionID, nil)
 		h.server.ServeHTTP(detail, detailReq)
 		if detail.Code != http.StatusOK {
 			t.Fatalf("expected 200 from detail endpoint, got %d body=%s", detail.Code, detail.Body.String())
 		}
 
 		var mailbox struct {
-			Messages []model.SessionMessage `json:"messages"`
+			Messages []struct {
+				Body runStructuredTextView `json:"body"`
+			} `json:"messages"`
 		}
 		if err := json.Unmarshal(detail.Body.Bytes(), &mailbox); err != nil {
 			t.Fatalf("decode mailbox: %v", err)
@@ -3120,8 +2327,8 @@ func TestSessionAPI(t *testing.T) {
 		if len(mailbox.Messages) != 4 {
 			t.Fatalf("expected 4 mailbox messages after send, got %d", len(mailbox.Messages))
 		}
-		if mailbox.Messages[2].Body != "What changed?" || mailbox.Messages[3].Body != "mock response" {
-			t.Fatalf("unexpected follow-up mailbox bodies: %q / %q", mailbox.Messages[2].Body, mailbox.Messages[3].Body)
+		if mailbox.Messages[2].Body.PlainText != "What changed?" || mailbox.Messages[3].Body.PlainText != "mock response" {
+			t.Fatalf("unexpected follow-up mailbox bodies: %q / %q", mailbox.Messages[2].Body.PlainText, mailbox.Messages[3].Body.PlainText)
 		}
 	})
 
@@ -3163,7 +2370,7 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/sessions/"+run.SessionID+"/deliveries/"+intentID+"/retry", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/conversations/"+run.SessionID+"/deliveries/"+intentID+"/retry", nil)
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 
 		h.server.ServeHTTP(rr, req)
@@ -3186,14 +2393,16 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		detail := httptest.NewRecorder()
-		detailReq := httptest.NewRequest(http.MethodGet, "/api/sessions/"+run.SessionID, nil)
+		detailReq := httptest.NewRequest(http.MethodGet, "/api/conversations/"+run.SessionID, nil)
 		h.server.ServeHTTP(detail, detailReq)
 		if detail.Code != http.StatusOK {
 			t.Fatalf("expected 200 from detail endpoint, got %d body=%s", detail.Code, detail.Body.String())
 		}
 
 		var detailResp struct {
-			DeliveryFailures []model.DeliveryFailure `json:"delivery_failures"`
+			DeliveryFailures []struct {
+				ConnectorID string `json:"connector_id"`
+			} `json:"delivery_failures"`
 		}
 		if err := json.Unmarshal(detail.Body.Bytes(), &detailResp); err != nil {
 			t.Fatalf("decode detail response: %v", err)
@@ -3233,714 +2442,13 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/api/sessions/"+run.SessionID+"/deliveries/"+intentID+"/retry", nil)
+		req := httptest.NewRequest(http.MethodPost, "/api/conversations/"+run.SessionID+"/deliveries/"+intentID+"/retry", nil)
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 
 		h.server.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusConflict {
 			t.Fatalf("expected 409, got %d body=%s", rr.Code, rr.Body.String())
-		}
-	})
-}
-
-func TestRoutesDeliveriesPage(t *testing.T) {
-	t.Run("GET /recover/routes-deliveries renders health routes and deliveries", func(t *testing.T) {
-		h := newServerHarness(t)
-		run, route, intentID := h.seedRoutesDeliveriesData(t)
-		h.markOutboundIntentTerminal(t, intentID)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/recover/routes-deliveries", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		for _, want := range []string{"Routes &amp; Deliveries", "Connected Sources", "Active Routes", "Outgoing Messages", route.ID, run.SessionID, "telegram", "terminal"} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected routes and deliveries page to contain %q:\n%s", want, body)
-			}
-		}
-		for _, want := range []string{"directory-card-list", "directory-card"} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected responsive routes and deliveries markup %q:\n%s", want, body)
-			}
-		}
-	})
-
-	t.Run("GET /recover/routes-deliveries renders runtime connector state", func(t *testing.T) {
-		h := newServerHarnessWithConnectorHealth(t, []model.ConnectorHealthSnapshot{
-			{
-				ConnectorID: "telegram",
-				State:       model.ConnectorHealthDegraded,
-				Summary:     "poll loop stale",
-			},
-		})
-		run, route, intentID := h.seedRoutesDeliveriesData(t)
-		h.markOutboundIntentTerminal(t, intentID)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/recover/routes-deliveries", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		for _, want := range []string{route.ID, run.SessionID, "telegram", "poll loop stale", "Degraded"} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected routes and deliveries page to contain %q:\n%s", want, body)
-			}
-		}
-	})
-
-	t.Run("GET /recover/routes-deliveries formats route and delivery labels", func(t *testing.T) {
-		h := newServerHarness(t)
-		run, route, intentID := h.seedRoutesDeliveriesData(t)
-		h.markOutboundIntentTerminal(t, intentID)
-		if _, err := h.db.RawDB().Exec(
-			`UPDATE outbound_intents
-			 SET message_text = ?, attempts = 3
-			 WHERE id = ?`,
-			"## Delivery check\n\n- Retry the connector\n- Confirm the route",
-			intentID,
-		); err != nil {
-			t.Fatalf("update outbound intent message: %v", err)
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/recover/routes-deliveries", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		routePattern := regexp.MustCompile(regexp.QuoteMeta(route.ID) + `(?s).*?assistant.*?\(Lead agent\)`)
-		if !routePattern.MatchString(body) {
-			t.Fatalf("expected route row to render a humanized role label:\n%s", body)
-		}
-		for _, want := range []string{"Terminal", "3 attempts", `class="muted structured-preview"`} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected routes and deliveries page to contain %q:\n%s", want, body)
-			}
-		}
-		if !strings.Contains(body, "Retry the connector") || !strings.Contains(body, "Confirm the route") {
-			t.Fatalf("expected delivery preview to preserve structured text:\n%s", body)
-		}
-		if strings.Contains(body, ">terminal<") {
-			t.Fatalf("expected delivery status to be humanized:\n%s", body)
-		}
-		if !strings.Contains(body, run.SessionID) {
-			t.Fatalf("expected bound session to remain visible:\n%s", body)
-		}
-	})
-
-	t.Run("GET /recover/routes-deliveries applies shared query filters", func(t *testing.T) {
-		h := newServerHarness(t)
-		_, route, intentID := h.seedRoutesDeliveriesData(t)
-		h.markOutboundIntentTerminal(t, intentID)
-		if _, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
-			ConversationKey: conversations.ConversationKey{
-				ConnectorID: "whatsapp",
-				AccountID:   "acct-2",
-				ExternalID:  "chat-beta",
-				ThreadID:    "thread-2",
-			},
-			FrontAgentID:  "assistant",
-			InitialPrompt: "Inspect WhatsApp.",
-			CWD:           h.workspaceRoot,
-		}); err != nil {
-			t.Fatalf("StartFrontSession whatsapp failed: %v", err)
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/recover/routes-deliveries?connector_id=telegram&q=chat-1&route_status=all&delivery_status=terminal", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		for _, want := range []string{route.ID, "chat-1", "terminal"} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected filtered routes and deliveries page to contain %q:\n%s", want, body)
-			}
-		}
-		for _, unwanted := range []string{"chat-beta", "thread-2"} {
-			if strings.Contains(body, unwanted) {
-				t.Fatalf("expected filtered routes and deliveries page to exclude %q:\n%s", unwanted, body)
-			}
-		}
-	})
-
-	t.Run("GET /recover/routes-deliveries renders section pagination links", func(t *testing.T) {
-		h := newServerHarness(t)
-		_, _, firstIntentID := h.seedRoutesDeliveriesData(t)
-		h.markOutboundIntentTerminal(t, firstIntentID)
-
-		secondRun, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
-			ConversationKey: conversations.ConversationKey{
-				ConnectorID: "telegram",
-				AccountID:   "acct-1",
-				ExternalID:  "chat-2",
-				ThreadID:    "thread-2",
-			},
-			FrontAgentID:  "assistant",
-			InitialPrompt: "Inspect Telegram 2.",
-			CWD:           h.workspaceRoot,
-		})
-		if err != nil {
-			t.Fatalf("StartFrontSession second telegram failed: %v", err)
-		}
-
-		var secondIntentID string
-		if err := h.db.RawDB().QueryRow(
-			`SELECT id FROM outbound_intents WHERE run_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
-			secondRun.ID,
-		).Scan(&secondIntentID); err != nil {
-			t.Fatalf("load second outbound intent: %v", err)
-		}
-		h.markOutboundIntentTerminal(t, secondIntentID)
-
-		if _, err := h.db.RawDB().Exec(
-			`UPDATE session_bindings
-			 SET created_at = CASE external_id
-			 	WHEN 'chat-1' THEN '2026-03-25 08:00:00'
-			 	WHEN 'chat-2' THEN '2026-03-25 08:01:00'
-			 	ELSE created_at
-			 END
-			 WHERE connector_id = 'telegram'`,
-		); err != nil {
-			t.Fatalf("update route created_at values: %v", err)
-		}
-		if _, err := h.db.RawDB().Exec(
-			`UPDATE outbound_intents
-			 SET created_at = CASE id
-			 	WHEN ? THEN '2026-03-25 08:00:00'
-			 	WHEN ? THEN '2026-03-25 08:01:00'
-			 	ELSE created_at
-			 END
-			 WHERE id IN (?, ?)`,
-			firstIntentID, secondIntentID, firstIntentID, secondIntentID,
-		); err != nil {
-			t.Fatalf("update outbound intent created_at values: %v", err)
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/recover/routes-deliveries?connector_id=telegram&route_status=active&active_limit=1&delivery_status=terminal&delivery_limit=1", nil)
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		for _, want := range []string{"chat-2", "active_cursor=", "active_direction=next", "delivery_cursor=", "delivery_direction=next"} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected paginated routes and deliveries page to contain %q:\n%s", want, body)
-			}
-		}
-	})
-
-	t.Run("POST /recover/routes-deliveries/routes/{id}/messages wakes the bound session", func(t *testing.T) {
-		h := newServerHarness(t)
-		run, route, _ := h.seedRoutesDeliveriesData(t)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/recover/routes-deliveries")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(
-			http.MethodPost,
-			"http://localhost/recover/routes-deliveries/routes/"+route.ID+"/messages",
-			strings.NewReader("body=What+changed%3F"),
-		)
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", "http://localhost")
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		if !strings.HasPrefix(rr.Header().Get("Location"), "/work/") {
-			t.Fatalf("expected redirect to /work/{id}, got %q", rr.Header().Get("Location"))
-		}
-
-		runs, err := h.db.RawDB().Query(
-			`SELECT id, session_id FROM runs WHERE session_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
-			run.SessionID,
-		)
-		if err != nil {
-			t.Fatalf("query latest run: %v", err)
-		}
-		defer runs.Close()
-
-		if !runs.Next() {
-			t.Fatal("expected follow-up run for bound session")
-		}
-		var latestRunID, sessionID string
-		if err := runs.Scan(&latestRunID, &sessionID); err != nil {
-			t.Fatalf("scan latest run: %v", err)
-		}
-		if latestRunID == run.ID || sessionID != run.SessionID {
-			t.Fatalf("expected new run on same session, got run=%s session=%s", latestRunID, sessionID)
-		}
-	})
-
-	t.Run("POST /recover/routes-deliveries/routes/{id}/messages with empty body re-renders the page with an error", func(t *testing.T) {
-		h := newServerHarness(t)
-		_, route, _ := h.seedRoutesDeliveriesData(t)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/recover/routes-deliveries")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "http://localhost/recover/routes-deliveries/routes/"+route.ID+"/messages", strings.NewReader("body="))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", "http://localhost")
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusUnprocessableEntity {
-			t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		if !strings.Contains(rr.Body.String(), "Route send body is required.") {
-			t.Fatalf("expected inline control-page error, got:\n%s", rr.Body.String())
-		}
-	})
-
-	t.Run("POST /recover/routes-deliveries/routes/{id}/deactivate redirects and clears the active route", func(t *testing.T) {
-		h := newServerHarness(t)
-		_, route, _ := h.seedRoutesDeliveriesData(t)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/recover/routes-deliveries")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "http://localhost/recover/routes-deliveries/routes/"+route.ID+"/deactivate", nil)
-		req.Header.Set("Origin", "http://localhost")
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		if rr.Header().Get("Location") != "/recover/routes-deliveries" {
-			t.Fatalf("expected redirect to /recover/routes-deliveries, got %q", rr.Header().Get("Location"))
-		}
-
-		routes, err := h.rt.ListRoutes(context.Background(), sessions.RouteListFilter{
-			ConnectorID: "telegram",
-			Status:      "active",
-			Limit:       10,
-		})
-		if err != nil {
-			t.Fatalf("list active routes: %v", err)
-		}
-		if len(routes) != 0 {
-			t.Fatalf("expected no active telegram routes after deactivate, got %+v", routes)
-		}
-	})
-
-	t.Run("POST /recover/routes-deliveries/deliveries/{id}/retry redirects and requeues terminal delivery", func(t *testing.T) {
-		h := newServerHarness(t)
-		_, _, intentID := h.seedRoutesDeliveriesData(t)
-		h.markOutboundIntentTerminal(t, intentID)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/recover/routes-deliveries")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "http://localhost/recover/routes-deliveries/deliveries/"+intentID+"/retry", nil)
-		req.Header.Set("Origin", "http://localhost")
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		if rr.Header().Get("Location") != "/recover/routes-deliveries" {
-			t.Fatalf("expected redirect to /recover/routes-deliveries, got %q", rr.Header().Get("Location"))
-		}
-
-		delivery, err := h.rt.RetryDelivery(context.Background(), intentID)
-		if !errors.Is(err, runtime.ErrDeliveryNotRetryable) {
-			t.Fatalf("expected delivery to already be requeued, got delivery=%+v err=%v", delivery, err)
-		}
-	})
-}
-
-func TestSessionPages(t *testing.T) {
-	t.Run("GET /operate/sessions renders the recent session directory", func(t *testing.T) {
-		h := newServerHarness(t)
-		front := h.startFrontSession(t, "Inspect the repo.")
-		worker := h.spawnWorkerSession(t, front.SessionID, "researcher", "Inspect docs.")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		for _, want := range []string{
-			"Sessions",
-			front.SessionID,
-			worker.SessionID,
-			"assistant",
-			"researcher",
-			"Any",
-			"Bound",
-			"Unbound",
-			`class="panel filter-panel"`,
-			`class="session-filter-grid"`,
-			`class="session-filter-footer"`,
-			`filter-action-group`,
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected session directory to contain %q:\n%s", want, body)
-			}
-		}
-		for _, want := range []string{"directory-card-list", "directory-card"} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected responsive session markup %q:\n%s", want, body)
-			}
-		}
-		if strings.Contains(body, "Bound only") {
-			t.Fatalf("expected segmented binding filter instead of removed checkbox:\n%s", body)
-		}
-	})
-
-	t.Run("GET /operate/sessions formats role status and timestamps", func(t *testing.T) {
-		h := newServerHarness(t)
-		front := h.startFrontSession(t, "Inspect the repo.")
-		worker := h.spawnWorkerSession(t, front.SessionID, "researcher", "Inspect docs.")
-		const workerUpdatedAt = "2031-03-25 10:15:00"
-		if _, err := h.db.RawDB().Exec(
-			`UPDATE sessions
-			 SET status = 'archived'
-			 WHERE id = ?`,
-			worker.SessionID,
-		); err != nil {
-			t.Fatalf("update worker session metadata: %v", err)
-		}
-		if _, err := h.db.RawDB().Exec(
-			`UPDATE runs
-			 SET updated_at = ?
-			 WHERE session_id = ?`,
-			workerUpdatedAt,
-			worker.SessionID,
-		); err != nil {
-			t.Fatalf("update worker run activity: %v", err)
-		}
-		if _, err := h.db.RawDB().Exec(
-			`UPDATE session_messages
-			 SET created_at = ?
-			 WHERE session_id = ?`,
-			workerUpdatedAt,
-			worker.SessionID,
-		); err != nil {
-			t.Fatalf("update worker session message activity: %v", err)
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		workerPattern := regexp.MustCompile(regexp.QuoteMeta(worker.SessionID) + `(?s).*?researcher.*?Specialist agent.*?Archived.*?2031-03-25 10:15:00 UTC`)
-		if !workerPattern.MatchString(body) {
-			t.Fatalf("expected worker session row to render humanized labels and timestamp:\n%s", body)
-		}
-		if strings.Contains(body, "2031-03-25T10:15:00Z") {
-			t.Fatalf("expected session timestamp to be human-formatted:\n%s", body)
-		}
-	})
-
-	t.Run("GET /operate/sessions keeps role inline with the agent summary row", func(t *testing.T) {
-		h := newServerHarness(t)
-		front := h.startFrontSession(t, "Inspect the repo.")
-		h.spawnWorkerSession(t, front.SessionID, "researcher", "Inspect docs.")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		want := `<div class="session-summary-line"><span>researcher</span><span class="muted session-inline-meta">Specialist agent</span></div>`
-		if !strings.Contains(body, want) {
-			t.Fatalf("expected worker agent summary to keep role inline with the primary row:\n%s", body)
-		}
-	})
-
-	t.Run("GET /operate/sessions applies shared directory filters", func(t *testing.T) {
-		h := newServerHarness(t)
-		run, _, _ := h.seedRoutesDeliveriesData(t)
-		worker := h.spawnWorkerSession(t, run.SessionID, "researcher", "Inspect docs.")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions?connector_id=telegram&binding=bound", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		if !strings.Contains(body, run.SessionID) {
-			t.Fatalf("expected bound front session to appear:\n%s", body)
-		}
-		if strings.Contains(body, worker.SessionID) {
-			t.Fatalf("expected unbound worker session to be filtered out:\n%s", body)
-		}
-	})
-
-	t.Run("GET /operate/sessions can filter for unbound sessions", func(t *testing.T) {
-		h := newServerHarness(t)
-		run, _, _ := h.seedRoutesDeliveriesData(t)
-		worker := h.spawnWorkerSession(t, run.SessionID, "researcher", "Inspect docs.")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions?binding=unbound", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		if strings.Contains(body, run.SessionID) {
-			t.Fatalf("expected bound front session to be filtered out:\n%s", body)
-		}
-		if !strings.Contains(body, worker.SessionID) {
-			t.Fatalf("expected unbound worker session to appear:\n%s", body)
-		}
-	})
-
-	t.Run("GET /operate/sessions renders pagination links", func(t *testing.T) {
-		h := newServerHarness(t)
-		svc := sessions.NewService(h.db, conversations.NewConversationStore(h.db))
-		base := time.Date(2026, 3, 25, 8, 0, 0, 0, time.UTC)
-
-		runs := make([]model.Run, 0, 2)
-		for i, key := range []conversations.ConversationKey{
-			{ConnectorID: "web", AccountID: "local", ExternalID: "assistant-a", ThreadID: "main-a"},
-			{ConnectorID: "web", AccountID: "local", ExternalID: "assistant-b", ThreadID: "main-b"},
-		} {
-			run, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
-				ConversationKey: key,
-				FrontAgentID:    "assistant",
-				InitialPrompt:   "Inspect the repo.",
-				CWD:             h.workspaceRoot,
-			})
-			if err != nil {
-				t.Fatalf("StartFrontSession %d failed: %v", i, err)
-			}
-			if err := svc.AppendMessage(context.Background(), model.SessionMessage{
-				ID:        "msg-page-ui-" + run.SessionID,
-				SessionID: run.SessionID,
-				Kind:      model.MessageAssistant,
-				Body:      "ui marker",
-				CreatedAt: base.Add(time.Duration(i) * time.Minute),
-			}); err != nil {
-				t.Fatalf("AppendMessage %d failed: %v", i, err)
-			}
-			runs = append(runs, run)
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions?limit=1", nil)
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		if !strings.Contains(body, runs[1].SessionID) || strings.Contains(body, runs[0].SessionID) {
-			t.Fatalf("expected first page to contain only newest session:\n%s", body)
-		}
-		if !strings.Contains(body, "cursor=") || !strings.Contains(body, "direction=next") || !strings.Contains(body, "Next") {
-			t.Fatalf("expected pagination link on sessions page:\n%s", body)
-		}
-	})
-
-	t.Run("GET /operate/sessions/{id} renders mailbox route and delivery state", func(t *testing.T) {
-		h := newServerHarness(t)
-		run, route, intentID := h.seedRoutesDeliveriesData(t)
-		h.markOutboundIntentTerminal(t, intentID)
-		svc := sessions.NewService(h.db, conversations.NewConversationStore(h.db))
-		if err := svc.AppendMessage(context.Background(), model.SessionMessage{
-			ID:        "msg-session-announce",
-			SessionID: run.SessionID,
-			Kind:      model.MessageAnnounce,
-			Body:      "## Delivery plan\n\n1. Gather context\n2. Fix formatting",
-			CreatedAt: time.Date(2026, time.March, 25, 9, 0, 0, 0, time.UTC),
-		}); err != nil {
-			t.Fatalf("AppendMessage failed: %v", err)
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions/"+run.SessionID, nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		for _, want := range []string{
-			"Session Detail",
-			run.SessionID,
-			"Inspect Telegram.",
-			"mock response",
-			route.ID,
-			"Note",
-			`class="structured-text structured-html"`,
-			"<h2>Delivery plan</h2>",
-			"<li>Gather context</li>",
-			"Terminal",
-			"/operate/sessions/" + run.SessionID + "/messages",
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected session detail to contain %q:\n%s", want, body)
-			}
-		}
-		if strings.Contains(body, "<td>announce</td>") {
-			t.Fatalf("expected mailbox message kind to be humanized:\n%s", body)
-		}
-	})
-
-	t.Run("GET /operate/sessions/{id} renders live mailbox streaming hooks for an active run", func(t *testing.T) {
-		h := newServerHarness(t)
-		run := h.startFrontSession(t, "Inspect the repo.")
-		svc := sessions.NewService(h.db, conversations.NewConversationStore(h.db))
-		if err := svc.AppendMessage(context.Background(), model.SessionMessage{
-			ID:        "msg-stream-assistant",
-			SessionID: run.SessionID,
-			Kind:      model.MessageAssistant,
-			Body:      "Previous reply.",
-			Provenance: model.SessionMessageProvenance{
-				Kind:        model.MessageProvenanceAssistantTurn,
-				SourceRunID: run.ID,
-			},
-		}); err != nil {
-			t.Fatalf("AppendMessage failed: %v", err)
-		}
-		h.insertRunWithSession(t, "run-session-active", run.ConversationID, run.SessionID, "follow up", "active")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "http://localhost/operate/sessions/"+run.SessionID, nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		body := rr.Body.String()
-		for _, want := range []string{
-			`id="session-live-root"`,
-			`data-active-run-id="run-session-active"`,
-			`/api/sessions/` + run.SessionID + `/messages`,
-			"`/api/work/${encodeURIComponent(runID)}/events`",
-			`new EventSource(streamURL)`,
-			`data-source-run-id="` + run.ID + `"`,
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected session detail to contain %q:\n%s", want, body)
-			}
-		}
-	})
-
-	t.Run("POST /operate/sessions/{id}/messages wakes the session and redirects to the new run", func(t *testing.T) {
-		h := newServerHarness(t)
-		front := h.startFrontSession(t, "Inspect the repo.")
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/operate/sessions/"+front.SessionID)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(
-			http.MethodPost,
-			"http://localhost/operate/sessions/"+front.SessionID+"/messages",
-			strings.NewReader("body=What+changed%3F"),
-		)
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", "http://localhost")
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		if !strings.HasPrefix(rr.Header().Get("Location"), "/work/") {
-			t.Fatalf("expected redirect to /work/{id}, got %q", rr.Header().Get("Location"))
-		}
-	})
-
-	t.Run("POST /operate/sessions/{id}/messages with empty body re-renders the detail page with an error", func(t *testing.T) {
-		h := newServerHarness(t)
-		front := h.startFrontSession(t, "Inspect the repo.")
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/operate/sessions/"+front.SessionID)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(
-			http.MethodPost,
-			"http://localhost/operate/sessions/"+front.SessionID+"/messages",
-			strings.NewReader("body="),
-		)
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		req.Header.Set("Origin", "http://localhost")
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusUnprocessableEntity {
-			t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		if !strings.Contains(rr.Body.String(), "Session message body is required.") {
-			t.Fatalf("expected inline session-detail error, got:\n%s", rr.Body.String())
-		}
-	})
-
-	t.Run("POST /operate/sessions/{id}/deliveries/{delivery_id}/retry redirects back to session detail", func(t *testing.T) {
-		h := newServerHarness(t)
-		run, _, intentID := h.seedRoutesDeliveriesData(t)
-		h.markOutboundIntentTerminal(t, intentID)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/operate/sessions/"+run.SessionID)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(
-			http.MethodPost,
-			"http://localhost/operate/sessions/"+run.SessionID+"/deliveries/"+intentID+"/retry",
-			nil,
-		)
-		req.Header.Set("Origin", "http://localhost")
-		req.AddCookie(cookie)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
-		}
-		if rr.Header().Get("Location") != "/operate/sessions/"+run.SessionID {
-			t.Fatalf("expected redirect to session detail, got %q", rr.Header().Get("Location"))
-		}
-
-		delivery, err := h.rt.RetrySessionDelivery(context.Background(), run.SessionID, intentID)
-		if !errors.Is(err, runtime.ErrDeliveryNotRetryable) {
-			t.Fatalf("expected delivery to already be requeued, got delivery=%+v err=%v", delivery, err)
 		}
 	})
 }

@@ -96,6 +96,12 @@ describe('Team page', () => {
 		expect(body).toContain('scoped write specialist');
 		expect(body).toContain('diff reviewer');
 		expect(body).toContain('Save setup');
+		expect(body).toContain('Create setup');
+		expect(body).toContain('Copy setup');
+		expect(body).toContain('Delete setup');
+		expect(body).toContain('Import setup file');
+		expect(body).toContain('Export YAML');
+		expect(body).toContain('Add another role');
 		expect(body).toContain('/tmp/storage/projects/proj-primary/teams/review/team.yaml');
 	});
 });

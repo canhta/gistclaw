@@ -1,12 +1,10 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
-	"html/template"
 	"log"
 	"net/http"
 	"net/url"
@@ -39,7 +37,6 @@ type Server struct {
 	storageRoot     string
 	whatsAppWebhook http.Handler
 	connectorHealth connectorHealthSource
-	templates       *template.Template
 	mux             *http.ServeMux
 }
 
@@ -57,16 +54,6 @@ type scheduleService interface {
 	DeleteSchedule(context.Context, string) error
 	ScheduleStatus(context.Context) (scheduler.StatusSummary, error)
 	RunScheduleNow(context.Context, string) (*scheduler.ClaimedOccurrence, error)
-}
-
-type layoutData struct {
-	Title       string
-	Body        template.HTML
-	CurrentPath string
-	Navigation  shellNavigation
-	Project     shellProjectLayout
-	ShellMode   string
-	MainClass   string
 }
 
 type shellProjectLayout struct {
@@ -92,11 +79,6 @@ func NewServer(opts Options) (*Server, error) {
 		opts.Broadcaster = NewSSEBroadcaster()
 	}
 
-	tpls, err := loadTemplates()
-	if err != nil {
-		return nil, err
-	}
-
 	s := &Server{
 		db:              opts.DB,
 		replay:          opts.Replay,
@@ -106,7 +88,6 @@ func NewServer(opts Options) (*Server, error) {
 		storageRoot:     opts.StorageRoot,
 		whatsAppWebhook: opts.WhatsAppWebhook,
 		connectorHealth: opts.ConnectorHealth,
-		templates:       tpls,
 		mux:             http.NewServeMux(),
 	}
 	s.registerRoutes()
@@ -153,6 +134,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/work/{id}/events", s.handleRunEvents)
 	s.mux.Handle("POST /api/work/{id}/dismiss", s.adminAuth(http.HandlerFunc(s.handleWorkDismiss)))
 	s.mux.HandleFunc("GET /api/team", s.handleTeamAPI)
+	s.mux.HandleFunc("GET /api/team/export", s.handleTeamExportAPI)
 	s.mux.Handle("POST /api/team/select", s.adminAuth(http.HandlerFunc(s.handleTeamSelectAPI)))
 	s.mux.Handle("POST /api/team/create", s.adminAuth(http.HandlerFunc(s.handleTeamCreateAPI)))
 	s.mux.Handle("POST /api/team/clone", s.adminAuth(http.HandlerFunc(s.handleTeamCloneAPI)))
@@ -190,19 +172,6 @@ func (s *Server) registerRoutes() {
 		s.mux.HandleFunc("GET /webhooks/whatsapp", http.NotFound)
 		s.mux.HandleFunc("POST /webhooks/whatsapp", http.NotFound)
 	}
-	s.mux.HandleFunc("GET /api/sessions", s.handleSessionsIndex)
-	s.mux.HandleFunc("GET /api/sessions/{id}", s.handleSessionDetail)
-	s.mux.HandleFunc("GET "+pageOperateSessions, s.handleSessionPageIndex)
-	s.mux.HandleFunc("GET "+pageOperateSessions+"/{id}", s.handleSessionPageDetail)
-	s.mux.Handle("POST "+pageOperateSessions+"/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleSessionPageSend)))
-	s.mux.Handle("POST "+pageOperateSessions+"/{id}/deliveries/{delivery_id}/retry", s.adminAuth(http.HandlerFunc(s.handleSessionPageRetryDelivery)))
-	s.mux.HandleFunc("GET "+pageRecoverRoutesDeliveries, s.handleRoutesDeliveriesPage)
-	s.mux.HandleFunc("GET "+pageConfigureTeam, s.handleTeam)
-	s.mux.HandleFunc("GET "+pageConfigureTeamExport, s.handleTeamExport)
-	s.mux.Handle("POST "+pageConfigureTeam, s.adminAuth(http.HandlerFunc(s.handleTeamUpdate)))
-	s.mux.Handle("POST "+pageRecoverRoutesDeliveries+"/routes/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleRoutesDeliveriesRouteSend)))
-	s.mux.Handle("POST "+pageRecoverRoutesDeliveries+"/routes/{id}/deactivate", s.adminAuth(http.HandlerFunc(s.handleRoutesDeliveriesRouteDeactivate)))
-	s.mux.Handle("POST "+pageRecoverRoutesDeliveries+"/deliveries/{id}/retry", s.adminAuth(http.HandlerFunc(s.handleRoutesDeliveriesDeliveryRetry)))
 	s.mux.Handle("POST /api/routes", s.adminAuth(http.HandlerFunc(s.handleRouteCreate)))
 	s.mux.HandleFunc("GET /api/routes", s.handleRoutesIndex)
 	s.mux.Handle("POST /api/routes/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleRouteSend)))
@@ -210,60 +179,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/deliveries", s.handleDeliveryIndex)
 	s.mux.HandleFunc("GET /api/deliveries/health", s.handleDeliveryHealth)
 	s.mux.Handle("POST /api/deliveries/{id}/retry", s.adminAuth(http.HandlerFunc(s.handleDeliveryRetry)))
-	s.mux.Handle("POST /api/sessions/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleSessionSend)))
-	s.mux.Handle("POST /api/sessions/{id}/deliveries/{delivery_id}/retry", s.adminAuth(http.HandlerFunc(s.handleSessionRetryDelivery)))
-	s.mux.HandleFunc("GET "+pageRecoverApprovals, s.handleApprovals)
-	s.mux.Handle("POST "+pageRecoverApprovals+"/{id}/resolve", s.adminAuth(http.HandlerFunc(s.handleApprovalResolve)))
-	s.mux.HandleFunc("GET "+pageConfigureSettings, s.handleSettings)
-	s.mux.Handle("POST "+pageConfigureSettings, s.adminAuth(http.HandlerFunc(s.handleSettingsUpdate)))
-	s.mux.Handle("POST "+pageConfigureSettingsPassword, s.adminAuth(http.HandlerFunc(s.handleSettingsPasswordChange)))
-	s.mux.Handle("POST "+pageConfigureSettingsDevices+"/{id}/revoke", s.adminAuth(http.HandlerFunc(s.handleDeviceRevoke)))
-	s.mux.Handle("POST "+pageConfigureSettingsDevices+"/{id}/block", s.adminAuth(http.HandlerFunc(s.handleDeviceBlock)))
-	s.mux.Handle("POST "+pageConfigureSettingsDevices+"/{id}/unblock", s.adminAuth(http.HandlerFunc(s.handleDeviceUnblock)))
 	s.mux.Handle("POST /projects/activate", s.adminAuth(http.HandlerFunc(s.handleProjectActivate)))
-	s.mux.HandleFunc("GET "+pageConfigureMemory, s.handleMemoryList)
-	s.mux.Handle("POST "+pageConfigureMemory+"/{id}/forget", s.adminAuth(http.HandlerFunc(s.handleMemoryForget)))
-	s.mux.Handle("POST "+pageConfigureMemory+"/{id}/edit", s.adminAuth(http.HandlerFunc(s.handleMemoryEdit)))
-}
-
-func (s *Server) renderTemplate(w http.ResponseWriter, r *http.Request, title, bodyTemplate string, data any) {
-	s.renderTemplateStatusMode(w, r, http.StatusOK, title, bodyTemplate, data, shellModeApp)
-}
-
-func (s *Server) renderTemplateStatus(w http.ResponseWriter, r *http.Request, status int, title, bodyTemplate string, data any) {
-	s.renderTemplateStatusMode(w, r, status, title, bodyTemplate, data, shellModeApp)
-}
-
-func (s *Server) renderTemplateStatusMode(w http.ResponseWriter, r *http.Request, status int, title, bodyTemplate string, data any, mode string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	var body bytes.Buffer
-	if err := s.templates.ExecuteTemplate(&body, bodyTemplate, data); err != nil {
-		http.Error(w, fmt.Sprintf("template render failed: %v", err), http.StatusInternalServerError)
-		return
-	}
-	projectLayout := shellProjectLayout{}
-	navigation := shellNavigation{}
-	if mode == shellModeApp {
-		var err error
-		projectLayout, err = s.projectLayoutData(r)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("template render failed: %v", err), http.StatusInternalServerError)
-			return
-		}
-		navigation = navigationForPath(r.URL.Path)
-	}
-	w.WriteHeader(status)
-	if err := s.templates.ExecuteTemplate(w, "layout", layoutData{
-		Title:       title,
-		Body:        template.HTML(body.String()),
-		CurrentPath: requestPathWithQuery(r),
-		Navigation:  navigation,
-		Project:     projectLayout,
-		ShellMode:   mode,
-		MainClass:   layoutMainClass(mode),
-	}); err != nil {
-		http.Error(w, fmt.Sprintf("template render failed: %v", err), http.StatusInternalServerError)
-	}
 }
 
 func (s *Server) requestLogger(next http.Handler) http.Handler {
@@ -381,13 +297,6 @@ func runIDFromRequest(r *http.Request) string {
 	parts := strings.Split(path, "/")
 	if len(parts) >= 2 && parts[0] == "runs" {
 		return parts[1]
-	}
-	return ""
-}
-
-func layoutMainClass(mode string) string {
-	if mode == shellModeAuth {
-		return "auth-main"
 	}
 	return ""
 }

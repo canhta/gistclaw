@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime"
 	"github.com/canhta/gistclaw/internal/sessions"
@@ -81,130 +80,6 @@ type routesDeliveriesRuntimeHealthView struct {
 	RestartSuggested bool
 }
 
-func (s *Server) handleRoutesDeliveriesPage(w http.ResponseWriter, r *http.Request) {
-	data, err := s.loadRoutesDeliveriesPageData(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	s.renderTemplate(w, r, "Routes & Deliveries", "routes_deliveries_body", data)
-}
-
-func (s *Server) handleRoutesDeliveriesRouteSend(w http.ResponseWriter, r *http.Request) {
-	if s.rt == nil {
-		http.Error(w, "runtime not configured", http.StatusInternalServerError)
-		return
-	}
-	visible, err := s.routeVisibleInActiveProject(r.Context(), r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "failed to load route", http.StatusInternalServerError)
-		return
-	}
-	if !visible {
-		http.NotFound(w, r)
-		return
-	}
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form", http.StatusBadRequest)
-		return
-	}
-
-	body := strings.TrimSpace(r.FormValue("body"))
-	if body == "" {
-		s.renderRoutesDeliveriesError(w, r, http.StatusUnprocessableEntity, "Route send body is required.")
-		return
-	}
-
-	run, err := s.rt.SendRoute(r.Context(), r.PathValue("id"), strings.TrimSpace(r.FormValue("from_session_id")), body)
-	if err != nil {
-		switch {
-		case errors.Is(err, runtime.ErrRouteNotFound):
-			http.NotFound(w, r)
-		case errors.Is(err, runtime.ErrRouteNotActive):
-			s.renderRoutesDeliveriesError(w, r, http.StatusConflict, "Only active routes can receive messages.")
-		case errors.Is(err, conversations.ErrConversationBusy):
-			s.renderRoutesDeliveriesError(w, r, http.StatusConflict, "The target session already has an active root run.")
-		default:
-			http.Error(w, "failed to send route message", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	http.Redirect(w, r, runDetailPath(run.ID), http.StatusSeeOther)
-}
-
-func (s *Server) handleRoutesDeliveriesRouteDeactivate(w http.ResponseWriter, r *http.Request) {
-	if s.rt == nil {
-		http.Error(w, "runtime not configured", http.StatusInternalServerError)
-		return
-	}
-	visible, err := s.routeVisibleInActiveProject(r.Context(), r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "failed to load route", http.StatusInternalServerError)
-		return
-	}
-	if !visible {
-		http.NotFound(w, r)
-		return
-	}
-
-	_, err = s.rt.DeactivateRoute(r.Context(), r.PathValue("id"))
-	if err != nil {
-		switch {
-		case errors.Is(err, runtime.ErrRouteNotFound):
-			http.NotFound(w, r)
-		case errors.Is(err, runtime.ErrRouteNotActive):
-			s.renderRoutesDeliveriesError(w, r, http.StatusConflict, "Only active routes can be deactivated.")
-		default:
-			http.Error(w, "failed to deactivate route", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	http.Redirect(w, r, pageRecoverRoutesDeliveries, http.StatusSeeOther)
-}
-
-func (s *Server) handleRoutesDeliveriesDeliveryRetry(w http.ResponseWriter, r *http.Request) {
-	if s.rt == nil {
-		http.Error(w, "runtime not configured", http.StatusInternalServerError)
-		return
-	}
-	visible, err := s.deliveryVisibleInActiveProject(r.Context(), r.PathValue("id"))
-	if err != nil {
-		http.Error(w, "failed to load delivery", http.StatusInternalServerError)
-		return
-	}
-	if !visible {
-		http.NotFound(w, r)
-		return
-	}
-
-	_, err = s.rt.RetryDelivery(r.Context(), r.PathValue("id"))
-	if err != nil {
-		switch {
-		case errors.Is(err, runtime.ErrDeliveryNotFound):
-			http.NotFound(w, r)
-		case errors.Is(err, runtime.ErrDeliveryNotRetryable):
-			s.renderRoutesDeliveriesError(w, r, http.StatusConflict, "Only terminal deliveries can be retried.")
-		default:
-			http.Error(w, "failed to retry delivery", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	http.Redirect(w, r, pageRecoverRoutesDeliveries, http.StatusSeeOther)
-}
-
-func (s *Server) renderRoutesDeliveriesError(w http.ResponseWriter, r *http.Request, status int, message string) {
-	data, err := s.loadRoutesDeliveriesPageData(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	data.Error = message
-	s.renderTemplateStatus(w, r, status, "Routes & Deliveries", "routes_deliveries_body", data)
-}
-
 func (s *Server) loadRoutesDeliveriesPageData(r *http.Request) (routesDeliveriesPageData, error) {
 	if s.rt == nil {
 		return routesDeliveriesPageData{}, errors.New("runtime not configured")
@@ -264,7 +139,7 @@ func (s *Server) loadRoutesDeliveriesPageData(r *http.Request) (routesDeliveries
 			return routesDeliveriesPageData{}, errors.New("failed to load route history")
 		}
 		routeHistory = historyPage.Items
-		historyPaging = buildPageLinks(pageRecoverRoutesDeliveries, cloneQuery(r.URL.Query()), "history_cursor", "history_direction", historyPage.NextCursor, historyPage.PrevCursor, historyPage.HasNext, historyPage.HasPrev)
+		historyPaging = buildPageLinks("/api/recover", cloneQuery(r.URL.Query()), "history_cursor", "history_direction", historyPage.NextCursor, historyPage.PrevCursor, historyPage.HasNext, historyPage.HasPrev)
 	default:
 		activeFilter := baseRouteFilter
 		activeFilter.Status = "active"
@@ -276,7 +151,7 @@ func (s *Server) loadRoutesDeliveriesPageData(r *http.Request) (routesDeliveries
 			return routesDeliveriesPageData{}, errors.New("failed to load active routes")
 		}
 		activeRoutes = activePage.Items
-		activePaging = buildPageLinks(pageRecoverRoutesDeliveries, cloneQuery(r.URL.Query()), "active_cursor", "active_direction", activePage.NextCursor, activePage.PrevCursor, activePage.HasNext, activePage.HasPrev)
+		activePaging = buildPageLinks("/api/recover", cloneQuery(r.URL.Query()), "active_cursor", "active_direction", activePage.NextCursor, activePage.PrevCursor, activePage.HasNext, activePage.HasPrev)
 		if filters.RouteStatus == "all" {
 			historyFilter := baseRouteFilter
 			historyFilter.Status = "inactive"
@@ -288,7 +163,7 @@ func (s *Server) loadRoutesDeliveriesPageData(r *http.Request) (routesDeliveries
 				return routesDeliveriesPageData{}, errors.New("failed to load route history")
 			}
 			routeHistory = historyPage.Items
-			historyPaging = buildPageLinks(pageRecoverRoutesDeliveries, cloneQuery(r.URL.Query()), "history_cursor", "history_direction", historyPage.NextCursor, historyPage.PrevCursor, historyPage.HasNext, historyPage.HasPrev)
+			historyPaging = buildPageLinks("/api/recover", cloneQuery(r.URL.Query()), "history_cursor", "history_direction", historyPage.NextCursor, historyPage.PrevCursor, historyPage.HasNext, historyPage.HasPrev)
 		}
 	}
 
@@ -310,7 +185,7 @@ func (s *Server) loadRoutesDeliveriesPageData(r *http.Request) (routesDeliveries
 		RouteHistory:   buildRoutesDeliveriesRouteViews(routeHistory),
 		HistoryPaging:  historyPaging,
 		Deliveries:     buildRoutesDeliveriesDeliveryViews(deliveryPage.Items),
-		DeliveryPaging: buildPageLinks(pageRecoverRoutesDeliveries, cloneQuery(r.URL.Query()), "delivery_cursor", "delivery_direction", deliveryPage.NextCursor, deliveryPage.PrevCursor, deliveryPage.HasNext, deliveryPage.HasPrev),
+		DeliveryPaging: buildPageLinks("/api/recover", cloneQuery(r.URL.Query()), "delivery_cursor", "delivery_direction", deliveryPage.NextCursor, deliveryPage.PrevCursor, deliveryPage.HasNext, deliveryPage.HasPrev),
 		Filters:        filters,
 	}, nil
 }

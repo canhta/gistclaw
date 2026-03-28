@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime"
 )
@@ -153,5 +154,148 @@ func TestRecoverApproveAndRetryMutationsFlowThroughRuntime(t *testing.T) {
 	delivery, err := h.rt.RetryDelivery(context.Background(), deliveryID)
 	if err != runtime.ErrDeliveryNotRetryable {
 		t.Fatalf("expected delivery to already be requeued, got delivery=%+v err=%v", delivery, err)
+	}
+}
+
+func TestRecoverAPIApprovalFiltersAndPaging(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+	h.insertApprovalAt(t, "run-approval-new", "bash", "/tmp/new", "pending", "", "2026-03-25 10:00:00")
+	h.insertApprovalAt(t, "run-approval-mid", "git", "/tmp/mid", "approved", "operator", "2026-03-25 09:00:00")
+	h.insertApprovalAt(t, "run-approval-old", "bash", "/tmp/old", "pending", "", "2026-03-25 08:00:00")
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/recover?q=bash&status=pending&limit=1", nil)
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Approvals []struct {
+			ID string `json:"id"`
+		} `json:"approvals"`
+		ApprovalPaging struct {
+			NextURL string `json:"next_url"`
+			HasNext bool   `json:"has_next"`
+		} `json:"approval_paging"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(resp.Approvals) != 1 || resp.Approvals[0].ID != "ticket-run-approval-new" {
+		t.Fatalf("unexpected first approvals page %+v", resp.Approvals)
+	}
+	if !resp.ApprovalPaging.HasNext {
+		t.Fatalf("expected next page, got %+v", resp.ApprovalPaging)
+	}
+	if !strings.HasPrefix(resp.ApprovalPaging.NextURL, "/api/recover?") {
+		t.Fatalf("expected API next page URL, got %+v", resp.ApprovalPaging)
+	}
+	if !strings.Contains(resp.ApprovalPaging.NextURL, "direction=next") || !strings.Contains(resp.ApprovalPaging.NextURL, "limit=1") {
+		t.Fatalf("expected next approval page URL, got %+v", resp.ApprovalPaging)
+	}
+
+}
+
+func TestRecoverAPIRepairFiltersAndPaging(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+	_, _, firstIntentID := h.seedRoutesDeliveriesData(t)
+	h.markOutboundIntentTerminal(t, firstIntentID)
+
+	secondRun, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-2",
+			ThreadID:    "thread-2",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Inspect Telegram 2.",
+		CWD:           h.workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession second telegram failed: %v", err)
+	}
+
+	var secondIntentID string
+	if err := h.db.RawDB().QueryRow(
+		`SELECT id FROM outbound_intents WHERE run_id = ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+		secondRun.ID,
+	).Scan(&secondIntentID); err != nil {
+		t.Fatalf("load second outbound intent: %v", err)
+	}
+	h.markOutboundIntentTerminal(t, secondIntentID)
+
+	if _, err := h.db.RawDB().Exec(
+		`UPDATE session_bindings
+		 SET created_at = CASE external_id
+		 	WHEN 'chat-1' THEN '2026-03-25 08:00:00'
+		 	WHEN 'chat-2' THEN '2026-03-25 08:01:00'
+		 	ELSE created_at
+		 END
+		 WHERE connector_id = 'telegram'`,
+	); err != nil {
+		t.Fatalf("update route created_at values: %v", err)
+	}
+	if _, err := h.db.RawDB().Exec(
+		`UPDATE outbound_intents
+		 SET created_at = CASE id
+		 	WHEN ? THEN '2026-03-25 08:00:00'
+		 	WHEN ? THEN '2026-03-25 08:01:00'
+		 	ELSE created_at
+		 END
+		 WHERE id IN (?, ?)`,
+		firstIntentID, secondIntentID, firstIntentID, secondIntentID,
+	); err != nil {
+		t.Fatalf("update outbound intent created_at values: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/recover?connector_id=telegram&route_status=active&active_limit=1&delivery_status=terminal&delivery_limit=1", nil)
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Repair struct {
+			ActiveRoutes []struct {
+				ExternalID string `json:"external_id"`
+			} `json:"active_routes"`
+			ActivePaging struct {
+				NextURL string `json:"next_url"`
+				HasNext bool   `json:"has_next"`
+			} `json:"active_paging"`
+			Deliveries []struct {
+				ChatID string `json:"chat_id"`
+			} `json:"deliveries"`
+			DeliveryPaging struct {
+				NextURL string `json:"next_url"`
+				HasNext bool   `json:"has_next"`
+			} `json:"delivery_paging"`
+		} `json:"repair"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(resp.Repair.ActiveRoutes) != 1 {
+		t.Fatalf("unexpected first repair active routes %+v", resp.Repair.ActiveRoutes)
+	}
+	if len(resp.Repair.Deliveries) != 1 {
+		t.Fatalf("unexpected first repair deliveries %+v", resp.Repair.Deliveries)
+	}
+	if !resp.Repair.ActivePaging.HasNext || !strings.HasPrefix(resp.Repair.ActivePaging.NextURL, "/api/recover?") || !strings.Contains(resp.Repair.ActivePaging.NextURL, "active_direction=next") {
+		t.Fatalf("expected active route next page, got %+v", resp.Repair.ActivePaging)
+	}
+	if !resp.Repair.DeliveryPaging.HasNext || !strings.HasPrefix(resp.Repair.DeliveryPaging.NextURL, "/api/recover?") || !strings.Contains(resp.Repair.DeliveryPaging.NextURL, "delivery_direction=next") {
+		t.Fatalf("expected delivery next page, got %+v", resp.Repair.DeliveryPaging)
 	}
 }

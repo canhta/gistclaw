@@ -59,6 +59,24 @@ func TestRepoTooling_MakeTargets(t *testing.T) {
 			args:      []string{"FILES=cmd/gistclaw/main.go"},
 			wantSnips: []string{"goimports", "golangci-lint", "--fast-only"},
 		},
+		{
+			name:      "precommit helper frontend",
+			target:    "precommit",
+			args:      []string{"FILES=frontend/src/routes/+page.svelte"},
+			wantSnips: []string{"cd frontend && bun run lint", "cd frontend && bun run check"},
+		},
+		{
+			name:   "prepush helper",
+			target: "prepush",
+			wantSnips: []string{
+				"golangci-lint",
+				"go test ./... -coverprofile=coverage.out",
+				"cd frontend && bun run check",
+				"cd frontend && bun run lint",
+				"cd frontend && bun run test:unit -- --run",
+				"cd frontend && bun run build",
+			},
+		},
 	}
 
 	for _, tc := range targets {
@@ -106,8 +124,7 @@ func TestRepoTooling_ConfigFiles(t *testing.T) {
 				"pre-commit:",
 				"pre-push:",
 				"make precommit",
-				"make lint",
-				"make coverage",
+				"make prepush",
 			},
 		},
 		{

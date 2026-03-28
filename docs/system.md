@@ -58,14 +58,12 @@ This document is the source of truth for what the repository ships today: packag
 - `/onboarding` starts with a starter project, then lets the operator keep it, bind an existing repo, or create a new project elsewhere before the first run.
 - Operator UI pages and browser read APIs require the built-in login. Machine automation may still use the admin token path.
 - The shell includes a project switcher that updates the active project context without turning project selection into a primary Settings job.
-- `/operate/runs` and `/operate/runs/{id}` show run state and live replay, with the orchestration graph kept on runs and run detail. The runs queue defaults to the active project with an explicit all-projects filter.
-- `/operate/sessions` and `/operate/sessions/{id}` expose session mailbox history, route state, and delivery failures.
-- `/operate/start-task` starts a new operator task from the web surface.
-- `/configure/team` selects, creates, clones, deletes, edits, imports, and exports named team profiles for the active project, including base profile, tool family, delegation, and specialist-visibility controls, stored under the operator storage root instead of the repo path.
-- `/configure/memory` lists, edits, and forgets stored facts.
-- `/configure/settings` updates machine-level operator settings, rotates the operator password, and manages current, active, and blocked browser devices.
-- `/recover/approvals` resolves risky tool actions.
-- `/recover/routes-deliveries` exposes connector health, route bindings, route history, and delivery retry actions.
+- `/work` and `/work/{id}` are the operator work surface for command intake, active run state, live replay, and orchestration graph detail.
+- `/conversations` and `/conversations/{id}` expose session history, route state, connector health, and delivery evidence.
+- `/team` is the setup surface for named team profiles in the active project, backed by `/api/team`, `/api/team/export`, and the profile mutation APIs for select, create, clone, delete, import, and save.
+- `/knowledge` lists, edits, and forgets stored facts.
+- `/settings` updates machine-level operator settings, rotates the operator password, and manages current, active, and blocked browser devices.
+- `/recover` is the intervention bench for risky tool approvals, connector health, route state, and delivery retries, backed by `/api/recover` plus `/api/recover/approvals/*`, `/api/recover/routes/*`, and `/api/recover/deliveries/*`.
 
 ### Connectors
 

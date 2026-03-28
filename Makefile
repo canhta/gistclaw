@@ -10,7 +10,7 @@ GOLANGCI_LINT_VERSION ?= v2.11.4
 LEFTHOOK_VERSION ?= v2.0.4
 COVERAGE_MIN ?= 70
 
-.PHONY: dev fmt lint test run hooks-install precommit
+.PHONY: dev fmt lint test run hooks-install precommit prepush
 .PHONY: coverage
 .PHONY: ui-install ui-build ui-check ui-test ui-lint ui-format
 
@@ -68,8 +68,9 @@ precommit: $(GOIMPORTS) $(GOLANGCI_LINT)
 	FILES="$(FILES)"; \
 	GO_FILES="$$(printf '%s\n' $$FILES | tr ' ' '\n' | grep '\.go$$' || true)"; \
 	MODULE_FILES="$$(printf '%s\n' $$FILES | tr ' ' '\n' | grep -E '^(go\.mod|go\.sum)$$' || true)"; \
-	if [ -z "$$GO_FILES$$MODULE_FILES" ]; then \
-		echo "No relevant Go files staged."; \
+	FRONTEND_FILES="$$(printf '%s\n' $$FILES | tr ' ' '\n' | grep '^frontend/' || true)"; \
+	if [ -z "$$GO_FILES$$MODULE_FILES$$FRONTEND_FILES" ]; then \
+		echo "No relevant Go or frontend files staged."; \
 		exit 0; \
 	fi; \
 	if [ -n "$$GO_FILES" ]; then \
@@ -79,7 +80,13 @@ precommit: $(GOIMPORTS) $(GOLANGCI_LINT)
 	fi; \
 	if [ -n "$$MODULE_FILES" ]; then \
 		$(GOLANGCI_LINT) run --fast-only; \
+	fi; \
+	if [ -n "$$FRONTEND_FILES" ]; then \
+		cd frontend && bun run lint; \
+		cd frontend && bun run check; \
 	fi
+
+prepush: lint coverage ui-check ui-lint ui-test ui-build
 
 $(LOCALBIN):
 	mkdir -p $(LOCALBIN)

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="420" viewBox="0 0 1600 420" fill="none" role="img" aria-label="GistClaw banner">
+	<rect width="1600" height="420" fill="#0A0F14" />
+	<rect x="18" y="18" width="1564" height="384" fill="#121A23" stroke="#4C637C" stroke-width="4" />
+	<rect x="42" y="42" width="1516" height="336" fill="url(#banner-bg)" stroke="#314356" stroke-width="2" />
+	<rect x="42" y="42" width="96" height="18" fill="#FF5C39" />
+	<rect x="1462" y="360" width="96" height="18" fill="#53C7F0" />
+	<rect x="88" y="94" width="212" height="32" fill="#FF5C39" />
+	<text x="102" y="116" fill="#0A0F14" font-family="IBM Plex Mono, monospace" font-size="18" font-weight="700" letter-spacing="2">LOCAL-FIRST</text>
+	<text x="88" y="228" fill="#F4F7FB" font-family="Space Grotesk, Arial, sans-serif" font-size="132" font-weight="700" letter-spacing="-4">GistClaw</text>
+	<rect x="90" y="252" width="468" height="18" fill="#FF5C39" />
+	<rect x="574" y="252" width="144" height="18" fill="#53C7F0" />
+	<text x="90" y="312" fill="#97A6B6" font-family="IBM Plex Mono, monospace" font-size="28" font-weight="700" letter-spacing="3">LOCAL-FIRST MULTI-AGENT RUNTIME</text>
+	<rect x="1180" y="102" width="228" height="18" fill="#53C7F0" />
+	<rect x="1240" y="138" width="148" height="18" fill="#314356" />
+	<rect x="1208" y="174" width="188" height="18" fill="#FF5C39" />
+	<rect x="1170" y="220" width="238" height="96" fill="#16212D" stroke="#4C637C" stroke-width="4" />
+	<rect x="1194" y="244" width="92" height="16" fill="#FF5C39" />
+	<rect x="1300" y="244" width="84" height="16" fill="#53C7F0" />
+	<rect x="1194" y="278" width="190" height="16" fill="#314356" />
+	<circle cx="1408" cy="286" r="10" fill="#53C7F0" />
+	<path d="M1144 96 L1188 96 L1216 142 L1188 190 L1144 190 Z" fill="#16212D" stroke="#4C637C" stroke-width="4" />
+	<path d="M1098 214 L1146 214 L1172 258 L1146 302 L1098 302 Z" fill="#16212D" stroke="#4C637C" stroke-width="4" />
+	<defs>
+		<linearGradient id="banner-bg" x1="42" y1="42" x2="1558" y2="378" gradientUnits="userSpaceOnUse">
+			<stop offset="0" stop-color="#16212D" />
+			<stop offset="1" stop-color="#0A0F14" />
+		</linearGradient>
+	</defs>
+</svg>

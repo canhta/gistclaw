@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/model"
@@ -370,6 +371,34 @@ func TestTeamMutationAPIClonesDeletesAndImportsProfiles(t *testing.T) {
 	}
 	if saved.FrontAgent != "assistant" {
 		t.Fatalf("import should not persist until save, got front agent %q", saved.FrontAgent)
+	}
+}
+
+func TestTeamExportAPIDownloadsEditableYAML(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/team/export", nil)
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Disposition"); !strings.Contains(got, "attachment") || !strings.Contains(got, "team.yaml") {
+		t.Fatalf("expected attachment header for team export, got %q", got)
+	}
+	for _, want := range []string{
+		"name: Repo Task Team",
+		"role: front assistant",
+		"base_profile: operator",
+		"tool_families:",
+		"soul_file: assistant.soul.yaml",
+	} {
+		if !strings.Contains(rr.Body.String(), want) {
+			t.Fatalf("expected export to contain %q:\n%s", want, rr.Body.String())
+		}
 	}
 }
 

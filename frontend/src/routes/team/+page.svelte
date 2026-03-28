@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
 	import type { TeamConfigResponse, TeamMemberResponse, TeamResponse } from '$lib/types/api';
@@ -10,18 +11,152 @@
 	let noticeOverride = $state<string | null>(null);
 	let errorMessage = $state('');
 	let saving = $state(false);
-	let switchingProfile = $state('');
+	let busyAction = $state('');
 	let nameOverride = $state<string | null>(null);
 	let frontAgentOverride = $state<string | null>(null);
 	let roleOverrides = $state<Record<string, string>>({});
 	let baseProfileOverrides = $state<Record<string, string>>({});
 	let toolFamilyOverrides = $state<Record<string, string[]>>({});
 	let delegationKindOverrides = $state<Record<string, string[]>>({});
+	let memberDrafts = $state<TeamMemberResponse[] | null>(null);
+	let createProfileID = $state('');
+	let cloneSourceProfileID = $state('');
+	let cloneProfileID = $state('');
+	let deleteProfileID = $state('');
+	let importFile = $state<File | null>(null);
 
 	const notice = $derived(noticeOverride ?? data.team.notice ?? '');
 
+	const baseProfiles = ['operator', 'research', 'write', 'review', 'verify'];
+	const toolFamilies = [
+		'repo_read',
+		'repo_write',
+		'runtime_capability',
+		'connector_capability',
+		'web_read',
+		'delegate',
+		'verification',
+		'diff_review'
+	];
+	const delegationKinds = ['research', 'write', 'review', 'verify'];
+
+	function resetDraft(): void {
+		nameOverride = null;
+		frontAgentOverride = null;
+		roleOverrides = {};
+		baseProfileOverrides = {};
+		toolFamilyOverrides = {};
+		delegationKindOverrides = {};
+		memberDrafts = null;
+		errorMessage = '';
+	}
+
+	function teamMembers(): TeamMemberResponse[] {
+		return memberDrafts ?? data.team.team.members;
+	}
+
+	function teamName(): string {
+		return nameOverride ?? data.team.team.name;
+	}
+
+	function frontAgentID(): string {
+		const selected = frontAgentOverride ?? data.team.team.front_agent_id;
+		if (teamMembers().some((member) => member.id === selected)) {
+			return selected;
+		}
+		return teamMembers()[0]?.id ?? '';
+	}
+
+	function memberRole(member: TeamMemberResponse): string {
+		return roleOverrides[member.id] ?? member.role;
+	}
+
+	function memberBaseProfile(member: TeamMemberResponse): string {
+		return baseProfileOverrides[member.id] ?? member.base_profile;
+	}
+
+	function memberToolFamilies(member: TeamMemberResponse): string[] {
+		return toolFamilyOverrides[member.id] ?? member.tool_families;
+	}
+
+	function memberDelegationKinds(member: TeamMemberResponse): string[] {
+		return delegationKindOverrides[member.id] ?? member.delegation_kinds;
+	}
+
+	function toggleListValue(values: string[], value: string): string[] {
+		return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
+	}
+
+	function nextMemberID(): string {
+		const seen = new Set(teamMembers().map((member) => member.id));
+		for (let index = 1; ; index += 1) {
+			const candidate = `agent_${index}`;
+			if (!seen.has(candidate)) {
+				return candidate;
+			}
+		}
+	}
+
+	function addMember(): void {
+		const id = nextMemberID();
+		memberDrafts = [
+			...teamMembers(),
+			{
+				id,
+				role: 'research specialist',
+				soul_file: `${id}.soul.yaml`,
+				base_profile: 'research',
+				tool_families: ['repo_read', 'web_read'],
+				delegation_kinds: [],
+				can_message: [],
+				specialist_summary_visibility: 'basic',
+				soul_extra: {},
+				is_front: false
+			}
+		];
+	}
+
+	function removeMember(memberID: string): void {
+		if (teamMembers().length === 1) {
+			errorMessage = 'Team must keep at least one role.';
+			return;
+		}
+		const filtered = teamMembers()
+			.filter((member) => member.id !== memberID)
+			.map((member) => ({
+				...member,
+				can_message: member.can_message.filter((linkedID) => linkedID !== memberID),
+				is_front: member.id === frontAgentID() && member.id !== memberID
+			}));
+		memberDrafts = filtered;
+		if (frontAgentID() === memberID) {
+			frontAgentOverride = filtered[0]?.id ?? '';
+		}
+		delete roleOverrides[memberID];
+		delete baseProfileOverrides[memberID];
+		delete toolFamilyOverrides[memberID];
+		delete delegationKindOverrides[memberID];
+	}
+
+	function buildTeamConfig(): TeamConfigResponse {
+		const members = teamMembers().map((member) => ({
+			...member,
+			role: memberRole(member),
+			base_profile: memberBaseProfile(member),
+			tool_families: memberToolFamilies(member),
+			delegation_kinds: memberDelegationKinds(member),
+			is_front: member.id === frontAgentID()
+		}));
+		return {
+			name: teamName(),
+			front_agent_id: frontAgentID(),
+			member_count: members.length,
+			members
+		};
+	}
+
 	async function useProfile(profileID: string): Promise<void> {
-		switchingProfile = profileID;
+		busyAction = `use:${profileID}`;
 		errorMessage = '';
 
 		try {
@@ -37,7 +172,7 @@
 			errorMessage =
 				error instanceof HTTPError ? error.message : 'Unable to switch the setup right now.';
 		} finally {
-			switchingProfile = '';
+			busyAction = '';
 		}
 	}
 
@@ -63,71 +198,118 @@
 		}
 	}
 
-	function buildTeamConfig(): TeamConfigResponse {
-		return {
-			name: teamName(),
-			front_agent_id: frontAgentID(),
-			member_count: data.team.team.member_count,
-			members: data.team.team.members.map((member) => ({
-				...member,
-				role: memberRole(member),
-				base_profile: memberBaseProfile(member),
-				tool_families: memberToolFamilies(member),
-				delegation_kinds: memberDelegationKinds(member)
-			}))
-		};
-	}
+	async function createProfile(): Promise<void> {
+		const profileID = createProfileID.trim();
+		if (profileID === '') {
+			errorMessage = 'Create setup needs a name.';
+			return;
+		}
 
-	function resetDraft(): void {
-		nameOverride = null;
-		frontAgentOverride = null;
-		roleOverrides = {};
-		baseProfileOverrides = {};
-		toolFamilyOverrides = {};
-		delegationKindOverrides = {};
+		busyAction = 'create';
 		errorMessage = '';
+		try {
+			const response = await requestJSON<TeamResponse>(fetch, '/api/team/create', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ profile_id: profileID })
+			});
+			createProfileID = '';
+			resetDraft();
+			noticeOverride = response.notice ?? null;
+			await invalidateAll();
+		} catch (error) {
+			errorMessage = error instanceof HTTPError ? error.message : 'Unable to create this setup.';
+		} finally {
+			busyAction = '';
+		}
 	}
 
-	function teamName(): string {
-		return nameOverride ?? data.team.team.name;
+	async function cloneProfile(): Promise<void> {
+		const sourceProfileID = (cloneSourceProfileID || data.team.active_profile.id).trim();
+		const profileID = cloneProfileID.trim();
+		if (sourceProfileID === '' || profileID === '') {
+			errorMessage = 'Copy setup needs a source and a new name.';
+			return;
+		}
+
+		busyAction = 'clone';
+		errorMessage = '';
+		try {
+			const response = await requestJSON<TeamResponse>(fetch, '/api/team/clone', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({
+					source_profile_id: sourceProfileID,
+					profile_id: profileID
+				})
+			});
+			cloneProfileID = '';
+			resetDraft();
+			noticeOverride = response.notice ?? null;
+			await invalidateAll();
+		} catch (error) {
+			errorMessage = error instanceof HTTPError ? error.message : 'Unable to copy this setup.';
+		} finally {
+			busyAction = '';
+		}
 	}
 
-	function frontAgentID(): string {
-		return frontAgentOverride ?? data.team.team.front_agent_id;
+	async function deleteProfile(): Promise<void> {
+		const profileID = deleteProfileID.trim();
+		if (profileID === '') {
+			errorMessage = 'Delete setup needs a target profile.';
+			return;
+		}
+
+		busyAction = 'delete';
+		errorMessage = '';
+		try {
+			const response = await requestJSON<TeamResponse>(fetch, '/api/team/delete', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ profile_id: profileID })
+			});
+			deleteProfileID = '';
+			resetDraft();
+			noticeOverride = response.notice ?? null;
+			await invalidateAll();
+		} catch (error) {
+			errorMessage = error instanceof HTTPError ? error.message : 'Unable to delete this setup.';
+		} finally {
+			busyAction = '';
+		}
 	}
 
-	function memberRole(member: TeamMemberResponse): string {
-		return roleOverrides[member.id] ?? member.role;
+	async function importSetup(): Promise<void> {
+		if (!importFile) {
+			errorMessage = 'Import setup file needs a YAML file.';
+			return;
+		}
+
+		busyAction = 'import';
+		errorMessage = '';
+		try {
+			const yaml = await importFile.text();
+			const response = await requestJSON<TeamResponse>(fetch, '/api/team/import', {
+				method: 'POST',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ yaml })
+			});
+			importFile = null;
+			resetDraft();
+			noticeOverride = response.notice ?? null;
+			await invalidateAll();
+		} catch (error) {
+			errorMessage =
+				error instanceof HTTPError ? error.message : 'Unable to import this setup file.';
+		} finally {
+			busyAction = '';
+		}
 	}
 
-	function memberBaseProfile(member: TeamMemberResponse): string {
-		return baseProfileOverrides[member.id] ?? member.base_profile;
+	function exportSetup(): void {
+		window.location.assign('/api/team/export');
 	}
-
-	function memberToolFamilies(member: TeamMemberResponse): string[] {
-		return toolFamilyOverrides[member.id] ?? member.tool_families;
-	}
-
-	function memberDelegationKinds(member: TeamMemberResponse): string[] {
-		return delegationKindOverrides[member.id] ?? member.delegation_kinds;
-	}
-
-	function toggleListValue(values: string[], value: string): string[] {
-		return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
-	}
-
-	const baseProfiles = ['operator', 'research', 'write', 'review', 'verify'];
-	const toolFamilies = [
-		'repo_read',
-		'repo_write',
-		'runtime_capability',
-		'connector_capability',
-		'web_read',
-		'delegate',
-		'verification',
-		'diff_review'
-	];
-	const delegationKinds = ['research', 'write', 'review', 'verify'];
 </script>
 
 <svelte:head>
@@ -173,7 +355,7 @@
 						}}
 						class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
 					>
-						{#each data.team.team.members as member (member.id)}
+						{#each teamMembers() as member (member.id)}
 							<option value={member.id}>{member.id}</option>
 						{/each}
 					</select>
@@ -185,13 +367,9 @@
 				<p class="gc-machine mt-2 break-all">{data.team.active_profile.save_path}</p>
 			</div>
 
-			<button
-				type="submit"
-				class="mt-6 border-2 border-[var(--gc-orange)] bg-[var(--gc-orange)] px-4 py-3 text-left text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] text-[var(--gc-canvas)] uppercase transition-colors hover:border-[var(--gc-orange-hover)] hover:bg-[var(--gc-orange-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-				disabled={saving}
-			>
+			<SurfaceActionButton type="submit" tone="solid" className="mt-6" disabled={saving}>
 				{saving ? 'Saving setup' : 'Save setup'}
-			</button>
+			</SurfaceActionButton>
 		</form>
 
 		<div class="grid gap-4">
@@ -203,14 +381,14 @@
 							type="button"
 							class={`flex items-center justify-between border-2 px-4 py-3 text-left transition-colors ${profile.active ? 'border-[var(--gc-orange)] bg-[rgba(255,105,34,0.08)]' : 'border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] hover:border-[var(--gc-cyan)]'}`}
 							onclick={() => useProfile(profile.id)}
-							disabled={switchingProfile !== '' && switchingProfile !== profile.id}
+							disabled={busyAction !== '' && busyAction !== `use:${profile.id}`}
 						>
 							<div>
 								<p class="gc-stamp">{profile.active ? 'Active setup' : 'Available setup'}</p>
 								<p class="gc-panel-title mt-2 text-[1rem]">{profile.label}</p>
 							</div>
 							<p class="gc-machine">
-								{switchingProfile === profile.id
+								{busyAction === `use:${profile.id}`
 									? 'Switching'
 									: profile.active
 										? 'Current'
@@ -218,6 +396,83 @@
 							</p>
 						</button>
 					{/each}
+				</div>
+			</div>
+
+			<div class="gc-panel px-4 py-4">
+				<p class="gc-stamp">Setup actions</p>
+				<div class="mt-4 grid gap-4">
+					<div class="grid gap-2">
+						<p class="gc-stamp">Create setup</p>
+						<input
+							bind:value={createProfileID}
+							placeholder="review"
+							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-cyan)]"
+						/>
+						<SurfaceActionButton onclick={createProfile} disabled={busyAction !== ''}>
+							Create setup
+						</SurfaceActionButton>
+					</div>
+
+					<div class="grid gap-2 border-t-2 border-[var(--gc-border)] pt-4">
+						<p class="gc-stamp">Copy setup</p>
+						<select
+							bind:value={cloneSourceProfileID}
+							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-cyan)]"
+						>
+							<option value="">Use active setup</option>
+							{#each data.team.profiles as profile (profile.id)}
+								<option value={profile.id}>{profile.label}</option>
+							{/each}
+						</select>
+						<input
+							bind:value={cloneProfileID}
+							placeholder="review-copy"
+							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-cyan)]"
+						/>
+						<SurfaceActionButton onclick={cloneProfile} disabled={busyAction !== ''}>
+							Copy setup
+						</SurfaceActionButton>
+					</div>
+
+					<div class="grid gap-2 border-t-2 border-[var(--gc-border)] pt-4">
+						<p class="gc-stamp">Delete setup</p>
+						<select
+							bind:value={deleteProfileID}
+							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
+						>
+							<option value="">Pick an inactive setup</option>
+							{#each data.team.profiles.filter((profile) => !profile.active) as profile (profile.id)}
+								<option value={profile.id}>{profile.label}</option>
+							{/each}
+						</select>
+						<SurfaceActionButton
+							tone="warning"
+							onclick={deleteProfile}
+							disabled={busyAction !== '' || deleteProfileID.trim() === ''}
+						>
+							Delete setup
+						</SurfaceActionButton>
+					</div>
+
+					<div class="grid gap-2 border-t-2 border-[var(--gc-border)] pt-4">
+						<p class="gc-stamp">Import setup file</p>
+						<input
+							type="file"
+							accept=".yaml,.yml,text/yaml"
+							onchange={(event) => {
+								importFile = event.currentTarget.files?.[0] ?? null;
+							}}
+							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-cyan)]"
+						/>
+						<SurfaceActionButton onclick={importSetup} disabled={busyAction !== '' || !importFile}>
+							Import setup file
+						</SurfaceActionButton>
+					</div>
+
+					<div class="flex flex-wrap gap-3 border-t-2 border-[var(--gc-border)] pt-4">
+						<SurfaceActionButton onclick={exportSetup}>Export YAML</SurfaceActionButton>
+					</div>
 				</div>
 			</div>
 
@@ -230,7 +485,7 @@
 					</div>
 					<div>
 						<p class="gc-stamp">Members</p>
-						<p class="gc-value mt-2">{data.team.team.member_count}</p>
+						<p class="gc-value mt-2">{teamMembers().length}</p>
 					</div>
 				</div>
 			</div>
@@ -243,11 +498,14 @@
 				<p class="gc-stamp">Role topology</p>
 				<h2 class="gc-section-title mt-3">See who carries the work before the runtime fans out</h2>
 			</div>
-			<p class="gc-machine">{data.team.team.member_count} visible roles</p>
+			<div class="flex flex-wrap gap-3">
+				<p class="gc-machine">{teamMembers().length} visible roles</p>
+				<SurfaceActionButton onclick={addMember}>Add another role</SurfaceActionButton>
+			</div>
 		</div>
 
 		<div class="mt-6 grid gap-4 xl:grid-cols-3">
-			{#each data.team.team.members as member, index (member.id)}
+			{#each teamMembers() as member, index (member.id)}
 				<article
 					class={`gc-panel-soft px-4 py-4 ${frontAgentID() === member.id ? 'border-[var(--gc-orange)]' : ''}`}
 				>
@@ -258,7 +516,18 @@
 							</p>
 							<h3 class="gc-panel-title mt-3 text-[1rem]">{member.id}</h3>
 						</div>
-						<p class="gc-machine">{memberBaseProfile(member)}</p>
+						<div class="flex flex-col items-end gap-2">
+							<p class="gc-machine">{memberBaseProfile(member)}</p>
+							{#if teamMembers().length > 1}
+								<SurfaceActionButton
+									tone="warning"
+									className="px-3 py-2 text-[11px]"
+									onclick={() => removeMember(member.id)}
+								>
+									Remove role
+								</SurfaceActionButton>
+							{/if}
+						</div>
 					</div>
 
 					<label class="mt-4 grid gap-2">
@@ -341,7 +610,7 @@
 						<p class="gc-machine mt-2">{member.soul_file}</p>
 					</div>
 
-					{#if index === data.team.team.members.length - 1}
+					{#if index === teamMembers().length - 1}
 						<div class="mt-4 border-t-2 border-[var(--gc-border)] pt-4">
 							<p class="gc-stamp">Active front agent</p>
 							<p class="gc-copy mt-2 text-[var(--gc-text-secondary)]">

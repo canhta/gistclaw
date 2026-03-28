@@ -2,7 +2,6 @@ package web
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -35,13 +34,29 @@ type approvalsPageData struct {
 	Error     string
 }
 
-func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
-	data, err := s.loadApprovalsPageData(r)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	s.renderTemplate(w, r, "Approvals", "approvals_body", data)
+type approvalListFilters struct {
+	Query  string
+	Status string
+	Limit  int
+}
+
+type approvalListRequest struct {
+	Query     string
+	Status    string
+	Limit     int
+	Cursor    approvalListCursor
+	HasCursor bool
+	Direction string
+}
+
+type approvalListCursor struct {
+	CreatedAt string
+	ID        string
+}
+
+type approvalListRow struct {
+	Item      approvalItem
+	CreatedAt string
 }
 
 func (s *Server) loadApprovalsPageData(r *http.Request) (approvalsPageData, error) {
@@ -96,7 +111,6 @@ func (s *Server) loadApprovalsPageData(r *http.Request) (approvalsPageData, erro
 
 func (s *Server) handleApprovalResolve(w http.ResponseWriter, r *http.Request) {
 	ticketID := r.PathValue("id")
-	wantsJSON := strings.Contains(strings.ToLower(r.Header.Get("Accept")), "application/json")
 	visible, err := s.approvalVisibleInActiveProject(r.Context(), ticketID)
 	if err != nil {
 		http.Error(w, "failed to load approval", http.StatusInternalServerError)
@@ -107,80 +121,38 @@ func (s *Server) handleApprovalResolve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Guard: check if approval is expired before attempting to resolve.
 	var currentStatus string
-	if err := s.db.RawDB().QueryRowContext(r.Context(),
-		"SELECT status FROM approvals WHERE id = ?", ticketID,
-	).Scan(&currentStatus); err == nil && currentStatus == "expired" {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusConflict)
-		_ = json.NewEncoder(w).Encode(map[string]string{
-			"message": "This approval has expired and can no longer be resolved.",
-		})
+	if err := s.db.RawDB().QueryRowContext(r.Context(), "SELECT status FROM approvals WHERE id = ?", ticketID).Scan(&currentStatus); err == nil && currentStatus == "expired" {
+		writeApprovalResolveError(w, http.StatusConflict, "This approval has expired and can no longer be resolved.")
 		return
 	}
 
 	if err := r.ParseForm(); err != nil {
-		writeApprovalResolveError(w, wantsJSON, http.StatusBadRequest, "invalid form")
+		writeApprovalResolveError(w, http.StatusBadRequest, "invalid form")
 		return
 	}
 
 	decision := r.FormValue("decision")
 	if decision != "approved" && decision != "denied" {
-		writeApprovalResolveError(w, wantsJSON, http.StatusBadRequest, "decision must be approved or denied")
+		writeApprovalResolveError(w, http.StatusBadRequest, "decision must be approved or denied")
 		return
 	}
 
 	if s.rt == nil {
-		writeApprovalResolveError(w, wantsJSON, http.StatusInternalServerError, "runtime not configured")
+		writeApprovalResolveError(w, http.StatusInternalServerError, "runtime not configured")
 		return
 	}
 
 	if err := s.rt.ResolveApprovalAsync(r.Context(), ticketID, decision); err != nil {
-		if wantsJSON {
-			writeApprovalResolveError(w, true, http.StatusInternalServerError, err.Error())
-			return
-		}
-		s.renderTemplate(w, r, "Approvals", "approvals_body", approvalsPageData{
-			Error: err.Error(),
-		})
+		writeApprovalResolveError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	if wantsJSON {
-		writeJSON(w, http.StatusOK, map[string]string{
-			"approval_id": ticketID,
-			"decision":    decision,
-			"status":      decision,
-		})
-		return
-	}
-	http.Redirect(w, r, pageRecoverApprovals, http.StatusSeeOther)
-}
-
-type approvalListFilters struct {
-	Query  string
-	Status string
-	Limit  int
-}
-
-type approvalListRequest struct {
-	Query     string
-	Status    string
-	Limit     int
-	Cursor    approvalListCursor
-	HasCursor bool
-	Direction string
-}
-
-type approvalListCursor struct {
-	CreatedAt string
-	ID        string
-}
-
-type approvalListRow struct {
-	Item      approvalItem
-	CreatedAt string
+	writeJSON(w, http.StatusOK, map[string]string{
+		"approval_id": ticketID,
+		"decision":    decision,
+		"status":      decision,
+	})
 }
 
 func approvalListFilterFromRequest(r *http.Request) approvalListRequest {
@@ -284,7 +256,7 @@ func finalizeApprovalListPage(query url.Values, filter approvalListRequest, rows
 		hasNext = hasExtra
 	}
 
-	return items, buildPageLinks(pageRecoverApprovals, cloneQuery(query), "cursor", "direction", nextCursor, prevCursor, hasNext, hasPrev)
+	return items, buildPageLinks("/api/recover", cloneQuery(query), "cursor", "direction", nextCursor, prevCursor, hasNext, hasPrev)
 }
 
 func parseApprovalListCursor(raw string) (approvalListCursor, bool) {
@@ -320,10 +292,6 @@ func approvalStatusClass(status string) string {
 	}
 }
 
-func writeApprovalResolveError(w http.ResponseWriter, wantsJSON bool, status int, message string) {
-	if wantsJSON {
-		writeJSON(w, status, map[string]string{"message": message})
-		return
-	}
-	http.Error(w, message, status)
+func writeApprovalResolveError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, map[string]string{"message": message})
 }

@@ -128,14 +128,14 @@ func TestAuthReadAPIsRequireSessionOrBearer(t *testing.T) {
 	}
 
 	anonResp := httptest.NewRecorder()
-	anonReq := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	anonReq := httptest.NewRequest(http.MethodGet, "/api/conversations", nil)
 	h.rawServer.ServeHTTP(anonResp, anonReq)
 	if anonResp.Code != http.StatusUnauthorized {
 		t.Fatalf("expected anonymous API request to be 401, got %d", anonResp.Code)
 	}
 
 	bearerResp := httptest.NewRecorder()
-	bearerReq := httptest.NewRequest(http.MethodGet, "/api/sessions", nil)
+	bearerReq := httptest.NewRequest(http.MethodGet, "/api/conversations", nil)
 	bearerReq.Header.Set("Authorization", "Bearer "+h.adminToken)
 	h.rawServer.ServeHTTP(bearerResp, bearerReq)
 	if bearerResp.Code != http.StatusOK {

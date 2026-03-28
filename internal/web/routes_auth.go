@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -39,91 +38,6 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	clearAuthCookies(w, r)
 	http.Redirect(w, r, pageLogin+"?reason=logged_out", http.StatusSeeOther)
-}
-
-func (s *Server) handleSettingsPasswordChange(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form", http.StatusBadRequest)
-		return
-	}
-
-	issued, err := s.changePasswordAndReauthenticate(
-		r,
-		r.FormValue("current_password"),
-		r.FormValue("new_password"),
-		r.FormValue("confirm_password"),
-	)
-	if err != nil {
-		if errors.Is(err, errPasswordReauthenticationFailed) {
-			clearAuthCookies(w, r)
-			http.Redirect(w, r, pageLogin+"?reason=expired", http.StatusSeeOther)
-			return
-		}
-		http.Redirect(w, r, settingsAccessRedirectPath("", passwordChangeErrorMessage(err)), http.StatusSeeOther)
-		return
-	}
-
-	setAuthCookies(w, r, issued)
-	http.Redirect(w, r, settingsAccessRedirectPath("Password updated. Other device sessions were signed out.", ""), http.StatusSeeOther)
-}
-
-func (s *Server) handleDeviceRevoke(w http.ResponseWriter, r *http.Request) {
-	s.handleDeviceMutation(w, r, func(ctxRequest *http.Request, deviceID string, current bool) (settingsDeviceMutationResult, error) {
-		if err := authpkg.RevokeDeviceSessions(ctxRequest.Context(), s.db, deviceID, time.Now().UTC()); err != nil {
-			return settingsDeviceMutationResult{}, err
-		}
-		if current {
-			return settingsDeviceMutationResult{LoggedOut: true, Next: pageLogin + "?reason=logged_out"}, nil
-		}
-		return settingsDeviceMutationResult{Notice: "Device access revoked."}, nil
-	})
-}
-
-func (s *Server) handleDeviceBlock(w http.ResponseWriter, r *http.Request) {
-	s.handleDeviceMutation(w, r, func(ctxRequest *http.Request, deviceID string, current bool) (settingsDeviceMutationResult, error) {
-		if err := authpkg.BlockDevice(ctxRequest.Context(), s.db, deviceID, time.Now().UTC()); err != nil {
-			return settingsDeviceMutationResult{}, err
-		}
-		if current {
-			return settingsDeviceMutationResult{LoggedOut: true, Next: pageLogin + "?reason=blocked"}, nil
-		}
-		return settingsDeviceMutationResult{Notice: "Device blocked."}, nil
-	})
-}
-
-func (s *Server) handleDeviceUnblock(w http.ResponseWriter, r *http.Request) {
-	s.handleDeviceMutation(w, r, func(ctxRequest *http.Request, deviceID string, _ bool) (settingsDeviceMutationResult, error) {
-		if err := authpkg.UnblockDevice(ctxRequest.Context(), s.db, deviceID, time.Now().UTC()); err != nil {
-			return settingsDeviceMutationResult{}, err
-		}
-		return settingsDeviceMutationResult{Notice: "Device unblocked."}, nil
-	})
-}
-
-func (s *Server) handleDeviceMutation(w http.ResponseWriter, r *http.Request, mutate func(*http.Request, string, bool) (settingsDeviceMutationResult, error)) {
-	result, err := s.mutateSettingsDevice(r, mutate)
-	if err != nil {
-		if errors.Is(err, errSettingsSessionRequired) {
-			s.writeUnauthorized(w)
-			return
-		}
-		if errors.Is(err, errSettingsDeviceMissing) {
-			http.Error(w, "device not found", http.StatusNotFound)
-			return
-		}
-		http.Redirect(w, r, settingsAccessRedirectPath("", deviceMutationErrorMessage(err)), http.StatusSeeOther)
-		return
-	}
-
-	redirectTo := pageConfigureSettings
-	if result.Notice != "" {
-		redirectTo = settingsAccessRedirectPath(result.Notice, "")
-	}
-	if result.LoggedOut && result.Next != "" {
-		redirectTo = result.Next
-		clearAuthCookies(w, r)
-	}
-	http.Redirect(w, r, redirectTo, http.StatusSeeOther)
 }
 
 func (s *Server) changePasswordAndReauthenticate(r *http.Request, currentPassword, newPassword, confirmPassword string) (authpkg.IssuedSession, error) {
@@ -202,20 +116,6 @@ func deviceMutationErrorMessage(err error) string {
 	default:
 		return "Unable to update device access right now."
 	}
-}
-
-func settingsAccessRedirectPath(notice, accessError string) string {
-	values := url.Values{}
-	if strings.TrimSpace(notice) != "" {
-		values.Set("access_notice", notice)
-	}
-	if strings.TrimSpace(accessError) != "" {
-		values.Set("access_error", accessError)
-	}
-	if len(values) == 0 {
-		return pageConfigureSettings
-	}
-	return pageConfigureSettings + "?" + values.Encode()
 }
 
 func safeRedirectPath(raw, fallback string) string {
