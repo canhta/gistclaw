@@ -2,6 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import AppShell from '$lib/components/shell/AppShell.svelte';
 	import { surfaceForPath } from '$lib/config/surfaces';
+	import { getInspectorItems } from '$lib/shell/inspector.svelte';
 	import './layout.css';
 	import logo from '$lib/assets/logo.svg';
 	import type { LayoutData } from './$types';
@@ -14,6 +15,9 @@
 			!data.currentPath.startsWith('/onboarding') &&
 			data.currentPath !== '/login'
 	);
+
+	const pageInspectorFn = getInspectorItems();
+	const inspectorItems = $derived(pageInspectorFn ? pageInspectorFn() : surface.inspectorItems);
 </script>
 
 <svelte:head><link rel="icon" href={logo} /></svelte:head>
@@ -24,7 +28,7 @@
 		project={data.project!}
 		currentPath={data.currentPath}
 		inspectorTitle={surface.inspectorTitle}
-		inspectorItems={surface.inspectorItems}
+		{inspectorItems}
 	>
 		{@render children()}
 	</AppShell>

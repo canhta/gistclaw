@@ -1,14 +1,43 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { onMount } from 'svelte';
 	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
 	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import WorkClusterPanel from '$lib/components/common/WorkClusterPanel.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
+	import { setInspectorItems } from '$lib/shell/inspector.svelte';
 	import type { WorkCreateResponse } from '$lib/types/api';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	setInspectorItems(() => [
+		{
+			label: 'Approvals',
+			value: String(data.work.queue_strip.summary.needs_approval),
+			tone: data.work.queue_strip.summary.needs_approval > 0 ? 'warning' : 'default'
+		},
+		{
+			label: 'Active runs',
+			value: String(data.work.queue_strip.root_runs + data.work.queue_strip.worker_runs),
+			tone: data.work.queue_strip.root_runs > 0 ? 'accent' : 'default'
+		},
+		{
+			label: 'Recovery',
+			value: String(data.work.queue_strip.recovery_runs),
+			tone: data.work.queue_strip.recovery_runs > 0 ? 'warning' : 'default'
+		}
+	]);
+
+	onMount(() => {
+		const interval = setInterval(() => {
+			if (data.work.queue_strip.root_runs > 0 || data.work.queue_strip.recovery_runs > 0) {
+				void invalidateAll();
+			}
+		}, 5000);
+		return () => clearInterval(interval);
+	});
 
 	let task = $state('');
 	let errorMessage = $state('');
