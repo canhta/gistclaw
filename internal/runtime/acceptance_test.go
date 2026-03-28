@@ -41,7 +41,7 @@ func TestAcceptance_EndToEnd(t *testing.T) {
 		nil,
 	)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	run, err := rt.Start(ctx, StartRun{
@@ -105,7 +105,7 @@ func TestAcceptance_RestartReconciles(t *testing.T) {
 	db, cs, mem, reg := setupMilestoneTestDeps(t)
 	prov := NewMockProvider(nil, nil)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	for i, id := range []string{"stale-run-1", "stale-run-2"} {
@@ -150,7 +150,7 @@ func TestAcceptance_MemoryReadPathExercised(t *testing.T) {
 		nil,
 	)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	run, err := rt.Start(ctx, StartRun{
@@ -180,7 +180,7 @@ func TestAcceptance_IdleDaemonMakesZeroModelCalls(t *testing.T) {
 	db, cs, mem, reg := setupMilestoneTestDeps(t)
 	prov := NewMockProvider(nil, nil)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -203,7 +203,7 @@ func TestAcceptance_FrontSessionCanSpawnAndReceiveAnnounce(t *testing.T) {
 		nil,
 	)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	front, err := rt.StartFrontSession(ctx, StartFrontSession{
@@ -277,7 +277,7 @@ func TestAcceptance_RuntimeExposesSessionDirectoryAndHistory(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
 
 	front, err := rt.StartFrontSession(ctx, StartFrontSession{
@@ -346,7 +346,7 @@ func TestAcceptance_FrontMailboxSpansMultipleRuns(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
 	workspaceRoot := t.TempDir()
 
@@ -410,7 +410,7 @@ func TestAcceptance_FrontMailboxIncludesAssistantReplies(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
 
 	run, err := rt.StartFrontSession(ctx, StartFrontSession{
@@ -455,7 +455,7 @@ func TestAcceptance_FrontSessionQueuesOutboundIntentForExternalRoute(t *testing.
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
 
 	run, err := rt.StartFrontSession(ctx, StartFrontSession{

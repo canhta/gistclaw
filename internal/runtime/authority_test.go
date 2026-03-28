@@ -71,7 +71,7 @@ func TestReceiveInboundMessageRejectsRegisteredRemoteConnectorWithAutoApproveEle
 
 func TestStartRejectsRemoteSourceConnectorAuthorityWithoutPersistedConversation(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 
 	rawAuthority, err := json.Marshal(authority.Envelope{
 		ApprovalMode:   authority.ApprovalModeAutoApprove,
@@ -109,7 +109,7 @@ func TestStartRejectsRemoteSourceConnectorAuthorityWithoutPersistedConversation(
 
 func TestStartRejectsStoredRemoteConversationAuthorityWithoutParsingKey(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 
 	rawAuthority, err := json.Marshal(authority.Envelope{
 		ApprovalMode:   authority.ApprovalModeAutoApprove,

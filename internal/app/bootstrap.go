@@ -102,7 +102,7 @@ func Bootstrap(cfg Config) (*App, error) {
 
 	broadcaster := web.NewSSEBroadcaster()
 	connectorNotifier := newConnectorRouteNotifier(db)
-	rt := runtimeWiring(cfg, db, convStore, reg, mem, newRunEventFanout(broadcaster, connectorNotifier))
+	rt := runtimeWiring(cfg, db, convStore, reg, capabilityRegistry, mem, newRunEventFanout(broadcaster, connectorNotifier))
 	if err := rt.LoadBudgetSettings(context.Background()); err != nil {
 		if toolCloser != nil {
 			_ = toolCloser.Close()
@@ -353,11 +353,12 @@ func runtimeWiring(
 	db *store.DB,
 	cs *conversations.ConversationStore,
 	reg *tools.Registry,
+	capabilityRegistry *capabilities.Registry,
 	mem *memory.Store,
 	sink model.RunEventSink,
 ) *runtime.Runtime {
 	prov := buildProvider(cfg.Provider)
-	return runtime.New(db, cs, reg, mem, prov, sink)
+	return runtime.New(db, cs, reg, capabilityRegistry, mem, prov, sink)
 }
 
 func ensureProjectState(ctx context.Context, db *store.DB, cfg Config) (model.Project, error) {

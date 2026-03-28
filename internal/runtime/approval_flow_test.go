@@ -220,7 +220,7 @@ func TestResolveApproval_ApprovedCoderExecutesToolAndResumesRun(t *testing.T) {
 		},
 		{Content: "done", StopReason: "end_turn"},
 	}, nil)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	workspaceRoot := t.TempDir()
 
 	run, err := rt.Start(context.Background(), StartRun{
@@ -502,7 +502,7 @@ func newApprovalRuntimeWithProvider(t *testing.T, prov *MockProvider) (*Runtime,
 		t.Cleanup(func() { _ = closer.Close() })
 	}
 
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	return rt, db, prov
 }
 

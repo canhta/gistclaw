@@ -11,7 +11,7 @@ import (
 
 func TestRuntime_TeamConfigUsesActiveProjectStoredProfile(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	ctx := context.Background()
 	storageRoot := t.TempDir()
 	rt.SetStorageRoot(storageRoot)
@@ -37,7 +37,7 @@ func TestRuntime_TeamConfigUsesActiveProjectStoredProfile(t *testing.T) {
 
 func TestRuntime_UpdateTeamWritesIntoActiveProjectStorage(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	ctx := context.Background()
 	storageRoot := t.TempDir()
 	rt.SetStorageRoot(storageRoot)
@@ -89,7 +89,7 @@ func TestRuntime_UpdateTeamWritesIntoActiveProjectStorage(t *testing.T) {
 
 func TestRuntime_TeamConfigFallsBackToConfiguredTeamDirWhenStoredProfileMissing(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	ctx := context.Background()
 	storageRoot := t.TempDir()
 	rt.SetStorageRoot(storageRoot)

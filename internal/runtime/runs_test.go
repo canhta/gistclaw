@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime/capabilities"
+	"github.com/canhta/gistclaw/internal/sessions"
 	"github.com/canhta/gistclaw/internal/store"
 	"github.com/canhta/gistclaw/internal/tools"
 )
@@ -182,6 +184,172 @@ type delegateAliasTool struct {
 	delegate func(context.Context, string, string, string) (tools.DelegationResult, error)
 }
 
+type presenceRecordingConnector struct {
+	meta   model.ConnectorMetadata
+	policy capabilities.PresencePolicy
+
+	mu    sync.Mutex
+	emits []capabilities.PresenceEmitRequest
+}
+
+func (c *presenceRecordingConnector) Metadata() model.ConnectorMetadata {
+	return model.NormalizeConnectorMetadata(c.meta)
+}
+
+func (c *presenceRecordingConnector) Start(context.Context) error { return nil }
+
+func (c *presenceRecordingConnector) Notify(context.Context, string, model.ReplayDelta, string) error {
+	return nil
+}
+
+func (c *presenceRecordingConnector) Drain(context.Context) error { return nil }
+
+func (c *presenceRecordingConnector) CapabilityPresencePolicy(context.Context) capabilities.PresencePolicy {
+	return c.policy
+}
+
+func (c *presenceRecordingConnector) CapabilityEmitPresence(_ context.Context, req capabilities.PresenceEmitRequest) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.emits = append(c.emits, req)
+	return nil
+}
+
+func (c *presenceRecordingConnector) emitCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.emits)
+}
+
+func (c *presenceRecordingConnector) lastEmit() capabilities.PresenceEmitRequest {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.emits) == 0 {
+		return capabilities.PresenceEmitRequest{}
+	}
+	return c.emits[len(c.emits)-1]
+}
+
+type delayedStreamingProvider struct {
+	delay time.Duration
+
+	deltaOnce sync.Once
+	deltaSent chan struct{}
+	finish    <-chan struct{}
+}
+
+func (p *delayedStreamingProvider) ID() string { return "delayed-streaming" }
+
+func (p *delayedStreamingProvider) Generate(ctx context.Context, _ GenerateRequest, stream StreamSink) (GenerateResult, error) {
+	select {
+	case <-ctx.Done():
+		return GenerateResult{}, ctx.Err()
+	case <-time.After(p.delay):
+	}
+	if stream != nil {
+		if err := stream.OnDelta(ctx, "hello"); err != nil {
+			return GenerateResult{}, err
+		}
+	}
+	if p.deltaSent != nil {
+		p.deltaOnce.Do(func() { close(p.deltaSent) })
+	}
+	if p.finish != nil {
+		select {
+		case <-ctx.Done():
+			return GenerateResult{}, ctx.Err()
+		case <-p.finish:
+		}
+	}
+	if stream != nil {
+		if err := stream.OnComplete(); err != nil {
+			return GenerateResult{}, err
+		}
+	}
+	return GenerateResult{
+		Content:      "hello",
+		InputTokens:  1,
+		OutputTokens: 1,
+		StopReason:   "end_turn",
+	}, nil
+}
+
+type delayedToolCallProvider struct {
+	delay time.Duration
+	call  model.ToolCallRequest
+}
+
+func (p *delayedToolCallProvider) ID() string { return "delayed-tool-call" }
+
+func (p *delayedToolCallProvider) Generate(ctx context.Context, _ GenerateRequest, _ StreamSink) (GenerateResult, error) {
+	select {
+	case <-ctx.Done():
+		return GenerateResult{}, ctx.Err()
+	case <-time.After(p.delay):
+	}
+	return GenerateResult{
+		ToolCalls:   []model.ToolCallRequest{p.call},
+		InputTokens: 1,
+		StopReason:  "tool_calls",
+	}, nil
+}
+
+func seedRemoteFrontSession(
+	t *testing.T,
+	db *store.DB,
+	cs *conversations.ConversationStore,
+	connectorID string,
+	accountID string,
+	externalID string,
+	threadID string,
+	agentID string,
+) (model.Conversation, model.Session) {
+	t.Helper()
+
+	conv, err := cs.Resolve(context.Background(), conversations.ConversationKey{
+		ConnectorID: connectorID,
+		AccountID:   accountID,
+		ExternalID:  externalID,
+		ThreadID:    threadID,
+	})
+	if err != nil {
+		t.Fatalf("Resolve conversation: %v", err)
+	}
+
+	svc := sessions.NewService(db, cs)
+	front, err := svc.OpenFrontSession(context.Background(), sessions.OpenFrontSession{
+		ConversationID: conv.ID,
+		AgentID:        agentID,
+	})
+	if err != nil {
+		t.Fatalf("OpenFrontSession: %v", err)
+	}
+	if err := svc.BindFollowUp(context.Background(), sessions.BindFollowUp{
+		ConversationID: conv.ID,
+		ThreadID:       threadID,
+		SessionID:      front.ID,
+		ConnectorID:    connectorID,
+		AccountID:      accountID,
+		ExternalID:     externalID,
+	}); err != nil {
+		t.Fatalf("BindFollowUp: %v", err)
+	}
+
+	return conv, front
+}
+
+func waitForCondition(t *testing.T, timeout time.Duration, fn func() bool, desc string) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if fn() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", desc)
+}
+
 func (t *delegateAliasTool) Name() string { return t.name }
 
 func (t *delegateAliasTool) Spec() model.ToolSpec {
@@ -227,7 +395,7 @@ func TestRunEngine_StartAndComplete(t *testing.T) {
 	)
 	sink := &model.NoopEventSink{}
 
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	run, err := rt.Start(ctx, StartRun{
@@ -255,7 +423,7 @@ func TestRunEngine_StartAndComplete(t *testing.T) {
 
 func TestRunEngine_FailsHungProviderTurnsAfterTimeout(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, &blockingProvider{}, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, &blockingProvider{}, &model.NoopEventSink{})
 	rt.providerTimeout = 20 * time.Millisecond
 
 	started := time.Now()
@@ -298,7 +466,7 @@ func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 
 	run, err := rt.Start(context.Background(), StartRun{
 		ConversationID: "conv-visible-tools",
@@ -352,7 +520,7 @@ func TestRunEngine_AdvertisesCoderExecToScopedWriteAgent(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 
 	run, err := rt.Start(context.Background(), StartRun{
 		ConversationID: "conv-patcher-tools",
@@ -410,7 +578,7 @@ func TestRunEngine_DelegateTaskToolCreatesChildRun(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
 		DelegateTask: rt.DelegateTaskTool,
 	})
@@ -486,7 +654,7 @@ func TestRunEngine_DelegateTaskAllowsOverrideWhenRuntimeRecommendsDirect(t *test
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
 		DelegateTask: rt.DelegateTaskTool,
 	})
@@ -607,7 +775,7 @@ func TestRunEngine_DelegateTaskPausesParentUntilApprovedChildCompletes(t *testin
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
 		DelegateTask: rt.DelegateTaskTool,
 	})
@@ -844,7 +1012,7 @@ func TestRunEngine_DelegateFamilyToolPausesAndResumesWithoutHardcodedName(t *tes
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	reg.Register(&delegateAliasTool{
 		name: "delegate_helper",
 		delegate: func(ctx context.Context, controllerSessionID, agentID, prompt string) (tools.DelegationResult, error) {
@@ -1013,7 +1181,7 @@ func TestRunEngine_DelegateTaskInterruptsParentWhenChildInterrupts(t *testing.T)
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
 		DelegateTask: rt.DelegateTaskTool,
 	})
@@ -1116,7 +1284,7 @@ func TestRunEngine_IncludesSoulInstructionsInProviderRequests(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 
 	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
 		TeamID: "default",
@@ -1207,7 +1375,7 @@ func TestRunEngine_IncludesExecutionRecommendationAndSpecialistRosterInProviderR
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 
 	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
 		TeamID: "default",
@@ -1271,6 +1439,192 @@ func TestRunEngine_IncludesExecutionRecommendationAndSpecialistRosterInProviderR
 	}
 }
 
+func TestRunEngine_RemoteLongRunStartsPresence(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	capReg := capabilities.NewRegistry()
+	connector := &presenceRecordingConnector{
+		meta: model.ConnectorMetadata{
+			ID:       "zalo_personal",
+			Exposure: model.ConnectorExposureRemote,
+		},
+		policy: capabilities.PresencePolicy{
+			StartupDelay:      10 * time.Millisecond,
+			KeepaliveInterval: 100 * time.Millisecond,
+			MaxDuration:       time.Second,
+		},
+	}
+	capReg.RegisterConnector(connector)
+	prov := &blockingProvider{}
+	rt := New(db, cs, reg, capReg, mem, prov, &model.NoopEventSink{})
+	rt.SetConnectors([]model.Connector{connector})
+
+	conv, front := seedRemoteFrontSession(t, db, cs, "zalo_personal", "acct-1", "user-1", "main", "assistant")
+	asyncCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rt.SetAsyncContext(asyncCtx)
+
+	if _, err := rt.StartAsync(context.Background(), StartRun{
+		ConversationID:    conv.ID,
+		SourceConnectorID: "zalo_personal",
+		AgentID:           "assistant",
+		SessionID:         front.ID,
+		Objective:         "check my remote inbox",
+		CWD:               t.TempDir(),
+	}); err != nil {
+		t.Fatalf("StartAsync failed: %v", err)
+	}
+
+	waitForCondition(t, 200*time.Millisecond, func() bool {
+		return connector.emitCount() > 0
+	}, "presence emit")
+	cancel()
+	rt.WaitAsync()
+
+	if got := connector.emitCount(); got == 0 {
+		t.Fatal("expected automatic presence emit for long remote run")
+	}
+	last := connector.lastEmit()
+	if last.ThreadID != "user-1" || last.Mode != capabilities.PresenceModeTyping {
+		t.Fatalf("unexpected last presence emit: %+v", last)
+	}
+}
+
+func TestRunEngine_FirstOutputStopsPresence(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	capReg := capabilities.NewRegistry()
+	connector := &presenceRecordingConnector{
+		meta: model.ConnectorMetadata{
+			ID:       "zalo_personal",
+			Exposure: model.ConnectorExposureRemote,
+		},
+		policy: capabilities.PresencePolicy{
+			StartupDelay:      5 * time.Millisecond,
+			KeepaliveInterval: 10 * time.Millisecond,
+			MaxDuration:       time.Second,
+		},
+	}
+	capReg.RegisterConnector(connector)
+	finish := make(chan struct{})
+	prov := &delayedStreamingProvider{
+		delay:     20 * time.Millisecond,
+		deltaSent: make(chan struct{}),
+		finish:    finish,
+	}
+	rt := New(db, cs, reg, capReg, mem, prov, &model.NoopEventSink{})
+	rt.SetConnectors([]model.Connector{connector})
+
+	conv, front := seedRemoteFrontSession(t, db, cs, "zalo_personal", "acct-1", "user-1", "main", "assistant")
+	asyncCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	rt.SetAsyncContext(asyncCtx)
+
+	if _, err := rt.StartAsync(context.Background(), StartRun{
+		ConversationID:    conv.ID,
+		SourceConnectorID: "zalo_personal",
+		AgentID:           "assistant",
+		SessionID:         front.ID,
+		Objective:         "reply to the user",
+		CWD:               t.TempDir(),
+	}); err != nil {
+		t.Fatalf("StartAsync failed: %v", err)
+	}
+
+	waitForCondition(t, 200*time.Millisecond, func() bool {
+		select {
+		case <-prov.deltaSent:
+			return true
+		default:
+			return false
+		}
+	}, "first streamed output")
+
+	countAfterDelta := connector.emitCount()
+	time.Sleep(30 * time.Millisecond)
+	countAfterWait := connector.emitCount()
+	if countAfterWait != countAfterDelta {
+		t.Fatalf("expected presence to stop after first output, got %d then %d emits", countAfterDelta, countAfterWait)
+	}
+
+	close(finish)
+	rt.WaitAsync()
+}
+
+func TestRunEngine_ApprovalPauseStopsPresence(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	tools.RegisterCapabilityTools(reg, tools.CapabilityHandlers{
+		Send: func(_ context.Context, req capabilities.SendRequest) (capabilities.SendResult, error) {
+			return capabilities.SendResult{
+				ConnectorID: req.ConnectorID,
+				TargetID:    req.TargetID,
+				Accepted:    true,
+				Summary:     "sent",
+			}, nil
+		},
+	})
+	capReg := capabilities.NewRegistry()
+	connector := &presenceRecordingConnector{
+		meta: model.ConnectorMetadata{
+			ID:       "zalo_personal",
+			Exposure: model.ConnectorExposureRemote,
+		},
+		policy: capabilities.PresencePolicy{
+			StartupDelay:      5 * time.Millisecond,
+			KeepaliveInterval: 10 * time.Millisecond,
+			MaxDuration:       time.Second,
+		},
+	}
+	capReg.RegisterConnector(connector)
+	prov := &delayedToolCallProvider{
+		delay: 20 * time.Millisecond,
+		call: model.ToolCallRequest{
+			ID:        "call-send",
+			ToolName:  "connector_send",
+			InputJSON: []byte(`{"connector_id":"zalo_personal","target_id":"user-1","message":"hello"}`),
+		},
+	}
+	rt := New(db, cs, reg, capReg, mem, prov, &model.NoopEventSink{})
+	rt.SetConnectors([]model.Connector{connector})
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID:       "default",
+		FrontAgentID: "assistant",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:      "assistant",
+				BaseProfile:  model.BaseProfileOperator,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyConnectorCapability},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	conv, front := seedRemoteFrontSession(t, db, cs, "zalo_personal", "acct-1", "user-1", "main", "assistant")
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID:    conv.ID,
+		SourceConnectorID: "zalo_personal",
+		AgentID:           "assistant",
+		SessionID:         front.ID,
+		Objective:         "send hello",
+		CWD:               t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if run.Status != model.RunStatusNeedsApproval {
+		t.Fatalf("expected needs_approval status, got %q", run.Status)
+	}
+
+	countAfterPause := connector.emitCount()
+	if countAfterPause == 0 {
+		t.Fatal("expected presence before approval pause")
+	}
+	time.Sleep(30 * time.Millisecond)
+	countAfterWait := connector.emitCount()
+	if countAfterWait != countAfterPause {
+		t.Fatalf("expected presence to stop on approval pause, got %d then %d emits", countAfterPause, countAfterWait)
+	}
+}
+
 func TestRunEngine_DirectInboxFlowDoesNotSpawnChildRun(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	var inboxCalls []capabilities.InboxListRequest
@@ -1313,7 +1667,7 @@ func TestRunEngine_DirectInboxFlowDoesNotSpawnChildRun(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
 		DelegateTask: rt.DelegateTaskTool,
 	})
@@ -1438,7 +1792,7 @@ func TestRunEngine_DirectInboxUpdateFlowDoesNotSpawnChildRun(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
 		DelegateTask: rt.DelegateTaskTool,
 	})
@@ -1565,7 +1919,7 @@ func TestRunEngine_DirectConnectorFlowPausesForApprovalWithoutChildRun(t *testin
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
 		DelegateTask: rt.DelegateTaskTool,
 	})
@@ -1672,7 +2026,7 @@ func TestRunEngine_DirectConnectorFlowPausesForApprovalWithoutChildRun(t *testin
 
 func TestQueueConversationOutboundIntentSkipsLocalConnectorRoutes(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	rt.SetConnectors([]model.Connector{
 		&metadataOnlyConnector{
 			metadata: model.ConnectorMetadata{
@@ -1722,7 +2076,7 @@ func TestQueueConversationOutboundIntentSkipsLocalConnectorRoutes(t *testing.T) 
 
 func TestQueueConversationOutboundIntentQueuesRegisteredConnectorRoutes(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	rt.SetConnectors([]model.Connector{
 		&metadataOnlyConnector{
 			metadata: model.ConnectorMetadata{
@@ -1798,7 +2152,7 @@ func TestRunEngine_ApprovalRequestedEmitsReplayDelta(t *testing.T) {
 			StopReason: "tool_calls",
 		},
 	}, nil)
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 
 	run, err := rt.Start(context.Background(), StartRun{
 		ConversationID: "conv-approval-replay",
@@ -1839,7 +2193,7 @@ func TestRunEngine_ContinueAndResumeLoadRun(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
 
 	run, err := rt.Start(ctx, StartRun{
@@ -1877,7 +2231,7 @@ func TestRunEngine_SubmitTaskStartsWebConversation(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
 	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
 		TeamID:       "default",
@@ -1939,7 +2293,7 @@ func TestRunEngine_PassesCWDIntoToolInvocationContext(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 
 	workspaceRoot := t.TempDir()
 	if _, err := rt.Start(context.Background(), StartRun{
@@ -1981,7 +2335,7 @@ func TestRunEngine_PassesAuthorityIntoToolInvocationContext(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 
 	rawAuthority, err := json.Marshal(authority.Envelope{
 		ApprovalMode:   authority.ApprovalModeAutoApprove,
@@ -2034,7 +2388,7 @@ func TestRunEngine_UsesPersistedAuthoritySettingsByDefault(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 
 	if _, err := db.RawDB().Exec(
 		`INSERT INTO settings (key, value, updated_at) VALUES
@@ -2084,7 +2438,7 @@ func TestRunEngine_UsesPersistedAuthoritySettingsByDefault(t *testing.T) {
 
 func TestRunEngine_ChildRunInheritsParentAuthority(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 
 	rawAuthority, err := json.Marshal(authority.Envelope{
 		ApprovalMode:   authority.ApprovalModePrompt,
@@ -2135,7 +2489,7 @@ func TestRunEngine_ChildRunInheritsParentAuthority(t *testing.T) {
 func TestRunEngine_EmitsTurnDeltasToEventSink(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	sink := &recordingReplaySink{}
-	rt := New(db, cs, reg, mem, &streamingProvider{}, sink)
+	rt := New(db, cs, reg, nil, mem, &streamingProvider{}, sink)
 
 	run, err := rt.Start(context.Background(), StartRun{
 		ConversationID: "conv-stream",
@@ -2199,7 +2553,7 @@ func TestRunEngine_LifecycleEventsJournaled(t *testing.T) {
 	)
 	sink := &model.NoopEventSink{}
 
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	run, err := rt.Start(ctx, StartRun{
@@ -2260,7 +2614,7 @@ func TestRunEngine_PersistsProviderModelID(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 
 	run, err := rt.Start(context.Background(), StartRun{
 		ConversationID: "conv-model-id",
@@ -2299,7 +2653,7 @@ func TestRunEngine_StartRollsBackWhenRunStartedEventFails(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(nil, nil)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	_, err := db.RawDB().Exec(
@@ -2344,7 +2698,7 @@ func TestRunEngine_RunCompletedAndReceiptAreAtomic(t *testing.T) {
 		nil,
 	)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	_, err := db.RawDB().Exec(
@@ -2401,7 +2755,7 @@ func TestRunEngine_NeverWritesToStoreDirectly(t *testing.T) {
 	)
 	sink := &model.NoopEventSink{}
 
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	_, err := rt.Start(ctx, StartRun{
@@ -2435,7 +2789,7 @@ func TestRunEngine_RejectsCompetingRootRun(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(nil, nil)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	_, err := db.RawDB().Exec(
@@ -2483,7 +2837,7 @@ func TestBudgetGuard_PerRunCapExhaustion(t *testing.T) {
 	)
 	sink := &model.NoopEventSink{}
 
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	rt.budget.PerRunTokenCap = 100000
 	ctx := context.Background()
 
@@ -2524,7 +2878,7 @@ func TestBudgetGuard_DailyCapBlocksNewRun(t *testing.T) {
 	}
 
 	prov := NewMockProvider(nil, nil)
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	rt.budget.DailyCostCapUSD = 10.0
 	ctx := context.Background()
 
@@ -2558,7 +2912,7 @@ func TestBudgetGuard_RollingWindow_NotUTCMidnight(t *testing.T) {
 	}
 
 	prov := NewMockProvider(nil, nil)
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	rt.budget.DailyCostCapUSD = 10.0
 	ctx := context.Background()
 
@@ -2591,7 +2945,7 @@ func TestRunEngine_ContextCompaction_At75Percent(t *testing.T) {
 	)
 	sink := &model.NoopEventSink{}
 
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	rt.contextWindowSize = 200000
 	ctx := context.Background()
 
@@ -2630,7 +2984,7 @@ func TestRunEngine_InterruptsOnEmptyNonTerminalTurn(t *testing.T) {
 		nil,
 	)
 
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	run, err := rt.Start(context.Background(), StartRun{
 		ConversationID: "conv-empty-nonterminal",
 		AgentID:        "agent-a",
@@ -2668,7 +3022,7 @@ func TestRunEngine_MemoryContextReadIsJournaled(t *testing.T) {
 		nil,
 	)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	run, err := rt.Start(ctx, StartRun{
@@ -2702,7 +3056,7 @@ func TestRunEngine_DoesNotPromoteOrdinaryCompletedRootRunIntoProjectMemory(t *te
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
 
 	run, err := rt.Start(ctx, StartRun{
@@ -2751,7 +3105,7 @@ func TestRunEngine_PromotesExplicitMemoryRequestIntoProjectMemory(t *testing.T) 
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
 
 	run, err := rt.Start(ctx, StartRun{
@@ -2803,7 +3157,7 @@ func TestRunEngine_DoesNotPromoteVagueExplicitMemoryPromptIntoProjectMemory(t *t
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
 
 	run, err := rt.Start(ctx, StartRun{
@@ -2849,7 +3203,7 @@ func TestRunEngine_PromotesNaturalPromptPreferencesIntoProjectMemory(t *testing.
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
 
 	run, err := rt.Start(ctx, StartRun{
@@ -2885,7 +3239,7 @@ func TestRunEngine_PromotesNaturalPromptPreferencesIntoProjectMemory(t *testing.
 
 func TestRunEngine_PromotesNaturalPromptPreferencesBeforeRunSucceeds(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, &blockingProvider{}, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, &blockingProvider{}, &model.NoopEventSink{})
 	rt.providerTimeout = 20 * time.Millisecond
 	ctx := context.Background()
 
@@ -2945,7 +3299,7 @@ func TestRunEngine_ExecutesToolCallsAndCarriesResultsIntoNextTurn(t *testing.T) 
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
 
 	run, err := rt.Start(ctx, StartRun{
@@ -3038,7 +3392,7 @@ func TestRunEngine_ProviderInstructionsIncludeWorkspaceSnapshot(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
 
 	workspaceRoot := t.TempDir()
@@ -3101,7 +3455,7 @@ func TestRunEngine_JournalsToolLogsAndEmitsReplayDeltas(t *testing.T) {
 		nil,
 	)
 	sink := &recordingReplaySink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 
 	run, err := rt.Start(context.Background(), StartRun{
 		ConversationID: "conv-tool-log",
@@ -3177,7 +3531,7 @@ func TestStartFrontSession_ProviderContextUsesSessionMailboxNotConversationWideE
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
 	workspaceRoot := t.TempDir()
 

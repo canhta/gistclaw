@@ -10,7 +10,7 @@ import (
 
 func TestScopeConversationKey_UsesExplicitCWDRegistration(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 
 	key, project, err := rt.scopeConversationKey(context.Background(), conversations.ConversationKey{
 		ConnectorID: "telegram",
@@ -40,7 +40,7 @@ func TestScopeConversationKey_UsesActiveProjectWhenExplicitScopeMissing(t *testi
 		t.Fatalf("SetActiveProject: %v", err)
 	}
 
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	key, scopedProject, err := rt.scopeConversationKey(context.Background(), conversations.ConversationKey{
 		ConnectorID: "telegram",
 		ThreadID:    "thread-1",

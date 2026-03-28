@@ -12,7 +12,7 @@ import (
 
 func TestRuntime_TeamConfigUsesActiveProfileForProject(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	ctx := context.Background()
 	storageRoot := t.TempDir()
 	rt.SetStorageRoot(storageRoot)
@@ -42,7 +42,7 @@ func TestRuntime_TeamConfigUsesActiveProfileForProject(t *testing.T) {
 
 func TestRuntime_ChangingActiveProfileOnlyAffectsFutureRuns(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	ctx := context.Background()
 	storageRoot := t.TempDir()
 	rt.SetStorageRoot(storageRoot)
@@ -100,7 +100,7 @@ func TestRuntime_ChangingActiveProfileOnlyAffectsFutureRuns(t *testing.T) {
 
 func TestRuntime_TeamProfileManagementMethods(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	ctx := context.Background()
 	storageRoot := t.TempDir()
 	rt.SetStorageRoot(storageRoot)
@@ -169,7 +169,7 @@ func TestRuntime_TeamProfileManagementMethods(t *testing.T) {
 
 func TestRuntime_DeleteTeamProfileRejectsActiveProfile(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 	ctx := context.Background()
 	rt.SetStorageRoot(t.TempDir())
 

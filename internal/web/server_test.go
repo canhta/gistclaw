@@ -4632,7 +4632,7 @@ func newServerHarnessWithProviderAndConnectorHealth(t *testing.T, prov runtime.P
 		reg.Register(tool)
 	}
 	broadcaster := NewSSEBroadcaster()
-	rt := runtime.New(db, cs, reg, mem, prov, broadcaster)
+	rt := runtime.New(db, cs, reg, nil, mem, prov, broadcaster)
 	t.Cleanup(func() {
 		rt.WaitAsync()
 		_ = db.Close()
@@ -4713,7 +4713,7 @@ func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, e
 		reg.Register(tool)
 	}
 	broadcaster := NewSSEBroadcaster()
-	rt := runtime.New(db, cs, reg, mem, prov, broadcaster)
+	rt := runtime.New(db, cs, reg, nil, mem, prov, broadcaster)
 	t.Cleanup(func() {
 		rt.WaitAsync()
 		_ = db.Close()

@@ -23,7 +23,7 @@ func TestBudget_PerRunTokenCapStopsRun(t *testing.T) {
 	}, nil)
 
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	rt.budget.PerRunTokenCap = 500 // low cap — exceeded after first turn
 
 	ctx := context.Background()
@@ -88,7 +88,7 @@ func TestBudget_RunMarkedInterruptedNotFailed(t *testing.T) {
 	}, nil)
 
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	rt.budget.PerRunTokenCap = 500
 
 	ctx := context.Background()
@@ -129,7 +129,7 @@ func TestBudget_DailyCapRejectsStartRun(t *testing.T) {
 
 	prov := NewMockProvider(nil, nil)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	rt.budget.DailyCostCapUSD = 10.0
 
 	_, err := rt.Start(context.Background(), StartRun{
@@ -157,7 +157,7 @@ func TestBudget_IdleDaemonNoRecordIdleBurn(t *testing.T) {
 	db, cs, mem, reg := setupMilestoneTestDeps(t)
 	prov := NewMockProvider(nil, nil)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 
 	// Reconciling with no active runs should not invoke RecordIdleBurn.
 	report, err := rt.ReconcileInterrupted(context.Background())
@@ -184,7 +184,7 @@ func TestBudget_CapRaiseAppliesOnNextRun(t *testing.T) {
 	}, nil)
 
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	rt.budget.PerRunTokenCap = 100
 
 	ctx := context.Background()
@@ -224,7 +224,7 @@ func TestBudget_UpdateSettingsAppliesLiveBudgetLimits(t *testing.T) {
 	db, cs, mem, reg := setupMilestoneTestDeps(t)
 	prov := NewMockProvider(nil, nil)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 
 	if err := rt.UpdateSettings(context.Background(), map[string]string{
 		"per_run_token_budget": "50000",

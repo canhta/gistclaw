@@ -31,7 +31,7 @@ func newCollaborationRuntime(t *testing.T, responses []GenerateResult) (*Runtime
 	cs := conversations.NewConversationStore(db)
 	mem := memory.NewStore(db, cs)
 	reg := tools.NewRegistry()
-	rt := New(db, cs, reg, mem, NewMockProvider(responses, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(responses, nil), &model.NoopEventSink{})
 	return rt, db
 }
 
@@ -57,7 +57,7 @@ func newCollaborationRuntimeWithProviderAndTools(t *testing.T, prov *MockProvide
 		t.Cleanup(func() { _ = closer.Close() })
 	}
 
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	return rt, db, prov
 }
 
@@ -474,7 +474,7 @@ func TestRuntime_StartFrontSessionIncludesDirectoryContextInProviderInstructions
 	prov := NewMockProvider([]GenerateResult{
 		{Content: "I inspected the repo.", InputTokens: 12, OutputTokens: 18, StopReason: "end_turn"},
 	}, nil)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 
 	projectPath := t.TempDir()
 	for path, body := range map[string]string{

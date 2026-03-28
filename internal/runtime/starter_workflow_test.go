@@ -31,7 +31,7 @@ func TestStarterWorkflow_PreviewOnly(t *testing.T) {
 	}, nil)
 
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	run, err := rt.Start(ctx, StartRun{
@@ -145,7 +145,7 @@ func TestStarterWorkflow_VerificationResultAttached(t *testing.T) {
 		{Content: "tests pass", InputTokens: 5, OutputTokens: 10, StopReason: "end_turn"},
 	}, nil)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	run, err := rt.Start(ctx, StartRun{
@@ -179,7 +179,7 @@ func TestStarterWorkflow_RepoPatchRunsAsWorkerFlow(t *testing.T) {
 		{Content: "Verification passed.", InputTokens: 7, OutputTokens: 12, StopReason: "end_turn"},
 	}, nil)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	front, err := rt.StartFrontSession(ctx, StartFrontSession{

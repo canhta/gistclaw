@@ -27,7 +27,7 @@ func TestPrepareStartRun_UsesActiveProjectPrimaryPathWhenCWDOmitted(t *testing.T
 		t.Fatalf("seed active_project_id: %v", err)
 	}
 
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
 
 	cmd, err := rt.prepareStartRun(context.Background(), "", StartRun{
 		ConversationID: "conv-project",

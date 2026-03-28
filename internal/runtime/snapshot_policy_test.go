@@ -34,7 +34,7 @@ func TestRunEngine_UsesExecutionSnapshotAdaptivePolicy(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, registry, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, registry, nil, mem, prov, &model.NoopEventSink{})
 
 	run, err := rt.Start(context.Background(), StartRun{
 		ConversationID:        "conv-snapshot-policy",
@@ -100,7 +100,7 @@ func TestRuntime_DefaultExecutionSnapshotIsAppliedToChildSpawns(t *testing.T) {
 		},
 		nil,
 	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
 	rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
 		TeamID: "default",
 		Agents: map[string]model.AgentProfile{

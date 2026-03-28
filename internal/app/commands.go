@@ -150,7 +150,7 @@ func ConfiguredConnectorHealth(ctx context.Context, cfg Config, db *store.DB) ([
 
 	cs := conversations.NewConversationStore(db)
 	mem := memory.NewStore(db, cs)
-	rt := runtime.New(db, cs, tools.NewRegistry(), mem, nil, nil)
+	rt := runtime.New(db, cs, tools.NewRegistry(), nil, mem, nil, nil)
 	app := &App{
 		connectors: buildConnectors(cfg, db, cs, rt, nil),
 	}

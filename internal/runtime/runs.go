@@ -19,6 +19,8 @@ import (
 	"github.com/canhta/gistclaw/internal/i18n"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/runtime/capabilities"
+	"github.com/canhta/gistclaw/internal/runtime/presence"
 	recommendationpkg "github.com/canhta/gistclaw/internal/runtime/recommendation"
 	"github.com/canhta/gistclaw/internal/sessions"
 	"github.com/canhta/gistclaw/internal/store"
@@ -163,6 +165,7 @@ type Runtime struct {
 	store               *store.DB
 	convStore           *conversations.ConversationStore
 	tools               *tools.Registry
+	capabilities        *capabilities.Registry
 	memory              *memory.Store
 	provider            Provider
 	providerTimeout     time.Duration
@@ -177,12 +180,14 @@ type Runtime struct {
 	defaultSnapshotJSON []byte
 	asyncCtx            context.Context
 	asyncWG             sync.WaitGroup
+	presence            *presence.Manager
 }
 
 func New(
 	db *store.DB,
 	cs *conversations.ConversationStore,
 	reg *tools.Registry,
+	capReg *capabilities.Registry,
 	mem *memory.Store,
 	prov Provider,
 	sink model.RunEventSink,
@@ -191,6 +196,7 @@ func New(
 		store:           db,
 		convStore:       cs,
 		tools:           reg,
+		capabilities:    capReg,
 		memory:          mem,
 		provider:        prov,
 		providerTimeout: 45 * time.Second,
@@ -204,6 +210,7 @@ func New(
 		contexts:          newDefaultContextAssembler(db, cs, nil),
 		connectors:        builtinConnectorCatalog(),
 		asyncCtx:          context.Background(),
+		presence:          presence.NewManager(),
 	}
 }
 
@@ -483,6 +490,12 @@ type replayStreamSink struct {
 	eventSink model.RunEventSink
 }
 
+type outputAwareStreamSink struct {
+	base          StreamSink
+	onFirstOutput func()
+	once          sync.Once
+}
+
 func newReplayStreamSink(eventSink model.RunEventSink, runID string) StreamSink {
 	if eventSink == nil {
 		return nil
@@ -494,6 +507,33 @@ func newReplayStreamSink(eventSink model.RunEventSink, runID string) StreamSink 
 		runID:     runID,
 		eventSink: eventSink,
 	}
+}
+
+func wrapStreamSinkForOutput(base StreamSink, onFirstOutput func()) StreamSink {
+	if onFirstOutput == nil {
+		return base
+	}
+	return &outputAwareStreamSink{
+		base:          base,
+		onFirstOutput: onFirstOutput,
+	}
+}
+
+func (s *outputAwareStreamSink) OnDelta(ctx context.Context, text string) error {
+	if strings.TrimSpace(text) != "" {
+		s.once.Do(s.onFirstOutput)
+	}
+	if s.base == nil {
+		return nil
+	}
+	return s.base.OnDelta(ctx, text)
+}
+
+func (s *outputAwareStreamSink) OnComplete() error {
+	if s.base == nil {
+		return nil
+	}
+	return s.base.OnComplete()
 }
 
 func (s *replayStreamSink) OnDelta(ctx context.Context, text string) error {
@@ -546,6 +586,10 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 	cwd := opts.cwd
 	if cwd == "" {
 		cwd = run.CWD
+	}
+	presenceRoute, presenceActive := r.startPresenceForRun(ctx, conversationID, sessionID)
+	if presenceActive {
+		defer r.stopPresenceForRoute(presenceRoute)
 	}
 	projectID := run.ProjectID
 	cumulativeInput := run.InputTokens
@@ -653,11 +697,16 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 		if _, hasDeadline := ctx.Deadline(); !hasDeadline && r.providerTimeout > 0 {
 			generateCtx, cancel = context.WithTimeout(ctx, r.providerTimeout)
 		}
+		streamSink := wrapStreamSinkForOutput(newReplayStreamSink(r.eventSink, runID), func() {
+			if presenceActive {
+				r.presence.MarkOutputStarted(presenceRoute)
+			}
+		})
 		result, err := r.provider.Generate(generateCtx, GenerateRequest{
 			Instructions:    providerReq.Instructions,
 			ConversationCtx: conversationCtx,
 			ToolSpecs:       visibleTools,
-		}, newReplayStreamSink(r.eventSink, runID))
+		}, streamSink)
 		cancel()
 		if err != nil {
 			_ = r.convStore.AppendEvent(ctx, model.Event{
@@ -735,7 +784,11 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 		}
 
 		if len(result.ToolCalls) > 0 {
-			toolOutcome, err := r.executeToolCalls(ctx, runID, conversationID, agentID, sessionID, cwd, runAuthority, result.ToolCalls)
+			toolOutcome, err := r.executeToolCalls(ctx, runID, conversationID, agentID, sessionID, cwd, runAuthority, result.ToolCalls, func() {
+				if presenceActive {
+					r.presence.MarkPaused(presenceRoute)
+				}
+			})
 			if err != nil {
 				return model.Run{}, err
 			}
@@ -847,6 +900,7 @@ func (r *Runtime) executeToolCalls(
 	cwd string,
 	runAuthority authority.Envelope,
 	toolCalls []model.ToolCallRequest,
+	onApprovalPause func(),
 ) (toolCallOutcome, error) {
 	outcome := toolCallOutcome{
 		events: make([]model.Event, 0, len(toolCalls)),
@@ -941,6 +995,9 @@ func (r *Runtime) executeToolCalls(
 			if err := r.appendApprovalGate(ctx, conversationID, runID, sessionID, tc, ticket, toolDecision.Reason); err != nil {
 				return outcome, err
 			}
+			if onApprovalPause != nil {
+				onApprovalPause()
+			}
 			outcome.paused = true
 			return outcome, nil
 		default:
@@ -968,6 +1025,69 @@ func (r *Runtime) executeToolCalls(
 	}
 
 	return outcome, nil
+}
+
+func (r *Runtime) startPresenceForRun(ctx context.Context, conversationID, sessionID string) (presence.Route, bool) {
+	route, policy, ok := r.presenceRouteForRun(ctx, conversationID, sessionID)
+	if !ok {
+		return presence.Route{}, false
+	}
+	ctrl := r.presence.Start(route, presence.Options{
+		StartupDelay:           policy.StartupDelay,
+		KeepaliveInterval:      policy.KeepaliveInterval,
+		MaxDuration:            policy.MaxDuration,
+		MaxConsecutiveFailures: policy.MaxConsecutiveFailures,
+		StartFn: func(emitCtx context.Context) error {
+			return r.capabilities.EmitPresence(emitCtx, capabilities.PresenceEmitRequest{
+				ConnectorID:    route.ConnectorID,
+				ConversationID: route.ConversationID,
+				ThreadID:       route.ExternalID,
+				Mode:           capabilities.PresenceModeTyping,
+			})
+		},
+	})
+	return route, ctrl != nil
+}
+
+func (r *Runtime) stopPresenceForRoute(route presence.Route) {
+	if r == nil || r.presence == nil {
+		return
+	}
+	r.presence.Stop(route)
+}
+
+func (r *Runtime) presenceRouteForRun(ctx context.Context, conversationID, sessionID string) (presence.Route, capabilities.PresencePolicy, bool) {
+	if r == nil || r.capabilities == nil || r.presence == nil {
+		return presence.Route{}, capabilities.PresencePolicy{}, false
+	}
+	sessionID = strings.TrimSpace(sessionID)
+	conversationID = strings.TrimSpace(conversationID)
+	if sessionID == "" || conversationID == "" {
+		return presence.Route{}, capabilities.PresencePolicy{}, false
+	}
+
+	sessionSvc := sessions.NewService(r.store, r.convStore)
+	session, err := sessionSvc.LoadSession(ctx, sessionID)
+	if err != nil || session.Role != model.SessionRoleFront {
+		return presence.Route{}, capabilities.PresencePolicy{}, false
+	}
+	route, err := sessionSvc.LoadRouteBySession(ctx, sessionID)
+	if err != nil {
+		return presence.Route{}, capabilities.PresencePolicy{}, false
+	}
+	if !r.isRemoteConnector(route.ConnectorID) || strings.TrimSpace(route.ExternalID) == "" {
+		return presence.Route{}, capabilities.PresencePolicy{}, false
+	}
+	policy, err := r.capabilities.PresencePolicy(ctx, route.ConnectorID)
+	if err != nil {
+		return presence.Route{}, capabilities.PresencePolicy{}, false
+	}
+	return presence.Route{
+		ConversationID: conversationID,
+		ConnectorID:    route.ConnectorID,
+		AccountID:      route.AccountID,
+		ExternalID:     route.ExternalID,
+	}, policy, true
 }
 
 func (r *Runtime) loadRunContextEvents(ctx context.Context, runID string) ([]model.Event, error) {

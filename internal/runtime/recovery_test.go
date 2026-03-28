@@ -15,7 +15,7 @@ import (
 func TestRecovery_InterruptedRunsReconciled(t *testing.T) {
 	db, cs, mem, reg := setupMilestoneTestDeps(t)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), sink)
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), sink)
 	ctx := context.Background()
 
 	// Insert a conversation and a run left in 'active' state.
@@ -68,7 +68,7 @@ func TestRecovery_InterruptedRunsReconciled(t *testing.T) {
 func TestRecovery_StaleApprovalsExpired(t *testing.T) {
 	db, cs, mem, reg := setupMilestoneTestDeps(t)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), sink)
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), sink)
 	ctx := context.Background()
 
 	// Insert a stale pending approval (created 25 hours ago).
@@ -101,7 +101,7 @@ func TestRecovery_StaleApprovalsExpired(t *testing.T) {
 func TestRecovery_DetachedPendingApprovalsExpired(t *testing.T) {
 	db, cs, mem, reg := setupMilestoneTestDeps(t)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), sink)
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), sink)
 	ctx := context.Background()
 
 	_, err := db.RawDB().ExecContext(ctx,
@@ -170,7 +170,7 @@ func TestRecovery_IdleStartupNoModelCalls(t *testing.T) {
 	db, cs, mem, reg := setupMilestoneTestDeps(t)
 	prov := NewMockProvider(nil, nil)
 	sink := &model.NoopEventSink{}
-	rt := New(db, cs, reg, mem, prov, sink)
+	rt := New(db, cs, reg, nil, mem, prov, sink)
 	ctx := context.Background()
 
 	report, err := rt.ReconcileInterrupted(ctx)
