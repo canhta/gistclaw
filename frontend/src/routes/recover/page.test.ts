@@ -121,6 +121,7 @@ describe('Recover page', () => {
 		expect(body).toContain('Approve');
 		expect(body).toContain('Deactivate route');
 		expect(body).toContain('Retry delivery');
+		expect(body).toContain('gc-action-warning');
 		expect(body).toContain('/conversations/session-1');
 	});
 });

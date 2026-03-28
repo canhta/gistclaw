@@ -211,14 +211,15 @@
 									{route.session_id}
 								</a>
 							</div>
-							<button
+							<SurfaceActionButton
 								type="button"
-								class="gc-action gc-action-warning mt-4"
+								tone="warning"
+								className="mt-4"
 								onclick={() => deactivateRoute(route.id)}
 								disabled={actionLabel !== '' && actionLabel !== `route:${route.id}`}
 							>
 								Deactivate route
-							</button>
+							</SurfaceActionButton>
 						</article>
 					{/each}
 				</div>

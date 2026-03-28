@@ -109,27 +109,32 @@
 		</div>
 
 		<div class="border-t-2 border-[var(--gc-border)] px-4 py-3 sm:px-6">
-			<nav
-				data-shell-mobile-nav
-				aria-label="Primary navigation"
-				class="flex gap-3 overflow-x-auto pb-1"
+			<div
+				data-shell-mobile-nav-strip
+				class="max-w-full overflow-x-auto overflow-y-hidden overscroll-x-contain"
 			>
-				{#each navigation as item (item.href)}
-					<a
-						href={item.href}
-						aria-current={isActive(item.href) ? 'page' : undefined}
-						class={mobileNavClass(item.href)}
-					>
-						<div class="flex items-center gap-3">
-							<SurfaceIcon surfaceID={item.id} />
-							<div class="min-w-0">
-								<span class="gc-stamp block">{item.label}</span>
-								<span class="gc-machine mt-2 block">{item.id}</span>
+				<nav
+					data-shell-mobile-nav
+					aria-label="Primary navigation"
+					class="flex min-w-max gap-3 pb-1"
+				>
+					{#each navigation as item (item.href)}
+						<a
+							href={item.href}
+							aria-current={isActive(item.href) ? 'page' : undefined}
+							class={mobileNavClass(item.href)}
+						>
+							<div class="flex items-center gap-3">
+								<SurfaceIcon surfaceID={item.id} />
+								<div class="min-w-0">
+									<span class="gc-stamp block">{item.label}</span>
+									<span class="gc-machine mt-2 block">{item.id}</span>
+								</div>
 							</div>
-						</div>
-					</a>
-				{/each}
-			</nav>
+						</a>
+					{/each}
+				</nav>
+			</div>
 		</div>
 	</div>
 
