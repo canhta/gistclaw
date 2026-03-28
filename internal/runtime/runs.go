@@ -78,6 +78,7 @@ func (s toolInvocationLogSink) Record(ctx context.Context, record tools.ToolLogR
 
 type StartRun struct {
 	ConversationID        string
+	SourceConnectorID     string
 	AgentID               string
 	SessionID             string
 	TeamID                string
@@ -425,7 +426,7 @@ func (r *Runtime) prepareRunStart(ctx context.Context, parentRunID string, cmd S
 	if err != nil {
 		return fmt.Errorf("prepare run start: decode authority: %w", err)
 	}
-	if err := r.enforceConversationAuthority(ctx, cmd.ConversationID, runAuthority); err != nil {
+	if err := r.enforceConversationAuthority(ctx, cmd.ConversationID, cmd.SourceConnectorID, runAuthority); err != nil {
 		return err
 	}
 	if parentRunID == "" {
@@ -440,6 +441,7 @@ func (r *Runtime) prepareRunStart(ctx context.Context, parentRunID string, cmd S
 
 func newRunStartedEvent(conversationID, runID, parentRunID string, cmd StartRun, now time.Time) (model.Event, error) {
 	payload, err := json.Marshal(map[string]any{
+		"source_connector_id":     cmd.SourceConnectorID,
 		"agent_id":                cmd.AgentID,
 		"session_id":              cmd.SessionID,
 		"team_id":                 cmd.TeamID,

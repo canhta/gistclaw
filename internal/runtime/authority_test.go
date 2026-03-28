@@ -2,10 +2,12 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
+	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 )
@@ -64,5 +66,43 @@ func TestReceiveInboundMessageRejectsRegisteredRemoteConnectorWithAutoApproveEle
 	}
 	if !strings.Contains(err.Error(), "auto_approve") || !strings.Contains(err.Error(), "elevated") {
 		t.Fatalf("expected auto_approve + elevated rejection, got %v", err)
+	}
+}
+
+func TestStartRejectsRemoteSourceConnectorAuthorityWithoutPersistedConversation(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+
+	rawAuthority, err := json.Marshal(authority.Envelope{
+		ApprovalMode:   authority.ApprovalModeAutoApprove,
+		HostAccessMode: authority.HostAccessModeElevated,
+	})
+	if err != nil {
+		t.Fatalf("marshal authority: %v", err)
+	}
+
+	_, err = rt.Start(context.Background(), StartRun{
+		ConversationID:    "conv-source-authority",
+		SourceConnectorID: "telegram",
+		AgentID:           "assistant",
+		Objective:         "Inspect the repo.",
+		CWD:               t.TempDir(),
+		AuthorityJSON:     rawAuthority,
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{
+			TeamID: "default",
+			Agents: map[string]model.AgentProfile{
+				"assistant": {
+					AgentID:      "assistant",
+					BaseProfile:  model.BaseProfileOperator,
+					ToolFamilies: []model.ToolFamily{model.ToolFamilyRuntimeCapability},
+				},
+			},
+		}),
+	})
+	if err == nil {
+		t.Fatal("expected remote source connector authority to be rejected")
+	}
+	if !errors.Is(err, ErrRemoteConnectorUnsafeAuthority) {
+		t.Fatalf("expected ErrRemoteConnectorUnsafeAuthority, got %v", err)
 	}
 }

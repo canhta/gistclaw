@@ -95,13 +95,14 @@ func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) 
 
 	runID := generateID()
 	start := StartRun{
-		ConversationID: conv.ID,
-		AgentID:        cmd.FrontAgentID,
-		SessionID:      sessionID,
-		ProjectID:      cmd.ProjectID,
-		Objective:      cmd.InitialPrompt,
-		CWD:            cmd.CWD,
-		AccountID:      cmd.ConversationKey.AccountID,
+		ConversationID:    conv.ID,
+		SourceConnectorID: cmd.ConversationKey.ConnectorID,
+		AgentID:           cmd.FrontAgentID,
+		SessionID:         sessionID,
+		ProjectID:         cmd.ProjectID,
+		Objective:         cmd.InitialPrompt,
+		CWD:               cmd.CWD,
+		AccountID:         cmd.ConversationKey.AccountID,
 	}
 	if err := r.createRun(ctx, runID, "", start); err != nil {
 		return model.Run{}, err
@@ -638,13 +639,14 @@ func (r *Runtime) prepareInboundRun(ctx context.Context, opts inboundRunOptions)
 	now := time.Now().UTC()
 	runID := generateID()
 	start := StartRun{
-		ConversationID: opts.conversationID,
-		AgentID:        opts.agentID,
-		SessionID:      opts.sessionID,
-		ProjectID:      opts.projectID,
-		Objective:      opts.body,
-		CWD:            opts.cwd,
-		AccountID:      opts.key.AccountID,
+		ConversationID:    opts.conversationID,
+		SourceConnectorID: opts.key.ConnectorID,
+		AgentID:           opts.agentID,
+		SessionID:         opts.sessionID,
+		ProjectID:         opts.projectID,
+		Objective:         opts.body,
+		CWD:               opts.cwd,
+		AccountID:         opts.key.AccountID,
 	}
 	start, err := r.prepareStartRun(ctx, "", start)
 	if err != nil {

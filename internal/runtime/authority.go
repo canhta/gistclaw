@@ -84,13 +84,17 @@ func decodeAuthorityOverride(raw []byte) (authority.Envelope, error) {
 	return env, nil
 }
 
-func (r *Runtime) enforceConversationAuthority(ctx context.Context, conversationID string, env authority.Envelope) error {
+func (r *Runtime) enforceConversationAuthority(ctx context.Context, conversationID, sourceConnectorID string, env authority.Envelope) error {
 	if env.ApprovalMode != authority.ApprovalModeAutoApprove || env.HostAccessMode != authority.HostAccessModeElevated {
 		return nil
 	}
-	connectorID, err := r.conversationConnectorID(ctx, conversationID)
-	if err != nil {
-		return err
+	connectorID := strings.TrimSpace(sourceConnectorID)
+	if connectorID == "" {
+		var err error
+		connectorID, err = r.conversationConnectorID(ctx, conversationID)
+		if err != nil {
+			return err
+		}
 	}
 	if r.isRemoteConnector(connectorID) {
 		return ErrRemoteConnectorUnsafeAuthority
