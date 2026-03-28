@@ -452,6 +452,51 @@ export interface HistoryResponse {
 	deliveries: HistoryDeliveryResponse[];
 }
 
+export interface SettingsDeviceResponse {
+	id: string;
+	primary_label: string;
+	secondary_line: string;
+	current: boolean;
+	blocked: boolean;
+	active_sessions: number;
+	details_ip: string;
+	details_user_agent: string;
+}
+
+export interface SettingsMachineResponse {
+	storage_root: string;
+	approval_mode: string;
+	approval_mode_label: string;
+	host_access_mode: string;
+	host_access_mode_label: string;
+	admin_token: string;
+	per_run_token_budget: string;
+	daily_cost_cap_usd: string;
+	rolling_cost_usd: number;
+	rolling_cost_label: string;
+	telegram_token: string;
+	active_project_name: string;
+	active_project_path: string;
+	active_project_summary: string;
+}
+
+export interface SettingsResponse {
+	machine: SettingsMachineResponse;
+	access: {
+		password_configured: boolean;
+		current_device?: SettingsDeviceResponse;
+		other_active_devices: SettingsDeviceResponse[];
+		blocked_devices: SettingsDeviceResponse[];
+	};
+}
+
+export interface SettingsActionResponse {
+	notice?: string;
+	logged_out?: boolean;
+	next?: string;
+	settings?: SettingsResponse;
+}
+
 export interface ConversationDetailResponse {
 	session: {
 		id: string;

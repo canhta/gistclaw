@@ -41,44 +41,30 @@ type settingsDeviceRow struct {
 	UnblockPath      string
 }
 
+type settingsDeviceGroups struct {
+	CurrentDevice      *settingsDeviceRow
+	OtherActiveDevices []settingsDeviceRow
+	BlockedDevices     []settingsDeviceRow
+}
+
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	machine, err := s.loadSettingsMachineSnapshot(r.Context())
+	if err != nil {
+		http.Error(w, "failed to load settings", http.StatusInternalServerError)
+		return
+	}
+
 	data := settingsPageData{
-		StorageRoot:       s.storageRoot,
-		ApprovalMode:      lookupSetting(s.db, "approval_mode"),
-		HostAccessMode:    lookupSetting(s.db, "host_access_mode"),
-		PerRunTokenBudget: lookupSetting(s.db, "per_run_token_budget"),
-		DailyCostCapUSD:   lookupSetting(s.db, "daily_cost_cap_usd"),
+		StorageRoot:       machine.StorageRoot,
+		ApprovalMode:      machine.ApprovalMode,
+		HostAccessMode:    machine.HostAccessMode,
+		AdminToken:        machine.AdminToken,
+		PerRunTokenBudget: machine.PerRunTokenBudget,
+		DailyCostCapUSD:   machine.DailyCostCapUSD,
+		RollingCostUSD:    machine.RollingCostUSD,
+		TelegramToken:     machine.TelegramToken,
 		AccessError:       strings.TrimSpace(r.URL.Query().Get("access_error")),
 		AccessNotice:      strings.TrimSpace(r.URL.Query().Get("access_notice")),
-	}
-	if data.ApprovalMode == "" {
-		data.ApprovalMode = string(authority.ApprovalModePrompt)
-	}
-	if data.HostAccessMode == "" {
-		data.HostAccessMode = string(authority.HostAccessModeStandard)
-	}
-
-	// Read rolling 24-hour cost from receipts.
-	var rolling float64
-	_ = s.db.RawDB().QueryRow(
-		`SELECT COALESCE(SUM(cost_usd), 0) FROM receipts WHERE created_at >= datetime('now', '-24 hours')`,
-	).Scan(&rolling)
-	data.RollingCostUSD = rolling
-
-	// Mask admin token: show first 8 chars then asterisks
-	raw := lookupSetting(s.db, "admin_token")
-	if len(raw) > 8 {
-		data.AdminToken = raw[:8] + strings.Repeat("*", len(raw)-8)
-	} else if raw != "" {
-		data.AdminToken = strings.Repeat("*", len(raw))
-	}
-
-	// Mask telegram bot token similarly.
-	tgRaw := lookupSetting(s.db, "telegram_bot_token")
-	if len(tgRaw) > 8 {
-		data.TelegramToken = tgRaw[:8] + strings.Repeat("*", len(tgRaw)-8)
-	} else if tgRaw != "" {
-		data.TelegramToken = strings.Repeat("*", len(tgRaw))
 	}
 
 	if err := s.populateAccessDevices(r, &data); err != nil && data.AccessError == "" {
@@ -143,11 +129,23 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) populateAccessDevices(r *http.Request, data *settingsPageData) error {
-	devices, err := authpkg.ListDevices(r.Context(), s.db, time.Now().UTC())
+	groups, err := s.loadSettingsDeviceGroups(r)
 	if err != nil {
 		return err
 	}
+	data.CurrentDevice = groups.CurrentDevice
+	data.OtherActiveDevices = groups.OtherActiveDevices
+	data.BlockedDevices = groups.BlockedDevices
+	return nil
+}
+
+func (s *Server) loadSettingsDeviceGroups(r *http.Request) (settingsDeviceGroups, error) {
+	devices, err := authpkg.ListDevices(r.Context(), s.db, time.Now().UTC())
+	if err != nil {
+		return settingsDeviceGroups{}, err
+	}
 	currentSession, hasSession := requestSessionFromContext(r.Context())
+	groups := settingsDeviceGroups{}
 	for _, device := range devices {
 		row := settingsDeviceRow{
 			ID:               device.ID,
@@ -164,14 +162,14 @@ func (s *Server) populateAccessDevices(r *http.Request, data *settingsPageData) 
 		}
 		switch {
 		case row.Current:
-			data.CurrentDevice = &row
+			groups.CurrentDevice = &row
 		case row.Blocked:
-			data.BlockedDevices = append(data.BlockedDevices, row)
+			groups.BlockedDevices = append(groups.BlockedDevices, row)
 		case device.ActiveSessions > 0:
-			data.OtherActiveDevices = append(data.OtherActiveDevices, row)
+			groups.OtherActiveDevices = append(groups.OtherActiveDevices, row)
 		}
 	}
-	return nil
+	return groups, nil
 }
 
 func settingsDeviceSecondaryLine(device authpkg.DeviceAccess) string {

@@ -2,12 +2,20 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
 	authpkg "github.com/canhta/gistclaw/internal/auth"
+)
+
+var (
+	errPasswordConfirmationMismatch   = errors.New("web: password confirmation mismatch")
+	errPasswordReauthenticationFailed = errors.New("web: password reauthentication failed")
+	errSettingsSessionRequired        = errors.New("web: settings session required")
+	errSettingsDeviceMissing          = errors.New("web: settings device missing")
 )
 
 type loginPageData struct {
@@ -81,21 +89,94 @@ func (s *Server) handleSettingsPasswordChange(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	currentPassword := r.FormValue("current_password")
-	newPassword := r.FormValue("new_password")
-	confirmPassword := r.FormValue("confirm_password")
-	if strings.TrimSpace(newPassword) == "" {
-		http.Redirect(w, r, settingsAccessRedirectPath("", "Enter a new password."), http.StatusSeeOther)
-		return
-	}
-	if newPassword != confirmPassword {
-		http.Redirect(w, r, settingsAccessRedirectPath("", "New password confirmation did not match."), http.StatusSeeOther)
+	issued, err := s.changePasswordAndReauthenticate(
+		r,
+		r.FormValue("current_password"),
+		r.FormValue("new_password"),
+		r.FormValue("confirm_password"),
+	)
+	if err != nil {
+		if errors.Is(err, errPasswordReauthenticationFailed) {
+			clearAuthCookies(w, r)
+			http.Redirect(w, r, pageLogin+"?reason=expired", http.StatusSeeOther)
+			return
+		}
+		http.Redirect(w, r, settingsAccessRedirectPath("", passwordChangeErrorMessage(err)), http.StatusSeeOther)
 		return
 	}
 
-	if err := authpkg.ChangePassword(r.Context(), s.db, currentPassword, newPassword, time.Now().UTC()); err != nil {
-		http.Redirect(w, r, settingsAccessRedirectPath("", passwordChangeErrorMessage(err)), http.StatusSeeOther)
+	setAuthCookies(w, r, issued)
+	http.Redirect(w, r, settingsAccessRedirectPath("Password updated. Other device sessions were signed out.", ""), http.StatusSeeOther)
+}
+
+func (s *Server) handleDeviceRevoke(w http.ResponseWriter, r *http.Request) {
+	s.handleDeviceMutation(w, r, func(ctxRequest *http.Request, deviceID string, current bool) (settingsDeviceMutationResult, error) {
+		if err := authpkg.RevokeDeviceSessions(ctxRequest.Context(), s.db, deviceID, time.Now().UTC()); err != nil {
+			return settingsDeviceMutationResult{}, err
+		}
+		if current {
+			return settingsDeviceMutationResult{LoggedOut: true, Next: pageLogin + "?reason=logged_out"}, nil
+		}
+		return settingsDeviceMutationResult{Notice: "Device access revoked."}, nil
+	})
+}
+
+func (s *Server) handleDeviceBlock(w http.ResponseWriter, r *http.Request) {
+	s.handleDeviceMutation(w, r, func(ctxRequest *http.Request, deviceID string, current bool) (settingsDeviceMutationResult, error) {
+		if err := authpkg.BlockDevice(ctxRequest.Context(), s.db, deviceID, time.Now().UTC()); err != nil {
+			return settingsDeviceMutationResult{}, err
+		}
+		if current {
+			return settingsDeviceMutationResult{LoggedOut: true, Next: pageLogin + "?reason=blocked"}, nil
+		}
+		return settingsDeviceMutationResult{Notice: "Device blocked."}, nil
+	})
+}
+
+func (s *Server) handleDeviceUnblock(w http.ResponseWriter, r *http.Request) {
+	s.handleDeviceMutation(w, r, func(ctxRequest *http.Request, deviceID string, _ bool) (settingsDeviceMutationResult, error) {
+		if err := authpkg.UnblockDevice(ctxRequest.Context(), s.db, deviceID, time.Now().UTC()); err != nil {
+			return settingsDeviceMutationResult{}, err
+		}
+		return settingsDeviceMutationResult{Notice: "Device unblocked."}, nil
+	})
+}
+
+func (s *Server) handleDeviceMutation(w http.ResponseWriter, r *http.Request, mutate func(*http.Request, string, bool) (settingsDeviceMutationResult, error)) {
+	result, err := s.mutateSettingsDevice(r, mutate)
+	if err != nil {
+		if errors.Is(err, errSettingsSessionRequired) {
+			s.writeUnauthorized(w)
+			return
+		}
+		if errors.Is(err, errSettingsDeviceMissing) {
+			http.Error(w, "device not found", http.StatusNotFound)
+			return
+		}
+		http.Redirect(w, r, settingsAccessRedirectPath("", deviceMutationErrorMessage(err)), http.StatusSeeOther)
 		return
+	}
+
+	redirectTo := pageConfigureSettings
+	if result.Notice != "" {
+		redirectTo = settingsAccessRedirectPath(result.Notice, "")
+	}
+	if result.LoggedOut && result.Next != "" {
+		redirectTo = result.Next
+		clearAuthCookies(w, r)
+	}
+	http.Redirect(w, r, redirectTo, http.StatusSeeOther)
+}
+
+func (s *Server) changePasswordAndReauthenticate(r *http.Request, currentPassword, newPassword, confirmPassword string) (authpkg.IssuedSession, error) {
+	if strings.TrimSpace(newPassword) == "" {
+		return authpkg.IssuedSession{}, authpkg.ErrPasswordRequired
+	}
+	if newPassword != confirmPassword {
+		return authpkg.IssuedSession{}, errPasswordConfirmationMismatch
+	}
+	if err := authpkg.ChangePassword(r.Context(), s.db, currentPassword, newPassword, time.Now().UTC()); err != nil {
+		return authpkg.IssuedSession{}, err
 	}
 
 	deviceCookieValue := ""
@@ -110,80 +191,24 @@ func (s *Server) handleSettingsPasswordChange(w http.ResponseWriter, r *http.Req
 		Now:               time.Now().UTC(),
 	})
 	if err != nil {
-		clearAuthCookies(w, r)
-		http.Redirect(w, r, pageLogin+"?reason=expired", http.StatusSeeOther)
-		return
+		return authpkg.IssuedSession{}, fmt.Errorf("%w: %v", errPasswordReauthenticationFailed, err)
 	}
-
-	setAuthCookies(w, r, issued)
-	http.Redirect(w, r, settingsAccessRedirectPath("Password updated. Other device sessions were signed out.", ""), http.StatusSeeOther)
+	return issued, nil
 }
 
-func (s *Server) handleDeviceRevoke(w http.ResponseWriter, r *http.Request) {
-	s.handleDeviceMutation(w, r, func(ctxRequest *http.Request, deviceID string, session authpkg.SessionState) (string, string, error) {
-		if err := authpkg.RevokeDeviceSessions(ctxRequest.Context(), s.db, deviceID, time.Now().UTC()); err != nil {
-			return "", "", err
-		}
-		if session.DeviceID == deviceID {
-			return pageLogin + "?reason=logged_out", "", nil
-		}
-		return settingsAccessRedirectPath("Device access revoked.", ""), "", nil
-	})
-}
-
-func (s *Server) handleDeviceBlock(w http.ResponseWriter, r *http.Request) {
-	s.handleDeviceMutation(w, r, func(ctxRequest *http.Request, deviceID string, session authpkg.SessionState) (string, string, error) {
-		if err := authpkg.BlockDevice(ctxRequest.Context(), s.db, deviceID, time.Now().UTC()); err != nil {
-			return "", "", err
-		}
-		if session.DeviceID == deviceID {
-			return pageLogin + "?reason=blocked", "", nil
-		}
-		return settingsAccessRedirectPath("Device blocked.", ""), "", nil
-	})
-}
-
-func (s *Server) handleDeviceUnblock(w http.ResponseWriter, r *http.Request) {
-	s.handleDeviceMutation(w, r, func(ctxRequest *http.Request, deviceID string, session authpkg.SessionState) (string, string, error) {
-		if err := authpkg.UnblockDevice(ctxRequest.Context(), s.db, deviceID, time.Now().UTC()); err != nil {
-			return "", "", err
-		}
-		return settingsAccessRedirectPath("Device unblocked.", ""), "", nil
-	})
-}
-
-func (s *Server) handleDeviceMutation(w http.ResponseWriter, r *http.Request, mutate func(*http.Request, string, authpkg.SessionState) (string, string, error)) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form", http.StatusBadRequest)
-		return
-	}
-
+func (s *Server) mutateSettingsDevice(
+	r *http.Request,
+	mutate func(*http.Request, string, bool) (settingsDeviceMutationResult, error),
+) (settingsDeviceMutationResult, error) {
 	session, ok := requestSessionFromContext(r.Context())
 	if !ok {
-		s.writeUnauthorized(w)
-		return
+		return settingsDeviceMutationResult{}, errSettingsSessionRequired
 	}
 	deviceID := strings.TrimSpace(r.PathValue("id"))
 	if deviceID == "" {
-		http.Error(w, "device not found", http.StatusNotFound)
-		return
+		return settingsDeviceMutationResult{}, errSettingsDeviceMissing
 	}
-
-	redirectTo, notice, err := mutate(r, deviceID, session)
-	if err != nil {
-		http.Redirect(w, r, settingsAccessRedirectPath("", deviceMutationErrorMessage(err)), http.StatusSeeOther)
-		return
-	}
-	if notice != "" {
-		redirectTo = settingsAccessRedirectPath(notice, "")
-	}
-	if redirectTo == "" {
-		redirectTo = pageConfigureSettings
-	}
-	if session.DeviceID == deviceID {
-		clearAuthCookies(w, r)
-	}
-	http.Redirect(w, r, redirectTo, http.StatusSeeOther)
+	return mutate(r, deviceID, session.DeviceID == deviceID)
 }
 
 func (s *Server) loginPageData(r *http.Request, explicitMessage string) (loginPageData, int, error) {
@@ -240,6 +265,8 @@ func passwordChangeErrorMessage(err error) string {
 		return "Current password did not match."
 	case errors.Is(err, authpkg.ErrPasswordRequired):
 		return "Enter a new password."
+	case errors.Is(err, errPasswordConfirmationMismatch):
+		return "New password confirmation did not match."
 	default:
 		return "Unable to update the password right now."
 	}

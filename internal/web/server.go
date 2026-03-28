@@ -181,6 +181,12 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("POST /api/automate/{id}/disable", s.adminAuth(http.HandlerFunc(s.handleAutomateDisable)))
 	s.mux.Handle("POST /api/automate/{id}/run", s.adminAuth(http.HandlerFunc(s.handleAutomateRun)))
 	s.mux.HandleFunc("GET /api/history", s.handleHistoryIndex)
+	s.mux.HandleFunc("GET /api/settings", s.handleSettingsAPI)
+	s.mux.Handle("POST /api/settings", s.adminAuth(http.HandlerFunc(s.handleSettingsUpdateAPI)))
+	s.mux.Handle("POST /api/settings/password", s.adminAuth(http.HandlerFunc(s.handleSettingsPasswordChangeAPI)))
+	s.mux.Handle("POST /api/settings/devices/{id}/revoke", s.adminAuth(http.HandlerFunc(s.handleSettingsDeviceRevokeAPI)))
+	s.mux.Handle("POST /api/settings/devices/{id}/block", s.adminAuth(http.HandlerFunc(s.handleSettingsDeviceBlockAPI)))
+	s.mux.Handle("POST /api/settings/devices/{id}/unblock", s.adminAuth(http.HandlerFunc(s.handleSettingsDeviceUnblockAPI)))
 	if s.whatsAppWebhook != nil {
 		s.mux.Handle("GET /webhooks/whatsapp", s.whatsAppWebhook)
 		s.mux.Handle("POST /webhooks/whatsapp", s.whatsAppWebhook)
