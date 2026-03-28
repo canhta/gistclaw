@@ -145,8 +145,8 @@ func (r *Registry) RegisterConnector(conn model.Connector) {
 	if r == nil || conn == nil {
 		return
 	}
-	connectorID := strings.TrimSpace(conn.ID())
-	if connectorID == "" {
+	meta := model.NormalizeConnectorMetadata(conn.Metadata())
+	if meta.ID == "" {
 		return
 	}
 
@@ -171,7 +171,7 @@ func (r *Registry) RegisterConnector(conn model.Connector) {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.connectors[connectorID] = adapters
+	r.connectors[meta.ID] = adapters
 }
 
 func (r *Registry) RegisterAppAction(name string, handler AppActionHandler) {

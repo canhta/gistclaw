@@ -7,11 +7,34 @@ import (
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/conversations"
+	"github.com/canhta/gistclaw/internal/model"
 )
 
-func TestReceiveInboundMessageRejectsZaloPersonalConnectorWithAutoApproveElevated(t *testing.T) {
+type metadataOnlyConnector struct {
+	metadata model.ConnectorMetadata
+}
+
+func (c *metadataOnlyConnector) Metadata() model.ConnectorMetadata { return c.metadata }
+
+func (c *metadataOnlyConnector) Start(context.Context) error { return nil }
+
+func (c *metadataOnlyConnector) Notify(context.Context, string, model.ReplayDelta, string) error {
+	return nil
+}
+
+func (c *metadataOnlyConnector) Drain(context.Context) error { return nil }
+
+func TestReceiveInboundMessageRejectsRegisteredRemoteConnectorWithAutoApproveElevated(t *testing.T) {
 	rt, db := newCollaborationRuntime(t, []GenerateResult{
 		{Content: "unsafe", StopReason: "end_turn"},
+	})
+	rt.SetConnectors([]model.Connector{
+		&metadataOnlyConnector{
+			metadata: model.ConnectorMetadata{
+				ID:       "remote_bridge",
+				Exposure: model.ConnectorExposureRemote,
+			},
+		},
 	})
 	if _, err := db.RawDB().Exec(
 		`INSERT INTO settings (key, value, updated_at) VALUES
@@ -23,7 +46,7 @@ func TestReceiveInboundMessageRejectsZaloPersonalConnectorWithAutoApproveElevate
 
 	_, err := rt.ReceiveInboundMessage(context.Background(), InboundMessageCommand{
 		ConversationKey: conversations.ConversationKey{
-			ConnectorID: "zalo_personal",
+			ConnectorID: "remote_bridge",
 			AccountID:   "acct-1",
 			ExternalID:  "chat-1",
 			ThreadID:    "thread-1",
@@ -34,7 +57,7 @@ func TestReceiveInboundMessageRejectsZaloPersonalConnectorWithAutoApproveElevate
 		CWD:             t.TempDir(),
 	})
 	if err == nil {
-		t.Fatal("expected zalo personal connector run to be rejected")
+		t.Fatal("expected remote connector run to be rejected")
 	}
 	if !errors.Is(err, ErrRemoteConnectorUnsafeAuthority) {
 		t.Fatalf("expected ErrRemoteConnectorUnsafeAuthority, got %v", err)

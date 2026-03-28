@@ -30,7 +30,6 @@ var outboundAllowedKinds = map[string]bool{
 }
 
 // OutboundDispatcher writes outbound_intents and delivers them via sendMessage.
-// It implements model.Connector for the Telegram channel.
 type OutboundDispatcher struct {
 	connectorID string
 	bot         *Bot

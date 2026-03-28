@@ -1,5 +1,5 @@
-// Package email implements a model.Connector for SMTP email delivery.
-// Inbound messages are not supported (Start is a no-op).
+// Package email implements SMTP outbound delivery.
+// Inbound messages are not supported.
 // Outbound notifications are delivered via net/smtp.SendMail.
 package email
 
@@ -39,7 +39,6 @@ type SMTPConfig struct {
 type senderFunc func(addr, from string, to []string, msg []byte) error
 
 // OutboundDispatcher delivers outbound notifications via SMTP.
-// It implements model.Connector.
 type OutboundDispatcher struct {
 	connectorID string
 	cfg         SMTPConfig
@@ -248,6 +247,3 @@ func generateID() string {
 
 // Ensure time import is used (time.Time used in future extensions).
 var _ = time.Now
-
-// Compile-time interface check.
-var _ model.Connector = (*OutboundDispatcher)(nil)

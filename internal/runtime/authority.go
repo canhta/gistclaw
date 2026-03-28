@@ -92,7 +92,7 @@ func (r *Runtime) enforceConversationAuthority(ctx context.Context, conversation
 	if err != nil {
 		return err
 	}
-	if isRemoteConnectorID(connectorID) {
+	if r.isRemoteConnector(connectorID) {
 		return ErrRemoteConnectorUnsafeAuthority
 	}
 	return nil
@@ -119,13 +119,4 @@ func parseConversationConnectorID(normalizedKey string) string {
 		part = part[:idx]
 	}
 	return strings.ReplaceAll(part, "%3A", ":")
-}
-
-func isRemoteConnectorID(connectorID string) bool {
-	switch strings.ToLower(strings.TrimSpace(connectorID)) {
-	case "telegram", "whatsapp", "zalo_personal":
-		return true
-	default:
-		return false
-	}
 }

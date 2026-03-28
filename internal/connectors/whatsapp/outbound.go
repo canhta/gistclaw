@@ -1,5 +1,5 @@
-// Package whatsapp implements a model.Connector for the WhatsApp Business Cloud API.
-// Inbound messages arrive via Meta webhooks (Start is a no-op for the outbound dispatcher).
+// Package whatsapp implements WhatsApp Business Cloud connector support.
+// Inbound messages arrive via Meta webhooks.
 // Outbound messages are delivered via the Meta Graph API Messages endpoint.
 package whatsapp
 
@@ -34,7 +34,6 @@ var outboundAllowedKinds = map[string]bool{
 }
 
 // OutboundDispatcher delivers outbound notifications via the WhatsApp Cloud API.
-// It implements model.Connector.
 type OutboundDispatcher struct {
 	connectorID   string
 	phoneNumberID string // Meta WhatsApp Business phone number ID
@@ -265,9 +264,6 @@ func generateID() string {
 	_, _ = rand.Read(buf)
 	return hex.EncodeToString(buf)
 }
-
-// Compile-time check.
-var _ model.Connector = (*OutboundDispatcher)(nil)
 
 // Ensure time import is used.
 var _ = time.Now

@@ -545,8 +545,8 @@ func TestBootstrap_WiresTelegramConnectorWhenConfigured(t *testing.T) {
 	if len(app.connectors) != 1 {
 		t.Fatalf("expected 1 wired connector, got %d", len(app.connectors))
 	}
-	if app.connectors[0].ID() != "telegram" {
-		t.Fatalf("expected telegram connector, got %q", app.connectors[0].ID())
+	if app.connectors[0].Metadata().ID != "telegram" {
+		t.Fatalf("expected telegram connector, got %q", app.connectors[0].Metadata().ID)
 	}
 }
 
@@ -574,8 +574,8 @@ func TestBootstrap_WiresWhatsAppConnectorWhenConfigured(t *testing.T) {
 	if len(app.connectors) != 1 {
 		t.Fatalf("expected 1 wired connector, got %d", len(app.connectors))
 	}
-	if app.connectors[0].ID() != "whatsapp" {
-		t.Fatalf("expected whatsapp connector, got %q", app.connectors[0].ID())
+	if app.connectors[0].Metadata().ID != "whatsapp" {
+		t.Fatalf("expected whatsapp connector, got %q", app.connectors[0].Metadata().ID)
 	}
 	if app.webServer == nil {
 		t.Fatal("expected web server to be wired")
@@ -604,8 +604,8 @@ func TestBootstrap_WiresZaloPersonalConnectorWhenConfigured(t *testing.T) {
 	if len(app.connectors) != 1 {
 		t.Fatalf("expected 1 wired connector, got %d", len(app.connectors))
 	}
-	if app.connectors[0].ID() != "zalo_personal" {
-		t.Fatalf("expected zalo_personal connector, got %q", app.connectors[0].ID())
+	if app.connectors[0].Metadata().ID != "zalo_personal" {
+		t.Fatalf("expected zalo_personal connector, got %q", app.connectors[0].Metadata().ID)
 	}
 }
 

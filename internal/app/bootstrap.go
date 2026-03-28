@@ -150,6 +150,7 @@ func Bootstrap(cfg Config) (*App, error) {
 	}
 
 	connectors := buildConnectors(cfg, db, convStore, rt, whatsappHealth)
+	rt.SetConnectors(connectors)
 	for _, connector := range connectors {
 		capabilityRegistry.RegisterConnector(connector)
 	}

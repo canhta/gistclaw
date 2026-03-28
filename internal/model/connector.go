@@ -1,6 +1,31 @@
 package model
 
-import "context"
+import (
+	"context"
+	"strings"
+)
+
+type ConnectorExposure string
+
+const (
+	ConnectorExposureLocal  ConnectorExposure = "local"
+	ConnectorExposureRemote ConnectorExposure = "remote"
+)
+
+type ConnectorMetadata struct {
+	ID       string
+	Exposure ConnectorExposure
+}
+
+func NormalizeConnectorMetadata(meta ConnectorMetadata) ConnectorMetadata {
+	meta.ID = strings.TrimSpace(meta.ID)
+	switch meta.Exposure {
+	case ConnectorExposureLocal, ConnectorExposureRemote:
+	default:
+		meta.Exposure = ConnectorExposureRemote
+	}
+	return meta
+}
 
 // Connector is the interface implemented by every inbound/outbound channel adapter
 // (Telegram, WhatsApp, email, Slack, etc.). The runtime depends only on this
@@ -12,11 +37,12 @@ import "context"
 //	│  Start(ctx)          — long-poll / webhook     │
 //	│  Notify(ctx, …)      — outbound delivery       │
 //	│  Drain(ctx)          — resume pending intents  │
-//	│  ID()                — connector identifier    │
+//	│  Metadata()          — connector descriptor    │
 //	└────────────────────────────────────────────────┘
 type Connector interface {
-	// ID returns the stable connector identifier stored in outbound_intents.connector_id.
-	ID() string
+	// Metadata returns the stable connector descriptor used by runtime policy,
+	// routing, and connector capability registration.
+	Metadata() ConnectorMetadata
 
 	// Start runs the connector's receive loop until ctx is cancelled.
 	// For polling connectors (Telegram long-poll) this blocks until shutdown.

@@ -55,7 +55,11 @@ func (n *connectorRouteNotifier) SetConnectors(connectors []model.Connector) {
 		if connector == nil {
 			continue
 		}
-		n.connectors[connector.ID()] = connector
+		meta := model.NormalizeConnectorMetadata(connector.Metadata())
+		if meta.ID == "" {
+			continue
+		}
+		n.connectors[meta.ID] = connector
 	}
 }
 
@@ -74,7 +78,7 @@ func (n *connectorRouteNotifier) Emit(ctx context.Context, runID string, evt mod
 	if err != nil {
 		return err
 	}
-	if route.ConnectorID == "" || route.ConnectorID == "web" || route.ExternalID == "" {
+	if route.ConnectorID == "" || route.ExternalID == "" {
 		return nil
 	}
 

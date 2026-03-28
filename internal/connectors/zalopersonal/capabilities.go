@@ -36,7 +36,7 @@ func (c *Connector) CapabilityListDirectory(ctx context.Context, req capabilitie
 		entries = entries[:req.Limit]
 	}
 	return capabilities.DirectoryListResult{
-		ConnectorID: c.ID(),
+		ConnectorID: c.Metadata().ID,
 		Scope:       scope,
 		Entries:     entries,
 	}, nil
@@ -85,7 +85,7 @@ func (c *Connector) CapabilityResolveTarget(ctx context.Context, req capabilitie
 		matches = matches[:req.Limit]
 	}
 	return capabilities.TargetResolveResult{
-		ConnectorID: c.ID(),
+		ConnectorID: c.Metadata().ID,
 		Query:       strings.TrimSpace(req.Query),
 		Matches:     matches,
 	}, nil
@@ -110,7 +110,7 @@ func (c *Connector) CapabilitySend(ctx context.Context, req capabilities.SendReq
 		return capabilities.SendResult{}, err
 	}
 	return capabilities.SendResult{
-		ConnectorID: c.ID(),
+		ConnectorID: c.Metadata().ID,
 		TargetID:    targetID,
 		TargetType:  targetType,
 		Accepted:    true,

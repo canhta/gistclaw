@@ -1513,6 +1513,106 @@ func TestRunEngine_DirectConnectorFlowPausesForApprovalWithoutChildRun(t *testin
 	}
 }
 
+func TestQueueConversationOutboundIntentSkipsLocalConnectorRoutes(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt.SetConnectors([]model.Connector{
+		&metadataOnlyConnector{
+			metadata: model.ConnectorMetadata{
+				ID:       "local_ui",
+				Exposure: model.ConnectorExposureLocal,
+			},
+		},
+	})
+
+	conv, err := cs.Resolve(context.Background(), conversations.ConversationKey{
+		ConnectorID: "local_ui",
+		AccountID:   "local",
+		ExternalID:  "default",
+		ThreadID:    "main",
+	})
+	if err != nil {
+		t.Fatalf("resolve conversation: %v", err)
+	}
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO sessions (id, conversation_id, key, agent_id, role, status, created_at)
+		 VALUES ('session-front', ?, 'front:'+?, 'assistant', 'front', 'active', datetime('now'))`,
+		conv.ID, conv.ID,
+	); err != nil {
+		t.Fatalf("insert session: %v", err)
+	}
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO session_bindings
+		 (id, conversation_id, thread_id, session_id, connector_id, account_id, external_id, status, created_at)
+		 VALUES ('route-1', ?, 'main', 'session-front', 'local_ui', 'local', 'default', 'active', datetime('now'))`,
+		conv.ID,
+	); err != nil {
+		t.Fatalf("insert route: %v", err)
+	}
+
+	if err := rt.queueConversationOutboundIntent(context.Background(), "run-1", conv.ID, "session-front", "msg-1", "hello", nil); err != nil {
+		t.Fatalf("queueConversationOutboundIntent: %v", err)
+	}
+
+	var count int
+	if err := db.RawDB().QueryRow(`SELECT count(*) FROM outbound_intents`).Scan(&count); err != nil {
+		t.Fatalf("count outbound intents: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no outbound intents for local connector route, got %d", count)
+	}
+}
+
+func TestQueueConversationOutboundIntentQueuesRegisteredConnectorRoutes(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	rt.SetConnectors([]model.Connector{
+		&metadataOnlyConnector{
+			metadata: model.ConnectorMetadata{
+				ID:       "telegram",
+				Exposure: model.ConnectorExposureRemote,
+			},
+		},
+	})
+
+	conv, err := cs.Resolve(context.Background(), conversations.ConversationKey{
+		ConnectorID: "telegram",
+		AccountID:   "acct-1",
+		ExternalID:  "chat-1",
+		ThreadID:    "main",
+	})
+	if err != nil {
+		t.Fatalf("resolve conversation: %v", err)
+	}
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO sessions (id, conversation_id, key, agent_id, role, status, created_at)
+		 VALUES ('session-front', ?, 'front:'+?, 'assistant', 'front', 'active', datetime('now'))`,
+		conv.ID, conv.ID,
+	); err != nil {
+		t.Fatalf("insert session: %v", err)
+	}
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO session_bindings
+		 (id, conversation_id, thread_id, session_id, connector_id, account_id, external_id, status, created_at)
+		 VALUES ('route-1', ?, 'main', 'session-front', 'telegram', 'acct-1', 'chat-1', 'active', datetime('now'))`,
+		conv.ID,
+	); err != nil {
+		t.Fatalf("insert route: %v", err)
+	}
+
+	if err := rt.queueConversationOutboundIntent(context.Background(), "run-1", conv.ID, "session-front", "msg-1", "hello", nil); err != nil {
+		t.Fatalf("queueConversationOutboundIntent: %v", err)
+	}
+
+	var count int
+	if err := db.RawDB().QueryRow(`SELECT count(*) FROM outbound_intents`).Scan(&count); err != nil {
+		t.Fatalf("count outbound intents: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected 1 outbound intent for registered connector route, got %d", count)
+	}
+}
+
 func TestRunEngine_ApprovalRequestedEmitsReplayDelta(t *testing.T) {
 	db, err := store.Open(":memory:")
 	if err != nil {

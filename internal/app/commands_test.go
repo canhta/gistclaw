@@ -20,7 +20,9 @@ type stubCommandConnector struct {
 	snapshot model.ConnectorHealthSnapshot
 }
 
-func (c *stubCommandConnector) ID() string { return c.id }
+func (c *stubCommandConnector) Metadata() model.ConnectorMetadata {
+	return model.NormalizeConnectorMetadata(model.ConnectorMetadata{ID: c.id})
+}
 
 func (c *stubCommandConnector) Start(context.Context) error { return nil }
 

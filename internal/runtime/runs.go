@@ -168,6 +168,7 @@ type Runtime struct {
 	budget              BudgetGuard
 	contextWindowSize   int
 	contexts            ContextAssembler
+	connectors          map[string]model.ConnectorMetadata
 	teamDir             string
 	storageRoot         string
 	defaultSnapshot     model.ExecutionSnapshot
@@ -199,6 +200,7 @@ func New(
 		},
 		contextWindowSize: 200000,
 		contexts:          newDefaultContextAssembler(db, cs, nil),
+		connectors:        builtinConnectorCatalog(),
 		asyncCtx:          context.Background(),
 	}
 }
@@ -2004,7 +2006,7 @@ func (r *Runtime) queueOutboundIntent(
 	if err != nil {
 		return fmt.Errorf("load outbound route: %w", err)
 	}
-	if route.ConnectorID == "" || route.ConnectorID == "web" || route.ExternalID == "" {
+	if !r.shouldQueueOutbound(route.ConnectorID) || route.ExternalID == "" {
 		return nil
 	}
 
@@ -2052,7 +2054,7 @@ func (r *Runtime) queueConversationOutboundIntent(
 	if err != nil {
 		return fmt.Errorf("load conversation outbound route: %w", err)
 	}
-	if route.ConnectorID == "" || route.ConnectorID == "web" || route.ExternalID == "" {
+	if !r.shouldQueueOutbound(route.ConnectorID) || route.ExternalID == "" {
 		return nil
 	}
 

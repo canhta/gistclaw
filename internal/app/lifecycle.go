@@ -60,7 +60,7 @@ func (a *App) Prepare(ctx context.Context) error {
 	for _, c := range a.connectors {
 		if err := c.Drain(ctx); err != nil {
 			// Drain failure is non-fatal — log and continue.
-			fmt.Printf("connector %s: drain warning: %v\n", c.ID(), err)
+			fmt.Printf("connector %s: drain warning: %v\n", c.Metadata().ID, err)
 		}
 	}
 

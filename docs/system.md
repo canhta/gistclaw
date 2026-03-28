@@ -25,6 +25,7 @@ This document is the source of truth for what the repository ships today: packag
 - The front assistant is direct-execution by default and receives a runtime execution recommendation (`direct`, `delegate`, or `parallelize`) before each provider turn.
 - The active team snapshot declares the `front_agent`, and runtime entry points resolve that agent from team state instead of hardcoding assistant IDs.
 - Connector configs may leave `agent_id` blank; bootstrap resolves those connectors to the active team `front_agent` instead of assuming `assistant`.
+- Connectors are self-describing at the interface seam, so runtime authority and delivery logic use connector metadata instead of hardcoded connector ID lists.
 - Raw specialist spawning is now opt-in and guarded by the runtime recommendation, so tasks classified as `direct` must use local capabilities instead of spawning by default.
 - Structured delegation is the default specialist path, so the front assistant can request `research`, `write`, `review`, or `verify` work without choosing the worker topology itself.
 - Direct product actions now flow through generic capability tools such as `connector_directory_list`, `connector_target_resolve`, `connector_send`, `connector_status`, and `app_action`, backed by runtime capability adapters instead of prompt-only conventions.

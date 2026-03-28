@@ -118,8 +118,11 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 	return connector
 }
 
-func (c *Connector) ID() string {
-	return "zalo_personal"
+func (c *Connector) Metadata() model.ConnectorMetadata {
+	return model.NormalizeConnectorMetadata(model.ConnectorMetadata{
+		ID:       "zalo_personal",
+		Exposure: model.ConnectorExposureRemote,
+	})
 }
 
 func (c *Connector) SetGroupPolicy(policy GroupPolicy) {

@@ -25,7 +25,9 @@ type stubConnector struct {
 	statusErr       error
 }
 
-func (c *stubConnector) ID() string { return c.id }
+func (c *stubConnector) Metadata() model.ConnectorMetadata {
+	return model.NormalizeConnectorMetadata(model.ConnectorMetadata{ID: c.id})
+}
 
 func (c *stubConnector) Start(context.Context) error { return nil }
 
@@ -62,7 +64,9 @@ type snapshotOnlyConnector struct {
 	snapshot model.ConnectorHealthSnapshot
 }
 
-func (c *snapshotOnlyConnector) ID() string { return c.id }
+func (c *snapshotOnlyConnector) Metadata() model.ConnectorMetadata {
+	return model.NormalizeConnectorMetadata(model.ConnectorMetadata{ID: c.id})
+}
 
 func (c *snapshotOnlyConnector) Start(context.Context) error { return nil }
 

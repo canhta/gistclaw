@@ -27,8 +27,11 @@ func NewConnector(phoneNumberID, accessToken string, db *store.DB, cs *conversat
 	}
 }
 
-func (c *Connector) ID() string {
-	return c.outbound.ID()
+func (c *Connector) Metadata() model.ConnectorMetadata {
+	return model.NormalizeConnectorMetadata(model.ConnectorMetadata{
+		ID:       c.outbound.ID(),
+		Exposure: model.ConnectorExposureRemote,
+	})
 }
 
 func (c *Connector) Notify(ctx context.Context, chatID string, delta model.ReplayDelta, dedupeKey string) error {

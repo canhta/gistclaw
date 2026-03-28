@@ -18,7 +18,9 @@ type recordingNotifyConnector struct {
 	calls  int
 }
 
-func (c *recordingNotifyConnector) ID() string { return c.id }
+func (c *recordingNotifyConnector) Metadata() model.ConnectorMetadata {
+	return model.NormalizeConnectorMetadata(model.ConnectorMetadata{ID: c.id})
+}
 
 func (c *recordingNotifyConnector) Start(context.Context) error { return nil }
 

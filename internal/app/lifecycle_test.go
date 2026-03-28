@@ -18,7 +18,9 @@ type stubConnector struct {
 	drains  atomic.Int32
 }
 
-func (c *stubConnector) ID() string { return c.id }
+func (c *stubConnector) Metadata() model.ConnectorMetadata {
+	return model.NormalizeConnectorMetadata(model.ConnectorMetadata{ID: c.id})
+}
 
 func (c *stubConnector) Start(ctx context.Context) error {
 	select {

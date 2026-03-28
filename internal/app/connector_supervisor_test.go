@@ -28,15 +28,17 @@ func newStubSupervisedConnector(id string, startErrs ...error) *stubSupervisedCo
 		started:   make(chan struct{}, 16),
 		startErrs: append([]error(nil), startErrs...),
 		health: model.ConnectorHealthSnapshot{
-			ConnectorID: id,
-			State:       model.ConnectorHealthHealthy,
-			Summary:     "healthy",
+			ConnectorID:      id,
+			State:            model.ConnectorHealthHealthy,
+			Summary:          "healthy",
 			RestartSuggested: false,
 		},
 	}
 }
 
-func (c *stubSupervisedConnector) ID() string { return c.id }
+func (c *stubSupervisedConnector) Metadata() model.ConnectorMetadata {
+	return model.NormalizeConnectorMetadata(model.ConnectorMetadata{ID: c.id})
+}
 
 func (c *stubSupervisedConnector) Start(ctx context.Context) error {
 	c.startCount.Add(1)
