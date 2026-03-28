@@ -87,8 +87,10 @@ func (t *cwdAwareTool) Name() string { return "cwd_aware" }
 func (t *cwdAwareTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:       t.Name(),
+		Family:     model.ToolFamilyRuntimeCapability,
 		Risk:       model.RiskLow,
 		SideEffect: "read",
+		Approval:   "never",
 	}
 }
 
@@ -110,8 +112,10 @@ func (t *authorityAwareTool) Name() string { return "authority_aware" }
 func (t *authorityAwareTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:       t.Name(),
+		Family:     model.ToolFamilyRuntimeCapability,
 		Risk:       model.RiskLow,
 		SideEffect: "read",
+		Approval:   "never",
 	}
 }
 
@@ -143,8 +147,10 @@ func (t *loggingTool) Name() string { return "logging_tool" }
 func (t *loggingTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:       t.Name(),
+		Family:     model.ToolFamilyRuntimeCapability,
 		Risk:       model.RiskLow,
 		SideEffect: "read",
+		Approval:   "never",
 	}
 }
 
@@ -242,9 +248,9 @@ func TestRunEngine_FailsHungProviderTurnsAfterTimeout(t *testing.T) {
 
 func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "session_spawn", Risk: model.RiskLow}})
-	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "write_new_file", Risk: model.RiskMedium, SideEffect: "create"}})
-	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "coder_exec", Risk: model.RiskHigh, SideEffect: "exec_write"}})
+	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "session_spawn", Family: model.ToolFamilyDelegate, Risk: model.RiskLow}})
+	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "write_new_file", Family: model.ToolFamilyRepoWrite, Risk: model.RiskMedium, SideEffect: "create"}})
+	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "coder_exec", Family: model.ToolFamilyRepoWrite, Risk: model.RiskHigh, SideEffect: "exec_write"}})
 	prov := NewMockProvider(
 		[]GenerateResult{
 			{Content: "delegating", InputTokens: 3, OutputTokens: 5, StopReason: "end_turn"},
@@ -262,10 +268,10 @@ func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
 			TeamID: "default",
 			Agents: map[string]model.AgentProfile{
 				"assistant": {
-					AgentID:      "assistant",
-					Capabilities: []model.AgentCapability{model.CapReadHeavy, model.CapSpawn},
-					ToolProfile:  "read_heavy",
-					CanSpawn:     []string{"researcher"},
+					AgentID:         "assistant",
+					BaseProfile:     model.BaseProfileOperator,
+					ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
+					DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
 				},
 			},
 		}),
@@ -298,7 +304,7 @@ func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
 
 func TestRunEngine_AdvertisesCoderExecToScopedWriteAgent(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "coder_exec", Risk: model.RiskHigh, SideEffect: "exec_write"}})
+	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "coder_exec", Family: model.ToolFamilyRepoWrite, Risk: model.RiskHigh, SideEffect: "exec_write"}})
 	prov := NewMockProvider(
 		[]GenerateResult{
 			{Content: "patch complete", InputTokens: 3, OutputTokens: 5, StopReason: "end_turn"},
@@ -317,8 +323,8 @@ func TestRunEngine_AdvertisesCoderExecToScopedWriteAgent(t *testing.T) {
 			Agents: map[string]model.AgentProfile{
 				"patcher": {
 					AgentID:      "patcher",
-					Capabilities: []model.AgentCapability{model.CapScopedWrite},
-					ToolProfile:  "scoped_write",
+					BaseProfile:  model.BaseProfileWrite,
+					ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyRepoWrite},
 				},
 			},
 		}),
@@ -375,15 +381,15 @@ func TestRunEngine_SessionSpawnToolCreatesChildRun(t *testing.T) {
 		TeamID: "default",
 		Agents: map[string]model.AgentProfile{
 			"assistant": {
-				AgentID:      "assistant",
-				Capabilities: []model.AgentCapability{model.CapReadHeavy, model.CapSpawn},
-				ToolProfile:  "read_heavy",
-				CanSpawn:     []string{"researcher"},
+				AgentID:         "assistant",
+				BaseProfile:     model.BaseProfileOperator,
+				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
+				DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
 			},
 			"researcher": {
 				AgentID:      "researcher",
-				Capabilities: []model.AgentCapability{model.CapReadHeavy},
-				ToolProfile:  "read_heavy",
+				BaseProfile:  model.BaseProfileResearch,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyWebRead},
 			},
 		},
 	}); err != nil {
@@ -482,15 +488,15 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 		TeamID: "default",
 		Agents: map[string]model.AgentProfile{
 			"assistant": {
-				AgentID:      "assistant",
-				Capabilities: []model.AgentCapability{model.CapReadHeavy, model.CapSpawn},
-				ToolProfile:  "read_heavy",
-				CanSpawn:     []string{"patcher"},
+				AgentID:         "assistant",
+				BaseProfile:     model.BaseProfileOperator,
+				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
+				DelegationKinds: []model.DelegationKind{model.DelegationKindWrite},
 			},
 			"patcher": {
 				AgentID:      "patcher",
-				Capabilities: []model.AgentCapability{model.CapScopedWrite},
-				ToolProfile:  "scoped_write",
+				BaseProfile:  model.BaseProfileWrite,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyRepoWrite},
 			},
 		},
 	}); err != nil {
@@ -718,15 +724,15 @@ func TestRunEngine_SessionSpawnInterruptsParentWhenChildInterrupts(t *testing.T)
 		TeamID: "default",
 		Agents: map[string]model.AgentProfile{
 			"assistant": {
-				AgentID:      "assistant",
-				Capabilities: []model.AgentCapability{model.CapReadHeavy, model.CapSpawn},
-				ToolProfile:  "read_heavy",
-				CanSpawn:     []string{"patcher"},
+				AgentID:         "assistant",
+				BaseProfile:     model.BaseProfileOperator,
+				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
+				DelegationKinds: []model.DelegationKind{model.DelegationKindWrite},
 			},
 			"patcher": {
 				AgentID:      "patcher",
-				Capabilities: []model.AgentCapability{model.CapScopedWrite},
-				ToolProfile:  "scoped_write",
+				BaseProfile:  model.BaseProfileWrite,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyRepoWrite},
 			},
 		},
 	}); err != nil {
@@ -818,19 +824,19 @@ func TestRunEngine_IncludesSoulInstructionsInProviderRequests(t *testing.T) {
 		TeamID: "default",
 		Agents: map[string]model.AgentProfile{
 			"assistant": {
-				AgentID:      "assistant",
-				Role:         "operator-facing coordinator",
-				Instructions: "must route external research through researcher",
-				Capabilities: []model.AgentCapability{model.CapReadHeavy, model.CapSpawn},
-				ToolProfile:  "read_heavy",
-				CanSpawn:     []string{"researcher"},
+				AgentID:         "assistant",
+				Role:            "operator-facing coordinator",
+				Instructions:    "must route external research through researcher",
+				BaseProfile:     model.BaseProfileOperator,
+				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
+				DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
 			},
 			"researcher": {
 				AgentID:      "researcher",
 				Role:         "research specialist",
 				Instructions: "prefer primary sources and return concise findings",
-				Capabilities: []model.AgentCapability{model.CapReadHeavy},
-				ToolProfile:  "read_heavy",
+				BaseProfile:  model.BaseProfileResearch,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyWebRead},
 			},
 		},
 	}); err != nil {
@@ -871,7 +877,7 @@ func TestRunEngine_IncludesSoulInstructionsInProviderRequests(t *testing.T) {
 	for _, want := range []string{
 		"operator-facing coordinator",
 		"must route external research through researcher",
-		"Can spawn: researcher",
+		"Delegation kinds: research",
 	} {
 		if !strings.Contains(prov.Requests[0].Instructions, want) {
 			t.Fatalf("expected front instructions to include %q, got:\n%s", want, prov.Requests[0].Instructions)
@@ -927,8 +933,8 @@ func TestRunEngine_ApprovalRequestedEmitsReplayDelta(t *testing.T) {
 			Agents: map[string]model.AgentProfile{
 				"patcher": {
 					AgentID:      "patcher",
-					Capabilities: []model.AgentCapability{model.CapScopedWrite},
-					ToolProfile:  "scoped_write",
+					BaseProfile:  model.BaseProfileWrite,
+					ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyRepoWrite},
 				},
 			},
 		}),
@@ -1041,6 +1047,16 @@ func TestRunEngine_PassesCWDIntoToolInvocationContext(t *testing.T) {
 		AgentID:        "agent-a",
 		Objective:      "use tool",
 		CWD:            workspaceRoot,
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{
+			TeamID: "default",
+			Agents: map[string]model.AgentProfile{
+				"agent-a": {
+					AgentID:      "agent-a",
+					BaseProfile:  model.BaseProfileOperator,
+					ToolFamilies: []model.ToolFamily{model.ToolFamilyRuntimeCapability},
+				},
+			},
+		}),
 	}); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -1081,6 +1097,16 @@ func TestRunEngine_PassesAuthorityIntoToolInvocationContext(t *testing.T) {
 		Objective:      "use tool",
 		CWD:            t.TempDir(),
 		AuthorityJSON:  rawAuthority,
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{
+			TeamID: "default",
+			Agents: map[string]model.AgentProfile{
+				"agent-a": {
+					AgentID:      "agent-a",
+					BaseProfile:  model.BaseProfileOperator,
+					ToolFamilies: []model.ToolFamily{model.ToolFamilyRuntimeCapability},
+				},
+			},
+		}),
 	}); err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}
@@ -1123,6 +1149,16 @@ func TestRunEngine_UsesPersistedAuthoritySettingsByDefault(t *testing.T) {
 		AgentID:        "agent-a",
 		Objective:      "use tool",
 		CWD:            t.TempDir(),
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{
+			TeamID: "default",
+			Agents: map[string]model.AgentProfile{
+				"agent-a": {
+					AgentID:      "agent-a",
+					BaseProfile:  model.BaseProfileOperator,
+					ToolFamilies: []model.ToolFamily{model.ToolFamilyRuntimeCapability},
+				},
+			},
+		}),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -2017,6 +2053,16 @@ func TestRunEngine_ExecutesToolCallsAndCarriesResultsIntoNextTurn(t *testing.T) 
 		AgentID:        "agent-a",
 		Objective:      "Inspect README and summarize it",
 		CWD:            t.TempDir(),
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{
+			TeamID: "default",
+			Agents: map[string]model.AgentProfile{
+				"agent-a": {
+					AgentID:      "agent-a",
+					BaseProfile:  model.BaseProfileOperator,
+					ToolFamilies: []model.ToolFamily{model.ToolFamilyRuntimeCapability},
+				},
+			},
+		}),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -2162,6 +2208,16 @@ func TestRunEngine_JournalsToolLogsAndEmitsReplayDeltas(t *testing.T) {
 		AgentID:        "assistant",
 		Objective:      "capture tool logs",
 		CWD:            t.TempDir(),
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{
+			TeamID: "default",
+			Agents: map[string]model.AgentProfile{
+				"assistant": {
+					AgentID:      "assistant",
+					BaseProfile:  model.BaseProfileOperator,
+					ToolFamilies: []model.ToolFamily{model.ToolFamilyRuntimeCapability},
+				},
+			},
+		}),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -2312,7 +2368,9 @@ func (t *recordingRuntimeTool) Spec() model.ToolSpec {
 		Name:            t.name,
 		Description:     "test tool",
 		InputSchemaJSON: `{"type":"object","properties":{"path":{"type":"string"}}}`,
+		Family:          model.ToolFamilyRuntimeCapability,
 		Risk:            model.RiskLow,
+		Approval:        "never",
 	}
 }
 

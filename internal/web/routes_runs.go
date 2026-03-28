@@ -123,9 +123,10 @@ type runExecutionSnapshotView struct {
 }
 
 type runExecutionAgentView struct {
-	ID           string
-	ToolProfile  string
-	Capabilities []string
+	ID              string
+	BaseProfile     string
+	ToolFamilies    []string
+	DelegationKinds []string
 }
 
 type runStructuredTextView struct {
@@ -1145,15 +1146,21 @@ func buildExecutionSnapshotView(teamID string, raw []byte) runExecutionSnapshotV
 	view.Agents = make([]runExecutionAgentView, 0, len(agentIDs))
 	for _, agentID := range agentIDs {
 		profile := snapshot.Agents[agentID]
-		capabilities := make([]string, 0, len(profile.Capabilities))
-		for _, capability := range profile.Capabilities {
-			capabilities = append(capabilities, string(capability))
+		toolFamilies := make([]string, 0, len(profile.ToolFamilies))
+		for _, family := range profile.ToolFamilies {
+			toolFamilies = append(toolFamilies, string(family))
 		}
-		sort.Strings(capabilities)
+		sort.Strings(toolFamilies)
+		delegationKinds := make([]string, 0, len(profile.DelegationKinds))
+		for _, kind := range profile.DelegationKinds {
+			delegationKinds = append(delegationKinds, string(kind))
+		}
+		sort.Strings(delegationKinds)
 		view.Agents = append(view.Agents, runExecutionAgentView{
-			ID:           agentID,
-			ToolProfile:  profile.ToolProfile,
-			Capabilities: capabilities,
+			ID:              agentID,
+			BaseProfile:     string(profile.BaseProfile),
+			ToolFamilies:    toolFamilies,
+			DelegationKinds: delegationKinds,
 		})
 	}
 

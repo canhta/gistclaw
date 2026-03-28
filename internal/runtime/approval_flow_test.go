@@ -512,8 +512,8 @@ func workspaceWriteSnapshot() model.ExecutionSnapshot {
 		Agents: map[string]model.AgentProfile{
 			"patcher": {
 				AgentID:      "patcher",
-				ToolProfile:  "scoped_write",
-				Capabilities: []model.AgentCapability{model.CapScopedWrite},
+				BaseProfile:  model.BaseProfileWrite,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyRepoWrite},
 			},
 		},
 	}
@@ -535,8 +535,10 @@ func (t *fakeCoderExecTool) Name() string { return "coder_exec" }
 func (t *fakeCoderExecTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:       t.Name(),
+		Family:     model.ToolFamilyRepoWrite,
 		Risk:       model.RiskHigh,
 		SideEffect: "exec_write",
+		Approval:   "maybe",
 	}
 }
 

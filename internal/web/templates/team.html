@@ -155,21 +155,21 @@
             <input id="agent_{{.Index}}_role" name="agent_{{.Index}}_role" type="text" value="{{.Role}}">
           </div>
           <div class="field">
-            <label for="agent_{{.Index}}_tool_posture">Tool Access</label>
-            <select id="agent_{{.Index}}_tool_posture" name="agent_{{.Index}}_tool_posture">
-              {{range .ToolPostureOptions}}
+            <label for="agent_{{.Index}}_base_profile">Base Profile</label>
+            <select id="agent_{{.Index}}_base_profile" name="agent_{{.Index}}_base_profile">
+              {{range .BaseProfileOptions}}
                 <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
               {{end}}
             </select>
           </div>
           <div class="field team-link-group">
-            <span class="panel-kicker">Delegation</span>
-            <span class="field-label">Can Spawn Sub-Agents</span>
+            <span class="panel-kicker">Tool Access</span>
+            <span class="field-label">Tool Families</span>
             <div class="choice-chip-grid">
-              {{if .CanSpawnOptions}}
-                {{range .CanSpawnOptions}}
+              {{if .ToolFamilyOptions}}
+                {{range .ToolFamilyOptions}}
                   <label class="choice-chip">
-                    <input type="checkbox" name="agent_{{$agent.Index}}_can_spawn" value="{{.Value}}"{{if .Selected}} checked{{end}}>
+                    <input type="checkbox" name="agent_{{$agent.Index}}_tool_families" value="{{.Value}}"{{if .Selected}} checked{{end}}>
                     <span>{{.Label}}</span>
                   </label>
                 {{end}}
@@ -177,6 +177,30 @@
                 <span class="muted">No other agents available.</span>
               {{end}}
             </div>
+          </div>
+          <div class="field team-link-group">
+            <span class="panel-kicker">Delegation</span>
+            <span class="field-label">Delegation Kinds</span>
+            <div class="choice-chip-grid">
+              {{if .DelegationKindOptions}}
+                {{range .DelegationKindOptions}}
+                  <label class="choice-chip">
+                    <input type="checkbox" name="agent_{{$agent.Index}}_delegation_kinds" value="{{.Value}}"{{if .Selected}} checked{{end}}>
+                    <span>{{.Label}}</span>
+                  </label>
+                {{end}}
+              {{else}}
+                <span class="muted">No delegation available.</span>
+              {{end}}
+            </div>
+          </div>
+          <div class="field">
+            <label for="agent_{{.Index}}_specialist_summary_visibility">Specialist Visibility</label>
+            <select id="agent_{{.Index}}_specialist_summary_visibility" name="agent_{{.Index}}_specialist_summary_visibility">
+              {{range .SpecialistSummaryOptions}}
+                <option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>
+              {{end}}
+            </select>
           </div>
           <div class="field team-link-group">
             <span class="panel-kicker">Messaging</span>

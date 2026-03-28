@@ -228,11 +228,18 @@
             <article class="snapshot-agent">
               <div class="snapshot-agent-head">
                 <div class="snapshot-agent-name">{{.ID}}</div>
-                <div class="mono subtle">{{.ToolProfile}}</div>
+                <div class="mono subtle">{{.BaseProfile}}</div>
               </div>
-              {{if .Capabilities}}
+              {{if .ToolFamilies}}
                 <div class="capability-list">
-                  {{range .Capabilities}}
+                  {{range .ToolFamilies}}
+                    <span class="badge badge-muted">{{.}}</span>
+                  {{end}}
+                </div>
+              {{end}}
+              {{if .DelegationKinds}}
+                <div class="capability-list">
+                  {{range .DelegationKinds}}
                     <span class="badge badge-muted">{{.}}</span>
                   {{end}}
                 </div>

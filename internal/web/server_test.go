@@ -259,7 +259,8 @@ func TestRuns(t *testing.T) {
 			"Assigned Team",
 			"Repo Task Team",
 			"assistant",
-			"scoped_write",
+			"write",
+			"repo_write",
 			"Source",
 			"GistClaw",
 			"Attention",
@@ -929,10 +930,11 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    role: coordinator
-    tool_posture: read_heavy
+    base_profile: operator
+    tool_families: [repo_read, runtime_capability]
+    specialist_summary_visibility: basic
 `)
-		writeTestFile(t, filepath.Join(h.storageRoot, "projects", otherProjectID, "teams", "default", "assistant.soul.yaml"), "role: coordinator\ntool_posture: read_heavy\n")
+		writeTestFile(t, filepath.Join(h.storageRoot, "projects", otherProjectID, "teams", "default", "assistant.soul.yaml"), "role: SEO lead\n")
 		if err := runtime.SetActiveProject(context.Background(), h.db, otherProjectID); err != nil {
 			t.Fatalf("set active project: %v", err)
 		}
@@ -1345,14 +1347,20 @@ func TestTeam(t *testing.T) {
 			"Copy Setup",
 			"Delete Setup",
 			"Lead agent",
-			"Can Spawn Sub-Agents",
+			"Base Profile",
+			"Tool Families",
+			"Delegation Kinds",
+			"Specialist Visibility",
+			"Can Message",
 			"assistant",
 			"patcher",
 			"reviewer",
-			"operator_facing",
-			"scoped_write",
-			`name="agent_0_tool_posture"`,
-			`name="agent_0_can_spawn"`,
+			"operator",
+			"write",
+			`name="agent_0_base_profile"`,
+			`name="agent_0_tool_families"`,
+			`name="agent_0_delegation_kinds"`,
+			`name="agent_0_specialist_summary_visibility"`,
 			`name="agent_0_can_message"`,
 			`name="agent_0_id"`,
 			`name="agent_0_soul_file"`,
@@ -1362,7 +1370,8 @@ func TestTeam(t *testing.T) {
 			`name="clone_source_profile"`,
 			`name="clone_profile_name"`,
 			`name="delete_profile_name"`,
-			`<option value="read_heavy"`,
+			`<option value="operator"`,
+			`value="write"`,
 			`value="reviewer" checked`,
 			`Add Agent`,
 			`/configure/team/export`,
@@ -1386,7 +1395,6 @@ func TestTeam(t *testing.T) {
 			}
 		}
 		for _, unwanted := range []string{
-			`name="agent_0_can_spawn" type="text"`,
 			`name="agent_0_can_message" type="text"`,
 		} {
 			if strings.Contains(body, unwanted) {
@@ -1558,24 +1566,37 @@ func TestTeam(t *testing.T) {
 		form.Set("intent", "save")
 		form.Set("name", "Platform Crew")
 		form.Set("front_agent", "reviewer")
-		form.Set("agent_0_role", "operator-facing coordinator")
-		form.Set("agent_0_tool_posture", "operator_facing")
-		form.Del("agent_0_can_spawn")
-		form.Add("agent_0_can_spawn", "patcher")
-		form.Add("agent_0_can_spawn", "reviewer")
+		form.Set("agent_0_role", "front assistant")
+		form.Set("agent_0_base_profile", "operator")
+		form.Del("agent_0_tool_families")
+		form.Add("agent_0_tool_families", "repo_read")
+		form.Add("agent_0_tool_families", "runtime_capability")
+		form.Add("agent_0_tool_families", "delegate")
+		form.Del("agent_0_delegation_kinds")
+		form.Add("agent_0_delegation_kinds", "write")
+		form.Add("agent_0_delegation_kinds", "review")
+		form.Set("agent_0_specialist_summary_visibility", "full")
 		form.Del("agent_0_can_message")
 		form.Add("agent_0_can_message", "patcher")
 		form.Add("agent_0_can_message", "reviewer")
 		form.Set("agent_1_role", "scoped write specialist")
-		form.Set("agent_1_tool_posture", "scoped_write")
+		form.Set("agent_1_base_profile", "write")
+		form.Del("agent_1_tool_families")
+		form.Add("agent_1_tool_families", "repo_read")
+		form.Add("agent_1_tool_families", "repo_write")
 		form.Del("agent_1_can_message")
 		form.Add("agent_1_can_message", "assistant")
 		form.Add("agent_1_can_message", "reviewer")
+		form.Set("agent_1_specialist_summary_visibility", "basic")
 		form.Set("agent_2_role", "diff reviewer")
-		form.Set("agent_2_tool_posture", "read_heavy")
+		form.Set("agent_2_base_profile", "review")
+		form.Del("agent_2_tool_families")
+		form.Add("agent_2_tool_families", "repo_read")
+		form.Add("agent_2_tool_families", "diff_review")
 		form.Del("agent_2_can_message")
 		form.Add("agent_2_can_message", "assistant")
 		form.Add("agent_2_can_message", "patcher")
+		form.Set("agent_2_specialist_summary_visibility", "basic")
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/configure/team", strings.NewReader(form.Encode()))
@@ -1607,11 +1628,14 @@ func TestTeam(t *testing.T) {
 		if spec.FrontAgent != "reviewer" {
 			t.Fatalf("expected updated front agent, got %q", spec.FrontAgent)
 		}
-		if got := spec.Agents[0].CanSpawn; len(got) != 2 || got[0] != "patcher" || got[1] != "reviewer" {
-			t.Fatalf("expected assistant can_spawn [patcher reviewer], got %#v", got)
+		if spec.Agents[0].BaseProfile != model.BaseProfileOperator {
+			t.Fatalf("expected assistant base_profile %q, got %q", model.BaseProfileOperator, spec.Agents[0].BaseProfile)
 		}
-		if got := spec.Agents[1].CanSpawn; len(got) != 0 {
-			t.Fatalf("expected patcher can_spawn empty, got %#v", got)
+		if got := spec.Agents[0].ToolFamilies; len(got) != 3 || got[0] != model.ToolFamilyRepoRead || got[1] != model.ToolFamilyRuntimeCapability || got[2] != model.ToolFamilyDelegate {
+			t.Fatalf("expected assistant tool families [repo_read runtime_capability delegate], got %#v", got)
+		}
+		if got := spec.Agents[0].DelegationKinds; len(got) != 2 || got[0] != model.DelegationKindWrite || got[1] != model.DelegationKindReview {
+			t.Fatalf("expected assistant delegation kinds [write review], got %#v", got)
 		}
 		if got := spec.Agents[2].CanMessage; len(got) != 2 || got[0] != "assistant" || got[1] != "patcher" {
 			t.Fatalf("expected reviewer can_message [assistant patcher], got %#v", got)
@@ -1761,9 +1785,10 @@ func TestTeam(t *testing.T) {
 		}
 		for _, want := range []string{
 			"name: Repo Task Team",
-			"role: operator-facing coordinator",
-			"tool_posture: operator_facing",
-			"soul_file: coordinator.soul.yaml",
+			"role: front assistant",
+			"base_profile: operator",
+			"tool_families:",
+			"soul_file: assistant.soul.yaml",
 		} {
 			if !strings.Contains(rr.Body.String(), want) {
 				t.Fatalf("expected export to contain %q:\n%s", want, rr.Body.String())
@@ -1791,26 +1816,31 @@ agents:
   - id: reviewer
     soul_file: reviewer.soul.yaml
     role: imported reviewer
-    tool_posture: read_heavy
-    can_spawn: [assistant]
+    base_profile: review
+    tool_families: [repo_read, diff_review]
     can_message: [assistant, patcher]
+    specialist_summary_visibility: basic
   - id: patcher
     soul_file: patcher.soul.yaml
     role: imported patcher
-    tool_posture: scoped_write
-    can_spawn: []
+    base_profile: write
+    tool_families: [repo_read, repo_write]
     can_message: [reviewer]
+    specialist_summary_visibility: basic
   - id: assistant
-    soul_file: coordinator.soul.yaml
-    role: imported coordinator
-    tool_posture: operator_facing
-    can_spawn: [patcher, reviewer]
+    soul_file: assistant.soul.yaml
+    role: imported assistant
+    base_profile: operator
+    tool_families: [repo_read, runtime_capability, delegate]
+    delegation_kinds: [write, review]
     can_message: [patcher, reviewer]
+    specialist_summary_visibility: full
   - id: researcher
     role: imported researcher
-    tool_posture: read_heavy
-    can_spawn: []
+    base_profile: research
+    tool_families: [repo_read, web_read]
     can_message: [assistant]
+    specialist_summary_visibility: basic
 `
 		if _, err := part.Write([]byte(imported)); err != nil {
 			t.Fatalf("write import file: %v", err)
@@ -1839,7 +1869,7 @@ agents:
 			`value="researcher"`,
 			`value="researcher.soul.yaml"`,
 			`<option value="reviewer" selected>`,
-			`value="assistant" checked`,
+			`value="web_read" checked`,
 		} {
 			if !strings.Contains(html, want) {
 				t.Fatalf("expected import response to contain %q:\n%s", want, html)
@@ -4725,8 +4755,10 @@ func (t *blockingCoderExecTool) Name() string { return "coder_exec" }
 func (t *blockingCoderExecTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:       t.Name(),
+		Family:     model.ToolFamilyRepoWrite,
 		Risk:       model.RiskHigh,
 		SideEffect: "exec_write",
+		Approval:   "maybe",
 	}
 }
 
@@ -4796,21 +4828,28 @@ name: Repo Task Team
 front_agent: assistant
 agents:
   - id: assistant
-    soul_file: coordinator.soul.yaml
-    can_spawn: [patcher, reviewer]
+    soul_file: assistant.soul.yaml
+    base_profile: operator
+    tool_families: [repo_read, runtime_capability, connector_capability, delegate]
+    delegation_kinds: [write, review]
     can_message: [patcher, reviewer]
+    specialist_summary_visibility: full
   - id: patcher
     soul_file: patcher.soul.yaml
-    can_spawn: []
+    base_profile: write
+    tool_families: [repo_read, repo_write]
     can_message: [assistant, reviewer]
+    specialist_summary_visibility: basic
   - id: reviewer
     soul_file: reviewer.soul.yaml
-    can_spawn: []
+    base_profile: review
+    tool_families: [repo_read, diff_review]
     can_message: [assistant, patcher]
+    specialist_summary_visibility: basic
 `)
-	writeTestFile(t, filepath.Join(dir, "coordinator.soul.yaml"), "role: operator-facing coordinator\ntool_posture: operator_facing\n")
-	writeTestFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: scoped write specialist\ntool_posture: scoped_write\n")
-	writeTestFile(t, filepath.Join(dir, "reviewer.soul.yaml"), "role: diff reviewer\ntool_posture: read_heavy\n")
+	writeTestFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: front assistant\n")
+	writeTestFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: scoped write specialist\n")
+	writeTestFile(t, filepath.Join(dir, "reviewer.soul.yaml"), "role: diff reviewer\n")
 	return dir
 }
 
@@ -4825,15 +4864,19 @@ func teamFormValues(cfg teams.Config) url.Values {
 		form.Set(prefix+"id", agent.ID)
 		form.Set(prefix+"soul_file", agent.SoulFile)
 		form.Set(prefix+"role", agent.Role)
-		form.Set(prefix+"tool_posture", agent.ToolPosture)
+		form.Set(prefix+"base_profile", string(agent.BaseProfile))
+		form.Set(prefix+"specialist_summary_visibility", string(agent.SpecialistSummaryVisibility))
 		rawExtra, err := json.Marshal(agent.Soul.Extra)
 		if err == nil {
 			form.Set(prefix+"soul_extra_json", string(rawExtra))
 		} else {
 			form.Set(prefix+"soul_extra_json", "{}")
 		}
-		for _, value := range agent.CanSpawn {
-			form.Add(prefix+"can_spawn", value)
+		for _, value := range agent.ToolFamilies {
+			form.Add(prefix+"tool_families", string(value))
+		}
+		for _, value := range agent.DelegationKinds {
+			form.Add(prefix+"delegation_kinds", string(value))
 		}
 		for _, value := range agent.CanMessage {
 			form.Add(prefix+"can_message", value)

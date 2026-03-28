@@ -13,7 +13,7 @@ import (
 	"github.com/canhta/gistclaw/internal/tools"
 )
 
-func TestRunEngine_UsesExecutionSnapshotToolProfileForPolicy(t *testing.T) {
+func TestRunEngine_UsesExecutionSnapshotAdaptivePolicy(t *testing.T) {
 	db, cs, mem, _ := setupRunTestDeps(t)
 	registry, closer, err := buildRuntimeRepoRegistry()
 	if err != nil {
@@ -40,8 +40,8 @@ func TestRunEngine_UsesExecutionSnapshotToolProfileForPolicy(t *testing.T) {
 		ConversationID:        "conv-snapshot-policy",
 		AgentID:               "reviewer",
 		Objective:             "attempt write",
-		CWD:         t.TempDir(),
-		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{TeamID: "default", Agents: map[string]model.AgentProfile{"reviewer": {AgentID: "reviewer", ToolProfile: "read_heavy", Capabilities: []model.AgentCapability{model.CapReadHeavy}}}}),
+		CWD:                   t.TempDir(),
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{TeamID: "default", Agents: map[string]model.AgentProfile{"reviewer": {AgentID: "reviewer", BaseProfile: model.BaseProfileReview, ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDiffReview}}}}),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -104,8 +104,8 @@ func TestRuntime_DefaultExecutionSnapshotIsAppliedToChildSpawns(t *testing.T) {
 	rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
 		TeamID: "default",
 		Agents: map[string]model.AgentProfile{
-			"assistant": {AgentID: "assistant", ToolProfile: "operator_facing", Capabilities: []model.AgentCapability{model.CapOperatorFacing, model.CapSpawn}},
-			"reviewer":  {AgentID: "reviewer", ToolProfile: "read_heavy", Capabilities: []model.AgentCapability{model.CapReadHeavy}},
+			"assistant": {AgentID: "assistant", BaseProfile: model.BaseProfileOperator, ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate}, DelegationKinds: []model.DelegationKind{model.DelegationKindReview}},
+			"reviewer":  {AgentID: "reviewer", BaseProfile: model.BaseProfileReview, ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDiffReview}},
 		},
 	})
 
@@ -118,7 +118,7 @@ func TestRuntime_DefaultExecutionSnapshotIsAppliedToChildSpawns(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "start",
-		CWD: t.TempDir(),
+		CWD:           t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)

@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/teams"
 )
 
@@ -29,16 +30,18 @@ type teamPageData struct {
 }
 
 type teamAgentCardData struct {
-	Index              int
-	ID                 string
-	SoulFile           string
-	SoulExtraJSON      string
-	Role               string
-	ToolPosture        string
-	ToolPostureOptions []teamOption
-	CanSpawnOptions    []teamOption
-	CanMessageOptions  []teamOption
-	IsFront            bool
+	Index                    int
+	ID                       string
+	SoulFile                 string
+	SoulExtraJSON            string
+	Role                     string
+	BaseProfile              string
+	BaseProfileOptions       []teamOption
+	ToolFamilyOptions        []teamOption
+	DelegationKindOptions    []teamOption
+	CanMessageOptions        []teamOption
+	SpecialistSummaryOptions []teamOption
+	IsFront                  bool
 }
 
 type teamOption struct {
@@ -319,16 +322,18 @@ func newTeamPageData(state teamPageState, errMsg, notice string) teamPageData {
 			}
 		}
 		data.Agents = append(data.Agents, teamAgentCardData{
-			Index:              idx,
-			ID:                 agent.ID,
-			SoulFile:           agent.SoulFile,
-			SoulExtraJSON:      soulExtraJSON,
-			Role:               agent.Role,
-			ToolPosture:        agent.ToolPosture,
-			ToolPostureOptions: buildToolPostureOptions(agent.ToolPosture),
-			CanSpawnOptions:    buildTeamLinkOptions(cfg.Agents, idx, agent.CanSpawn),
-			CanMessageOptions:  buildTeamLinkOptions(cfg.Agents, idx, agent.CanMessage),
-			IsFront:            agent.ID == cfg.FrontAgent,
+			Index:                    idx,
+			ID:                       agent.ID,
+			SoulFile:                 agent.SoulFile,
+			SoulExtraJSON:            soulExtraJSON,
+			Role:                     agent.Role,
+			BaseProfile:              string(agent.BaseProfile),
+			BaseProfileOptions:       buildBaseProfileOptions(agent.BaseProfile),
+			ToolFamilyOptions:        buildToolFamilyOptions(agent.ToolFamilies),
+			DelegationKindOptions:    buildDelegationKindOptions(agent.DelegationKinds),
+			CanMessageOptions:        buildTeamLinkOptions(cfg.Agents, idx, agent.CanMessage),
+			SpecialistSummaryOptions: buildSpecialistSummaryOptions(agent.SpecialistSummaryVisibility),
+			IsFront:                  agent.ID == cfg.FrontAgent,
 		})
 	}
 	return data
@@ -388,18 +393,19 @@ func teamConfigFromRequest(r *http.Request) (teams.Config, error) {
 			soulFile = teams.SuggestedSoulFile(agentID)
 		}
 		role := strings.TrimSpace(r.FormValue(prefix + "role"))
-		toolPosture := strings.TrimSpace(r.FormValue(prefix + "tool_posture"))
+		baseProfile := model.BaseProfile(strings.TrimSpace(r.FormValue(prefix + "base_profile")))
 		agent := teams.AgentConfig{
-			ID:          agentID,
-			SoulFile:    soulFile,
-			Role:        role,
-			ToolPosture: toolPosture,
-			CanSpawn:    normalizeAgentLinks(r.Form[prefix+"can_spawn"]),
-			CanMessage:  normalizeAgentLinks(r.Form[prefix+"can_message"]),
+			ID:                          agentID,
+			SoulFile:                    soulFile,
+			Role:                        role,
+			BaseProfile:                 baseProfile,
+			ToolFamilies:                normalizeToolFamilies(r.Form[prefix+"tool_families"]),
+			DelegationKinds:             normalizeDelegationKinds(r.Form[prefix+"delegation_kinds"]),
+			CanMessage:                  normalizeAgentLinks(r.Form[prefix+"can_message"]),
+			SpecialistSummaryVisibility: model.SpecialistSummaryVisibility(strings.TrimSpace(r.FormValue(prefix + "specialist_summary_visibility"))),
 			Soul: teams.SoulSpec{
-				Role:        role,
-				ToolPosture: toolPosture,
-				Extra:       parseSoulExtraJSON(strings.TrimSpace(r.FormValue(prefix + "soul_extra_json"))),
+				Role:  role,
+				Extra: parseSoulExtraJSON(strings.TrimSpace(r.FormValue(prefix + "soul_extra_json"))),
 			},
 		}
 		cfg.Agents = append(cfg.Agents, agent)
@@ -459,14 +465,15 @@ func normalizeAgentLinks(values []string) []string {
 func addTeamMember(cfg teams.Config) teams.Config {
 	id := nextTeamAgentID(cfg)
 	cfg.Agents = append(cfg.Agents, teams.AgentConfig{
-		ID:          id,
-		SoulFile:    teams.SuggestedSoulFile(id),
-		Role:        "new specialist",
-		ToolPosture: "read_heavy",
+		ID:                          id,
+		SoulFile:                    teams.SuggestedSoulFile(id),
+		Role:                        "new specialist",
+		BaseProfile:                 model.BaseProfileSpecialist,
+		ToolFamilies:                []model.ToolFamily{model.ToolFamilyRepoRead},
+		SpecialistSummaryVisibility: model.SpecialistSummaryBasic,
 		Soul: teams.SoulSpec{
-			Role:        "new specialist",
-			ToolPosture: "read_heavy",
-			Extra:       map[string]any{},
+			Role:  "new specialist",
+			Extra: map[string]any{},
 		},
 	})
 	return cfg
@@ -485,7 +492,6 @@ func removeTeamMember(cfg *teams.Config, index int) error {
 	}
 	cfg.Agents = append(cfg.Agents[:index], cfg.Agents[index+1:]...)
 	for i := range cfg.Agents {
-		cfg.Agents[i].CanSpawn = removeAgentLink(cfg.Agents[i].CanSpawn, removedID)
 		cfg.Agents[i].CanMessage = removeAgentLink(cfg.Agents[i].CanMessage, removedID)
 	}
 	return nil
@@ -534,20 +540,115 @@ func buildTeamLinkOptions(agents []teams.AgentConfig, currentIndex int, selected
 	return options
 }
 
-func buildToolPostureOptions(selected string) []teamOption {
-	values := []string{
-		"operator_facing",
-		"scoped_write",
-		"read_heavy",
-		"propose_only",
+func buildBaseProfileOptions(selected model.BaseProfile) []teamOption {
+	values := []model.BaseProfile{
+		model.BaseProfileOperator,
+		model.BaseProfileSpecialist,
+		model.BaseProfileResearch,
+		model.BaseProfileWrite,
+		model.BaseProfileReview,
+		model.BaseProfileVerify,
 	}
 	options := make([]teamOption, 0, len(values))
 	for _, value := range values {
 		options = append(options, teamOption{
-			Value:    value,
-			Label:    strings.ReplaceAll(value, "_", " "),
+			Value:    string(value),
+			Label:    string(value),
 			Selected: value == selected,
 		})
 	}
 	return options
+}
+
+func buildToolFamilyOptions(selected []model.ToolFamily) []teamOption {
+	values := []model.ToolFamily{
+		model.ToolFamilyRepoRead,
+		model.ToolFamilyRepoWrite,
+		model.ToolFamilyRuntimeCapability,
+		model.ToolFamilyConnectorCapability,
+		model.ToolFamilyWebRead,
+		model.ToolFamilyDelegate,
+		model.ToolFamilyVerification,
+		model.ToolFamilyDiffReview,
+	}
+	selectedSet := make(map[string]bool, len(selected))
+	for _, value := range selected {
+		selectedSet[string(value)] = true
+	}
+	options := make([]teamOption, 0, len(values))
+	for _, value := range values {
+		options = append(options, teamOption{
+			Value:    string(value),
+			Label:    strings.ReplaceAll(string(value), "_", " "),
+			Selected: selectedSet[string(value)],
+		})
+	}
+	return options
+}
+
+func buildDelegationKindOptions(selected []model.DelegationKind) []teamOption {
+	values := []model.DelegationKind{
+		model.DelegationKindResearch,
+		model.DelegationKindWrite,
+		model.DelegationKindReview,
+		model.DelegationKindVerify,
+	}
+	selectedSet := make(map[string]bool, len(selected))
+	for _, value := range selected {
+		selectedSet[string(value)] = true
+	}
+	options := make([]teamOption, 0, len(values))
+	for _, value := range values {
+		options = append(options, teamOption{
+			Value:    string(value),
+			Label:    string(value),
+			Selected: selectedSet[string(value)],
+		})
+	}
+	return options
+}
+
+func buildSpecialistSummaryOptions(selected model.SpecialistSummaryVisibility) []teamOption {
+	values := []model.SpecialistSummaryVisibility{
+		model.SpecialistSummaryNone,
+		model.SpecialistSummaryBasic,
+		model.SpecialistSummaryFull,
+	}
+	options := make([]teamOption, 0, len(values))
+	for _, value := range values {
+		options = append(options, teamOption{
+			Value:    string(value),
+			Label:    string(value),
+			Selected: value == selected,
+		})
+	}
+	return options
+}
+
+func normalizeToolFamilies(values []string) []model.ToolFamily {
+	seen := make(map[string]bool, len(values))
+	items := make([]model.ToolFamily, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		items = append(items, model.ToolFamily(value))
+	}
+	return items
+}
+
+func normalizeDelegationKinds(values []string) []model.DelegationKind {
+	seen := make(map[string]bool, len(values))
+	items := make([]model.DelegationKind, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		items = append(items, model.DelegationKind(value))
+	}
+	return items
 }

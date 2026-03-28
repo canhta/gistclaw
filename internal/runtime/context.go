@@ -80,11 +80,20 @@ func composeInstructions(objective string, agent model.AgentProfile, contextView
 	if agent.Role != "" {
 		agentParts = append(agentParts, "Role: "+agent.Role)
 	}
-	if agent.ToolProfile != "" {
-		agentParts = append(agentParts, "Tool posture: "+agent.ToolProfile)
+	if agent.BaseProfile != "" {
+		agentParts = append(agentParts, "Base profile: "+string(agent.BaseProfile))
 	}
-	if len(agent.CanSpawn) > 0 {
-		agentParts = append(agentParts, "Can spawn: "+strings.Join(agent.CanSpawn, ", "))
+	if len(agent.ToolFamilies) > 0 {
+		agentParts = append(agentParts, "Tool families: "+joinToolFamilies(agent.ToolFamilies))
+	}
+	if len(agent.DelegationKinds) > 0 {
+		agentParts = append(agentParts, "Delegation kinds: "+joinDelegationKinds(agent.DelegationKinds))
+	}
+	if agent.SpecialistSummaryVisibility != "" {
+		agentParts = append(agentParts, "Specialist visibility: "+string(agent.SpecialistSummaryVisibility))
+	}
+	if len(agent.CanMessage) > 0 {
+		agentParts = append(agentParts, "Can message: "+strings.Join(agent.CanMessage, ", "))
 	}
 	if agent.Instructions != "" {
 		agentParts = append(agentParts, "Rules:\n"+agent.Instructions)
@@ -125,4 +134,20 @@ func composeInstructions(objective string, agent model.AgentProfile, contextView
 	}
 
 	return strings.Join(parts, "\n\n")
+}
+
+func joinToolFamilies(values []model.ToolFamily) string {
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		items = append(items, string(value))
+	}
+	return strings.Join(items, ", ")
+}
+
+func joinDelegationKinds(values []model.DelegationKind) string {
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		items = append(items, string(value))
+	}
+	return strings.Join(items, ", ")
 }

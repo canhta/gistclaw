@@ -32,15 +32,20 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: [patcher]
+    base_profile: operator
+    tool_families: [repo_read, runtime_capability, connector_capability, delegate]
+    delegation_kinds: [write]
     can_message: [patcher]
+    specialist_summary_visibility: full
   - id: patcher
     soul_file: patcher.soul.yaml
-    can_spawn: []
+    base_profile: write
+    tool_families: [repo_read, repo_write]
     can_message: [assistant]
+    specialist_summary_visibility: basic
 `)
-	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\ntool_posture: operator_facing\n")
-	writeFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: scoped_write\n")
+	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: front assistant\n")
+	writeFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: scoped write specialist\n")
 	return dir
 }
 
@@ -69,15 +74,20 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: [patcher]
+    base_profile: operator
+    tool_families: [repo_read, runtime_capability, connector_capability, delegate]
+    delegation_kinds: [write]
     can_message: [patcher]
+    specialist_summary_visibility: full
   - id: patcher
     soul_file: patcher.soul.yaml
-    can_spawn: []
+    base_profile: write
+    tool_families: [repo_read, repo_write]
     can_message: [assistant]
+    specialist_summary_visibility: basic
 `)
-	writeFile(t, filepath.Join(teamDir, "assistant.soul.yaml"), "role: assistant\ntool_posture: operator_facing\n")
-	writeFile(t, filepath.Join(teamDir, "patcher.soul.yaml"), "role: patcher\ntool_posture: scoped_write\n")
+	writeFile(t, filepath.Join(teamDir, "assistant.soul.yaml"), "role: front assistant\n")
+	writeFile(t, filepath.Join(teamDir, "patcher.soul.yaml"), "role: scoped write specialist\n")
 	return root
 }
 
@@ -125,7 +135,8 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: []
+    base_profile: operator
+    tool_families: [repo_read, delegate]
     can_message: []
 `)
 	// assistant.soul.yaml intentionally not written
@@ -148,10 +159,11 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: []
+    base_profile: operator
+    tool_families: [repo_read, delegate]
     can_message: [ghost]
 `)
-	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\ntool_posture: operator_facing\n")
+	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: front assistant\n")
 	err := bootstrapWithTeamDir(t, dir)
 	if err == nil {
 		t.Fatal("expected error for unknown message target, got nil")
@@ -239,7 +251,7 @@ func TestBootstrap_SeedsStorageOwnedTeamDirFromShippedDefaultWhenStorageIsEmpty(
 	t.Cleanup(func() { _ = app.db.Close() })
 
 	storageTeamDir := filepath.Join(storageRoot, "teams", "default")
-	for _, name := range []string{"team.yaml", "coordinator.soul.yaml", "patcher.soul.yaml"} {
+	for _, name := range []string{"team.yaml", "assistant.soul.yaml", "patcher.soul.yaml"} {
 		if _, err := os.Stat(filepath.Join(storageTeamDir, name)); err != nil {
 			t.Fatalf("expected storage-owned team file %q to exist: %v", name, err)
 		}
@@ -310,14 +322,17 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: [researcher]
+    base_profile: operator
+    tool_families: [repo_read, delegate]
+    delegation_kinds: [research]
     can_message: [researcher]
   - id: researcher
     soul_file: researcher.soul.yaml
-    can_spawn: []
+    base_profile: research
+    tool_families: [repo_read, web_read]
     can_message: [assistant]
 `)
-	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\ntool_posture: operator_facing\n")
+	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: front assistant\n")
 
 	err := bootstrapWithTeamDir(t, dir)
 	if err == nil || !strings.Contains(err.Error(), "researcher.soul.yaml") {
@@ -325,7 +340,7 @@ agents:
 	}
 }
 
-func TestTeamValidation_RejectsUnknownToolPosture(t *testing.T) {
+func TestTeamValidation_RejectsUnknownBaseProfile(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "team.yaml"), `
 name: default
@@ -333,14 +348,15 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: []
+    base_profile: unsafe_mode
+    tool_families: [repo_read]
     can_message: []
 `)
-	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: assistant\ntool_posture: unsafe_mode\n")
+	writeFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: front assistant\n")
 
 	err := bootstrapWithTeamDir(t, dir)
 	if err == nil || !strings.Contains(err.Error(), "unsafe_mode") {
-		t.Fatalf("expected unknown tool posture error, got %v", err)
+		t.Fatalf("expected unknown base profile error, got %v", err)
 	}
 }
 

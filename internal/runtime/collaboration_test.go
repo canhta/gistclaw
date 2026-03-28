@@ -292,11 +292,11 @@ func writeRuntimeTeamFixture(t *testing.T, workspaceRoot, name string) {
 	if err := os.MkdirAll(teamDir, 0o755); err != nil {
 		t.Fatalf("mkdir runtime team dir: %v", err)
 	}
-	teamSpec := "name: " + name + "\nfront_agent: assistant\nagents:\n  - id: assistant\n    soul_file: assistant.soul.yaml\n    role: coordinator\n    tool_posture: read_heavy\n"
+	teamSpec := "name: " + name + "\nfront_agent: assistant\nagents:\n  - id: assistant\n    soul_file: assistant.soul.yaml\n    base_profile: operator\n    tool_families: [repo_read, delegate]\n    delegation_kinds: [research]\n    can_message: []\n"
 	if err := os.WriteFile(filepath.Join(teamDir, "team.yaml"), []byte(teamSpec), 0o644); err != nil {
 		t.Fatalf("write runtime team yaml: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(teamDir, "assistant.soul.yaml"), []byte("role: coordinator\ntool_posture: read_heavy\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(teamDir, "assistant.soul.yaml"), []byte("role: front assistant\n"), 0o644); err != nil {
 		t.Fatalf("write runtime soul: %v", err)
 	}
 }

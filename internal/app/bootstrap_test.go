@@ -303,7 +303,7 @@ func TestBootstrap_SeedsStarterProjectWithShippedDefaultTeam(t *testing.T) {
 	}
 
 	storageTeamDir := filepath.Join(cfg.StorageRoot, "teams", "default")
-	for _, name := range []string{"team.yaml", "coordinator.soul.yaml", "patcher.soul.yaml"} {
+	for _, name := range []string{"team.yaml", "assistant.soul.yaml", "patcher.soul.yaml"} {
 		if _, err := os.Stat(filepath.Join(storageTeamDir, name)); err != nil {
 			t.Fatalf("expected starter storage team file %q to exist: %v", name, err)
 		}

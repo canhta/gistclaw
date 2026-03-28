@@ -836,7 +836,7 @@ func (r *Runtime) executeToolCalls(
 	}
 	policy := &tools.Policy{}
 	runProfile := model.RunProfile{RunID: runID}
-	agent, err := r.agentProfileForRun(ctx, runID, agentID)
+	agent, specialists, err := r.agentContextForRun(ctx, runID, agentID)
 	if err != nil {
 		return outcome, err
 	}
@@ -844,7 +844,7 @@ func (r *Runtime) executeToolCalls(
 	for _, tc := range toolCalls {
 		tool, ok := r.tools.Get(tc.ToolName)
 		if !ok {
-			event, _, err := r.recordToolCall(ctx, conversationID, runID, sessionID, cwd, runAuthority, agent, tc, nil, model.DecisionDeny, "tool not found", "")
+			event, _, err := r.recordToolCall(ctx, conversationID, runID, sessionID, cwd, runAuthority, agent, specialists, tc, nil, model.DecisionDeny, "tool not found", "")
 			if err != nil {
 				return outcome, err
 			}
@@ -855,7 +855,7 @@ func (r *Runtime) executeToolCalls(
 		toolDecision := policy.DecideCall(agent, runProfile, tool.Spec(), tc.InputJSON)
 		switch toolDecision.Mode {
 		case model.DecisionAllow:
-			event, result, err := r.recordToolCall(ctx, conversationID, runID, sessionID, cwd, runAuthority, agent, tc, tool, model.DecisionAllow, "", "")
+			event, result, err := r.recordToolCall(ctx, conversationID, runID, sessionID, cwd, runAuthority, agent, specialists, tc, tool, model.DecisionAllow, "", "")
 			if err != nil {
 				return outcome, err
 			}
@@ -887,7 +887,7 @@ func (r *Runtime) executeToolCalls(
 			outcome.paused = true
 			return outcome, nil
 		default:
-			event, _, err := r.recordToolCall(ctx, conversationID, runID, sessionID, cwd, runAuthority, agent, tc, tool, model.DecisionDeny, toolDecision.Reason, "")
+			event, _, err := r.recordToolCall(ctx, conversationID, runID, sessionID, cwd, runAuthority, agent, specialists, tc, tool, model.DecisionDeny, toolDecision.Reason, "")
 			if err != nil {
 				return outcome, err
 			}
@@ -981,6 +981,7 @@ func (r *Runtime) recordToolCall(
 	cwd string,
 	runAuthority authority.Envelope,
 	agent model.AgentProfile,
+	specialists map[string]model.AgentProfile,
 	tc model.ToolCallRequest,
 	tool tools.Tool,
 	decision model.DecisionMode,
@@ -993,11 +994,12 @@ func (r *Runtime) recordToolCall(
 			result.Error = "tool not found"
 		} else {
 			invokeCtx := tools.WithInvocationContext(ctx, tools.InvocationContext{
-				CWD:        cwd,
-				SessionID:  sessionID,
-				Agent:      agent,
-				Authority:  runAuthority,
-				ApprovalID: approvalID,
+				CWD:         cwd,
+				SessionID:   sessionID,
+				Agent:       agent,
+				Specialists: specialists,
+				Authority:   runAuthority,
+				ApprovalID:  approvalID,
 				LogSink: toolInvocationLogSink{
 					convStore:      r.convStore,
 					eventSink:      r.eventSink,
@@ -1836,11 +1838,16 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 }
 
 func (r *Runtime) agentProfileForRun(ctx context.Context, runID, agentID string) (model.AgentProfile, error) {
+	agent, _, err := r.agentContextForRun(ctx, runID, agentID)
+	return agent, err
+}
+
+func (r *Runtime) agentContextForRun(ctx context.Context, runID, agentID string) (model.AgentProfile, map[string]model.AgentProfile, error) {
 	run, err := r.loadRun(ctx, runID)
 	if err != nil {
-		return model.AgentProfile{}, fmt.Errorf("runtime: load run agent profile: %w", err)
+		return model.AgentProfile{}, nil, fmt.Errorf("runtime: load run agent profile: %w", err)
 	}
-	return agentProfileFromSnapshot(run.ExecutionSnapshotJSON, agentID)
+	return agentContextFromSnapshot(run.ExecutionSnapshotJSON, agentID)
 }
 
 func (r *Runtime) visibleToolSpecs(agent model.AgentProfile) []model.ToolSpec {
@@ -1861,22 +1868,27 @@ func (r *Runtime) visibleToolSpecs(agent model.AgentProfile) []model.ToolSpec {
 }
 
 func agentProfileFromSnapshot(snapshotJSON []byte, agentID string) (model.AgentProfile, error) {
+	profile, _, err := agentContextFromSnapshot(snapshotJSON, agentID)
+	return profile, err
+}
+
+func agentContextFromSnapshot(snapshotJSON []byte, agentID string) (model.AgentProfile, map[string]model.AgentProfile, error) {
 	fallback := model.AgentProfile{AgentID: agentID}
 	if len(snapshotJSON) == 0 {
-		return fallback, nil
+		return fallback, nil, nil
 	}
 	snapshot, err := decodeExecutionSnapshot(snapshotJSON)
 	if err != nil {
-		return model.AgentProfile{}, err
+		return model.AgentProfile{}, nil, err
 	}
 	profile, ok := snapshot.Agents[agentID]
 	if !ok {
-		return fallback, nil
+		return fallback, specialistRoster(snapshot, agentID), nil
 	}
 	if profile.AgentID == "" {
 		profile.AgentID = agentID
 	}
-	return profile, nil
+	return profile, specialistRoster(snapshot, agentID), nil
 }
 
 func decodeExecutionSnapshot(snapshotJSON []byte) (model.ExecutionSnapshot, error) {
@@ -1888,6 +1900,26 @@ func decodeExecutionSnapshot(snapshotJSON []byte) (model.ExecutionSnapshot, erro
 		snapshot.Agents = map[string]model.AgentProfile{}
 	}
 	return snapshot, nil
+}
+
+func specialistRoster(snapshot model.ExecutionSnapshot, agentID string) map[string]model.AgentProfile {
+	if len(snapshot.Agents) == 0 {
+		return nil
+	}
+	roster := make(map[string]model.AgentProfile, len(snapshot.Agents))
+	for id, profile := range snapshot.Agents {
+		if id == agentID {
+			continue
+		}
+		if profile.AgentID == "" {
+			profile.AgentID = id
+		}
+		roster[id] = profile
+	}
+	if len(roster) == 0 {
+		return nil
+	}
+	return roster
 }
 
 func (r *Runtime) queueOutboundIntent(
@@ -2160,12 +2192,12 @@ func (r *Runtime) finishApprovalResolution(ctx context.Context, prepared approva
 				return err
 			}
 		}
-		agent, err := r.agentProfileForRun(ctx, run.ID, run.AgentID)
+		agent, specialists, err := r.agentContextForRun(ctx, run.ID, run.AgentID)
 		if err != nil {
 			return err
 		}
 		tool, _ := r.tools.Get(ticket.ToolName)
-		_, result, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.CWD, runAuthority, agent, call, tool, model.DecisionAllow, "", ticket.ID)
+		_, result, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.CWD, runAuthority, agent, specialists, call, tool, model.DecisionAllow, "", ticket.ID)
 		if err != nil {
 			return err
 		}
@@ -2219,11 +2251,11 @@ func (r *Runtime) finishApprovalResolution(ctx context.Context, prepared approva
 				return err
 			}
 		}
-		agent, err := r.agentProfileForRun(ctx, run.ID, run.AgentID)
+		agent, specialists, err := r.agentContextForRun(ctx, run.ID, run.AgentID)
 		if err != nil {
 			return err
 		}
-		if _, _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.CWD, runAuthority, agent, call, nil, model.DecisionDeny, "approval denied", ticket.ID); err != nil {
+		if _, _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.CWD, runAuthority, agent, specialists, call, nil, model.DecisionDeny, "approval denied", ticket.ID); err != nil {
 			return err
 		}
 		interrupted, err := r.interruptRun(ctx, run)

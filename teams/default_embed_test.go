@@ -27,30 +27,28 @@ func TestDefault(t *testing.T) {
 		}
 	})
 
-	t.Run("embeds coordinator routing rules for specialist delegation", func(t *testing.T) {
+	t.Run("embeds front assistant direct-execution policy", func(t *testing.T) {
 		defaults := Default()
 
-		body, err := fs.ReadFile(defaults, "coordinator.soul.yaml")
+		body, err := fs.ReadFile(defaults, "assistant.soul.yaml")
 		if err != nil {
-			t.Fatalf("read embedded coordinator.soul.yaml: %v", err)
+			t.Fatalf("read embedded assistant.soul.yaml: %v", err)
 		}
 
 		text := string(body)
 		for _, want := range []string{
-			"must route external research through researcher",
-			"must route scoped writes through patcher",
-			"must not claim a specialist acted unless a child run exists",
-			"may answer obvious yes/no continue questions on behalf of the team",
-			"must not ask the operator for reversible workflow choices that can be decided from task context",
-			"must keep human escalation limited to critical boundaries or missing external facts",
-			"reviewer and verifier may run in parallel only after patcher work lands",
-			"if the operator explicitly requests review or verification, those child runs are required before completion",
-			"must not treat a proposed patch or pending approval as finished patcher work",
-			"workflow:",
+			"You are the user-facing assistant for repo tasks.",
+			"Execute directly when the task is bounded and the required capabilities are already available.",
+			"Delegate only when specialization, uncertainty reduction, scale, or parallelism adds clear value.",
+			"prefer direct capability execution for simple, bounded tasks",
+			"use short deterministic tool chains before delegating",
+			"if the runtime recommends delegate or parallelize, treat that as the default unless stronger direct evidence says otherwise",
+			"do not claim specialist work happened unless a delegated run exists",
+			"do not mutate files directly when a write specialist is available for that job",
 			"output_contract:",
 		} {
 			if !strings.Contains(text, want) {
-				t.Fatalf("expected embedded coordinator prompt to contain %q, got:\n%s", want, text)
+				t.Fatalf("expected embedded assistant prompt to contain %q, got:\n%s", want, text)
 			}
 		}
 	})
@@ -67,7 +65,7 @@ func TestDefault(t *testing.T) {
 		for _, want := range []string{
 			"prefer coder_exec with backend codex for substantial code generation",
 			"must not reconstruct codex exec flags manually when coder_exec can express the job",
-			"if coder_exec is unavailable or blocked, surface that explicitly to the coordinator",
+			"if coder_exec is unavailable or blocked, surface that explicitly to the front assistant",
 			"must not ask the operator directly",
 			"treat coder_exec output as the primary success evidence",
 			"prefer targeted list_dir, grep_search, or syntax checks over rereading generated files end to end",
@@ -123,7 +121,7 @@ func TestDefault(t *testing.T) {
 		}
 	})
 
-	t.Run("embeds researcher coordinator-first escalation guidance", func(t *testing.T) {
+	t.Run("embeds researcher front-assistant escalation guidance", func(t *testing.T) {
 		defaults := Default()
 
 		body, err := fs.ReadFile(defaults, "researcher.soul.yaml")
@@ -134,7 +132,7 @@ func TestDefault(t *testing.T) {
 		text := string(body)
 		for _, want := range []string{
 			"do not ask the operator directly",
-			"route unresolved blockers back through the coordinator",
+			"route unresolved blockers back through the front assistant",
 		} {
 			if !strings.Contains(text, want) {
 				t.Fatalf("expected embedded researcher prompt to contain %q, got:\n%s", want, text)
