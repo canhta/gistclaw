@@ -23,6 +23,7 @@ type ContextAssemblyInput struct {
 	AgentID                 string
 	Agent                   model.AgentProfile
 	Specialists             map[string]model.AgentProfile
+	ToolSpecs               []model.ToolSpec
 	Objective               string
 	CWD                     string
 	MemoryView              memory.ContextView
@@ -61,6 +62,7 @@ func (a *defaultContextAssembler) Assemble(ctx context.Context, input ContextAss
 			input.Objective,
 			input.Agent,
 			input.Specialists,
+			input.ToolSpecs,
 			input.ExecutionRecommendation,
 			input.MemoryView,
 			directory,
@@ -85,6 +87,7 @@ func composeInstructions(
 	objective string,
 	agent model.AgentProfile,
 	specialists map[string]model.AgentProfile,
+	toolSpecs []model.ToolSpec,
 	executionRecommendation recommendationpkg.Decision,
 	contextView memory.ContextView,
 	directory DirectoryContext,
@@ -122,6 +125,9 @@ func composeInstructions(
 	if recommendationBlock := renderExecutionRecommendation(executionRecommendation); recommendationBlock != "" {
 		parts = append(parts, recommendationBlock)
 	}
+	if capabilityBlock := renderDirectCapabilityGuidance(executionRecommendation, toolSpecs); capabilityBlock != "" {
+		parts = append(parts, capabilityBlock)
+	}
 	if specialistsBlock := renderSpecialistRoster(agent.SpecialistSummaryVisibility, specialists); specialistsBlock != "" {
 		parts = append(parts, specialistsBlock)
 	}
@@ -158,6 +164,37 @@ func composeInstructions(
 	}
 
 	return strings.Join(parts, "\n\n")
+}
+
+func renderDirectCapabilityGuidance(decision recommendationpkg.Decision, toolSpecs []model.ToolSpec) string {
+	if decision.Mode != recommendationpkg.ModeDirect || len(toolSpecs) == 0 {
+		return ""
+	}
+
+	names := make([]string, 0, len(toolSpecs))
+	seen := make(map[string]bool, len(toolSpecs))
+	for _, spec := range toolSpecs {
+		if spec.Family != model.ToolFamilyConnectorCapability && spec.Family != model.ToolFamilyRuntimeCapability {
+			continue
+		}
+		if seen[spec.Name] {
+			continue
+		}
+		seen[spec.Name] = true
+		names = append(names, spec.Name)
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	sort.Strings(names)
+
+	lines := make([]string, 0, len(names)+2)
+	lines = append(lines, "Direct capability tools available:")
+	for _, name := range names {
+		lines = append(lines, "- "+name)
+	}
+	lines = append(lines, "Use these before delegation for bounded local or connector tasks.")
+	return strings.Join(lines, "\n")
 }
 
 func renderExecutionRecommendation(decision recommendationpkg.Decision) string {

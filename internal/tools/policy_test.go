@@ -99,6 +99,36 @@ func TestPolicy_Decide_AdaptiveLayers(t *testing.T) {
 			},
 			want: model.DecisionDeny,
 		},
+		{
+			name: "raw session spawn requires explicit allow tool",
+			agent: model.AgentProfile{
+				BaseProfile:     model.BaseProfileOperator,
+				ToolFamilies:    []model.ToolFamily{model.ToolFamilyDelegate},
+				DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
+			},
+			spec: model.ToolSpec{
+				Name:       "session_spawn",
+				Family:     model.ToolFamilyDelegate,
+				SideEffect: effectRead,
+				Approval:   "never",
+			},
+			want: model.DecisionDeny,
+		},
+		{
+			name: "delegate task allowed with declared delegation kinds",
+			agent: model.AgentProfile{
+				BaseProfile:     model.BaseProfileOperator,
+				ToolFamilies:    []model.ToolFamily{model.ToolFamilyDelegate},
+				DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
+			},
+			spec: model.ToolSpec{
+				Name:       "delegate_task",
+				Family:     model.ToolFamilyDelegate,
+				SideEffect: effectRead,
+				Approval:   "never",
+			},
+			want: model.DecisionAllow,
+		},
 	}
 
 	p := &Policy{}

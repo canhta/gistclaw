@@ -632,6 +632,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			AgentID:                 agentID,
 			Agent:                   agentProfile,
 			Specialists:             specialists,
+			ToolSpecs:               visibleTools,
 			Objective:               objective,
 			CWD:                     cwd,
 			MemoryView:              contextView,

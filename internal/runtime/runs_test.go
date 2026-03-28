@@ -15,6 +15,7 @@ import (
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/runtime/capabilities"
 	"github.com/canhta/gistclaw/internal/store"
 	"github.com/canhta/gistclaw/internal/tools"
 )
@@ -249,6 +250,7 @@ func TestRunEngine_FailsHungProviderTurnsAfterTimeout(t *testing.T) {
 func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "session_spawn", Family: model.ToolFamilyDelegate, Risk: model.RiskLow}})
+	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "delegate_task", Family: model.ToolFamilyDelegate, Risk: model.RiskLow}})
 	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "write_new_file", Family: model.ToolFamilyRepoWrite, Risk: model.RiskMedium, SideEffect: "create"}})
 	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "coder_exec", Family: model.ToolFamilyRepoWrite, Risk: model.RiskHigh, SideEffect: "exec_write"}})
 	prov := NewMockProvider(
@@ -291,8 +293,11 @@ func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
 	for _, spec := range prov.Requests[0].ToolSpecs {
 		gotNames[spec.Name] = true
 	}
-	if !gotNames["session_spawn"] {
-		t.Fatalf("expected session_spawn to be visible, got %+v", gotNames)
+	if !gotNames["delegate_task"] {
+		t.Fatalf("expected delegate_task to be visible, got %+v", gotNames)
+	}
+	if gotNames["session_spawn"] {
+		t.Fatalf("expected raw session_spawn to stay hidden by default, got %+v", gotNames)
 	}
 	if gotNames["write_new_file"] {
 		t.Fatalf("expected write_new_file to be hidden, got %+v", gotNames)
@@ -384,6 +389,7 @@ func TestRunEngine_SessionSpawnToolCreatesChildRun(t *testing.T) {
 				AgentID:         "assistant",
 				BaseProfile:     model.BaseProfileOperator,
 				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
+				AllowTools:      []string{"session_spawn"},
 				DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
 			},
 			"researcher": {
@@ -539,6 +545,7 @@ func TestRunEngine_SessionSpawnIsDeniedWhenRuntimeRecommendsDirect(t *testing.T)
 				AgentID:                     "assistant",
 				BaseProfile:                 model.BaseProfileOperator,
 				ToolFamilies:                []model.ToolFamily{model.ToolFamilyConnectorCapability, model.ToolFamilyDelegate},
+				AllowTools:                  []string{"session_spawn"},
 				DelegationKinds:             []model.DelegationKind{model.DelegationKindResearch},
 				SpecialistSummaryVisibility: model.SpecialistSummaryFull,
 			},
@@ -663,6 +670,7 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 				AgentID:         "assistant",
 				BaseProfile:     model.BaseProfileOperator,
 				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
+				AllowTools:      []string{"session_spawn"},
 				DelegationKinds: []model.DelegationKind{model.DelegationKindWrite},
 			},
 			"patcher": {
@@ -899,6 +907,7 @@ func TestRunEngine_SessionSpawnInterruptsParentWhenChildInterrupts(t *testing.T)
 				AgentID:         "assistant",
 				BaseProfile:     model.BaseProfileOperator,
 				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
+				AllowTools:      []string{"session_spawn"},
 				DelegationKinds: []model.DelegationKind{model.DelegationKindWrite},
 			},
 			"patcher": {
@@ -1067,6 +1076,14 @@ func TestRunEngine_IncludesSoulInstructionsInProviderRequests(t *testing.T) {
 
 func TestRunEngine_IncludesExecutionRecommendationAndSpecialistRosterInProviderRequests(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
+	tools.RegisterCapabilityTools(reg, tools.CapabilityHandlers{
+		DirectoryList: func(context.Context, capabilities.DirectoryListRequest) (capabilities.DirectoryListResult, error) {
+			return capabilities.DirectoryListResult{}, nil
+		},
+		Send: func(context.Context, capabilities.SendRequest) (capabilities.SendResult, error) {
+			return capabilities.SendResult{}, nil
+		},
+	})
 	prov := NewMockProvider(
 		[]GenerateResult{
 			{Content: "done", InputTokens: 4, OutputTokens: 6, StopReason: "end_turn"},
@@ -1122,6 +1139,10 @@ func TestRunEngine_IncludesExecutionRecommendationAndSpecialistRosterInProviderR
 		"Execution recommendation:",
 		"Mode: direct",
 		"Rationale:",
+		"Direct capability tools available:",
+		"connector_directory_list",
+		"connector_send",
+		"Use these before delegation",
 		"Specialists available:",
 		"patcher",
 		"researcher",
@@ -1130,6 +1151,150 @@ func TestRunEngine_IncludesExecutionRecommendationAndSpecialistRosterInProviderR
 		if !strings.Contains(instructions, want) {
 			t.Fatalf("expected provider instructions to include %q, got:\n%s", want, instructions)
 		}
+	}
+}
+
+func TestRunEngine_DirectConnectorFlowPausesForApprovalWithoutChildRun(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	var directoryCalls []capabilities.DirectoryListRequest
+	var sendCalls []capabilities.SendRequest
+	tools.RegisterCapabilityTools(reg, tools.CapabilityHandlers{
+		DirectoryList: func(_ context.Context, req capabilities.DirectoryListRequest) (capabilities.DirectoryListResult, error) {
+			directoryCalls = append(directoryCalls, req)
+			return capabilities.DirectoryListResult{
+				ConnectorID: "zalo_personal",
+				Scope:       "contacts",
+				Entries: []capabilities.DirectoryEntry{
+					{ID: "user-1", Title: "Anh An", Kind: "contact"},
+				},
+			}, nil
+		},
+		Send: func(_ context.Context, req capabilities.SendRequest) (capabilities.SendResult, error) {
+			sendCalls = append(sendCalls, req)
+			return capabilities.SendResult{
+				ConnectorID: "zalo_personal",
+				TargetID:    req.TargetID,
+				TargetType:  req.TargetType,
+				Accepted:    true,
+				Summary:     "message sent",
+			}, nil
+		},
+	})
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				Content: "I will list contacts first.",
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:        "call-contacts",
+						ToolName:  "connector_directory_list",
+						InputJSON: []byte(`{"connector_id":"zalo_personal","scope":"contacts","query":"Anh","limit":5}`),
+					},
+				},
+				StopReason: "tool_calls",
+			},
+			{
+				Content: "I found the contact and will send the message.",
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:        "call-send",
+						ToolName:  "connector_send",
+						InputJSON: []byte(`{"connector_id":"zalo_personal","target_id":"user-1","target_type":"contact","message":"hello from Telegram"}`),
+					},
+				},
+				StopReason: "tool_calls",
+			},
+			{
+				Content:    "Sent hello from Telegram to Anh An on Zalo.",
+				StopReason: "end_turn",
+			},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
+		Spawn:        rt.SpawnTool,
+		DelegateTask: rt.DelegateTaskTool,
+	})
+
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID: "default",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:                     "assistant",
+				Role:                        "front assistant",
+				Instructions:                "prefer direct execution before delegation",
+				BaseProfile:                 model.BaseProfileOperator,
+				ToolFamilies:                []model.ToolFamily{model.ToolFamilyConnectorCapability, model.ToolFamilyDelegate},
+				DelegationKinds:             []model.DelegationKind{model.DelegationKindResearch, model.DelegationKindWrite},
+				SpecialistSummaryVisibility: model.SpecialistSummaryFull,
+			},
+			"researcher": {
+				AgentID:      "researcher",
+				BaseProfile:  model.BaseProfileResearch,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyWebRead},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-direct-zalo",
+		AgentID:        "assistant",
+		Objective:      "List my Zalo contacts and send hello to Anh on Zalo.",
+		CWD:            t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if run.Status != model.RunStatusNeedsApproval {
+		t.Fatalf("expected run to pause for approval, got %q", run.Status)
+	}
+	if len(directoryCalls) != 1 {
+		t.Fatalf("expected 1 directory call, got %d", len(directoryCalls))
+	}
+	if len(sendCalls) != 0 {
+		t.Fatalf("expected connector_send to wait for approval before execution, got %d calls", len(sendCalls))
+	}
+
+	var childRuns int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM runs WHERE parent_run_id = ?",
+		run.ID,
+	).Scan(&childRuns); err != nil {
+		t.Fatalf("count child runs: %v", err)
+	}
+	if childRuns != 0 {
+		t.Fatalf("expected no child runs for direct connector flow, got %d", childRuns)
+	}
+
+	var pendingApprovals int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM approvals WHERE run_id = ? AND status = 'pending'",
+		run.ID,
+	).Scan(&pendingApprovals); err != nil {
+		t.Fatalf("count pending approvals: %v", err)
+	}
+	if pendingApprovals != 1 {
+		t.Fatalf("expected 1 pending approval, got %d", pendingApprovals)
+	}
+
+	if len(prov.Requests) != 2 {
+		t.Fatalf("expected 2 provider requests before approval gate, got %d", len(prov.Requests))
+	}
+	gotNames := make(map[string]bool, len(prov.Requests[0].ToolSpecs))
+	for _, spec := range prov.Requests[0].ToolSpecs {
+		gotNames[spec.Name] = true
+	}
+	if !gotNames["connector_directory_list"] || !gotNames["connector_send"] {
+		t.Fatalf("expected connector capability tools, got %+v", gotNames)
+	}
+	if !gotNames["delegate_task"] {
+		t.Fatalf("expected delegate_task to remain available, got %+v", gotNames)
+	}
+	if gotNames["session_spawn"] {
+		t.Fatalf("expected raw session_spawn to stay hidden, got %+v", gotNames)
 	}
 }
 

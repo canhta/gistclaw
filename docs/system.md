@@ -23,8 +23,8 @@ This document is the source of truth for what the repository ships today: packag
 - A conversation can have one active root run at a time.
 - Collaboration happens through runtime-managed sessions and session messages.
 - The front assistant is direct-execution by default and receives a runtime execution recommendation (`direct`, `delegate`, or `parallelize`) before each provider turn.
-- Raw specialist spawning is now guarded by that recommendation, so tasks classified as `direct` must use local capabilities instead of spawning by default.
-- Structured delegation is available for specialist work, so the front assistant can request `research`, `write`, `review`, or `verify` work without choosing the worker topology itself.
+- Raw specialist spawning is now opt-in and guarded by the runtime recommendation, so tasks classified as `direct` must use local capabilities instead of spawning by default.
+- Structured delegation is the default specialist path, so the front assistant can request `research`, `write`, `review`, or `verify` work without choosing the worker topology itself.
 - Direct product actions now flow through generic capability tools such as `connector_directory_list`, `connector_target_resolve`, `connector_send`, `connector_status`, and `app_action`, backed by runtime capability adapters instead of prompt-only conventions.
 - Risky tool calls still require explicit approval before mutating writes are applied.
 - Connector-bound front sessions can surface blocked approvals as conversational gates, letting the same chat collect approval or denial and resume the run.
