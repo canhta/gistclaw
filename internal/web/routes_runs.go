@@ -1420,10 +1420,6 @@ type runListCursor struct {
 	ID        string
 }
 
-func runListFilterFromRequest(r *http.Request) runListRequest {
-	return runListFilterFromQuery(r.URL.Query())
-}
-
 func runListFilterFromQuery(query url.Values) runListRequest {
 	cursor, ok := parseRunListCursor(strings.TrimSpace(query.Get("cursor")))
 	direction := strings.TrimSpace(query.Get("direction"))
@@ -1440,10 +1436,6 @@ func runListFilterFromQuery(query url.Values) runListRequest {
 		HasCursor: ok,
 		Direction: direction,
 	}
-}
-
-func runScopeFromRequest(r *http.Request) string {
-	return runScopeFromQuery(r.URL.Query())
 }
 
 func runScopeFromQuery(query url.Values) string {
