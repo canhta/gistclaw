@@ -10,7 +10,8 @@ import (
 )
 
 type CollaborationHandlers struct {
-	Spawn func(context.Context, SessionSpawnRequest) (SessionSpawnResult, error)
+	Spawn        func(context.Context, SessionSpawnRequest) (SessionSpawnResult, error)
+	DelegateTask func(context.Context, DelegateTaskRequest) (SessionSpawnResult, error)
 }
 
 type SessionSpawnRequest struct {
@@ -27,6 +28,12 @@ type SessionSpawnResult struct {
 	Output    string
 }
 
+type DelegateTaskRequest struct {
+	ControllerSessionID string
+	Kind                model.DelegationKind
+	Objective           string
+}
+
 func RegisterCollaborationTools(reg *Registry, handlers CollaborationHandlers) {
 	if reg == nil {
 		return
@@ -34,19 +41,38 @@ func RegisterCollaborationTools(reg *Registry, handlers CollaborationHandlers) {
 	if handlers.Spawn != nil {
 		reg.Register(&SessionSpawnTool{spawn: handlers.Spawn})
 	}
+	if handlers.DelegateTask != nil {
+		reg.Register(&DelegateTaskTool{delegate: handlers.DelegateTask})
+	}
 }
 
 type SessionSpawnTool struct {
 	spawn func(context.Context, SessionSpawnRequest) (SessionSpawnResult, error)
 }
 
+type DelegateTaskTool struct {
+	delegate func(context.Context, DelegateTaskRequest) (SessionSpawnResult, error)
+}
+
 func (t *SessionSpawnTool) Name() string { return "session_spawn" }
+
+func (t *DelegateTaskTool) Name() string { return "delegate_task" }
 
 func (t *SessionSpawnTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
 		Name:            t.Name(),
 		Description:     "Spawn a specialist agent run and return its result.",
 		InputSchemaJSON: `{"type":"object","properties":{"agent_id":{"type":"string"},"prompt":{"type":"string"}},"required":["agent_id","prompt"],"additionalProperties":false}`,
+		Family:          model.ToolFamilyDelegate,
+		Risk:            model.RiskLow,
+	}
+}
+
+func (t *DelegateTaskTool) Spec() model.ToolSpec {
+	return model.ToolSpec{
+		Name:            t.Name(),
+		Description:     "Delegate a specialist task by kind and let the runtime choose the matching worker.",
+		InputSchemaJSON: `{"type":"object","properties":{"kind":{"type":"string","enum":["research","write","review","verify"]},"objective":{"type":"string"}},"required":["kind","objective"],"additionalProperties":false}`,
 		Family:          model.ToolFamilyDelegate,
 		Risk:            model.RiskLow,
 	}
@@ -101,10 +127,59 @@ func (t *SessionSpawnTool) Invoke(ctx context.Context, call model.ToolCall) (mod
 	return model.ToolResult{Output: string(payload)}, nil
 }
 
-func validateDelegationTarget(meta InvocationContext, targetAgentID string) error {
-	if meta.DelegationMode == "direct" {
-		return fmt.Errorf("session_spawn: runtime recommends direct execution for this task; use local capabilities first")
+func (t *DelegateTaskTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
+	if t == nil || t.delegate == nil {
+		return model.ToolResult{}, fmt.Errorf("delegate_task: handler is required")
 	}
+	meta, ok := InvocationContextFrom(ctx)
+	if !ok || strings.TrimSpace(meta.SessionID) == "" {
+		return model.ToolResult{}, fmt.Errorf("delegate_task: caller session is required")
+	}
+
+	var input struct {
+		Kind      model.DelegationKind `json:"kind"`
+		Objective string               `json:"objective"`
+	}
+	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
+		return model.ToolResult{}, fmt.Errorf("delegate_task: decode input: %w", err)
+	}
+	input.Kind = model.DelegationKind(strings.TrimSpace(string(input.Kind)))
+	input.Objective = strings.TrimSpace(input.Objective)
+	if input.Kind == "" {
+		return model.ToolResult{}, fmt.Errorf("delegate_task: kind is required")
+	}
+	if !model.IsValidDelegationKind(string(input.Kind)) {
+		return model.ToolResult{}, fmt.Errorf("delegate_task: unsupported kind %q", input.Kind)
+	}
+	if input.Objective == "" {
+		return model.ToolResult{}, fmt.Errorf("delegate_task: objective is required")
+	}
+	if err := validateDelegationKind(meta, "delegate_task", input.Kind); err != nil {
+		return model.ToolResult{}, err
+	}
+
+	result, err := t.delegate(ctx, DelegateTaskRequest{
+		ControllerSessionID: meta.SessionID,
+		Kind:                input.Kind,
+		Objective:           input.Objective,
+	})
+	if err != nil {
+		return model.ToolResult{}, err
+	}
+	payload, err := json.Marshal(map[string]any{
+		"run_id":     result.RunID,
+		"session_id": result.SessionID,
+		"agent_id":   result.AgentID,
+		"status":     result.Status,
+		"output":     result.Output,
+	})
+	if err != nil {
+		return model.ToolResult{}, fmt.Errorf("delegate_task: encode output: %w", err)
+	}
+	return model.ToolResult{Output: string(payload)}, nil
+}
+
+func validateDelegationTarget(meta InvocationContext, targetAgentID string) error {
 	target, ok := meta.Specialists[targetAgentID]
 	if !ok {
 		return fmt.Errorf("session_spawn: %s is not a known specialist", targetAgentID)
@@ -113,12 +188,33 @@ func validateDelegationTarget(meta InvocationContext, targetAgentID string) erro
 	if !ok {
 		return fmt.Errorf("session_spawn: %s is not a delegatable specialist", targetAgentID)
 	}
+	if meta.DelegationMode == "direct" {
+		return fmt.Errorf("session_spawn: runtime recommends direct execution for this task; use local capabilities first")
+	}
 	if !containsDelegationKind(meta.Agent.DelegationKinds, kind) {
 		return fmt.Errorf("session_spawn: %s cannot delegate %s work to %s", meta.Agent.AgentID, kind, targetAgentID)
 	}
+	if err := validateDelegationRecommendation(meta, "session_spawn", kind); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateDelegationKind(meta InvocationContext, toolName string, kind model.DelegationKind) error {
+	if !containsDelegationKind(meta.Agent.DelegationKinds, kind) {
+		return fmt.Errorf("%s: %s cannot delegate %s work", toolName, meta.Agent.AgentID, kind)
+	}
+	return validateDelegationRecommendation(meta, toolName, kind)
+}
+
+func validateDelegationRecommendation(meta InvocationContext, toolName string, kind model.DelegationKind) error {
+	if meta.DelegationMode == "direct" {
+		return fmt.Errorf("%s: runtime recommends direct execution for this task; use local capabilities first", toolName)
+	}
 	if len(meta.SuggestedDelegationKinds) > 0 && !containsDelegationKind(meta.SuggestedDelegationKinds, kind) {
 		return fmt.Errorf(
-			"session_spawn: runtime recommends %s work, not %s",
+			"%s: runtime recommends %s work, not %s",
+			toolName,
 			joinDelegationKinds(meta.SuggestedDelegationKinds),
 			kind,
 		)

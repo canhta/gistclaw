@@ -427,6 +427,83 @@ func TestRunEngine_SessionSpawnToolCreatesChildRun(t *testing.T) {
 	}
 }
 
+func TestRunEngine_DelegateTaskToolCreatesChildRun(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				Content: "I will delegate this research.",
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:        "call-delegate",
+						ToolName:  "delegate_task",
+						InputJSON: []byte(`{"kind":"research","objective":"Research OpenClaw and report back."}`),
+					},
+				},
+				InputTokens:  4,
+				OutputTokens: 6,
+			},
+			{Content: "OpenClaw uses first-class session tools.", InputTokens: 5, OutputTokens: 9, StopReason: "end_turn"},
+			{Content: "Research complete.", InputTokens: 6, OutputTokens: 10, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
+		Spawn:        rt.SpawnTool,
+		DelegateTask: rt.DelegateTaskTool,
+	})
+
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID: "default",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:         "assistant",
+				BaseProfile:     model.BaseProfileOperator,
+				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
+				DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
+			},
+			"researcher": {
+				AgentID:      "researcher",
+				BaseProfile:  model.BaseProfileResearch,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyWebRead},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	run, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Research OpenClaw and summarize the result.",
+		CWD:           t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+	if run.Status != model.RunStatusCompleted {
+		t.Fatalf("expected completed run, got %s", run.Status)
+	}
+
+	var childCount int
+	err = db.RawDB().QueryRow(
+		"SELECT count(*) FROM runs WHERE parent_run_id = ? AND agent_id = 'researcher'",
+		run.ID,
+	).Scan(&childCount)
+	if err != nil {
+		t.Fatalf("query child runs: %v", err)
+	}
+	if childCount != 1 {
+		t.Fatalf("expected 1 child researcher run, got %d", childCount)
+	}
+}
+
 func TestRunEngine_SessionSpawnIsDeniedWhenRuntimeRecommendsDirect(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(

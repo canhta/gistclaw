@@ -910,7 +910,7 @@ func (r *Runtime) executeToolCalls(
 				return outcome, err
 			}
 			outcome.events = append(outcome.events, event)
-			if tc.ToolName == "session_spawn" && spawnedRunStillActive(result) {
+			if isDelegationTool(tc.ToolName) && spawnedRunStillActive(result) {
 				outcome.paused = true
 				return outcome, nil
 			}
@@ -1579,7 +1579,7 @@ func (r *Runtime) appendUpdatedParentSpawnResult(ctx context.Context, parent mod
 		if err := json.Unmarshal(payloadJSON, &payload); err != nil {
 			return fmt.Errorf("decode parent spawn tool call: %w", err)
 		}
-		if payload.ToolName != "session_spawn" || payload.Decision != string(model.DecisionAllow) {
+		if !isDelegationTool(payload.ToolName) || payload.Decision != string(model.DecisionAllow) {
 			continue
 		}
 		match.ToolCallID = payload.ToolCallID
@@ -1978,6 +1978,10 @@ func specialistRoster(snapshot model.ExecutionSnapshot, agentID string) map[stri
 		return nil
 	}
 	return roster
+}
+
+func isDelegationTool(name string) bool {
+	return name == "session_spawn" || name == "delegate_task"
 }
 
 func (r *Runtime) queueOutboundIntent(

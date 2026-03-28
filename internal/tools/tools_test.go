@@ -47,17 +47,23 @@ func TestRegistry_ListReturnsAll(t *testing.T) {
 	}
 }
 
-func TestRegisterCollaborationTools_RegistersSessionSpawn(t *testing.T) {
+func TestRegisterCollaborationTools_RegistersDelegationTools(t *testing.T) {
 	reg := NewRegistry()
 
 	RegisterCollaborationTools(reg, CollaborationHandlers{
 		Spawn: func(context.Context, SessionSpawnRequest) (SessionSpawnResult, error) {
 			return SessionSpawnResult{}, nil
 		},
+		DelegateTask: func(context.Context, DelegateTaskRequest) (SessionSpawnResult, error) {
+			return SessionSpawnResult{}, nil
+		},
 	})
 
 	if _, ok := reg.Get("session_spawn"); !ok {
 		t.Fatal("expected session_spawn to be registered")
+	}
+	if _, ok := reg.Get("delegate_task"); !ok {
+		t.Fatal("expected delegate_task to be registered")
 	}
 }
 
@@ -193,6 +199,82 @@ func TestSessionSpawnTool_InvokeRejectsTargetOutsideSuggestedKinds(t *testing.T)
 	})
 	if err == nil || err.Error() != "session_spawn: runtime recommends research work, not verify" {
 		t.Fatalf("expected suggested-kind guardrail, got %v", err)
+	}
+}
+
+func TestDelegateTaskTool_InvokeUsesRuntimeSelectedSpecialist(t *testing.T) {
+	var got DelegateTaskRequest
+	tool := &DelegateTaskTool{
+		delegate: func(_ context.Context, req DelegateTaskRequest) (SessionSpawnResult, error) {
+			got = req
+			return SessionSpawnResult{
+				RunID:     "run-child",
+				SessionID: "session-child",
+				AgentID:   "researcher",
+				Status:    model.RunStatusCompleted,
+				Output:    "research complete",
+			}, nil
+		},
+	}
+
+	ctx := WithInvocationContext(context.Background(), InvocationContext{
+		SessionID:      "session-parent",
+		DelegationMode: "delegate",
+		Agent: model.AgentProfile{
+			AgentID:         "assistant",
+			DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
+		},
+		Specialists: map[string]model.AgentProfile{
+			"researcher": {AgentID: "researcher", BaseProfile: model.BaseProfileResearch},
+		},
+	})
+	result, err := tool.Invoke(ctx, model.ToolCall{
+		ID:        "call-1",
+		ToolName:  "delegate_task",
+		InputJSON: []byte(`{"kind":"research","objective":"Inspect OpenClaw"}`),
+	})
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if got.ControllerSessionID != "session-parent" || got.Kind != model.DelegationKindResearch || got.Objective != "Inspect OpenClaw" {
+		t.Fatalf("unexpected delegate request: %+v", got)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result.Output), &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if payload["agent_id"] != "researcher" {
+		t.Fatalf("expected researcher output, got %+v", payload)
+	}
+}
+
+func TestDelegateTaskTool_InvokeRejectsDirectRecommendation(t *testing.T) {
+	tool := &DelegateTaskTool{
+		delegate: func(context.Context, DelegateTaskRequest) (SessionSpawnResult, error) {
+			t.Fatal("delegate handler must not be called")
+			return SessionSpawnResult{}, nil
+		},
+	}
+
+	ctx := WithInvocationContext(context.Background(), InvocationContext{
+		SessionID:      "session-parent",
+		DelegationMode: "direct",
+		Agent: model.AgentProfile{
+			AgentID:         "assistant",
+			DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
+		},
+		Specialists: map[string]model.AgentProfile{
+			"researcher": {AgentID: "researcher", BaseProfile: model.BaseProfileResearch},
+		},
+	})
+	_, err := tool.Invoke(ctx, model.ToolCall{
+		ID:        "call-1",
+		ToolName:  "delegate_task",
+		InputJSON: []byte(`{"kind":"research","objective":"Inspect OpenClaw"}`),
+	})
+	if err == nil || err.Error() != "delegate_task: runtime recommends direct execution for this task; use local capabilities first" {
+		t.Fatalf("expected direct-execution guardrail, got %v", err)
 	}
 }
 
