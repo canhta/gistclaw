@@ -63,7 +63,7 @@ func TestReplay_LoadRunIncludesExecutionSnapshot(t *testing.T) {
 	db := setupReplayDB(t)
 	ctx := context.Background()
 
-	snapshotJSON := []byte(`{"team_id":"Repo Task Team","agents":{"assistant":{"agent_id":"assistant","tool_profile":"operator_facing","capabilities":["operator_facing","spawn"]}}}`)
+	snapshotJSON := []byte(`{"team_id":"Repo Task Team","front_agent_id":"assistant","agents":{"assistant":{"agent_id":"assistant","base_profile":"operator","tool_families":["repo_read","delegate"],"delegation_kinds":["research"]}}}`)
 	_, err := db.RawDB().Exec(
 		`INSERT INTO runs (id, conversation_id, agent_id, team_id, status, execution_snapshot_json, created_at, updated_at)
 		 VALUES ('run-snapshot', 'conv-snapshot', 'assistant', 'Repo Task Team', 'completed', ?, datetime('now'), datetime('now'))`,

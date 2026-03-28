@@ -43,6 +43,35 @@ func TestBootstrap_WiringFunctionsExist(t *testing.T) {
 	}
 }
 
+func TestResolveConnectorAgentIDs_DefaultsToFrontAgent(t *testing.T) {
+	cfg := Config{}
+	snapshot := model.ExecutionSnapshot{
+		TeamID:       "default",
+		FrontAgentID: "lead",
+		Agents: map[string]model.AgentProfile{
+			"lead": {
+				AgentID:      "lead",
+				BaseProfile:  model.BaseProfileOperator,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead},
+			},
+		},
+	}
+
+	resolved, err := resolveConnectorAgentIDs(cfg, snapshot)
+	if err != nil {
+		t.Fatalf("resolveConnectorAgentIDs returned error: %v", err)
+	}
+	if resolved.Telegram.AgentID != "lead" {
+		t.Fatalf("Telegram.AgentID = %q, want %q", resolved.Telegram.AgentID, "lead")
+	}
+	if resolved.WhatsApp.AgentID != "lead" {
+		t.Fatalf("WhatsApp.AgentID = %q, want %q", resolved.WhatsApp.AgentID, "lead")
+	}
+	if resolved.ZaloPersonal.AgentID != "lead" {
+		t.Fatalf("ZaloPersonal.AgentID = %q, want %q", resolved.ZaloPersonal.AgentID, "lead")
+	}
+}
+
 func TestBootstrap_NoFunctionOver30Lines(t *testing.T) {
 	cfg := Config{
 		DatabasePath: ":memory:",

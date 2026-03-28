@@ -15,7 +15,7 @@ func TestBuildRunGraphViewAssignsLanesKindsAndEdgeSemantics(t *testing.T) {
 	snapshot := replay.RunGraphSnapshot{
 		RootRunID: "root",
 		Nodes: []replay.GraphNode{
-			{ID: "root", AgentID: "assistant", Status: model.RunStatusActive},
+			{ID: "root", AgentID: "lead", Status: model.RunStatusActive},
 			{ID: "r1", ParentRunID: "root", AgentID: "researcher", Status: model.RunStatusCompleted},
 			{ID: "p1", ParentRunID: "root", AgentID: "patcher", Status: model.RunStatusNeedsApproval},
 			{ID: "v1", ParentRunID: "p1", AgentID: "verifier", Status: model.RunStatusPending},
@@ -26,6 +26,9 @@ func TestBuildRunGraphViewAssignsLanesKindsAndEdgeSemantics(t *testing.T) {
 
 	if got := findGraphNode(t, view.Nodes, "root").Kind; got != "root" {
 		t.Fatalf("expected root node kind, got %q", got)
+	}
+	if got := findGraphNode(t, view.Nodes, "root").LaneID; got != "coordination" {
+		t.Fatalf("expected root node to use coordination lane, got %q", got)
 	}
 	if got := findGraphNode(t, view.Nodes, "r1").LaneID; got != "research" {
 		t.Fatalf("expected research lane, got %q", got)

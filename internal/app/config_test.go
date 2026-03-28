@@ -114,8 +114,8 @@ zalo_personal:
 	if !cfg.ZaloPersonal.Enabled {
 		t.Fatal("expected zalo_personal.enabled to round-trip")
 	}
-	if cfg.ZaloPersonal.AgentID != "assistant" {
-		t.Fatalf("expected default zalo_personal agent_id %q, got %q", "assistant", cfg.ZaloPersonal.AgentID)
+	if cfg.ZaloPersonal.AgentID != "" {
+		t.Fatalf("expected zalo_personal agent_id to stay unset until bootstrap, got %q", cfg.ZaloPersonal.AgentID)
 	}
 	if cfg.ZaloPersonal.Groups.ReplyMode != "mention_required" {
 		t.Fatalf("expected default zalo_personal groups reply_mode %q, got %q", "mention_required", cfg.ZaloPersonal.Groups.ReplyMode)
@@ -232,8 +232,8 @@ provider:
 	if cfg.Web.ListenAddr == "" {
 		t.Fatal("expected Web.ListenAddr to have a default value")
 	}
-	if cfg.WhatsApp.AgentID == "" {
-		t.Fatal("expected WhatsApp.AgentID to have a default value")
+	if cfg.WhatsApp.AgentID != "" {
+		t.Fatalf("expected WhatsApp.AgentID to stay unset until bootstrap, got %q", cfg.WhatsApp.AgentID)
 	}
 }
 

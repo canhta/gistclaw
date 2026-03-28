@@ -132,6 +132,14 @@ func Bootstrap(cfg Config) (*App, error) {
 			_ = db.Close()
 			return nil, fmt.Errorf("bootstrap: set execution snapshot: %w", err)
 		}
+		cfg, err = resolveConnectorAgentIDs(cfg, snapshot)
+		if err != nil {
+			if toolCloser != nil {
+				_ = toolCloser.Close()
+			}
+			_ = db.Close()
+			return nil, fmt.Errorf("bootstrap: resolve connector agent ids: %w", err)
+		}
 	}
 	rp := replayWiring(db)
 	sched := scheduler.NewService(scheduler.NewStore(db), schedulerRuntimeDispatcher{runtime: rt})
@@ -177,6 +185,23 @@ func Bootstrap(cfg Config) (*App, error) {
 	}
 	application.webServer = webSrv
 	return application, nil
+}
+
+func resolveConnectorAgentIDs(cfg Config, snapshot model.ExecutionSnapshot) (Config, error) {
+	frontAgentID := strings.TrimSpace(snapshot.FrontAgentID)
+	if frontAgentID == "" {
+		return Config{}, fmt.Errorf("front_agent is required to resolve connector agent ids")
+	}
+	if cfg.Telegram.AgentID == "" {
+		cfg.Telegram.AgentID = frontAgentID
+	}
+	if cfg.WhatsApp.AgentID == "" {
+		cfg.WhatsApp.AgentID = frontAgentID
+	}
+	if cfg.ZaloPersonal.AgentID == "" {
+		cfg.ZaloPersonal.AgentID = frontAgentID
+	}
+	return cfg, nil
 }
 
 func resolveTeamDir(cfg Config) string {

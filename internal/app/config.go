@@ -235,15 +235,6 @@ func (c *Config) applyDefaults(defaultStateDir string) {
 		}
 	}
 
-	if c.Telegram.AgentID == "" {
-		c.Telegram.AgentID = "assistant"
-	}
-	if c.WhatsApp.AgentID == "" {
-		c.WhatsApp.AgentID = "assistant"
-	}
-	if c.ZaloPersonal.AgentID == "" {
-		c.ZaloPersonal.AgentID = "assistant"
-	}
 	if c.ZaloPersonal.Groups.ReplyMode == "" {
 		c.ZaloPersonal.Groups.ReplyMode = "mention_required"
 	}
