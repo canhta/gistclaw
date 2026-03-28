@@ -233,3 +233,93 @@ func TestCreateWorkTaskStartsRunAndReturnsRunID(t *testing.T) {
 		t.Fatalf("stored objective = %q, want %q", storedObjective, "review the repo")
 	}
 }
+
+func TestWorkDetailReturnsNotFoundForUnknownRun(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/work/missing-run", nil)
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestCreateWorkTaskRejectsInvalidBodies(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+
+	t.Run("invalid json", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/work", bytes.NewBufferString(`{`))
+		req.Header.Set("Content-Type", "application/json")
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("blank task", func(t *testing.T) {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/work", bytes.NewBufferString(`{"task":"   "}`))
+		req.Header.Set("Content-Type", "application/json")
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+}
+
+func TestBuildWorkQueueStripAndInspectorSeedFallbacks(t *testing.T) {
+	t.Parallel()
+
+	empty := buildWorkQueueStrip(nil)
+	if empty.Headline != "No active work yet. Start a task to see progress here." {
+		t.Fatalf("empty headline = %q", empty.Headline)
+	}
+
+	active := buildWorkQueueStrip([]runListClusterView{
+		{
+			Root: runListItem{Status: "active"},
+		},
+	})
+	if active.Headline != "See what is running, waiting on you, or done." {
+		t.Fatalf("active headline = %q", active.Headline)
+	}
+	if active.Summary.Active != 1 || active.RootRuns != 1 {
+		t.Fatalf("unexpected active summary %+v", active)
+	}
+
+	settled := buildWorkQueueStrip([]runListClusterView{
+		{
+			Root: runListItem{Status: "completed"},
+		},
+	})
+	if settled.Headline != "Recent work is settled." {
+		t.Fatalf("settled headline = %q", settled.Headline)
+	}
+	if settled.Summary.Completed != 1 {
+		t.Fatalf("unexpected settled summary %+v", settled)
+	}
+
+	seed := buildWorkInspectorSeed(runGraphView{
+		RootRunID:  "root",
+		ActivePath: []string{"missing-node"},
+		Nodes: []runGraphNodeView{
+			{ID: "root", AgentID: "assistant", Status: "active"},
+			{ID: "child", AgentID: "patcher", Status: "completed"},
+		},
+	})
+	if seed == nil {
+		t.Fatal("expected inspector seed")
+	}
+	if seed.ID != "root" || seed.AgentID != "assistant" {
+		t.Fatalf("unexpected fallback inspector seed %+v", seed)
+	}
+}

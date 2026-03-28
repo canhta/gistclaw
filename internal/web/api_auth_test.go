@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -141,4 +142,128 @@ func TestAuthSessionAPIReportsSetupAndDeviceState(t *testing.T) {
 			t.Fatal("expected non-empty device id")
 		}
 	})
+}
+
+func TestAuthLoginAPIAuthenticatesAndSetsCookies(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Now().UTC()); err != nil {
+		t.Fatalf("set password: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"password":"secret-pass","next":"/knowledge"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "GistClaw Test Browser")
+	h.rawServer.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Authenticated bool   `json:"authenticated"`
+		Next          string `json:"next"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.Authenticated {
+		t.Fatal("expected authenticated response")
+	}
+	if resp.Next != "/knowledge" {
+		t.Fatalf("next = %q, want %q", resp.Next, "/knowledge")
+	}
+	if findCookie(rr.Result().Cookies(), sessionCookieName) == nil {
+		t.Fatal("expected session cookie to be set")
+	}
+	if findCookie(rr.Result().Cookies(), deviceCookieName) == nil {
+		t.Fatal("expected device cookie to be set")
+	}
+}
+
+func TestAuthLoginAPIRejectsInvalidPassword(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Now().UTC()); err != nil {
+		t.Fatalf("set password: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"password":"wrong-pass"}`))
+	req.Header.Set("Content-Type", "application/json")
+	h.rawServer.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Message == "" {
+		t.Fatal("expected error message")
+	}
+}
+
+func TestAuthLogoutAPIClearsCookiesAndInvalidatesSession(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Now().UTC()); err != nil {
+		t.Fatalf("set password: %v", err)
+	}
+	sessionCookie, deviceCookie := loginForTest(t, h, "secret-pass")
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	req.AddCookie(sessionCookie)
+	req.AddCookie(deviceCookie)
+	h.rawServer.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		LoggedOut bool `json:"logged_out"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !resp.LoggedOut {
+		t.Fatal("expected logged_out true")
+	}
+
+	for _, name := range []string{sessionCookieName, deviceCookieName} {
+		cookie := findCookie(rr.Result().Cookies(), name)
+		if cookie == nil || cookie.MaxAge != -1 {
+			t.Fatalf("expected %s cookie to be cleared, got %#v", name, cookie)
+		}
+	}
+
+	sessionRR := httptest.NewRecorder()
+	sessionReq := httptest.NewRequest(http.MethodGet, "/api/auth/session", nil)
+	sessionReq.AddCookie(sessionCookie)
+	sessionReq.AddCookie(deviceCookie)
+	h.rawServer.ServeHTTP(sessionRR, sessionReq)
+
+	if sessionRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 checking session, got %d body=%s", sessionRR.Code, sessionRR.Body.String())
+	}
+
+	var sessionResp struct {
+		Authenticated bool `json:"authenticated"`
+	}
+	if err := json.Unmarshal(sessionRR.Body.Bytes(), &sessionResp); err != nil {
+		t.Fatalf("decode post-logout session response: %v", err)
+	}
+	if sessionResp.Authenticated {
+		t.Fatal("expected session to be invalidated")
+	}
 }

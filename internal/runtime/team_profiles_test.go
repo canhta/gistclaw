@@ -187,6 +187,38 @@ func TestRuntime_DeleteTeamProfileRejectsActiveProfile(t *testing.T) {
 	}
 }
 
+func TestRuntime_SelectTeamProfileRejectsUnknownProfile(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	rt := New(db, cs, reg, nil, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+	ctx := context.Background()
+	storageRoot := t.TempDir()
+	rt.SetStorageRoot(storageRoot)
+
+	writeRuntimeGlobalTeamProfile(t, storageRoot, "default", "Fallback Team")
+	rt.SetTeamDir(filepath.Join(storageRoot, "teams", "default"))
+
+	workspaceRoot := t.TempDir()
+	project, err := ActivateProjectPath(ctx, db, workspaceRoot, "alpha", "operator")
+	if err != nil {
+		t.Fatalf("activate project: %v", err)
+	}
+	if err := SetActiveProject(ctx, db, project.ID); err != nil {
+		t.Fatalf("set active project: %v", err)
+	}
+
+	if err := rt.SelectTeamProfile(ctx, "missing"); err == nil {
+		t.Fatal("expected SelectTeamProfile to reject an unknown profile")
+	}
+
+	activeProfile, err := rt.ActiveTeamProfile(ctx)
+	if err != nil {
+		t.Fatalf("ActiveTeamProfile: %v", err)
+	}
+	if activeProfile != teams.DefaultProfileName {
+		t.Fatalf("active profile = %q, want %q", activeProfile, teams.DefaultProfileName)
+	}
+}
+
 func writeRuntimeStoredTeamProfile(t *testing.T, storageRoot, projectID, profile, name string) {
 	t.Helper()
 

@@ -91,7 +91,15 @@ func (r *Runtime) SelectTeamProfile(ctx context.Context, profile string) error {
 	if project.ID == "" {
 		return fmt.Errorf("runtime: active project is required")
 	}
-	return SetActiveProjectTeamProfile(ctx, r.store, project.ID, profile)
+	profilesRoot, err := r.activeProjectProfilesRoot(ctx)
+	if err != nil {
+		return err
+	}
+	normalized, _, err := r.resolveProfileSourceDir(ctx, profile, profilesRoot)
+	if err != nil {
+		return err
+	}
+	return SetActiveProjectTeamProfile(ctx, r.store, project.ID, normalized)
 }
 
 func (r *Runtime) CreateTeamProfile(ctx context.Context, profile string) error {
@@ -107,11 +115,7 @@ func (r *Runtime) CloneTeamProfile(ctx context.Context, sourceProfile, newProfil
 	if err != nil {
 		return err
 	}
-	sourceProfile, err = teams.NormalizeProfileName(sourceProfile)
-	if err != nil {
-		return fmt.Errorf("runtime: invalid source team profile: %w", err)
-	}
-	sourceDir, err := r.cloneSourceDir(ctx, sourceProfile, profilesRoot)
+	_, sourceDir, err := r.resolveProfileSourceDir(ctx, sourceProfile, profilesRoot)
 	if err != nil {
 		return err
 	}
@@ -152,15 +156,19 @@ func (r *Runtime) activeProjectProfilesRoot(ctx context.Context) (string, error)
 	return filepath.Join(r.storageRoot, "projects", project.ID, "teams"), nil
 }
 
-func (r *Runtime) cloneSourceDir(ctx context.Context, profile, profilesRoot string) (string, error) {
-	sourceDir := teams.ProfileDir(profilesRoot, profile)
-	if _, err := os.Stat(filepath.Join(sourceDir, "team.yaml")); err == nil {
-		return sourceDir, nil
+func (r *Runtime) resolveProfileSourceDir(ctx context.Context, profile, profilesRoot string) (string, string, error) {
+	normalized, err := teams.NormalizeProfileName(profile)
+	if err != nil {
+		return "", "", fmt.Errorf("runtime: invalid team profile: %w", err)
 	}
-	if profile == teams.DefaultProfileName && r.teamDir != "" {
+	sourceDir := teams.ProfileDir(profilesRoot, normalized)
+	if _, err := os.Stat(filepath.Join(sourceDir, "team.yaml")); err == nil {
+		return normalized, sourceDir, nil
+	}
+	if normalized == teams.DefaultProfileName && r.teamDir != "" {
 		if _, err := os.Stat(filepath.Join(r.teamDir, "team.yaml")); err == nil {
-			return r.teamDir, nil
+			return normalized, r.teamDir, nil
 		}
 	}
-	return "", fmt.Errorf("runtime: team profile %q not found", profile)
+	return "", "", fmt.Errorf("runtime: team profile %q not found", normalized)
 }

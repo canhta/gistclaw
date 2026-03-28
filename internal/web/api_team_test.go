@@ -240,3 +240,259 @@ func TestTeamMutationAPISelectsAndSavesProfiles(t *testing.T) {
 		t.Fatalf("active profile = %q, want %q", profile, "default")
 	}
 }
+
+func TestTeamMutationAPIClonesDeletesAndImportsProfiles(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+
+	cloneReq := httptest.NewRequest(http.MethodPost, "/api/team/clone", bytes.NewBufferString(`{
+		"source_profile_id": "default",
+		"profile_id": "ops"
+	}`))
+	cloneReq.Header.Set("Content-Type", "application/json")
+
+	cloneRR := httptest.NewRecorder()
+	h.server.ServeHTTP(cloneRR, cloneReq)
+
+	if cloneRR.Code != http.StatusCreated {
+		t.Fatalf("expected 201, got %d body=%s", cloneRR.Code, cloneRR.Body.String())
+	}
+
+	var cloneResp struct {
+		Notice        string `json:"notice"`
+		ActiveProfile struct {
+			ID string `json:"id"`
+		} `json:"active_profile"`
+	}
+	if err := json.Unmarshal(cloneRR.Body.Bytes(), &cloneResp); err != nil {
+		t.Fatalf("decode clone response: %v", err)
+	}
+	if cloneResp.Notice != "Profile ops cloned from default." {
+		t.Fatalf("clone notice = %q", cloneResp.Notice)
+	}
+	if cloneResp.ActiveProfile.ID != "ops" {
+		t.Fatalf("clone active profile = %q, want %q", cloneResp.ActiveProfile.ID, "ops")
+	}
+
+	cloned, err := teams.LoadConfig(h.projectProfileDir("ops"))
+	if err != nil {
+		t.Fatalf("load cloned profile: %v", err)
+	}
+	if cloned.Name != "Repo Task Team" {
+		t.Fatalf("cloned team name = %q, want %q", cloned.Name, "Repo Task Team")
+	}
+
+	selectReq := httptest.NewRequest(http.MethodPost, "/api/team/select", bytes.NewBufferString(`{"profile_id":"default"}`))
+	selectReq.Header.Set("Content-Type", "application/json")
+	selectRR := httptest.NewRecorder()
+	h.server.ServeHTTP(selectRR, selectReq)
+	if selectRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 selecting default, got %d body=%s", selectRR.Code, selectRR.Body.String())
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodPost, "/api/team/delete", bytes.NewBufferString(`{"profile_id":"ops"}`))
+	deleteReq.Header.Set("Content-Type", "application/json")
+	deleteRR := httptest.NewRecorder()
+	h.server.ServeHTTP(deleteRR, deleteReq)
+
+	if deleteRR.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", deleteRR.Code, deleteRR.Body.String())
+	}
+	if _, err := os.Stat(h.projectProfileDir("ops")); !os.IsNotExist(err) {
+		t.Fatalf("expected cloned profile to be removed, err=%v", err)
+	}
+
+	var deleteResp struct {
+		Notice   string `json:"notice"`
+		Profiles []struct {
+			ID string `json:"id"`
+		} `json:"profiles"`
+	}
+	if err := json.Unmarshal(deleteRR.Body.Bytes(), &deleteResp); err != nil {
+		t.Fatalf("decode delete response: %v", err)
+	}
+	if deleteResp.Notice != "Profile ops deleted." {
+		t.Fatalf("delete notice = %q", deleteResp.Notice)
+	}
+	for _, profile := range deleteResp.Profiles {
+		if profile.ID == "ops" {
+			t.Fatalf("deleted profile still present in response: %+v", deleteResp.Profiles)
+		}
+	}
+
+	defaultCfg, err := teams.LoadConfig(h.teamDir)
+	if err != nil {
+		t.Fatalf("load default config: %v", err)
+	}
+	defaultCfg.Name = "Imported Team"
+	defaultCfg.FrontAgent = "reviewer"
+	importYAML, err := teams.ExportEditableYAML(defaultCfg)
+	if err != nil {
+		t.Fatalf("export editable yaml: %v", err)
+	}
+
+	importReq := httptest.NewRequest(http.MethodPost, "/api/team/import", bytes.NewBufferString(`{"yaml":`+string(jsonMustMarshal(t, string(importYAML)))+`}`))
+	importReq.Header.Set("Content-Type", "application/json")
+	importRR := httptest.NewRecorder()
+	h.server.ServeHTTP(importRR, importReq)
+
+	if importRR.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", importRR.Code, importRR.Body.String())
+	}
+
+	var importResp struct {
+		Notice string `json:"notice"`
+		Team   struct {
+			Name         string `json:"name"`
+			FrontAgentID string `json:"front_agent_id"`
+		} `json:"team"`
+	}
+	if err := json.Unmarshal(importRR.Body.Bytes(), &importResp); err != nil {
+		t.Fatalf("decode import response: %v", err)
+	}
+	if importResp.Notice != "Imported file loaded. Save Team to apply the change." {
+		t.Fatalf("import notice = %q", importResp.Notice)
+	}
+	if importResp.Team.Name != "Imported Team" {
+		t.Fatalf("imported team name = %q, want %q", importResp.Team.Name, "Imported Team")
+	}
+	if importResp.Team.FrontAgentID != "reviewer" {
+		t.Fatalf("imported front agent = %q, want %q", importResp.Team.FrontAgentID, "reviewer")
+	}
+
+	saved, err := teams.LoadConfig(h.teamDir)
+	if err != nil {
+		t.Fatalf("reload default config: %v", err)
+	}
+	if saved.Name != "Repo Task Team" {
+		t.Fatalf("import should not persist until save, got name %q", saved.Name)
+	}
+	if saved.FrontAgent != "assistant" {
+		t.Fatalf("import should not persist until save, got front agent %q", saved.FrontAgent)
+	}
+}
+
+func TestTeamMutationAPIRejectsInvalidCloneDeleteAndImportRequests(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+
+	t.Run("clone requires profile ids", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/team/clone", bytes.NewBufferString(`{"source_profile_id":"default"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("delete rejects active profile", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/team/delete", bytes.NewBufferString(`{"profile_id":"default"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("import rejects invalid yaml", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/team/import", bytes.NewBufferString(`{"yaml":"name: bad\nagents:\n  - id: only"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+}
+
+func TestTeamMutationAPIRejectsInvalidSelectCreateAndSaveRequests(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+
+	t.Run("select rejects invalid json", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/team/select", bytes.NewBufferString(`{`))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("select rejects missing profile", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/team/select", bytes.NewBufferString(`{"profile_id":"missing"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("create rejects duplicate profile", func(t *testing.T) {
+		createReq := httptest.NewRequest(http.MethodPost, "/api/team/create", bytes.NewBufferString(`{"profile_id":"review"}`))
+		createReq.Header.Set("Content-Type", "application/json")
+		createRR := httptest.NewRecorder()
+		h.server.ServeHTTP(createRR, createReq)
+		if createRR.Code != http.StatusCreated {
+			t.Fatalf("expected 201, got %d body=%s", createRR.Code, createRR.Body.String())
+		}
+
+		dupReq := httptest.NewRequest(http.MethodPost, "/api/team/create", bytes.NewBufferString(`{"profile_id":"review"}`))
+		dupReq.Header.Set("Content-Type", "application/json")
+		dupRR := httptest.NewRecorder()
+		h.server.ServeHTTP(dupRR, dupReq)
+
+		if dupRR.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("expected 422, got %d body=%s", dupRR.Code, dupRR.Body.String())
+		}
+	})
+
+	t.Run("save rejects invalid team config", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodPost, "/api/team/save", bytes.NewBufferString(`{
+			"team": {
+				"name": "Broken Team",
+				"front_agent_id": "assistant",
+				"members": [
+					{
+						"id": "",
+						"role": "front assistant",
+						"base_profile": "operator",
+						"tool_families": ["repo_read"],
+						"delegation_kinds": ["write"],
+						"can_message": ["patcher"],
+						"specialist_summary_visibility": "full",
+						"soul_extra": {}
+					}
+				]
+			}
+		}`))
+		req.Header.Set("Content-Type", "application/json")
+		rr := httptest.NewRecorder()
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("expected 422, got %d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+}
+
+func jsonMustMarshal(t *testing.T, value string) []byte {
+	t.Helper()
+
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal json string: %v", err)
+	}
+	return raw
+}
