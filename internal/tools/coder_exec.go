@@ -80,6 +80,7 @@ func (t *CoderExecTool) Spec() model.ToolSpec {
 		Name:            t.Name(),
 		Description:     desc,
 		InputSchemaJSON: `{"type":"object","properties":{"backend":{"type":"string"},"prompt":{"type":"string"},"cwd":{"type":"string"},"sandbox":{"type":"string"},"skip_git_repo_check":{"type":"boolean"}},"required":["prompt"],"additionalProperties":false}`,
+		Family:          model.ToolFamilyRepoWrite,
 		Risk:            model.RiskHigh,
 		SideEffect:      effectExecWrite,
 		Approval:        "maybe",

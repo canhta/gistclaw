@@ -47,6 +47,7 @@ func (t *WebSearchTool) Spec() model.ToolSpec {
 		Name:            t.Name(),
 		Description:     "Search the web and return normalized result objects with title, URL, and snippet.",
 		InputSchemaJSON: `{"type":"object","properties":{"query":{"type":"string"},"max_results":{"type":"integer","minimum":1,"maximum":10}},"required":["query"]}`,
+		Family:          model.ToolFamilyWebRead,
 		Risk:            model.RiskLow,
 		SideEffect:      "none",
 		Approval:        "never",

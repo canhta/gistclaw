@@ -23,6 +23,7 @@ func newMCPTool(cfg MCPToolConfig, remote MCPRemoteTool, conn MCPConnection) *mc
 			Name:            cfg.Alias,
 			Description:     remote.Description,
 			InputSchemaJSON: remote.InputSchemaJSON,
+			Family:          model.ToolFamilyRuntimeCapability,
 			Risk:            cfg.Risk,
 			SideEffect:      "remote_read",
 			Approval:        "never",

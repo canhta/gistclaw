@@ -2,10 +2,7 @@ package tools
 
 import "github.com/canhta/gistclaw/internal/model"
 
-type ToolProfile string
-
 type Policy struct {
-	Profile   ToolProfile
 	Overrides map[string]model.DecisionMode
 }
 
@@ -24,79 +21,55 @@ func (p *Policy) decide(agent model.AgentProfile, spec model.ToolSpec, effect st
 		}
 	}
 
-	switch spec.Name {
-	case "session_spawn":
-		if !hasCapability(agent.Capabilities, model.CapSpawn) {
-			return model.ToolDecision{Mode: model.DecisionDeny, Reason: "spawn capability required"}
-		}
-	case "scoped_apply":
-		if !hasCapability(agent.Capabilities, model.CapScopedWrite) {
-			return model.ToolDecision{Mode: model.DecisionDeny, Reason: "scoped_write capability required"}
-		}
+	if containsString(agent.DenyTools, spec.Name) {
+		return model.ToolDecision{Mode: model.DecisionDeny, Reason: "tool denied by agent policy"}
+	}
+	if spec.Family == "" {
+		return model.ToolDecision{Mode: model.DecisionDeny, Reason: "tool family is required"}
+	}
+	if spec.Family == model.ToolFamilyDelegate && len(agent.DelegationKinds) == 0 {
+		return model.ToolDecision{Mode: model.DecisionDeny, Reason: "delegation kinds required"}
+	}
+
+	if !allowsToolFamily(agent.BaseProfile, spec.Family) && !containsString(agent.AllowTools, spec.Name) {
+		return model.ToolDecision{Mode: model.DecisionDeny, Reason: "tool family denied by base profile"}
 	}
 
 	if isReadEffect(effect) {
-		return model.ToolDecision{Mode: model.DecisionAllow, Reason: "low risk tool"}
+		return model.ToolDecision{Mode: model.DecisionAllow, Reason: "allowed read tool"}
 	}
-
-	profile := string(p.Profile)
-	if profile == "" {
-		profile = agent.ToolProfile
+	if spec.Approval == "required" {
+		return model.ToolDecision{Mode: model.DecisionAsk, Reason: "tool requires approval"}
 	}
+	if spec.Approval == "maybe" && isMutatingEffect(effect) {
+		return model.ToolDecision{Mode: model.DecisionAsk, Reason: "mutating tool requires approval"}
+	}
+	return model.ToolDecision{Mode: model.DecisionAllow, Reason: "tool allowed by adaptive policy"}
+}
 
+func allowsToolFamily(profile model.BaseProfile, family model.ToolFamily) bool {
 	switch profile {
-	case "read_only", "read_heavy", "propose_only":
-		return model.ToolDecision{
-			Mode:   model.DecisionDeny,
-			Reason: "profile denies risky tools",
-		}
-	case "scoped_write":
-		if spec.Approval == "required" {
-			return model.ToolDecision{
-				Mode:   model.DecisionAsk,
-				Reason: "tool requires approval",
-			}
-		}
-		if (spec.Name == "shell_exec" || spec.Name == "coder_exec") && effect == effectExecWrite {
-			return model.ToolDecision{
-				Mode:   model.DecisionAsk,
-				Reason: "scoped_write requires approval for mutating shell commands",
-			}
-		}
-		return model.ToolDecision{
-			Mode:   model.DecisionAllow,
-			Reason: "scoped_write allows scoped mutations",
-		}
-	case "operator_facing", "elevated":
-		if spec.Approval == "required" {
-			return model.ToolDecision{
-				Mode:   model.DecisionAsk,
-				Reason: "tool requires approval",
-			}
-		}
-		if (spec.Name == "shell_exec" || spec.Name == "coder_exec") && effect == effectExecWrite {
-			return model.ToolDecision{
-				Mode:   model.DecisionAsk,
-				Reason: "mutating shell commands require approval",
-			}
-		}
-		return model.ToolDecision{Mode: model.DecisionAllow, Reason: "elevated profile"}
+	case model.BaseProfileOperator:
+		return family == model.ToolFamilyRepoRead ||
+			family == model.ToolFamilyRuntimeCapability ||
+			family == model.ToolFamilyConnectorCapability ||
+			family == model.ToolFamilyWebRead ||
+			family == model.ToolFamilyDelegate
+	case model.BaseProfileResearch:
+		return family == model.ToolFamilyRepoRead || family == model.ToolFamilyWebRead
+	case model.BaseProfileWrite:
+		return family == model.ToolFamilyRepoRead || family == model.ToolFamilyRepoWrite
+	case model.BaseProfileReview:
+		return family == model.ToolFamilyRepoRead || family == model.ToolFamilyDiffReview
+	case model.BaseProfileVerify:
+		return family == model.ToolFamilyRepoRead || family == model.ToolFamilyVerification
+	case model.BaseProfileSpecialist:
+		return family == model.ToolFamilyRepoRead
 	default:
-		if spec.Approval == "required" {
-			return model.ToolDecision{
-				Mode:   model.DecisionAsk,
-				Reason: "tool requires approval",
-			}
-		}
-		return model.ToolDecision{Mode: model.DecisionAllow, Reason: "default allow"}
+		return false
 	}
 }
 
-func hasCapability(capabilities []model.AgentCapability, target model.AgentCapability) bool {
-	for _, capability := range capabilities {
-		if capability == target {
-			return true
-		}
-	}
-	return false
+func isMutatingEffect(effect string) bool {
+	return !isReadEffect(effect)
 }

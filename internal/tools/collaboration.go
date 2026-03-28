@@ -47,6 +47,7 @@ func (t *SessionSpawnTool) Spec() model.ToolSpec {
 		Name:            t.Name(),
 		Description:     "Spawn a specialist agent run and return its result.",
 		InputSchemaJSON: `{"type":"object","properties":{"agent_id":{"type":"string"},"prompt":{"type":"string"}},"required":["agent_id","prompt"],"additionalProperties":false}`,
+		Family:          model.ToolFamilyDelegate,
 		Risk:            model.RiskLow,
 	}
 }
@@ -75,8 +76,8 @@ func (t *SessionSpawnTool) Invoke(ctx context.Context, call model.ToolCall) (mod
 	if input.Prompt == "" {
 		return model.ToolResult{}, fmt.Errorf("session_spawn: prompt is required")
 	}
-	if !containsString(meta.Agent.CanSpawn, input.AgentID) {
-		return model.ToolResult{}, fmt.Errorf("session_spawn: %s cannot spawn %s", meta.Agent.AgentID, input.AgentID)
+	if err := validateDelegationTarget(meta, input.AgentID); err != nil {
+		return model.ToolResult{}, err
 	}
 
 	result, err := t.spawn(ctx, SessionSpawnRequest{
@@ -98,6 +99,45 @@ func (t *SessionSpawnTool) Invoke(ctx context.Context, call model.ToolCall) (mod
 		return model.ToolResult{}, fmt.Errorf("session_spawn: encode output: %w", err)
 	}
 	return model.ToolResult{Output: string(payload)}, nil
+}
+
+func validateDelegationTarget(meta InvocationContext, targetAgentID string) error {
+	target, ok := meta.Specialists[targetAgentID]
+	if !ok {
+		return fmt.Errorf("session_spawn: %s is not a known specialist", targetAgentID)
+	}
+	kind, ok := delegationKindForBaseProfile(target.BaseProfile)
+	if !ok {
+		return fmt.Errorf("session_spawn: %s is not a delegatable specialist", targetAgentID)
+	}
+	if !containsDelegationKind(meta.Agent.DelegationKinds, kind) {
+		return fmt.Errorf("session_spawn: %s cannot delegate %s work to %s", meta.Agent.AgentID, kind, targetAgentID)
+	}
+	return nil
+}
+
+func delegationKindForBaseProfile(profile model.BaseProfile) (model.DelegationKind, bool) {
+	switch profile {
+	case model.BaseProfileResearch:
+		return model.DelegationKindResearch, true
+	case model.BaseProfileWrite:
+		return model.DelegationKindWrite, true
+	case model.BaseProfileReview:
+		return model.DelegationKindReview, true
+	case model.BaseProfileVerify:
+		return model.DelegationKindVerify, true
+	default:
+		return "", false
+	}
+}
+
+func containsDelegationKind(values []model.DelegationKind, want model.DelegationKind) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 func containsString(values []string, want string) bool {

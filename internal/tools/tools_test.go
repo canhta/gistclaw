@@ -47,111 +47,6 @@ func TestRegistry_ListReturnsAll(t *testing.T) {
 	}
 }
 
-func TestPolicy_ReadOnlyProfileDeniesWrite(t *testing.T) {
-	p := &Policy{Profile: "read_heavy"}
-	agent := model.AgentProfile{
-		Capabilities: []model.AgentCapability{model.CapReadHeavy},
-		ToolProfile:  "read_heavy",
-	}
-	spec := model.ToolSpec{Name: "file_write", Risk: model.RiskMedium}
-
-	decision := p.Decide(agent, model.RunProfile{}, spec)
-	if decision.Mode != model.DecisionDeny {
-		t.Fatalf("expected deny for write tool with read_heavy profile, got %s", decision.Mode)
-	}
-}
-
-func TestPolicy_ScopedWriteProfileAsksForShellExec(t *testing.T) {
-	p := &Policy{Profile: "scoped_write"}
-	agent := model.AgentProfile{
-		Capabilities: []model.AgentCapability{model.CapScopedWrite},
-		ToolProfile:  "scoped_write",
-	}
-	spec := model.ToolSpec{Name: "shell_exec", Risk: model.RiskHigh}
-
-	decision := p.Decide(agent, model.RunProfile{}, spec)
-	if decision.Mode != model.DecisionAsk {
-		t.Fatalf("expected ask for shell_exec with scoped_write profile, got %s", decision.Mode)
-	}
-}
-
-func TestPolicy_ScopedWriteProfileAsksForCoderExec(t *testing.T) {
-	p := &Policy{Profile: "scoped_write"}
-	agent := model.AgentProfile{
-		Capabilities: []model.AgentCapability{model.CapScopedWrite},
-		ToolProfile:  "scoped_write",
-	}
-	spec := model.ToolSpec{Name: "coder_exec", Risk: model.RiskHigh, SideEffect: effectExecWrite}
-
-	decision := p.Decide(agent, model.RunProfile{}, spec)
-	if decision.Mode != model.DecisionAsk {
-		t.Fatalf("expected ask for coder_exec with scoped_write profile, got %s", decision.Mode)
-	}
-}
-
-func TestPolicy_ScopedWriteProfileAsksForRequiredApprovalTool(t *testing.T) {
-	p := &Policy{Profile: "scoped_write"}
-	agent := model.AgentProfile{
-		Capabilities: []model.AgentCapability{model.CapScopedWrite},
-		ToolProfile:  "scoped_write",
-	}
-	spec := model.ToolSpec{
-		Name:       "write_new_file",
-		Risk:       model.RiskMedium,
-		SideEffect: effectCreate,
-		Approval:   "required",
-	}
-
-	decision := p.Decide(agent, model.RunProfile{}, spec)
-	if decision.Mode != model.DecisionAsk {
-		t.Fatalf("expected ask for required approval tool with scoped_write profile, got %s", decision.Mode)
-	}
-}
-
-func TestPolicy_ReadToolAlwaysAllowed(t *testing.T) {
-	p := &Policy{Profile: "read_heavy"}
-	agent := model.AgentProfile{
-		Capabilities: []model.AgentCapability{model.CapReadHeavy},
-		ToolProfile:  "read_heavy",
-	}
-	spec := model.ToolSpec{Name: "file_read", Risk: model.RiskLow}
-
-	decision := p.Decide(agent, model.RunProfile{}, spec)
-	if decision.Mode != model.DecisionAllow {
-		t.Fatalf("expected allow for read tool, got %s", decision.Mode)
-	}
-}
-
-func TestPolicy_DeniesSpawnForAgentWithoutCapability(t *testing.T) {
-	p := &Policy{}
-	agent := model.AgentProfile{
-		AgentID:      "worker",
-		Capabilities: []model.AgentCapability{model.CapReadHeavy},
-		ToolProfile:  "read_heavy",
-	}
-	spec := model.ToolSpec{Name: "session_spawn", Risk: model.RiskLow}
-
-	decision := p.Decide(agent, model.RunProfile{}, spec)
-	if decision.Mode != model.DecisionDeny {
-		t.Fatalf("expected deny, got %s", decision.Mode)
-	}
-}
-
-func TestPolicy_AllowsSpawnForReadHeavyAgentWithCapability(t *testing.T) {
-	p := &Policy{}
-	agent := model.AgentProfile{
-		AgentID:      "assistant",
-		Capabilities: []model.AgentCapability{model.CapReadHeavy, model.CapSpawn},
-		ToolProfile:  "read_heavy",
-	}
-	spec := model.ToolSpec{Name: "session_spawn", Risk: model.RiskLow}
-
-	decision := p.Decide(agent, model.RunProfile{}, spec)
-	if decision.Mode != model.DecisionAllow {
-		t.Fatalf("expected allow, got %s", decision.Mode)
-	}
-}
-
 func TestRegisterCollaborationTools_RegistersSessionSpawn(t *testing.T) {
 	reg := NewRegistry()
 
@@ -184,8 +79,11 @@ func TestSessionSpawnTool_InvokeUsesAuthorizedSpawnTarget(t *testing.T) {
 	ctx := WithInvocationContext(context.Background(), InvocationContext{
 		SessionID: "session-parent",
 		Agent: model.AgentProfile{
-			AgentID:  "assistant",
-			CanSpawn: []string{"researcher"},
+			AgentID:         "assistant",
+			DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
+		},
+		Specialists: map[string]model.AgentProfile{
+			"researcher": {AgentID: "researcher", BaseProfile: model.BaseProfileResearch},
 		},
 	})
 	result, err := tool.Invoke(ctx, model.ToolCall{
@@ -220,8 +118,12 @@ func TestSessionSpawnTool_InvokeRejectsUndeclaredTarget(t *testing.T) {
 	ctx := WithInvocationContext(context.Background(), InvocationContext{
 		SessionID: "session-parent",
 		Agent: model.AgentProfile{
-			AgentID:  "assistant",
-			CanSpawn: []string{"researcher"},
+			AgentID:         "assistant",
+			DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
+		},
+		Specialists: map[string]model.AgentProfile{
+			"researcher": {AgentID: "researcher", BaseProfile: model.BaseProfileResearch},
+			"verifier":   {AgentID: "verifier", BaseProfile: model.BaseProfileVerify},
 		},
 	})
 	_, err := tool.Invoke(ctx, model.ToolCall{
@@ -229,7 +131,7 @@ func TestSessionSpawnTool_InvokeRejectsUndeclaredTarget(t *testing.T) {
 		ToolName:  "session_spawn",
 		InputJSON: []byte(`{"agent_id":"verifier","prompt":"inspect OpenClaw"}`),
 	})
-	if err == nil || err.Error() != "session_spawn: assistant cannot spawn verifier" {
+	if err == nil || err.Error() != "session_spawn: assistant cannot delegate verify work to verifier" {
 		t.Fatalf("expected unauthorized target error, got %v", err)
 	}
 }

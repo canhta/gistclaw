@@ -164,6 +164,7 @@ func gitSpec(name, description string) model.ToolSpec {
 		Name:            name,
 		Description:     description,
 		InputSchemaJSON: `{"type":"object","properties":{"target":{"type":"string"},"limit":{"type":"integer","minimum":1},"cwd":{"type":"string"}}}`,
+		Family:          model.ToolFamilyRepoRead,
 		Risk:            model.RiskLow,
 		SideEffect:      effectRead,
 		Approval:        "never",

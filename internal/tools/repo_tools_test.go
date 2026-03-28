@@ -614,10 +614,10 @@ func TestGitTools_AllowElevatedAbsoluteCWD(t *testing.T) {
 }
 
 func TestPolicy_DecideCall_HandlesShellEffects(t *testing.T) {
-	p := &Policy{Profile: "scoped_write"}
+	p := &Policy{}
 	agent := model.AgentProfile{
-		Capabilities: []model.AgentCapability{model.CapScopedWrite},
-		ToolProfile:  "scoped_write",
+		BaseProfile:  model.BaseProfileWrite,
+		ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyRepoWrite},
 	}
 
 	readDecision := p.DecideCall(agent, model.RunProfile{}, NewShellExecTool(30, 1024).Spec(), []byte(`{"command":"git status"}`))
