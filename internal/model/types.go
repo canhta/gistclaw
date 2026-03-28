@@ -132,6 +132,96 @@ func IsValidCapability(s string) bool {
 	return validCapabilities[AgentCapability(s)]
 }
 
+type BaseProfile string
+
+const (
+	BaseProfileOperator   BaseProfile = "operator"
+	BaseProfileSpecialist BaseProfile = "specialist"
+	BaseProfileResearch   BaseProfile = "research"
+	BaseProfileWrite      BaseProfile = "write"
+	BaseProfileReview     BaseProfile = "review"
+	BaseProfileVerify     BaseProfile = "verify"
+)
+
+var validBaseProfiles = map[BaseProfile]bool{
+	BaseProfileOperator:   true,
+	BaseProfileSpecialist: true,
+	BaseProfileResearch:   true,
+	BaseProfileWrite:      true,
+	BaseProfileReview:     true,
+	BaseProfileVerify:     true,
+}
+
+func IsValidBaseProfile(s string) bool {
+	return validBaseProfiles[BaseProfile(s)]
+}
+
+type ToolFamily string
+
+const (
+	ToolFamilyRepoRead            ToolFamily = "repo_read"
+	ToolFamilyRepoWrite           ToolFamily = "repo_write"
+	ToolFamilyRuntimeCapability   ToolFamily = "runtime_capability"
+	ToolFamilyConnectorCapability ToolFamily = "connector_capability"
+	ToolFamilyWebRead             ToolFamily = "web_read"
+	ToolFamilyDelegate            ToolFamily = "delegate"
+	ToolFamilyVerification        ToolFamily = "verification"
+	ToolFamilyDiffReview          ToolFamily = "diff_review"
+)
+
+var validToolFamilies = map[ToolFamily]bool{
+	ToolFamilyRepoRead:            true,
+	ToolFamilyRepoWrite:           true,
+	ToolFamilyRuntimeCapability:   true,
+	ToolFamilyConnectorCapability: true,
+	ToolFamilyWebRead:             true,
+	ToolFamilyDelegate:            true,
+	ToolFamilyVerification:        true,
+	ToolFamilyDiffReview:          true,
+}
+
+func IsValidToolFamily(s string) bool {
+	return validToolFamilies[ToolFamily(s)]
+}
+
+type DelegationKind string
+
+const (
+	DelegationKindResearch DelegationKind = "research"
+	DelegationKindWrite    DelegationKind = "write"
+	DelegationKindReview   DelegationKind = "review"
+	DelegationKindVerify   DelegationKind = "verify"
+)
+
+var validDelegationKinds = map[DelegationKind]bool{
+	DelegationKindResearch: true,
+	DelegationKindWrite:    true,
+	DelegationKindReview:   true,
+	DelegationKindVerify:   true,
+}
+
+func IsValidDelegationKind(s string) bool {
+	return validDelegationKinds[DelegationKind(s)]
+}
+
+type SpecialistSummaryVisibility string
+
+const (
+	SpecialistSummaryNone  SpecialistSummaryVisibility = "none"
+	SpecialistSummaryBasic SpecialistSummaryVisibility = "basic"
+	SpecialistSummaryFull  SpecialistSummaryVisibility = "full"
+)
+
+var validSpecialistSummaryVisibility = map[SpecialistSummaryVisibility]bool{
+	SpecialistSummaryNone:  true,
+	SpecialistSummaryBasic: true,
+	SpecialistSummaryFull:  true,
+}
+
+func IsValidSpecialistSummaryVisibility(s string) bool {
+	return validSpecialistSummaryVisibility[SpecialistSummaryVisibility(s)]
+}
+
 type ToolRisk string
 
 const (
@@ -332,14 +422,20 @@ type RunProfile struct {
 }
 
 type AgentProfile struct {
-	AgentID      string
-	Role         string
-	Instructions string
-	Capabilities []AgentCapability
-	ToolProfile  string
-	MemoryScope  string
-	CanSpawn     []string
-	CanMessage   []string
+	AgentID                     string
+	Role                        string
+	Instructions                string
+	Capabilities                []AgentCapability
+	BaseProfile                 BaseProfile
+	ToolFamilies                []ToolFamily
+	AllowTools                  []string
+	DenyTools                   []string
+	DelegationKinds             []DelegationKind
+	SpecialistSummaryVisibility SpecialistSummaryVisibility
+	ToolProfile                 string
+	MemoryScope                 string
+	CanSpawn                    []string
+	CanMessage                  []string
 }
 
 type ExecutionSnapshot struct {
@@ -351,6 +447,7 @@ type ToolSpec struct {
 	Name            string
 	Description     string
 	InputSchemaJSON string
+	Family          ToolFamily
 	Risk            ToolRisk
 	SideEffect      string
 	Approval        string

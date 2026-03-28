@@ -101,6 +101,63 @@ func TestIsValidCapability_RecognizesSpawn(t *testing.T) {
 	}
 }
 
+func TestAgentProfile_ExposesAdaptivePolicyFields(t *testing.T) {
+	agentType := reflect.TypeOf(AgentProfile{})
+	assertHasField(
+		t,
+		agentType,
+		"BaseProfile",
+		"ToolFamilies",
+		"AllowTools",
+		"DenyTools",
+		"DelegationKinds",
+		"SpecialistSummaryVisibility",
+	)
+}
+
+func TestToolSpec_ExposesFamily(t *testing.T) {
+	specType := reflect.TypeOf(ToolSpec{})
+	assertHasField(t, specType, "Family")
+}
+
+func TestAdaptivePolicyValidators(t *testing.T) {
+	t.Run("base profile", func(t *testing.T) {
+		if !IsValidBaseProfile("operator") {
+			t.Fatal("expected operator to be a valid base profile")
+		}
+		if IsValidBaseProfile("unknown") {
+			t.Fatal("expected unknown base profile to be rejected")
+		}
+	})
+
+	t.Run("tool family", func(t *testing.T) {
+		if !IsValidToolFamily("connector_capability") {
+			t.Fatal("expected connector_capability to be a valid tool family")
+		}
+		if IsValidToolFamily("legacy_tooling") {
+			t.Fatal("expected legacy_tooling tool family to be rejected")
+		}
+	})
+
+	t.Run("delegation kind", func(t *testing.T) {
+		if !IsValidDelegationKind("research") {
+			t.Fatal("expected research to be a valid delegation kind")
+		}
+		if IsValidDelegationKind("fanout") {
+			t.Fatal("expected fanout delegation kind to be rejected")
+		}
+	})
+
+	t.Run("specialist summary visibility", func(t *testing.T) {
+		if !IsValidSpecialistSummaryVisibility("basic") {
+			t.Fatal("expected basic to be a valid specialist summary visibility")
+		}
+		if IsValidSpecialistSummaryVisibility("verbose") {
+			t.Fatal("expected verbose specialist summary visibility to be rejected")
+		}
+	})
+}
+
 func TestHostExecutionTypes_ReplaceWorkspaceFields(t *testing.T) {
 	projectType := reflect.TypeOf(Project{})
 	assertHasField(t, projectType, "PrimaryPath", "RootsJSON", "PolicyJSON")
