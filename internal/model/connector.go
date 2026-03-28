@@ -14,11 +14,25 @@ const (
 
 type ConnectorMetadata struct {
 	ID       string
+	Aliases  []string
 	Exposure ConnectorExposure
 }
 
 func NormalizeConnectorMetadata(meta ConnectorMetadata) ConnectorMetadata {
 	meta.ID = strings.TrimSpace(meta.ID)
+	if len(meta.Aliases) > 0 {
+		aliases := make([]string, 0, len(meta.Aliases))
+		seen := make(map[string]bool, len(meta.Aliases))
+		for _, alias := range meta.Aliases {
+			normalized := strings.TrimSpace(strings.ToLower(alias))
+			if normalized == "" || normalized == meta.ID || seen[normalized] {
+				continue
+			}
+			seen[normalized] = true
+			aliases = append(aliases, normalized)
+		}
+		meta.Aliases = aliases
+	}
 	switch meta.Exposure {
 	case ConnectorExposureLocal, ConnectorExposureRemote:
 	default:

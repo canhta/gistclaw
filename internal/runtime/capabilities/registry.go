@@ -131,12 +131,14 @@ type connectorAdapters struct {
 type Registry struct {
 	mu         sync.RWMutex
 	connectors map[string]connectorAdapters
+	aliases    map[string]string
 	appActions map[string]AppActionHandler
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
 		connectors: make(map[string]connectorAdapters),
+		aliases:    make(map[string]string),
 		appActions: make(map[string]AppActionHandler),
 	}
 }
@@ -172,6 +174,11 @@ func (r *Registry) RegisterConnector(conn model.Connector) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.connectors[meta.ID] = adapters
+	for _, alias := range meta.Aliases {
+		if alias != "" {
+			r.aliases[alias] = meta.ID
+		}
+	}
 }
 
 func (r *Registry) RegisterAppAction(name string, handler AppActionHandler) {
@@ -310,9 +317,13 @@ func (r *Registry) lookupConnector(connectorID string) (connectorAdapters, strin
 	if normalizedID == "" {
 		return connectorAdapters{}, "", fmt.Errorf("capabilities: connector_id is required")
 	}
+	normalizedID = strings.ToLower(normalizedID)
 
 	r.mu.RLock()
 	defer r.mu.RUnlock()
+	if canonicalID, ok := r.aliases[normalizedID]; ok {
+		normalizedID = canonicalID
+	}
 	adapters, ok := r.connectors[normalizedID]
 	if !ok {
 		return connectorAdapters{}, "", fmt.Errorf("capabilities: connector %q is not registered", normalizedID)

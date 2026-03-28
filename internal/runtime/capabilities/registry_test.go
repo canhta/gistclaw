@@ -10,6 +10,7 @@ import (
 
 type stubConnector struct {
 	id              string
+	aliases         []string
 	directoryCalls  []DirectoryListRequest
 	resolveCalls    []TargetResolveRequest
 	sendCalls       []SendRequest
@@ -26,7 +27,7 @@ type stubConnector struct {
 }
 
 func (c *stubConnector) Metadata() model.ConnectorMetadata {
-	return model.NormalizeConnectorMetadata(model.ConnectorMetadata{ID: c.id})
+	return model.NormalizeConnectorMetadata(model.ConnectorMetadata{ID: c.id, Aliases: append([]string(nil), c.aliases...)})
 }
 
 func (c *stubConnector) Start(context.Context) error { return nil }
@@ -180,6 +181,59 @@ func TestCapabilityRegistry_InvokesRegisteredConnectorAdapters(t *testing.T) {
 	}
 	if len(connector.statusCalls) != 1 || connector.statusCalls[0].ConnectorID != "zalo_personal" {
 		t.Fatalf("unexpected status calls: %+v", connector.statusCalls)
+	}
+}
+
+func TestCapabilityRegistry_ResolvesConnectorAliases(t *testing.T) {
+	reg := NewRegistry()
+	connector := &stubConnector{
+		id:      "zalo_personal",
+		aliases: []string{"zalo", "zalo personal"},
+		directoryResult: DirectoryListResult{
+			ConnectorID: "zalo_personal",
+			Scope:       "contacts",
+			Entries: []DirectoryEntry{
+				{ID: "user-1", Title: "Anh An", Kind: "contact"},
+			},
+		},
+		statusResult: ConnectorStatus{
+			ConnectorID: "zalo_personal",
+			State:       model.ConnectorHealthHealthy,
+			Summary:     "connected",
+		},
+		sendResult: SendResult{
+			ConnectorID: "zalo_personal",
+			TargetID:    "user-1",
+			Accepted:    true,
+			Summary:     "message accepted",
+		},
+	}
+	reg.RegisterConnector(connector)
+
+	if _, err := reg.DirectoryList(context.Background(), DirectoryListRequest{ConnectorID: "zalo"}); err != nil {
+		t.Fatalf("DirectoryList alias lookup: %v", err)
+	}
+	if len(connector.directoryCalls) != 1 || connector.directoryCalls[0].ConnectorID != "zalo_personal" {
+		t.Fatalf("expected alias to resolve to canonical connector id, got %+v", connector.directoryCalls)
+	}
+
+	statusResult, err := reg.Status(context.Background(), StatusRequest{ConnectorID: "zalo"})
+	if err != nil {
+		t.Fatalf("Status alias lookup: %v", err)
+	}
+	if len(statusResult.Connectors) != 1 || statusResult.Connectors[0].ConnectorID != "zalo_personal" {
+		t.Fatalf("unexpected alias status result: %+v", statusResult)
+	}
+
+	if _, err := reg.Send(context.Background(), SendRequest{
+		ConnectorID: "zalo",
+		TargetID:    "user-1",
+		Message:     "hello",
+	}); err != nil {
+		t.Fatalf("Send alias lookup: %v", err)
+	}
+	if len(connector.sendCalls) != 1 || connector.sendCalls[0].ConnectorID != "zalo_personal" {
+		t.Fatalf("expected send alias to resolve to canonical connector id, got %+v", connector.sendCalls)
 	}
 }
 

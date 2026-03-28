@@ -121,6 +121,7 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 func (c *Connector) Metadata() model.ConnectorMetadata {
 	return model.NormalizeConnectorMetadata(model.ConnectorMetadata{
 		ID:       "zalo_personal",
+		Aliases:  []string{"zalo", "zalo personal"},
 		Exposure: model.ConnectorExposureRemote,
 	})
 }
