@@ -189,7 +189,7 @@
 				<RunGraph graph={graphData} />
 			</div>
 		{:else if singleActiveCluster && graphError}
-			<div class="mt-6 gc-panel-soft border-[var(--gc-error)] px-4 py-4">
+			<div class="gc-panel-soft mt-6 border-[var(--gc-error)] px-4 py-4">
 				<p class="gc-copy text-[var(--gc-error)]">{graphError}</p>
 			</div>
 			<div class="mt-4 grid gap-4 xl:grid-cols-2">
