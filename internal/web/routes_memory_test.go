@@ -49,7 +49,7 @@ func seedMemoryFactInProject(t *testing.T, h *serverHarness, projectID, agentID,
 func TestMemoryInspector(t *testing.T) {
 	t.Run("GET /configure/memory returns all non-forgotten facts with scope and provenance", func(t *testing.T) {
 		h := newServerHarness(t)
-		seedMemoryFact(t, h, "coordinator", "local", "fact one", "model")
+		seedMemoryFact(t, h, "assistant", "local", "fact one", "model")
 		seedMemoryFact(t, h, "patcher", "team", "fact two", "model")
 
 		rr := httptest.NewRecorder()
@@ -74,8 +74,8 @@ func TestMemoryInspector(t *testing.T) {
 	t.Run("GET /configure/memory hides facts from other projects", func(t *testing.T) {
 		h := newServerHarness(t)
 		otherProjectID := h.insertProject(t, "seo-test", t.TempDir())
-		seedMemoryFact(t, h, "coordinator", "local", "active project fact", "model")
-		seedMemoryFactInProject(t, h, otherProjectID, "coordinator", "local", "other project fact", "model")
+		seedMemoryFact(t, h, "assistant", "local", "active project fact", "model")
+		seedMemoryFactInProject(t, h, otherProjectID, "assistant", "local", "other project fact", "model")
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/configure/memory", nil)
@@ -95,8 +95,8 @@ func TestMemoryInspector(t *testing.T) {
 
 	t.Run("GET /configure/memory?scope=local returns only local-scoped facts", func(t *testing.T) {
 		h := newServerHarness(t)
-		seedMemoryFact(t, h, "coordinator", "local", "local only", "model")
-		seedMemoryFact(t, h, "coordinator", "team", "team only", "model")
+		seedMemoryFact(t, h, "assistant", "local", "local only", "model")
+		seedMemoryFact(t, h, "assistant", "team", "team only", "model")
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/configure/memory?scope=local", nil)
@@ -137,9 +137,9 @@ func TestMemoryInspector(t *testing.T) {
 
 	t.Run("GET /configure/memory supports keyword filter and pagination", func(t *testing.T) {
 		h := newServerHarness(t)
-		newestID := seedMemoryFact(t, h, "coordinator", "local", "graph fact newest", "model")
-		middleID := seedMemoryFact(t, h, "coordinator", "local", "unrelated note", "model")
-		oldestID := seedMemoryFact(t, h, "coordinator", "local", "graph fact oldest", "model")
+		newestID := seedMemoryFact(t, h, "assistant", "local", "graph fact newest", "model")
+		middleID := seedMemoryFact(t, h, "assistant", "local", "unrelated note", "model")
+		oldestID := seedMemoryFact(t, h, "assistant", "local", "graph fact oldest", "model")
 		setMemoryUpdatedAt(t, h, newestID, "2026-03-25 10:00:00")
 		setMemoryUpdatedAt(t, h, middleID, "2026-03-25 09:00:00")
 		setMemoryUpdatedAt(t, h, oldestID, "2026-03-25 08:00:00")
@@ -180,7 +180,7 @@ func TestMemoryInspector(t *testing.T) {
 
 	t.Run("POST /configure/memory/{id}/forget with confirm=yes forgets and redirects", func(t *testing.T) {
 		h := newServerHarness(t)
-		id := seedMemoryFact(t, h, "coordinator", "local", "to be forgotten", "model")
+		id := seedMemoryFact(t, h, "assistant", "local", "to be forgotten", "model")
 		cookie := hostAdminSessionCookie(t, h, "http://localhost/configure/memory")
 
 		form := url.Values{"confirm": {"yes"}}
@@ -197,7 +197,7 @@ func TestMemoryInspector(t *testing.T) {
 		}
 
 		// Fact must now be absent from Filter results.
-		facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg(h.activeProjectID, "coordinator", ""))
+		facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg(h.activeProjectID, "assistant", ""))
 		if err != nil {
 			t.Fatalf("Filter after forget: %v", err)
 		}
@@ -210,7 +210,7 @@ func TestMemoryInspector(t *testing.T) {
 
 	t.Run("POST /configure/memory/{id}/forget without confirm shows confirmation prompt", func(t *testing.T) {
 		h := newServerHarness(t)
-		id := seedMemoryFact(t, h, "coordinator", "local", "pending forget", "model")
+		id := seedMemoryFact(t, h, "assistant", "local", "pending forget", "model")
 		cookie := hostAdminSessionCookie(t, h, "http://localhost/configure/memory")
 
 		rr := httptest.NewRecorder()
@@ -233,7 +233,7 @@ func TestMemoryInspector(t *testing.T) {
 		}
 
 		// Fact must still exist.
-		facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg(h.activeProjectID, "coordinator", ""))
+		facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg(h.activeProjectID, "assistant", ""))
 		if err != nil {
 			t.Fatalf("Filter: %v", err)
 		}
@@ -250,7 +250,7 @@ func TestMemoryInspector(t *testing.T) {
 
 	t.Run("POST /configure/memory/{id}/edit updates value and redirects", func(t *testing.T) {
 		h := newServerHarness(t)
-		id := seedMemoryFact(t, h, "coordinator", "local", "old value", "model")
+		id := seedMemoryFact(t, h, "assistant", "local", "old value", "model")
 		cookie := hostAdminSessionCookie(t, h, "http://localhost/configure/memory")
 
 		form := url.Values{"value": {"new human value"}}
@@ -266,7 +266,7 @@ func TestMemoryInspector(t *testing.T) {
 			t.Fatalf("expected 303 redirect, got %d: %s", rr.Code, rr.Body.String())
 		}
 
-		facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg(h.activeProjectID, "coordinator", ""))
+		facts, err := h.rt.Memory().Filter(context.Background(), memoryFilterArg(h.activeProjectID, "assistant", ""))
 		if err != nil {
 			t.Fatalf("Filter after edit: %v", err)
 		}
@@ -283,7 +283,7 @@ func TestMemoryInspector(t *testing.T) {
 
 	t.Run("POST /configure/memory/{id}/forget rejects anonymous writes", func(t *testing.T) {
 		h := newServerHarness(t)
-		id := seedMemoryFact(t, h, "coordinator", "local", "anonymous forget", "model")
+		id := seedMemoryFact(t, h, "assistant", "local", "anonymous forget", "model")
 
 		form := url.Values{"confirm": {"yes"}}
 		rr := httptest.NewRecorder()
@@ -301,7 +301,7 @@ func TestMemoryInspector(t *testing.T) {
 	t.Run("POST /configure/memory/{id}/forget rejects other project fact", func(t *testing.T) {
 		h := newServerHarness(t)
 		otherProjectID := h.insertProject(t, "seo-test", t.TempDir())
-		id := seedMemoryFactInProject(t, h, otherProjectID, "coordinator", "local", "foreign fact", "model")
+		id := seedMemoryFactInProject(t, h, otherProjectID, "assistant", "local", "foreign fact", "model")
 		cookie := hostAdminSessionCookie(t, h, "http://localhost/configure/memory")
 
 		form := url.Values{"confirm": {"yes"}}

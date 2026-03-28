@@ -161,6 +161,10 @@ func TestHostExecutionTypes_ReplaceWorkspaceFields(t *testing.T) {
 	assertHasField(t, projectType, "PrimaryPath", "RootsJSON", "PolicyJSON")
 	assertOmitsField(t, projectType, "WorkspaceRoot")
 
+	conversationType := reflect.TypeOf(Conversation{})
+	assertHasField(t, conversationType, "ConnectorID", "AccountID", "ExternalID", "ThreadID", "ProjectID")
+	assertOmitsField(t, conversationType, "Key")
+
 	runType := reflect.TypeOf(Run{})
 	assertHasField(t, runType, "CWD", "AuthorityJSON")
 	assertOmitsField(t, runType, "WorkspaceRoot")

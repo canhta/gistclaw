@@ -36,7 +36,7 @@ func TestStarterWorkflow_PreviewOnly(t *testing.T) {
 
 	run, err := rt.Start(ctx, StartRun{
 		ConversationID: "conv-preview",
-		AgentID:        "coordinator",
+		AgentID:        "assistant",
 		Objective:      "Apply a patch to main.go",
 		CWD:            t.TempDir(),
 		PreviewOnly:    true,

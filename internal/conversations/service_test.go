@@ -1045,9 +1045,9 @@ func TestConversationStore_ResetConversationDeletesOnlyTargetData(t *testing.T) 
 	ctx := context.Background()
 
 	for _, stmt := range []string{
-		`INSERT INTO conversations (id, key, created_at)
-		 VALUES ('conv-reset', 'telegram|acct-1|chat-1|main', datetime('now')),
-		        ('conv-keep', 'telegram|acct-2|chat-2|main', datetime('now'))`,
+		`INSERT INTO conversations (id, key, connector_id, account_id, external_id, thread_id, project_id, created_at)
+		 VALUES ('conv-reset', 'telegram|acct-1|chat-1|main', 'telegram', 'acct-1', 'chat-1', 'main', 'proj-reset', datetime('now')),
+		        ('conv-keep', 'telegram|acct-2|chat-2|main', 'telegram', 'acct-2', 'chat-2', 'main', 'proj-keep', datetime('now'))`,
 		`INSERT INTO runs (id, conversation_id, agent_id, session_id, status, created_at, updated_at)
 		 VALUES ('run-reset', 'conv-reset', 'assistant', 'sess-reset', 'completed', datetime('now'), datetime('now')),
 		        ('run-keep', 'conv-keep', 'assistant', 'sess-keep', 'completed', datetime('now'), datetime('now'))`,
@@ -1134,8 +1134,8 @@ func TestConversationStore_ResetConversationIsAtomic(t *testing.T) {
 	ctx := context.Background()
 
 	for _, stmt := range []string{
-		`INSERT INTO conversations (id, key, created_at)
-		 VALUES ('conv-reset', 'telegram|acct-1|chat-1|main', datetime('now'))`,
+		`INSERT INTO conversations (id, key, connector_id, account_id, external_id, thread_id, project_id, created_at)
+		 VALUES ('conv-reset', 'telegram|acct-1|chat-1|main', 'telegram', 'acct-1', 'chat-1', 'main', 'proj-reset', datetime('now'))`,
 		`INSERT INTO runs (id, conversation_id, agent_id, session_id, status, created_at, updated_at)
 		 VALUES ('run-reset', 'conv-reset', 'assistant', 'sess-reset', 'completed', datetime('now'), datetime('now'))`,
 		`INSERT INTO sessions (id, conversation_id, key, agent_id, role, status, created_at)

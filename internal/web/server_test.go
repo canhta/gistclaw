@@ -515,14 +515,22 @@ func TestRuns(t *testing.T) {
 
 	t.Run("graph endpoint renders topology snapshot with semantic edges", func(t *testing.T) {
 		h := newServerHarness(t)
-		h.insertRunAt(t, "082b1c314823744cc779ece2f90e80e7", "conv-graph", "review the repo", "active", "2026-03-25 08:00:00")
-		if _, err := h.db.RawDB().Exec(
-			`UPDATE runs SET updated_at = ? WHERE id = ?`,
-			"2026-03-25 08:02:00",
-			"082b1c314823744cc779ece2f90e80e7",
-		); err != nil {
-			t.Fatalf("set root updated_at: %v", err)
-		}
+		h.insertRunWithSnapshotAt(t, "082b1c314823744cc779ece2f90e80e7", "conv-graph", "review the repo", "active", "2026-03-25 08:00:00", "2026-03-25 08:02:00", model.ExecutionSnapshot{
+			TeamID:       "repo-task-team",
+			FrontAgentID: "assistant",
+			Agents: map[string]model.AgentProfile{
+				"assistant": {
+					AgentID:      "assistant",
+					BaseProfile:  model.BaseProfileOperator,
+					ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
+				},
+				"researcher": {
+					AgentID:      "researcher",
+					BaseProfile:  model.BaseProfileResearch,
+					ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyWebRead},
+				},
+			},
+		})
 		if _, err := h.db.RawDB().Exec(
 			`INSERT INTO runs
 			 (id, conversation_id, agent_id, session_id, project_id, team_id, parent_run_id, objective, cwd, status, created_at, updated_at)

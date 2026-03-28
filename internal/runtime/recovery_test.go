@@ -20,14 +20,14 @@ func TestRecovery_InterruptedRunsReconciled(t *testing.T) {
 
 	// Insert a conversation and a run left in 'active' state.
 	_, err := db.RawDB().ExecContext(ctx,
-		`INSERT INTO conversations (id, key, created_at)
-		 VALUES ('conv-crash', 'test:acct:ext:main', datetime('now'))`)
+		`INSERT INTO conversations (id, key, connector_id, account_id, external_id, thread_id, project_id, created_at)
+		 VALUES ('conv-crash', 'test:acct:ext:main', 'test', 'acct', 'ext', 'main', 'proj-recovery', datetime('now'))`)
 	if err != nil {
 		t.Fatalf("insert conversation: %v", err)
 	}
 	_, err = db.RawDB().ExecContext(ctx,
 		`INSERT INTO runs (id, conversation_id, agent_id, team_id, objective, cwd, authority_json, status, created_at, updated_at)
-		 VALUES ('run-crashed', 'conv-crash', 'coordinator', 'team-1', 'test', '/tmp', '{}', 'active', datetime('now'), datetime('now'))`)
+		 VALUES ('run-crashed', 'conv-crash', 'assistant', 'team-1', 'test', '/tmp', '{}', 'active', datetime('now'), datetime('now'))`)
 	if err != nil {
 		t.Fatalf("insert run: %v", err)
 	}

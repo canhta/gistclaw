@@ -304,6 +304,6 @@ agents:
 `)
 
 	if _, err := LoadEditableYAML(raw); err == nil {
-		t.Fatal("expected unsupported coordinator fields to be rejected")
+		t.Fatal("expected unsupported legacy team fields to be rejected")
 	}
 }

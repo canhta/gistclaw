@@ -416,14 +416,23 @@ type ExecutionSnapshot struct {
 }
 
 type ToolSpec struct {
-	Name            string
-	Description     string
-	InputSchemaJSON string
-	Family          ToolFamily
-	Risk            ToolRisk
-	SideEffect      string
-	Approval        string
+	Name                  string
+	Description           string
+	InputSchemaJSON       string
+	Family                ToolFamily
+	Risk                  ToolRisk
+	SideEffect            string
+	EffectClassifier      ToolEffectClassifier
+	Approval              string
+	RequiresExplicitAllow bool
 }
+
+type ToolEffectClassifier string
+
+const (
+	ToolEffectClassifierNone         ToolEffectClassifier = ""
+	ToolEffectClassifierShellCommand ToolEffectClassifier = "shell_command"
+)
 
 type ToolCall struct {
 	ID        string
@@ -507,7 +516,6 @@ type SummaryRef struct {
 
 type Conversation struct {
 	ID          string
-	Key         string
 	ConnectorID string
 	AccountID   string
 	ExternalID  string

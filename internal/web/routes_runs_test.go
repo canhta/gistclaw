@@ -62,7 +62,7 @@ func TestSummarizeRunBlocker(t *testing.T) {
 		{name: "approval", queueStatus: "needs_approval", rows: rows, rootStatus: "active", childCount: 2, want: "patcher waiting on approval"},
 		{name: "failure without agent", queueStatus: "failed", rows: []runChildRow{{Status: "failed"}}, rootStatus: "active", childCount: 1, want: "Sub-agent failed"},
 		{name: "active worker", queueStatus: "active", rows: []runChildRow{{Status: "active"}, {Status: "active"}}, rootStatus: "active", childCount: 2, want: "2 sub-agents active"},
-		{name: "active coordinator", queueStatus: "active", rows: nil, rootStatus: "active", childCount: 0, want: "Lead agent active"},
+		{name: "active lead agent", queueStatus: "active", rows: nil, rootStatus: "active", childCount: 0, want: "Lead agent active"},
 		{name: "pending workers", queueStatus: "pending", rows: []runChildRow{{Status: "pending"}}, rootStatus: "pending", childCount: 1, want: "1 sub-agent queued"},
 		{name: "completed children", queueStatus: "completed", rows: []runChildRow{{Status: "completed"}, {Status: "completed"}}, rootStatus: "completed", childCount: 2, want: "2 sub-agents settled"},
 		{name: "no children fallback", queueStatus: "completed", rows: nil, rootStatus: "completed", childCount: 0, want: "No sub-agents"},

@@ -80,13 +80,12 @@ func (s *ConversationStore) Find(ctx context.Context, key ConversationKey) (mode
 func (s *ConversationStore) loadConversationByKey(ctx context.Context, normalized string) (model.Conversation, error) {
 	var conv model.Conversation
 	err := s.db.RawDB().QueryRowContext(ctx,
-		`SELECT id, key, connector_id, account_id, external_id, thread_id, project_id, created_at
+		`SELECT id, connector_id, account_id, external_id, thread_id, project_id, created_at
 		 FROM conversations
 		 WHERE key = ?`,
 		normalized,
 	).Scan(
 		&conv.ID,
-		&conv.Key,
 		&conv.ConnectorID,
 		&conv.AccountID,
 		&conv.ExternalID,

@@ -293,7 +293,7 @@ func TestRunEngine_FailsHungProviderTurnsAfterTimeout(t *testing.T) {
 
 func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "session_spawn", Family: model.ToolFamilyDelegate, Risk: model.RiskLow}})
+	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "session_spawn", Family: model.ToolFamilyDelegate, Risk: model.RiskLow, RequiresExplicitAllow: true}})
 	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "delegate_task", Family: model.ToolFamilyDelegate, Risk: model.RiskLow}})
 	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "write_new_file", Family: model.ToolFamilyRepoWrite, Risk: model.RiskMedium, SideEffect: "create"}})
 	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "coder_exec", Family: model.ToolFamilyRepoWrite, Risk: model.RiskHigh, SideEffect: "exec_write"}})
@@ -1209,7 +1209,7 @@ func TestRunEngine_IncludesSoulInstructionsInProviderRequests(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(
 		[]GenerateResult{
-			{Content: "Coordinator ready.", InputTokens: 5, OutputTokens: 7, StopReason: "end_turn"},
+			{Content: "Assistant ready.", InputTokens: 5, OutputTokens: 7, StopReason: "end_turn"},
 			{Content: "Research findings ready.", InputTokens: 6, OutputTokens: 8, StopReason: "end_turn"},
 		},
 		nil,
@@ -1221,7 +1221,7 @@ func TestRunEngine_IncludesSoulInstructionsInProviderRequests(t *testing.T) {
 		Agents: map[string]model.AgentProfile{
 			"assistant": {
 				AgentID:         "assistant",
-				Role:            "operator-facing coordinator",
+				Role:            "front assistant",
 				Instructions:    "must route external research through researcher",
 				BaseProfile:     model.BaseProfileOperator,
 				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
@@ -1271,7 +1271,7 @@ func TestRunEngine_IncludesSoulInstructionsInProviderRequests(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"operator-facing coordinator",
+		"front assistant",
 		"must route external research through researcher",
 		"Delegation kinds: research",
 	} {
@@ -1747,15 +1747,22 @@ func TestRunEngine_SubmitTaskStartsWebConversation(t *testing.T) {
 		t.Fatalf("expected submit task to use lead front agent, got %q", run.AgentID)
 	}
 
-	var key string
+	var connectorID, accountID, externalID, threadID, projectID string
 	if err := db.RawDB().QueryRowContext(ctx,
-		"SELECT key FROM conversations WHERE id = ?",
+		"SELECT connector_id, account_id, external_id, thread_id, project_id FROM conversations WHERE id = ?",
 		run.ConversationID,
-	).Scan(&key); err != nil {
-		t.Fatalf("query conversation key: %v", err)
+	).Scan(&connectorID, &accountID, &externalID, &threadID, &projectID); err != nil {
+		t.Fatalf("query conversation fields: %v", err)
 	}
-	if !strings.HasPrefix(key, "web:local:default:main:") {
-		t.Fatalf("unexpected submit task conversation key %q", key)
+	if connectorID != "web" || accountID != "local" || externalID != "default" || threadID != "main" || projectID == "" {
+		t.Fatalf(
+			"unexpected submit task conversation fields connector=%q account=%q external=%q thread=%q project=%q",
+			connectorID,
+			accountID,
+			externalID,
+			threadID,
+			projectID,
+		)
 	}
 }
 

@@ -66,6 +66,7 @@ type runGraphNodeView struct {
 	ShortLabel           string                `json:"short_label"`
 	ParentRunID          string                `json:"parent_run_id"`
 	AgentID              string                `json:"agent_id"`
+	BaseProfile          model.BaseProfile     `json:"-"`
 	SessionID            string                `json:"session_id,omitempty"`
 	SessionShortID       string                `json:"session_short_id,omitempty"`
 	Objective            string                `json:"objective"`
@@ -133,14 +134,15 @@ func buildGraphNodes(snapshot replay.RunGraphSnapshot, rootAgentID string) []run
 	nodes := make([]runGraphNodeView, 0, len(snapshot.Nodes))
 	for _, node := range snapshot.Nodes {
 		preview := buildStructuredTextView(node.Objective, 2)
-		kind := graphNodeKind(snapshot.RootRunID, node.ID, node.AgentID)
-		laneID := graphLaneID(kind, node.AgentID, rootAgentID)
+		kind := graphNodeKind(snapshot.RootRunID, node.ID, node.AgentID, node.BaseProfile)
+		laneID := graphLaneID(kind, node.AgentID, rootAgentID, node.BaseProfile)
 		graphNode := runGraphNodeView{
 			ID:                   node.ID,
 			ShortID:              compactIdentifier(node.ID),
 			ShortLabel:           compactIdentifier(node.ID),
 			ParentRunID:          node.ParentRunID,
 			AgentID:              node.AgentID,
+			BaseProfile:          node.BaseProfile,
 			SessionID:            node.SessionID,
 			SessionShortID:       compactIdentifier(node.SessionID),
 			Objective:            node.Objective,
@@ -352,34 +354,36 @@ func buildGraphBranches(nodes []runGraphNodeView, rootRunID string) []runGraphBr
 	return result
 }
 
-func graphNodeKind(rootRunID, nodeID, agentID string) string {
+func graphNodeKind(rootRunID, nodeID, agentID string, baseProfile model.BaseProfile) string {
 	if nodeID == rootRunID {
 		return "root"
 	}
-	switch agentID {
-	case "reviewer":
+	switch baseProfile {
+	case model.BaseProfileReview:
 		return "review"
-	case "verifier":
+	case model.BaseProfileVerify:
 		return "verify"
 	default:
 		return "worker"
 	}
 }
 
-func graphLaneID(kind, agentID, rootAgentID string) string {
+func graphLaneID(kind, agentID, rootAgentID string, baseProfile model.BaseProfile) string {
 	if kind == "root" {
 		return "coordination"
 	}
 	switch agentID {
 	case rootAgentID:
 		return "coordination"
-	case "researcher":
+	}
+	switch baseProfile {
+	case model.BaseProfileResearch:
 		return "research"
-	case "patcher":
+	case model.BaseProfileWrite:
 		return "build"
-	case "reviewer":
+	case model.BaseProfileReview:
 		return "review"
-	case "verifier":
+	case model.BaseProfileVerify:
 		return "verify"
 	default:
 		return "workers"
@@ -415,16 +419,17 @@ func graphDelegationEdge(node runGraphNodeView, rootAgentID string) (kind, label
 	if node.Status == string(model.RunStatusNeedsApproval) {
 		return "blocked", "approve"
 	}
-	switch node.AgentID {
-	case rootAgentID:
+	if node.AgentID == rootAgentID {
 		return "delegates", "coordinate"
-	case "researcher":
+	}
+	switch node.BaseProfile {
+	case model.BaseProfileResearch:
 		return "delegates", "research"
-	case "patcher":
+	case model.BaseProfileWrite:
 		return "delegates", "build"
-	case "reviewer":
+	case model.BaseProfileReview:
 		return "delegates", "review"
-	case "verifier":
+	case model.BaseProfileVerify:
 		return "delegates", "verify"
 	default:
 		return "delegates", "delegate"

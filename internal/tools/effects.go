@@ -29,8 +29,8 @@ func classifyToolSpec(spec model.ToolSpec) string {
 }
 
 func classifyToolCall(spec model.ToolSpec, inputJSON []byte) string {
-	switch spec.Name {
-	case "shell_exec":
+	switch spec.EffectClassifier {
+	case model.ToolEffectClassifierShellCommand:
 		var input struct {
 			Command string `json:"command"`
 		}

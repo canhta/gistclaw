@@ -3,6 +3,7 @@ package replay
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -27,6 +28,7 @@ type GraphNode struct {
 	ID           string
 	ParentRunID  string
 	AgentID      string
+	BaseProfile  model.BaseProfile
 	SessionID    string
 	Objective    string
 	Status       model.RunStatus
@@ -122,6 +124,11 @@ func (s *Service) LoadGraph(ctx context.Context, rootRunID string) (ReplayGraph,
 }
 
 func (s *Service) LoadGraphSnapshot(ctx context.Context, rootRunID string) (RunGraphSnapshot, error) {
+	agentProfiles, err := s.loadGraphAgentProfiles(ctx, rootRunID)
+	if err != nil {
+		return RunGraphSnapshot{}, err
+	}
+
 	rows, err := s.db.RawDB().QueryContext(ctx,
 		`WITH RECURSIVE lineage(id, parent_run_id, agent_id, session_id, objective, status, model_lane, model_id, input_tokens, output_tokens, updated_at, created_at, depth) AS (
 			SELECT id,
@@ -187,6 +194,9 @@ func (s *Service) LoadGraphSnapshot(ctx context.Context, rootRunID string) (RunG
 		); err != nil {
 			return RunGraphSnapshot{}, fmt.Errorf("replay: scan graph lineage: %w", err)
 		}
+		if profile, ok := agentProfiles[node.AgentID]; ok {
+			node.BaseProfile = profile.BaseProfile
+		}
 		node.Status = model.RunStatus(status)
 		graph.Nodes = append(graph.Nodes, node)
 		if node.ParentRunID != "" {
@@ -201,4 +211,26 @@ func (s *Service) LoadGraphSnapshot(ctx context.Context, rootRunID string) (RunG
 	}
 
 	return graph, nil
+}
+
+func (s *Service) loadGraphAgentProfiles(ctx context.Context, rootRunID string) (map[string]model.AgentProfile, error) {
+	var raw []byte
+	err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT COALESCE(execution_snapshot_json, x'')
+		 FROM runs
+		 WHERE id = ?`,
+		rootRunID,
+	).Scan(&raw)
+	if err != nil {
+		return nil, fmt.Errorf("replay: load graph execution snapshot: %w", err)
+	}
+	if len(raw) == 0 {
+		return nil, nil
+	}
+
+	var snapshot model.ExecutionSnapshot
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return nil, nil
+	}
+	return snapshot.Agents, nil
 }

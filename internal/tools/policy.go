@@ -27,7 +27,7 @@ func (p *Policy) decide(agent model.AgentProfile, spec model.ToolSpec, effect st
 	if spec.Family == "" {
 		return model.ToolDecision{Mode: model.DecisionDeny, Reason: "tool family is required"}
 	}
-	if spec.Name == "session_spawn" && !containsString(agent.AllowTools, spec.Name) {
+	if spec.RequiresExplicitAllow && !containsString(agent.AllowTools, spec.Name) {
 		return model.ToolDecision{Mode: model.DecisionDeny, Reason: "raw session spawning requires explicit allow"}
 	}
 	if spec.Family == model.ToolFamilyDelegate && len(agent.DelegationKinds) == 0 {

@@ -60,11 +60,12 @@ func (t *DelegateTaskTool) Name() string { return "delegate_task" }
 
 func (t *SessionSpawnTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
-		Name:            t.Name(),
-		Description:     "Spawn a specialist agent run and return its result.",
-		InputSchemaJSON: `{"type":"object","properties":{"agent_id":{"type":"string"},"prompt":{"type":"string"}},"required":["agent_id","prompt"],"additionalProperties":false}`,
-		Family:          model.ToolFamilyDelegate,
-		Risk:            model.RiskLow,
+		Name:                  t.Name(),
+		Description:           "Spawn a specialist agent run and return its result.",
+		InputSchemaJSON:       `{"type":"object","properties":{"agent_id":{"type":"string"},"prompt":{"type":"string"}},"required":["agent_id","prompt"],"additionalProperties":false}`,
+		Family:                model.ToolFamilyDelegate,
+		Risk:                  model.RiskLow,
+		RequiresExplicitAllow: true,
 	}
 }
 

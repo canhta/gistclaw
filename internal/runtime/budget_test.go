@@ -29,9 +29,9 @@ func TestBudget_PerRunTokenCapStopsRun(t *testing.T) {
 	ctx := context.Background()
 	run, err := rt.Start(ctx, StartRun{
 		ConversationID: "conv-budget-cap",
-		AgentID:        "coordinator",
+		AgentID:        "assistant",
 		Objective:      "do something",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 		AccountID:      "local",
 	})
 	if err != nil {
@@ -94,9 +94,9 @@ func TestBudget_RunMarkedInterruptedNotFailed(t *testing.T) {
 	ctx := context.Background()
 	run, err := rt.Start(ctx, StartRun{
 		ConversationID: "conv-budget-interrupted",
-		AgentID:        "coordinator",
+		AgentID:        "assistant",
 		Objective:      "over budget test",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 		AccountID:      "local",
 	})
 	if err != nil {
@@ -134,9 +134,9 @@ func TestBudget_DailyCapRejectsStartRun(t *testing.T) {
 
 	_, err := rt.Start(context.Background(), StartRun{
 		ConversationID: "conv-daily-cap",
-		AgentID:        "coordinator",
+		AgentID:        "assistant",
 		Objective:      "should be rejected",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 		AccountID:      "local",
 	})
 	if err == nil {
@@ -190,9 +190,9 @@ func TestBudget_CapRaiseAppliesOnNextRun(t *testing.T) {
 	ctx := context.Background()
 	run1, err := rt.Start(ctx, StartRun{
 		ConversationID: "conv-cap-raise-1",
-		AgentID:        "coordinator",
+		AgentID:        "assistant",
 		Objective:      "run 1",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 		AccountID:      "local",
 	})
 	if err != nil {
@@ -207,9 +207,9 @@ func TestBudget_CapRaiseAppliesOnNextRun(t *testing.T) {
 
 	run2, err := rt.Start(ctx, StartRun{
 		ConversationID: "conv-cap-raise-2",
-		AgentID:        "coordinator",
+		AgentID:        "assistant",
 		Objective:      "run 2",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 		AccountID:      "local",
 	})
 	if err != nil {

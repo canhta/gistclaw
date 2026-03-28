@@ -100,17 +100,18 @@ func TestPolicy_Decide_AdaptiveLayers(t *testing.T) {
 			want: model.DecisionDeny,
 		},
 		{
-			name: "raw session spawn requires explicit allow tool",
+			name: "explicit-allow delegation tool requires allowlist",
 			agent: model.AgentProfile{
 				BaseProfile:     model.BaseProfileOperator,
 				ToolFamilies:    []model.ToolFamily{model.ToolFamilyDelegate},
 				DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
 			},
 			spec: model.ToolSpec{
-				Name:       "session_spawn",
-				Family:     model.ToolFamilyDelegate,
-				SideEffect: effectRead,
-				Approval:   "never",
+				Name:                  "raw_delegate",
+				Family:                model.ToolFamilyDelegate,
+				SideEffect:            effectRead,
+				Approval:              "never",
+				RequiresExplicitAllow: true,
 			},
 			want: model.DecisionDeny,
 		},

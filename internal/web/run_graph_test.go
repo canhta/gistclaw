@@ -15,10 +15,10 @@ func TestBuildRunGraphViewAssignsLanesKindsAndEdgeSemantics(t *testing.T) {
 	snapshot := replay.RunGraphSnapshot{
 		RootRunID: "root",
 		Nodes: []replay.GraphNode{
-			{ID: "root", AgentID: "lead", Status: model.RunStatusActive},
-			{ID: "r1", ParentRunID: "root", AgentID: "researcher", Status: model.RunStatusCompleted},
-			{ID: "p1", ParentRunID: "root", AgentID: "patcher", Status: model.RunStatusNeedsApproval},
-			{ID: "v1", ParentRunID: "p1", AgentID: "verifier", Status: model.RunStatusPending},
+			{ID: "root", AgentID: "lead", BaseProfile: model.BaseProfileOperator, Status: model.RunStatusActive},
+			{ID: "r1", ParentRunID: "root", AgentID: "researcher", BaseProfile: model.BaseProfileResearch, Status: model.RunStatusCompleted},
+			{ID: "p1", ParentRunID: "root", AgentID: "patcher", BaseProfile: model.BaseProfileWrite, Status: model.RunStatusNeedsApproval},
+			{ID: "v1", ParentRunID: "p1", AgentID: "verifier", BaseProfile: model.BaseProfileVerify, Status: model.RunStatusPending},
 		},
 	}
 
@@ -62,8 +62,8 @@ func TestBuildRunGraphViewUsesRootAgentForCoordinationLane(t *testing.T) {
 	snapshot := replay.RunGraphSnapshot{
 		RootRunID: "root",
 		Nodes: []replay.GraphNode{
-			{ID: "root", AgentID: "lead", Status: model.RunStatusActive},
-			{ID: "child-front", ParentRunID: "root", AgentID: "lead", Status: model.RunStatusCompleted},
+			{ID: "root", AgentID: "lead", BaseProfile: model.BaseProfileOperator, Status: model.RunStatusActive},
+			{ID: "child-front", ParentRunID: "root", AgentID: "lead", BaseProfile: model.BaseProfileOperator, Status: model.RunStatusCompleted},
 		},
 	}
 
@@ -73,6 +73,34 @@ func TestBuildRunGraphViewUsesRootAgentForCoordinationLane(t *testing.T) {
 	}
 	if got := findGraphEdge(t, view.Edges, "root", "child-front", "delegates").Label; got != "coordinate" {
 		t.Fatalf("expected renamed front agent edge label %q, got %q", "coordinate", got)
+	}
+}
+
+func TestBuildRunGraphViewUsesBaseProfilesForCustomSpecialistIDs(t *testing.T) {
+	t.Parallel()
+
+	snapshot := replay.RunGraphSnapshot{
+		RootRunID: "root",
+		Nodes: []replay.GraphNode{
+			{ID: "root", AgentID: "lead", BaseProfile: model.BaseProfileOperator, Status: model.RunStatusActive},
+			{ID: "writer-1", ParentRunID: "root", AgentID: "writer", BaseProfile: model.BaseProfileWrite, Status: model.RunStatusCompleted},
+			{ID: "qa-1", ParentRunID: "root", AgentID: "qa", BaseProfile: model.BaseProfileReview, Status: model.RunStatusCompleted},
+		},
+	}
+
+	view := buildRunGraphView(snapshot)
+
+	if got := findGraphNode(t, view.Nodes, "writer-1").LaneID; got != "build" {
+		t.Fatalf("expected write specialist lane %q, got %q", "build", got)
+	}
+	if got := findGraphEdge(t, view.Edges, "root", "writer-1", "delegates").Label; got != "build" {
+		t.Fatalf("expected write specialist edge label %q, got %q", "build", got)
+	}
+	if got := findGraphNode(t, view.Nodes, "qa-1").Kind; got != "review" {
+		t.Fatalf("expected review specialist kind %q, got %q", "review", got)
+	}
+	if got := findGraphNode(t, view.Nodes, "qa-1").LaneID; got != "review" {
+		t.Fatalf("expected review specialist lane %q, got %q", "review", got)
 	}
 }
 
@@ -115,8 +143,8 @@ func TestBuildRunGraphViewDoesNotExposeLegacyDepthColumns(t *testing.T) {
 	snapshot := replay.RunGraphSnapshot{
 		RootRunID: "root",
 		Nodes: []replay.GraphNode{
-			{ID: "root", AgentID: "assistant", Status: model.RunStatusActive},
-			{ID: "child", ParentRunID: "root", AgentID: "researcher", Status: model.RunStatusCompleted},
+			{ID: "root", AgentID: "assistant", BaseProfile: model.BaseProfileOperator, Status: model.RunStatusActive},
+			{ID: "child", ParentRunID: "root", AgentID: "researcher", BaseProfile: model.BaseProfileResearch, Status: model.RunStatusCompleted},
 		},
 	}
 

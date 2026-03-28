@@ -369,13 +369,14 @@ func (t *ShellExecTool) Name() string { return "shell_exec" }
 
 func (t *ShellExecTool) Spec() model.ToolSpec {
 	return model.ToolSpec{
-		Name:            t.Name(),
-		Description:     "Run one shell command inside the run directory or an explicit host directory when authority allows.",
-		InputSchemaJSON: `{"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"timeout_sec":{"type":"integer","minimum":1}},"required":["command"]}`,
-		Family:          model.ToolFamilyRepoWrite,
-		Risk:            model.RiskHigh,
-		SideEffect:      effectExecWrite,
-		Approval:        "maybe",
+		Name:             t.Name(),
+		Description:      "Run one shell command inside the run directory or an explicit host directory when authority allows.",
+		InputSchemaJSON:  `{"type":"object","properties":{"command":{"type":"string"},"cwd":{"type":"string"},"timeout_sec":{"type":"integer","minimum":1}},"required":["command"]}`,
+		Family:           model.ToolFamilyRepoWrite,
+		Risk:             model.RiskHigh,
+		SideEffect:       effectExecWrite,
+		EffectClassifier: model.ToolEffectClassifierShellCommand,
+		Approval:         "maybe",
 	}
 }
 

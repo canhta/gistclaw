@@ -54,7 +54,7 @@ func TestInspector_ForgetExcludesFromList(t *testing.T) {
 	ctx := context.Background()
 	const projectID = "proj-alpha"
 
-	id := writeFact(t, s, projectID, "coordinator", "local", "remember this", "model")
+	id := writeFact(t, s, projectID, "assistant", "local", "remember this", "model")
 
 	if err := s.Forget(ctx, projectID, id); err != nil {
 		t.Fatalf("Forget: %v", err)
@@ -76,13 +76,13 @@ func TestInspector_EditUpdatesValue(t *testing.T) {
 	ctx := context.Background()
 	const projectID = "proj-alpha"
 
-	id := writeFact(t, s, projectID, "coordinator", "local", "original content", "model")
+	id := writeFact(t, s, projectID, "assistant", "local", "original content", "model")
 
 	if err := s.Edit(ctx, projectID, id, "updated content"); err != nil {
 		t.Fatalf("Edit: %v", err)
 	}
 
-	items, err := s.Filter(ctx, MemoryFilter{ProjectID: projectID, AgentID: "coordinator"})
+	items, err := s.Filter(ctx, MemoryFilter{ProjectID: projectID, AgentID: "assistant"})
 	if err != nil {
 		t.Fatalf("Filter after edit: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestInspector_HumanEditOutranksModel(t *testing.T) {
 	ctx := context.Background()
 	const projectID = "proj-alpha"
 
-	id := writeFact(t, s, projectID, "coordinator", "local", "initial", "model")
+	id := writeFact(t, s, projectID, "assistant", "local", "initial", "model")
 
 	// Human edit applied after model write.
 	if err := s.Edit(ctx, projectID, id, "human value"); err != nil {
@@ -119,7 +119,7 @@ func TestInspector_HumanEditOutranksModel(t *testing.T) {
 	if err := s.UpdateFact(ctx, model.MemoryItem{
 		ProjectID: projectID,
 		ID:        id,
-		AgentID:   "coordinator",
+		AgentID:   "assistant",
 		Scope:     "local",
 		Content:   "model tries to overwrite",
 		Source:    "model",
@@ -127,7 +127,7 @@ func TestInspector_HumanEditOutranksModel(t *testing.T) {
 		t.Fatalf("UpdateFact: %v", err)
 	}
 
-	items, err := s.Filter(ctx, MemoryFilter{ProjectID: projectID, AgentID: "coordinator"})
+	items, err := s.Filter(ctx, MemoryFilter{ProjectID: projectID, AgentID: "assistant"})
 	if err != nil {
 		t.Fatalf("Filter: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestInspector_WrittenFactPreservesScope(t *testing.T) {
 	// Write with scope="team" — store must not reclassify it.
 	if err := s.WriteFact(ctx, model.MemoryItem{
 		ProjectID: projectID,
-		AgentID:   "coordinator",
+		AgentID:   "assistant",
 		Scope:     "team",
 		Content:   "scoped fact",
 		Source:    "model",
