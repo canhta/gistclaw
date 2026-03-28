@@ -3,10 +3,9 @@ package runtime
 import (
 	"strings"
 
+	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
 )
-
-const localWebSurfaceID = "web"
 
 func (r *Runtime) SetConnectors(connectors []model.Connector) {
 	catalog := builtinConnectorCatalog()
@@ -25,8 +24,8 @@ func (r *Runtime) SetConnectors(connectors []model.Connector) {
 
 func builtinConnectorCatalog() map[string]model.ConnectorMetadata {
 	return map[string]model.ConnectorMetadata{
-		localWebSurfaceID: model.NormalizeConnectorMetadata(model.ConnectorMetadata{
-			ID:       localWebSurfaceID,
+		conversations.LocalWebConnectorID: model.NormalizeConnectorMetadata(model.ConnectorMetadata{
+			ID:       conversations.LocalWebConnectorID,
 			Exposure: model.ConnectorExposureLocal,
 		}),
 	}

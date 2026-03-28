@@ -82,3 +82,31 @@ func TestConversationKey_EscapesColons(t *testing.T) {
 		t.Fatalf("colons in components must be escaped, got %q", got)
 	}
 }
+
+func TestLocalWebConversationKey_Defaults(t *testing.T) {
+	key := LocalWebConversationKey("", "")
+
+	if key.ConnectorID != LocalWebConnectorID {
+		t.Fatalf("connector_id = %q, want %q", key.ConnectorID, LocalWebConnectorID)
+	}
+	if key.AccountID != LocalWebAccountID {
+		t.Fatalf("account_id = %q, want %q", key.AccountID, LocalWebAccountID)
+	}
+	if key.ExternalID != LocalWebDefaultExternalID {
+		t.Fatalf("external_id = %q, want %q", key.ExternalID, LocalWebDefaultExternalID)
+	}
+	if key.ThreadID != LocalDefaultThreadID {
+		t.Fatalf("thread_id = %q, want %q", key.ThreadID, LocalDefaultThreadID)
+	}
+}
+
+func TestLocalWebConversationKey_PreservesExplicitExternalAndThread(t *testing.T) {
+	key := LocalWebConversationKey("assistant-a", "main-a")
+
+	if key.ExternalID != "assistant-a" {
+		t.Fatalf("external_id = %q, want %q", key.ExternalID, "assistant-a")
+	}
+	if key.ThreadID != "main-a" {
+		t.Fatalf("thread_id = %q, want %q", key.ThreadID, "main-a")
+	}
+}

@@ -2119,14 +2119,9 @@ func (r *Runtime) loadFrontConversationRoute(ctx context.Context, conversationID
 // write-path web handlers.
 func (r *Runtime) SubmitTask(ctx context.Context, objective, cwd string) (model.Run, error) {
 	return r.ReceiveInboundMessage(ctx, InboundMessageCommand{
-		ConversationKey: conversations.ConversationKey{
-			ConnectorID: "web",
-			AccountID:   "local",
-			ExternalID:  "default",
-			ThreadID:    "main",
-		},
-		Body: objective,
-		CWD:  cwd,
+		ConversationKey: conversations.LocalWebConversationKey("", ""),
+		Body:            objective,
+		CWD:             cwd,
 	})
 }
 

@@ -42,15 +42,10 @@ func (s *Server) handleRunSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	run, err := s.rt.ReceiveInboundMessageAsync(r.Context(), runtime.InboundMessageCommand{
-		ConversationKey: conversations.ConversationKey{
-			ConnectorID: "web",
-			AccountID:   "local",
-			ExternalID:  "default",
-			ThreadID:    "main",
-		},
-		Body:      task,
-		ProjectID: activeProject.ID,
-		CWD:       activeProject.PrimaryPath,
+		ConversationKey: conversations.LocalWebConversationKey("", ""),
+		Body:            task,
+		ProjectID:       activeProject.ID,
+		CWD:             activeProject.PrimaryPath,
 	})
 	if err != nil {
 		http.Error(w, "failed to start run: "+err.Error(), http.StatusInternalServerError)

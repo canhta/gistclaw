@@ -312,7 +312,7 @@ func (r *Runtime) SendSession(ctx context.Context, cmd SendSessionCommand) (mode
 		opts.kind = model.MessageUser
 		opts.provenance = model.SessionMessageProvenance{
 			Kind:              model.MessageProvenanceInbound,
-			SourceConnectorID: "web",
+			SourceConnectorID: conversations.LocalWebConnectorID,
 		}
 	}
 	return r.sendSession(ctx, opts)
