@@ -175,27 +175,13 @@ func buildRecoverApprovalResponses(items []approvalItem) []recoverApprovalRespon
 }
 
 func buildRecoverRepairFiltersResponse(filters routesDeliveriesPageFilters) recoverRepairFiltersResponse {
-	return recoverRepairFiltersResponse{
-		Query:          filters.Query,
-		ConnectorID:    filters.ConnectorID,
-		RouteStatus:    filters.RouteStatus,
-		DeliveryStatus: filters.DeliveryStatus,
-		ActiveLimit:    filters.ActiveLimit,
-		HistoryLimit:   filters.HistoryLimit,
-		DeliveryLimit:  filters.DeliveryLimit,
-	}
+	return recoverRepairFiltersResponse(filters)
 }
 
 func buildRecoverDeliveryHealthResponses(items []routesDeliveriesDeliveryHealthView) []recoverDeliveryHealthResponse {
 	resp := make([]recoverDeliveryHealthResponse, 0, len(items))
 	for _, item := range items {
-		resp = append(resp, recoverDeliveryHealthResponse{
-			ConnectorID:   item.ConnectorID,
-			PendingCount:  item.PendingCount,
-			RetryingCount: item.RetryingCount,
-			TerminalCount: item.TerminalCount,
-			StateClass:    item.StateClass,
-		})
+		resp = append(resp, recoverDeliveryHealthResponse(item))
 	}
 	return resp
 }
@@ -203,15 +189,7 @@ func buildRecoverDeliveryHealthResponses(items []routesDeliveriesDeliveryHealthV
 func buildRecoverRuntimeHealthResponses(items []routesDeliveriesRuntimeHealthView) []recoverRuntimeHealthResponse {
 	resp := make([]recoverRuntimeHealthResponse, 0, len(items))
 	for _, item := range items {
-		resp = append(resp, recoverRuntimeHealthResponse{
-			ConnectorID:      item.ConnectorID,
-			State:            item.State,
-			StateLabel:       item.StateLabel,
-			StateClass:       item.StateClass,
-			Summary:          item.Summary,
-			CheckedAtLabel:   item.CheckedAtLabel,
-			RestartSuggested: item.RestartSuggested,
-		})
+		resp = append(resp, recoverRuntimeHealthResponse(item))
 	}
 	return resp
 }
@@ -219,20 +197,7 @@ func buildRecoverRuntimeHealthResponses(items []routesDeliveriesRuntimeHealthVie
 func buildRecoverRouteResponses(items []routesDeliveriesRouteView) []recoverRouteResponse {
 	resp := make([]recoverRouteResponse, 0, len(items))
 	for _, item := range items {
-		resp = append(resp, recoverRouteResponse{
-			ID:                item.ID,
-			ConnectorID:       item.ConnectorID,
-			ExternalID:        item.ExternalID,
-			ThreadID:          item.ThreadID,
-			SessionID:         item.SessionID,
-			ConversationID:    item.ConversationID,
-			AgentID:           item.AgentID,
-			RoleLabel:         item.RoleLabel,
-			StatusLabel:       item.StatusLabel,
-			DeactivatedLabel:  item.DeactivatedLabel,
-			DeactivationNote:  item.DeactivationNote,
-			ReplacedByRouteID: item.ReplacedByRouteID,
-		})
+		resp = append(resp, recoverRouteResponse(item))
 	}
 	return resp
 }
@@ -240,26 +205,11 @@ func buildRecoverRouteResponses(items []routesDeliveriesRouteView) []recoverRout
 func buildRecoverDeliveryResponses(items []routesDeliveriesDeliveryView) []recoverDeliveryResponse {
 	resp := make([]recoverDeliveryResponse, 0, len(items))
 	for _, item := range items {
-		resp = append(resp, recoverDeliveryResponse{
-			ID:            item.ID,
-			RunID:         item.RunID,
-			SessionID:     item.SessionID,
-			ConnectorID:   item.ConnectorID,
-			ChatID:        item.ChatID,
-			Message:       item.Message,
-			Status:        item.Status,
-			StatusLabel:   item.StatusLabel,
-			AttemptsLabel: item.AttemptsLabel,
-		})
+		resp = append(resp, recoverDeliveryResponse(item))
 	}
 	return resp
 }
 
 func pageLinksResponseFrom(links pageLinks) pageLinksResponse {
-	return pageLinksResponse{
-		NextURL: links.NextURL,
-		PrevURL: links.PrevURL,
-		HasNext: links.HasNext,
-		HasPrev: links.HasPrev,
-	}
+	return pageLinksResponse(links)
 }

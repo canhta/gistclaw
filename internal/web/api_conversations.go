@@ -166,38 +166,19 @@ func (s *Server) handleConversationDetail(w http.ResponseWriter, r *http.Request
 func buildConversationIndexItemResponses(items []sessionPageIndexItemView) []conversationIndexItemResponse {
 	resp := make([]conversationIndexItemResponse, 0, len(items))
 	for _, item := range items {
-		resp = append(resp, conversationIndexItemResponse{
-			ID:             item.ID,
-			ConversationID: item.ConversationID,
-			AgentID:        item.AgentID,
-			RoleLabel:      item.RoleLabel,
-			StatusLabel:    item.StatusLabel,
-			UpdatedAtLabel: item.UpdatedAtLabel,
-		})
+		resp = append(resp, conversationIndexItemResponse(item))
 	}
 	return resp
 }
 
 func buildConversationDetailSessionResponse(item sessionPageDetailSessionView) conversationDetailSessionResponse {
-	return conversationDetailSessionResponse{
-		ID:          item.ID,
-		AgentID:     item.AgentID,
-		RoleLabel:   item.RoleLabel,
-		StatusLabel: item.StatusLabel,
-	}
+	return conversationDetailSessionResponse(item)
 }
 
 func buildConversationDetailMessageResponses(items []sessionPageDetailMessageView) []conversationDetailMessageResponse {
 	resp := make([]conversationDetailMessageResponse, 0, len(items))
 	for _, item := range items {
-		resp = append(resp, conversationDetailMessageResponse{
-			Kind:         item.Kind,
-			KindLabel:    item.KindLabel,
-			Body:         item.Body,
-			SenderLabel:  item.SenderLabel,
-			SenderIsMono: item.SenderIsMono,
-			SourceRunID:  item.SourceRunID,
-		})
+		resp = append(resp, conversationDetailMessageResponse(item))
 	}
 	return resp
 }
@@ -206,29 +187,14 @@ func buildConversationDetailRouteResponse(item *sessionPageDetailRouteView) *con
 	if item == nil {
 		return nil
 	}
-	return &conversationDetailRouteResponse{
-		ID:               item.ID,
-		ConnectorID:      item.ConnectorID,
-		ExternalID:       item.ExternalID,
-		ThreadID:         item.ThreadID,
-		StatusLabel:      item.StatusLabel,
-		CreatedAtLabel:   item.CreatedAtLabel,
-		DeactivatedLabel: item.DeactivatedLabel,
-	}
+	resp := conversationDetailRouteResponse(*item)
+	return &resp
 }
 
 func buildConversationDetailDeliveryResponses(items []sessionPageDetailDeliveryView) []conversationDetailDeliveryResponse {
 	resp := make([]conversationDetailDeliveryResponse, 0, len(items))
 	for _, item := range items {
-		resp = append(resp, conversationDetailDeliveryResponse{
-			ID:            item.ID,
-			ConnectorID:   item.ConnectorID,
-			ChatID:        item.ChatID,
-			Message:       item.Message,
-			Status:        item.Status,
-			StatusLabel:   item.StatusLabel,
-			AttemptsLabel: item.AttemptsLabel,
-		})
+		resp = append(resp, conversationDetailDeliveryResponse(item))
 	}
 	return resp
 }
@@ -236,14 +202,7 @@ func buildConversationDetailDeliveryResponses(items []sessionPageDetailDeliveryV
 func buildConversationDetailFailureResponses(items []sessionPageDetailFailureView) []conversationDetailFailureResponse {
 	resp := make([]conversationDetailFailureResponse, 0, len(items))
 	for _, item := range items {
-		resp = append(resp, conversationDetailFailureResponse{
-			ID:             item.ID,
-			ConnectorID:    item.ConnectorID,
-			ChatID:         item.ChatID,
-			EventKindLabel: item.EventKindLabel,
-			Error:          item.Error,
-			CreatedAtLabel: item.CreatedAtLabel,
-		})
+		resp = append(resp, conversationDetailFailureResponse(item))
 	}
 	return resp
 }
