@@ -22,9 +22,6 @@ func (s *Server) handleProjectActivate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	redirectTo := strings.TrimSpace(r.FormValue("redirect_to"))
-	if !strings.HasPrefix(redirectTo, "/") {
-		redirectTo = pageOperateRuns
-	}
+	redirectTo := safeRedirectPath(r.FormValue("redirect_to"), s.defaultEntryPath())
 	http.Redirect(w, r, redirectTo, http.StatusSeeOther)
 }

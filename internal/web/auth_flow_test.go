@@ -83,14 +83,14 @@ func TestAuthProtectedPagesRedirectToLogin(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/work", nil)
 	h.rawServer.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303, got %d", rr.Code)
 	}
 	loc := rr.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/login?") || !strings.Contains(loc, "next=%2Foperate%2Fruns") {
+	if !strings.HasPrefix(loc, "/login?") || !strings.Contains(loc, "next=%2Fwork") {
 		t.Fatalf("expected redirect to login with next path, got %q", loc)
 	}
 }
@@ -100,11 +100,15 @@ func TestAuthLoginCreatesSessionCookiesAndUnlocksOperatorPages(t *testing.T) {
 	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Date(2026, time.March, 27, 7, 10, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("SetPassword: %v", err)
 	}
+	wantBody, err := readSPAAsset("index.html")
+	if err != nil {
+		t.Fatalf("read spa index: %v", err)
+	}
 
 	sessionCookie, deviceCookie := loginForTest(t, h, "secret-pass")
 
 	pageResp := httptest.NewRecorder()
-	pageReq := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
+	pageReq := httptest.NewRequest(http.MethodGet, "/work", nil)
 	pageReq.AddCookie(sessionCookie)
 	pageReq.AddCookie(deviceCookie)
 	h.rawServer.ServeHTTP(pageResp, pageReq)
@@ -112,8 +116,8 @@ func TestAuthLoginCreatesSessionCookiesAndUnlocksOperatorPages(t *testing.T) {
 	if pageResp.Code != http.StatusOK {
 		t.Fatalf("expected authenticated page load 200, got %d", pageResp.Code)
 	}
-	if !strings.Contains(pageResp.Body.String(), "Runs") {
-		t.Fatalf("expected runs page, got:\n%s", pageResp.Body.String())
+	if pageResp.Body.String() != string(wantBody) {
+		t.Fatalf("expected work route to serve spa index")
 	}
 }
 
@@ -139,16 +143,20 @@ func TestAuthReadAPIsRequireSessionOrBearer(t *testing.T) {
 	}
 }
 
-func TestAuthSettingsPageShowsAccessAndDevicesBoard(t *testing.T) {
+func TestAuthSettingsPageServesSPAWhenAuthenticated(t *testing.T) {
 	h := newServerHarness(t)
 	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Date(2026, time.March, 27, 7, 30, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("SetPassword: %v", err)
+	}
+	wantBody, err := readSPAAsset("index.html")
+	if err != nil {
+		t.Fatalf("read spa index: %v", err)
 	}
 
 	sessionCookie, deviceCookie := loginForTest(t, h, "secret-pass")
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/configure/settings", nil)
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
 	req.AddCookie(sessionCookie)
 	req.AddCookie(deviceCookie)
 	h.rawServer.ServeHTTP(rr, req)
@@ -156,11 +164,8 @@ func TestAuthSettingsPageShowsAccessAndDevicesBoard(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
-	body := rr.Body.String()
-	for _, want := range []string{"Browser Access", "This Browser", "Other Signed-In Browsers", "Machine Settings"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("expected settings page to contain %q, got:\n%s", want, body)
-		}
+	if rr.Body.String() != string(wantBody) {
+		t.Fatalf("expected settings route to serve spa index")
 	}
 }
 
@@ -224,43 +229,26 @@ func TestAuthPasswordChangeRotatesBrowserPassword(t *testing.T) {
 
 	sessionCookie, deviceCookie := loginForTest(t, h, "secret-pass")
 
-	form := url.Values{
-		"current_password": {"secret-pass"},
-		"new_password":     {"new-secret-pass"},
-		"confirm_password": {"new-secret-pass"},
-	}
 	changeResp := httptest.NewRecorder()
-	changeReq := httptest.NewRequest(http.MethodPost, "http://localhost/configure/settings/password", strings.NewReader(form.Encode()))
-	changeReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	changeReq := httptest.NewRequest(
+		http.MethodPost,
+		"http://localhost/api/settings/password",
+		strings.NewReader(`{"current_password":"secret-pass","new_password":"new-secret-pass","confirm_password":"new-secret-pass"}`),
+	)
+	changeReq.Header.Set("Content-Type", "application/json")
 	changeReq.Header.Set("Origin", "http://localhost")
 	changeReq.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
 	changeReq.AddCookie(sessionCookie)
 	changeReq.AddCookie(deviceCookie)
 	h.rawServer.ServeHTTP(changeResp, changeReq)
 
-	if changeResp.Code != http.StatusSeeOther {
-		t.Fatalf("expected 303, got %d body=%s", changeResp.Code, changeResp.Body.String())
-	}
-	location := changeResp.Header().Get("Location")
-	if !strings.Contains(location, "access_notice=") {
-		t.Fatalf("expected settings notice redirect, got %q", location)
+	if changeResp.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", changeResp.Code, changeResp.Body.String())
 	}
 	newSessionCookie := findCookie(changeResp.Result().Cookies(), sessionCookieName)
 	newDeviceCookie := findCookie(changeResp.Result().Cookies(), deviceCookieName)
 	if newSessionCookie == nil || newDeviceCookie == nil {
 		t.Fatalf("expected refreshed auth cookies, got session=%v device=%v", newSessionCookie, newDeviceCookie)
-	}
-
-	noticeResp := httptest.NewRecorder()
-	noticeReq := httptest.NewRequest(http.MethodGet, location, nil)
-	noticeReq.AddCookie(newSessionCookie)
-	noticeReq.AddCookie(newDeviceCookie)
-	h.rawServer.ServeHTTP(noticeResp, noticeReq)
-	if noticeResp.Code != http.StatusOK {
-		t.Fatalf("expected redirected settings page 200, got %d", noticeResp.Code)
-	}
-	if !strings.Contains(noticeResp.Body.String(), "Password updated. Other device sessions were signed out.") {
-		t.Fatalf("expected password update notice, got:\n%s", noticeResp.Body.String())
 	}
 
 	oldLoginResp := httptest.NewRecorder()

@@ -226,5 +226,37 @@ func safeRedirectPath(raw, fallback string) string {
 	if !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") {
 		return fallback
 	}
+	if !isCurrentAppPath(raw) {
+		return fallback
+	}
 	return raw
+}
+
+func isCurrentAppPath(path string) bool {
+	switch {
+	case path == "/":
+		return true
+	case path == pageLogin, strings.HasPrefix(path, pageLogin+"?"):
+		return true
+	case path == pageOnboarding, strings.HasPrefix(path, pageOnboarding+"/"), strings.HasPrefix(path, pageOnboarding+"?"):
+		return true
+	case path == pageWork, strings.HasPrefix(path, pageWork+"/"), strings.HasPrefix(path, pageWork+"?"):
+		return true
+	case path == pageTeam, strings.HasPrefix(path, pageTeam+"?"):
+		return true
+	case path == pageKnowledge, strings.HasPrefix(path, pageKnowledge+"?"):
+		return true
+	case path == pageRecover, strings.HasPrefix(path, pageRecover+"?"):
+		return true
+	case path == pageConversations, strings.HasPrefix(path, pageConversations+"/"), strings.HasPrefix(path, pageConversations+"?"):
+		return true
+	case path == pageAutomate, strings.HasPrefix(path, pageAutomate+"?"):
+		return true
+	case path == pageHistory, strings.HasPrefix(path, pageHistory+"?"):
+		return true
+	case path == pageSettings, strings.HasPrefix(path, pageSettings+"?"):
+		return true
+	default:
+		return false
+	}
 }

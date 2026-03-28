@@ -122,12 +122,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) registerRoutes() {
 	spaAssets := serveSPAAssets()
 	s.mux.HandleFunc("GET /{$}", s.handleSPADocument)
-	s.mux.HandleFunc("GET /operate", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, pageOperateRuns, http.StatusSeeOther)
-	})
-	s.mux.HandleFunc("GET /configure", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, pageConfigureTeam, http.StatusSeeOther)
-	})
 	s.mux.Handle("GET /assets/{path...}", http.StripPrefix("/assets/", http.FileServer(http.FS(staticAssetFS()))))
 	s.mux.Handle("GET /_app/{path...}", spaAssets)
 	s.mux.Handle("GET /robots.txt", spaAssets)
@@ -332,7 +326,7 @@ func (s *Server) projectLayoutData(r *http.Request) (shellProjectLayout, error) 
 
 func requestPathWithQuery(r *http.Request) string {
 	if r == nil || r.URL == nil {
-		return pageOperateRuns
+		return pageWork
 	}
 	if raw := r.URL.RequestURI(); raw != "" {
 		return raw

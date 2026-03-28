@@ -1141,34 +1141,27 @@ func TestPageRouteMap(t *testing.T) {
 		}
 	})
 
-	t.Run("grouped page routes render without removed aliases", func(t *testing.T) {
+	t.Run("legacy grouped aliases are no longer served", func(t *testing.T) {
 		h := newServerHarness(t)
+		reqAuth := "Bearer " + h.adminToken
 
 		cases := []struct {
 			path string
-			want []string
 		}{
-			{path: "/operate/runs", want: []string{"Operate", "Configure", "Recover", `href="/operate/runs"`, `href="/operate/sessions"`, `name="project_id"`}},
-			{path: "/configure/team", want: []string{"Team", `href="/configure/team"`, `href="/configure/settings"`}},
-			{path: "/recover/routes-deliveries", want: []string{"Routes &amp; Deliveries", `href="/recover/approvals"`}},
-			{path: "/operate/start-task", want: []string{"Start Task"}},
+			{path: "/operate"},
+			{path: "/configure"},
 		}
 
 		for _, tc := range cases {
 			t.Run(tc.path, func(t *testing.T) {
 				rr := httptest.NewRecorder()
 				req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+				req.Header.Set("Authorization", reqAuth)
 
 				h.server.ServeHTTP(rr, req)
 
-				if rr.Code != http.StatusOK {
-					t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-				}
-				body := rr.Body.String()
-				for _, want := range tc.want {
-					if !strings.Contains(body, want) {
-						t.Fatalf("expected %s to contain %q:\n%s", tc.path, want, body)
-					}
+				if rr.Code != http.StatusNotFound {
+					t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
 				}
 			})
 		}
@@ -2379,8 +2372,8 @@ func TestProjectSwitcher(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if rr.Header().Get("Location") != "/operate/runs" {
-			t.Fatalf("expected redirect back to runs, got %q", rr.Header().Get("Location"))
+		if rr.Header().Get("Location") != "/work" {
+			t.Fatalf("expected redirect back to /work, got %q", rr.Header().Get("Location"))
 		}
 		if got := lookupSetting(h.db, "active_project_id"); got != otherProjectID {
 			t.Fatalf("expected active_project_id %q, got %q", otherProjectID, got)
@@ -2418,15 +2411,15 @@ func TestProjectSwitcher(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if rr.Header().Get("Location") != "/operate/runs" {
-			t.Fatalf("expected invalid redirect to fall back to /operate/runs, got %q", rr.Header().Get("Location"))
+		if rr.Header().Get("Location") != "/work" {
+			t.Fatalf("expected invalid redirect to fall back to /work, got %q", rr.Header().Get("Location"))
 		}
 	})
 }
 
 func TestRequestPathWithQuery(t *testing.T) {
-	if got := requestPathWithQuery(nil); got != "/operate/runs" {
-		t.Fatalf("expected nil request fallback %q, got %q", "/operate/runs", got)
+	if got := requestPathWithQuery(nil); got != "/work" {
+		t.Fatalf("expected nil request fallback %q, got %q", "/work", got)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/operate/runs?scope=all&q=fix", nil)
