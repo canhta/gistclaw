@@ -911,7 +911,7 @@ func (r *Runtime) executeToolCalls(
 				return outcome, err
 			}
 			outcome.events = append(outcome.events, event)
-			if isDelegationTool(tc.ToolName) && spawnedRunStillActive(result) {
+			if tool.Spec().Family == model.ToolFamilyDelegate && spawnedRunStillActive(result) {
 				outcome.paused = true
 				return outcome, nil
 			}
@@ -1092,9 +1092,14 @@ func (r *Runtime) recordToolCall(
 	if err != nil {
 		return model.Event{}, model.ToolResult{}, fmt.Errorf("marshal tool result: %w", err)
 	}
+	toolFamily := ""
+	if tool != nil {
+		toolFamily = string(tool.Spec().Family)
+	}
 	payload, err := json.Marshal(map[string]any{
 		"tool_call_id": tc.ID,
 		"tool_name":    tc.ToolName,
+		"tool_family":  toolFamily,
 		"input_json":   json.RawMessage(tc.InputJSON),
 		"output_json":  json.RawMessage(outputJSON),
 		"decision":     string(decision),
@@ -1560,6 +1565,7 @@ func (r *Runtime) appendUpdatedParentSpawnResult(ctx context.Context, parent mod
 	var match struct {
 		ToolCallID string          `json:"tool_call_id"`
 		ToolName   string          `json:"tool_name"`
+		ToolFamily string          `json:"tool_family"`
 		InputJSON  json.RawMessage `json:"input_json"`
 		Decision   string          `json:"decision"`
 		ApprovalID string          `json:"approval_id"`
@@ -1573,6 +1579,7 @@ func (r *Runtime) appendUpdatedParentSpawnResult(ctx context.Context, parent mod
 		var payload struct {
 			ToolCallID string          `json:"tool_call_id"`
 			ToolName   string          `json:"tool_name"`
+			ToolFamily string          `json:"tool_family"`
 			InputJSON  json.RawMessage `json:"input_json"`
 			Decision   string          `json:"decision"`
 			ApprovalID string          `json:"approval_id"`
@@ -1580,11 +1587,12 @@ func (r *Runtime) appendUpdatedParentSpawnResult(ctx context.Context, parent mod
 		if err := json.Unmarshal(payloadJSON, &payload); err != nil {
 			return fmt.Errorf("decode parent spawn tool call: %w", err)
 		}
-		if !isDelegationTool(payload.ToolName) || payload.Decision != string(model.DecisionAllow) {
+		if payload.ToolFamily != string(model.ToolFamilyDelegate) || payload.Decision != string(model.DecisionAllow) {
 			continue
 		}
 		match.ToolCallID = payload.ToolCallID
 		match.ToolName = payload.ToolName
+		match.ToolFamily = payload.ToolFamily
 		match.InputJSON = append([]byte(nil), payload.InputJSON...)
 		match.Decision = payload.Decision
 		match.ApprovalID = payload.ApprovalID
@@ -1614,6 +1622,7 @@ func (r *Runtime) appendUpdatedParentSpawnResult(ctx context.Context, parent mod
 	payloadJSON, err := json.Marshal(map[string]any{
 		"tool_call_id": match.ToolCallID,
 		"tool_name":    match.ToolName,
+		"tool_family":  match.ToolFamily,
 		"input_json":   json.RawMessage(match.InputJSON),
 		"output_json":  json.RawMessage(toolResultJSON),
 		"decision":     match.Decision,
@@ -1979,10 +1988,6 @@ func specialistRoster(snapshot model.ExecutionSnapshot, agentID string) map[stri
 		return nil
 	}
 	return roster
-}
-
-func isDelegationTool(name string) bool {
-	return name == "session_spawn" || name == "delegate_task"
 }
 
 func (r *Runtime) queueOutboundIntent(

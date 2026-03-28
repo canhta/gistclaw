@@ -177,6 +177,50 @@ func (t *loggingTool) Invoke(ctx context.Context, _ model.ToolCall) (model.ToolR
 	return model.ToolResult{Output: `{"ok":true}`}, nil
 }
 
+type delegateAliasTool struct {
+	name  string
+	spawn func(context.Context, tools.SessionSpawnRequest) (tools.SessionSpawnResult, error)
+}
+
+func (t *delegateAliasTool) Name() string { return t.name }
+
+func (t *delegateAliasTool) Spec() model.ToolSpec {
+	return model.ToolSpec{
+		Name:            t.Name(),
+		Description:     "Delegate specialist work through the runtime bridge.",
+		InputSchemaJSON: `{"type":"object","properties":{"agent_id":{"type":"string"},"prompt":{"type":"string"}},"required":["agent_id","prompt"],"additionalProperties":false}`,
+		Family:          model.ToolFamilyDelegate,
+		Risk:            model.RiskLow,
+	}
+}
+
+func (t *delegateAliasTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
+	meta, ok := tools.InvocationContextFrom(ctx)
+	if !ok || strings.TrimSpace(meta.SessionID) == "" {
+		return model.ToolResult{}, fmt.Errorf("%s: caller session is required", t.Name())
+	}
+	var input struct {
+		AgentID string `json:"agent_id"`
+		Prompt  string `json:"prompt"`
+	}
+	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
+		return model.ToolResult{}, fmt.Errorf("%s: decode input: %w", t.Name(), err)
+	}
+	result, err := t.spawn(ctx, tools.SessionSpawnRequest{
+		ControllerSessionID: meta.SessionID,
+		AgentID:             strings.TrimSpace(input.AgentID),
+		Prompt:              strings.TrimSpace(input.Prompt),
+	})
+	if err != nil {
+		return model.ToolResult{}, err
+	}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		return model.ToolResult{}, fmt.Errorf("%s: encode output: %w", t.Name(), err)
+	}
+	return model.ToolResult{Output: string(payload)}, nil
+}
+
 func TestRunEngine_StartAndComplete(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(
@@ -841,6 +885,177 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 	}
 	if spawnToolCallCount != 1 {
 		t.Fatalf("expected exactly 1 session_spawn tool result in resumed context, got %d", spawnToolCallCount)
+	}
+}
+
+func TestRunEngine_DelegateFamilyToolPausesAndResumesWithoutHardcodedName(t *testing.T) {
+	db, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	cs := conversations.NewConversationStore(db)
+	mem := memory.NewStore(db, cs)
+	reg, closer, err := tools.BuildRegistry(context.Background(), tools.BuildOptions{})
+	if err != nil {
+		t.Fatalf("BuildRegistry failed: %v", err)
+	}
+	if closer != nil {
+		t.Cleanup(func() { _ = closer.Close() })
+	}
+
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:       "call-delegate-helper",
+						ToolName: "delegate_helper",
+						InputJSON: []byte(`{
+							"agent_id":"patcher",
+							"prompt":"Create created.txt in the workspace."
+						}`),
+					},
+				},
+				InputTokens:  4,
+				OutputTokens: 6,
+			},
+			{
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:        "call-shell",
+						ToolName:  "shell_exec",
+						InputJSON: []byte(`{"command":"touch created.txt"}`),
+					},
+				},
+				InputTokens:  5,
+				OutputTokens: 7,
+			},
+			{Content: "Created file.", InputTokens: 6, OutputTokens: 8, StopReason: "end_turn"},
+			{Content: "QA can review now.", InputTokens: 7, OutputTokens: 9, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	reg.Register(&delegateAliasTool{
+		name:  "delegate_helper",
+		spawn: rt.SpawnTool,
+	})
+
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID: "default",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:         "assistant",
+				BaseProfile:     model.BaseProfileOperator,
+				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
+				DelegationKinds: []model.DelegationKind{model.DelegationKindWrite},
+			},
+			"patcher": {
+				AgentID:      "patcher",
+				BaseProfile:  model.BaseProfileWrite,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyRepoWrite},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	workspaceRoot := t.TempDir()
+	parent, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Implement the workspace write by delegating through delegate_helper.",
+		CWD:           workspaceRoot,
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+	if parent.Status != model.RunStatusActive {
+		t.Fatalf("expected parent run to stay active while child waits on approval, got %s", parent.Status)
+	}
+	if len(prov.Requests) != 2 {
+		t.Fatalf("expected 2 provider requests before approval, got %d", len(prov.Requests))
+	}
+
+	var childID string
+	if err := db.RawDB().QueryRow(
+		"SELECT id FROM runs WHERE parent_run_id = ? ORDER BY created_at ASC LIMIT 1",
+		parent.ID,
+	).Scan(&childID); err != nil {
+		t.Fatalf("query child run: %v", err)
+	}
+
+	var ticketID string
+	if err := db.RawDB().QueryRow(
+		"SELECT id FROM approvals WHERE run_id = ? AND status = 'pending' ORDER BY created_at ASC LIMIT 1",
+		childID,
+	).Scan(&ticketID); err != nil {
+		t.Fatalf("query child approval: %v", err)
+	}
+
+	if err := rt.ResolveApproval(context.Background(), ticketID, "approved"); err != nil {
+		t.Fatalf("ResolveApproval approved: %v", err)
+	}
+
+	parent, err = rt.loadRun(context.Background(), parent.ID)
+	if err != nil {
+		t.Fatalf("reload parent run: %v", err)
+	}
+	if parent.Status != model.RunStatusCompleted {
+		t.Fatalf("expected parent run completed after child approval, got %s", parent.Status)
+	}
+	if len(prov.Requests) != 4 {
+		t.Fatalf("expected 4 provider requests after child completion resumes parent, got %d", len(prov.Requests))
+	}
+
+	var sawDelegateToolResult bool
+	for _, evt := range prov.Requests[3].ConversationCtx {
+		if evt.Kind != "tool_call_recorded" {
+			continue
+		}
+		var payload struct {
+			ToolName   string          `json:"tool_name"`
+			OutputJSON json.RawMessage `json:"output_json"`
+		}
+		if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
+			t.Fatalf("unmarshal resumed parent tool payload: %v", err)
+		}
+		if payload.ToolName != "delegate_helper" {
+			continue
+		}
+		var toolResult struct {
+			Output string `json:"output"`
+		}
+		if err := json.Unmarshal(payload.OutputJSON, &toolResult); err != nil {
+			t.Fatalf("unmarshal resumed delegate_helper tool result: %v", err)
+		}
+		var output struct {
+			Status model.RunStatus `json:"status"`
+			Output string          `json:"output"`
+		}
+		if err := json.Unmarshal([]byte(toolResult.Output), &output); err != nil {
+			t.Fatalf("unmarshal resumed delegate_helper output: %v", err)
+		}
+		if output.Status != model.RunStatusCompleted {
+			t.Fatalf("expected resumed delegate_helper status %q, got %q", model.RunStatusCompleted, output.Status)
+		}
+		if !strings.Contains(output.Output, "Created file.") {
+			t.Fatalf("expected resumed delegate_helper output to include child result, got %q", output.Output)
+		}
+		sawDelegateToolResult = true
+	}
+	if !sawDelegateToolResult {
+		t.Fatalf("expected resumed parent context to include delegate_helper result, got %+v", prov.Requests[3].ConversationCtx)
 	}
 }
 
