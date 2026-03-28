@@ -66,8 +66,6 @@ func allowsToolFamily(profile model.BaseProfile, family model.ToolFamily) bool {
 		return family == model.ToolFamilyRepoRead || family == model.ToolFamilyDiffReview
 	case model.BaseProfileVerify:
 		return family == model.ToolFamilyRepoRead || family == model.ToolFamilyVerification
-	case model.BaseProfileSpecialist:
-		return family == model.ToolFamilyRepoRead
 	default:
 		return false
 	}

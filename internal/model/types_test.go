@@ -120,6 +120,9 @@ func TestAdaptivePolicyValidators(t *testing.T) {
 		if !IsValidBaseProfile("operator") {
 			t.Fatal("expected operator to be a valid base profile")
 		}
+		if IsValidBaseProfile("specialist") {
+			t.Fatal("expected specialist base profile to be rejected")
+		}
 		if IsValidBaseProfile("unknown") {
 			t.Fatal("expected unknown base profile to be rejected")
 		}

@@ -467,12 +467,12 @@ func addTeamMember(cfg teams.Config) teams.Config {
 	cfg.Agents = append(cfg.Agents, teams.AgentConfig{
 		ID:                          id,
 		SoulFile:                    teams.SuggestedSoulFile(id),
-		Role:                        "new specialist",
-		BaseProfile:                 model.BaseProfileSpecialist,
-		ToolFamilies:                []model.ToolFamily{model.ToolFamilyRepoRead},
+		Role:                        "research specialist",
+		BaseProfile:                 model.BaseProfileResearch,
+		ToolFamilies:                []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyWebRead},
 		SpecialistSummaryVisibility: model.SpecialistSummaryBasic,
 		Soul: teams.SoulSpec{
-			Role:  "new specialist",
+			Role:  "research specialist",
 			Extra: map[string]any{},
 		},
 	})
@@ -543,7 +543,6 @@ func buildTeamLinkOptions(agents []teams.AgentConfig, currentIndex int, selected
 func buildBaseProfileOptions(selected model.BaseProfile) []teamOption {
 	values := []model.BaseProfile{
 		model.BaseProfileOperator,
-		model.BaseProfileSpecialist,
 		model.BaseProfileResearch,
 		model.BaseProfileWrite,
 		model.BaseProfileReview,

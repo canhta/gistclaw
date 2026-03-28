@@ -111,21 +111,19 @@ const (
 type BaseProfile string
 
 const (
-	BaseProfileOperator   BaseProfile = "operator"
-	BaseProfileSpecialist BaseProfile = "specialist"
-	BaseProfileResearch   BaseProfile = "research"
-	BaseProfileWrite      BaseProfile = "write"
-	BaseProfileReview     BaseProfile = "review"
-	BaseProfileVerify     BaseProfile = "verify"
+	BaseProfileOperator BaseProfile = "operator"
+	BaseProfileResearch BaseProfile = "research"
+	BaseProfileWrite    BaseProfile = "write"
+	BaseProfileReview   BaseProfile = "review"
+	BaseProfileVerify   BaseProfile = "verify"
 )
 
 var validBaseProfiles = map[BaseProfile]bool{
-	BaseProfileOperator:   true,
-	BaseProfileSpecialist: true,
-	BaseProfileResearch:   true,
-	BaseProfileWrite:      true,
-	BaseProfileReview:     true,
-	BaseProfileVerify:     true,
+	BaseProfileOperator: true,
+	BaseProfileResearch: true,
+	BaseProfileWrite:    true,
+	BaseProfileReview:   true,
+	BaseProfileVerify:   true,
 }
 
 func IsValidBaseProfile(s string) bool {
