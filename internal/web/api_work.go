@@ -74,6 +74,8 @@ type workRunDetailResponse struct {
 	StreamURL             string `json:"stream_url"`
 	GraphURL              string `json:"graph_url"`
 	NodeDetailURLTemplate string `json:"node_detail_url_template"`
+	Dismissible           bool   `json:"dismissible"`
+	DismissURL            string `json:"dismiss_url,omitempty"`
 }
 
 type workInspectorSeedReponse struct {
@@ -89,6 +91,13 @@ type workCreateRequest struct {
 type workCreateResponse struct {
 	RunID     string `json:"run_id"`
 	Objective string `json:"objective"`
+}
+
+type workDismissResponse struct {
+	Dismissed bool   `json:"dismissed"`
+	RunID     string `json:"run_id"`
+	Status    string `json:"status"`
+	NextHref  string `json:"next_href"`
 }
 
 func (s *Server) handleWorkIndex(w http.ResponseWriter, r *http.Request) {
@@ -141,6 +150,8 @@ func (s *Server) handleWorkDetail(w http.ResponseWriter, r *http.Request) {
 			StreamURL:             workEventsPath(pageData.RunID),
 			GraphURL:              workGraphPath(pageData.RunID),
 			NodeDetailURLTemplate: workNodeDetailTemplatePath(pageData.RunID),
+			Dismissible:           pageData.Status == "interrupted",
+			DismissURL:            workDismissPath(pageData.RunID, pageData.Status),
 		},
 		Graph:         pageData.Graph,
 		InspectorSeed: buildWorkInspectorSeed(pageData.Graph),
@@ -169,6 +180,21 @@ func (s *Server) handleWorkCreate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, workCreateResponse{
 		RunID:     runID,
 		Objective: task,
+	})
+}
+
+func (s *Server) handleWorkDismiss(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("id")
+	if err := s.dismissRun(r.Context(), runID); err != nil {
+		http.Error(w, "failed to dismiss run", http.StatusInternalServerError)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, workDismissResponse{
+		Dismissed: true,
+		RunID:     runID,
+		Status:    "dismissed",
+		NextHref:  pageWork,
 	})
 }
 

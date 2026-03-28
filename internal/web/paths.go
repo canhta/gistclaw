@@ -67,10 +67,6 @@ func runNodeDetailTemplatePath(runID string) string {
 	return runDetailPath(runID) + "/nodes/__RUN_ID__"
 }
 
-func runDismissPath(runID string) string {
-	return runDetailPath(runID) + "/dismiss"
-}
-
 func workAPIPath(runID string) string {
 	return "/api/work/" + url.PathEscape(runID)
 }
@@ -89,6 +85,13 @@ func workEventsPath(runID string) string {
 
 func workNodeDetailTemplatePath(runID string) string {
 	return workAPIPath(runID) + "/nodes/__RUN_ID__"
+}
+
+func workDismissPath(runID, status string) string {
+	if status != "interrupted" {
+		return ""
+	}
+	return workAPIPath(runID) + "/dismiss"
 }
 
 func sessionDetailPath(sessionID string) string {

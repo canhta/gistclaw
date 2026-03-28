@@ -2463,7 +2463,7 @@ func TestActionPaths(t *testing.T) {
 		got  string
 		want string
 	}{
-		{name: "run dismiss", got: runDismissPath("run 1"), want: "/operate/runs/run%201/dismiss"},
+		{name: "work dismiss", got: workDismissPath("run 1", "interrupted"), want: "/api/work/run%201/dismiss"},
 		{name: "session message", got: sessionMessagePath("session 1"), want: "/operate/sessions/session%201/messages"},
 		{name: "session retry delivery", got: sessionRetryDeliveryPath("session 1", "delivery/1"), want: "/operate/sessions/session%201/deliveries/delivery%2F1/retry"},
 		{name: "approval resolve", got: approvalResolvePath("approval/1"), want: "/recover/approvals/approval%2F1/resolve"},

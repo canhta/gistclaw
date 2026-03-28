@@ -1,9 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
 	import RunGraph from '$lib/components/graph/RunGraph.svelte';
+	import { HTTPError, requestJSON } from '$lib/http/client';
 	import { connectEventStream } from '$lib/http/events';
 	import { loadWorkDetail } from '$lib/work/load';
+	import type { WorkDismissResponse } from '$lib/types/api';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -16,6 +20,8 @@
 			(detail.run.stream_url ? 'Live stream attached' : 'Live stream unavailable')
 	);
 	let liveError = $state('');
+	let actionError = $state('');
+	let dismissing = $state(false);
 
 	let refreshInFlight = false;
 	let refreshQueued = false;
@@ -24,6 +30,8 @@
 		detailOverride = null;
 		liveStatusOverride = null;
 		liveError = '';
+		actionError = '';
+		dismissing = false;
 	});
 
 	async function refreshDetail(): Promise<void> {
@@ -37,6 +45,7 @@
 			detailOverride = await loadWorkDetail(fetch, detail.run.id);
 			liveStatusOverride = null;
 			liveError = '';
+			actionError = '';
 		} catch {
 			liveStatusOverride = 'Live stream stalled';
 			liveError = 'Unable to refresh the run detail from the browser API.';
@@ -46,6 +55,27 @@
 				refreshQueued = false;
 				void refreshDetail();
 			}
+		}
+	}
+
+	async function dismissRun(): Promise<void> {
+		if (!detail.run.dismissible || !detail.run.dismiss_url) {
+			return;
+		}
+
+		dismissing = true;
+		actionError = '';
+
+		try {
+			const result = await requestJSON<WorkDismissResponse>(fetch, detail.run.dismiss_url, {
+				method: 'POST'
+			});
+			await goto(result.next_href, { invalidateAll: true });
+		} catch (error) {
+			actionError =
+				error instanceof HTTPError ? error.message : 'Unable to dismiss this run right now.';
+		} finally {
+			dismissing = false;
 		}
 	}
 
@@ -115,12 +145,29 @@
 				Back to queue
 			</a>
 
+			{#if detail.run.dismissible && detail.run.dismiss_url}
+				<SurfaceActionButton
+					tone="warning"
+					className="mt-3"
+					disabled={dismissing}
+					onclick={() => {
+						void dismissRun();
+					}}
+				>
+					{dismissing ? 'Dismissing run' : 'Dismiss run'}
+				</SurfaceActionButton>
+				<p class="gc-machine mt-3 break-all">{detail.run.dismiss_url}</p>
+			{/if}
+
 			<div class="gc-panel-soft mt-6 px-4 py-4">
 				<p class="gc-stamp">Live stream</p>
 				<h3 class="gc-panel-title mt-3 text-[1rem]">{liveStatus}</h3>
 				<p class="gc-machine mt-3 break-all">{detail.run.stream_url}</p>
 				{#if liveError}
 					<p class="gc-copy mt-3 text-[var(--gc-error)]">{liveError}</p>
+				{/if}
+				{#if actionError}
+					<p class="gc-copy mt-3 text-[var(--gc-error)]">{actionError}</p>
 				{/if}
 			</div>
 		</div>

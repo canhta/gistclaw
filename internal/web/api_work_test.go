@@ -276,6 +276,90 @@ func TestCreateWorkTaskRejectsInvalidBodies(t *testing.T) {
 	})
 }
 
+func TestDismissWorkMarksInterruptedRunDismissed(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+	h.insertRun(t, "run-work-dismiss", "conv-work-dismiss", "Review the repo", "interrupted")
+
+	dismissRR := httptest.NewRecorder()
+	dismissReq := httptest.NewRequest(http.MethodPost, "/api/work/run-work-dismiss/dismiss", nil)
+	h.server.ServeHTTP(dismissRR, dismissReq)
+
+	if dismissRR.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", dismissRR.Code, dismissRR.Body.String())
+	}
+
+	var dismissResp struct {
+		Dismissed bool   `json:"dismissed"`
+		RunID     string `json:"run_id"`
+		Status    string `json:"status"`
+		NextHref  string `json:"next_href"`
+	}
+	if err := json.Unmarshal(dismissRR.Body.Bytes(), &dismissResp); err != nil {
+		t.Fatalf("decode dismiss response: %v", err)
+	}
+	if !dismissResp.Dismissed || dismissResp.RunID != "run-work-dismiss" || dismissResp.Status != "dismissed" {
+		t.Fatalf("unexpected dismiss response %+v", dismissResp)
+	}
+	if dismissResp.NextHref != "/work" {
+		t.Fatalf("next_href = %q, want %q", dismissResp.NextHref, "/work")
+	}
+
+	indexRR := httptest.NewRecorder()
+	indexReq := httptest.NewRequest(http.MethodGet, "/api/work", nil)
+	h.server.ServeHTTP(indexRR, indexReq)
+
+	if indexRR.Code != http.StatusOK {
+		t.Fatalf("expected work index 200, got %d body=%s", indexRR.Code, indexRR.Body.String())
+	}
+
+	var indexResp struct {
+		Clusters []struct {
+			Root struct {
+				ID string `json:"id"`
+			} `json:"root"`
+		} `json:"clusters"`
+	}
+	if err := json.Unmarshal(indexRR.Body.Bytes(), &indexResp); err != nil {
+		t.Fatalf("decode work index: %v", err)
+	}
+	for _, cluster := range indexResp.Clusters {
+		if cluster.Root.ID == "run-work-dismiss" {
+			t.Fatalf("expected dismissed run to be absent from work index, got %+v", indexResp.Clusters)
+		}
+	}
+
+	detailRR := httptest.NewRecorder()
+	detailReq := httptest.NewRequest(http.MethodGet, "/api/work/run-work-dismiss", nil)
+	h.server.ServeHTTP(detailRR, detailReq)
+
+	if detailRR.Code != http.StatusOK {
+		t.Fatalf("expected work detail 200, got %d body=%s", detailRR.Code, detailRR.Body.String())
+	}
+
+	var detailResp struct {
+		Run struct {
+			ID          string `json:"id"`
+			Status      string `json:"status"`
+			Dismissible bool   `json:"dismissible"`
+			DismissURL  string `json:"dismiss_url"`
+		} `json:"run"`
+	}
+	if err := json.Unmarshal(detailRR.Body.Bytes(), &detailResp); err != nil {
+		t.Fatalf("decode work detail: %v", err)
+	}
+	if detailResp.Run.ID != "run-work-dismiss" || detailResp.Run.Status != "dismissed" {
+		t.Fatalf("unexpected dismissed run detail %+v", detailResp.Run)
+	}
+	if detailResp.Run.Dismissible {
+		t.Fatalf("expected dismissed run to stop exposing dismiss action, got %+v", detailResp.Run)
+	}
+	if detailResp.Run.DismissURL != "" {
+		t.Fatalf("expected dismissed run to omit dismiss_url, got %q", detailResp.Run.DismissURL)
+	}
+}
+
 func TestBuildWorkQueueStripAndInspectorSeedFallbacks(t *testing.T) {
 	t.Parallel()
 

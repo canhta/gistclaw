@@ -169,6 +169,8 @@ export interface WorkDetailResponse {
 		stream_url: string;
 		graph_url: string;
 		node_detail_url_template: string;
+		dismissible: boolean;
+		dismiss_url?: string;
 	};
 	graph: WorkGraphResponse;
 	inspector_seed?: {
@@ -176,6 +178,13 @@ export interface WorkDetailResponse {
 		agent_id: string;
 		status: string;
 	};
+}
+
+export interface WorkDismissResponse {
+	dismissed: boolean;
+	run_id: string;
+	status: string;
+	next_href: string;
 }
 
 export interface WorkCreateResponse {

@@ -1482,7 +1482,8 @@ func buildRunListQuery(filter runListRequest, activeProject model.Project) (stri
 			COALESCE(queue_summary.worker_count, 0) AS worker_count
 		FROM runs root
 		LEFT JOIN queue_summary ON queue_summary.root_id = root.id
-		WHERE COALESCE(root.parent_run_id, '') = ''`)
+		WHERE COALESCE(root.parent_run_id, '') = ''
+			AND COALESCE(root.status, '') != 'dismissed'`)
 
 	clauses := []string{"1=1"}
 	args := make([]any, 0, 10)
@@ -1834,19 +1835,12 @@ func encodeRunListCursor(createdAt, id string) string {
 	return createdAt + "|" + id
 }
 
-// handleRunDismiss marks an interrupted run as dismissed so it no longer
-// appears in the active run list. The run record is retained in the journal.
-func (s *Server) handleRunDismiss(w http.ResponseWriter, r *http.Request) {
-	runID := r.PathValue("id")
-	_, err := s.db.RawDB().ExecContext(r.Context(),
+func (s *Server) dismissRun(ctx context.Context, runID string) error {
+	_, err := s.db.RawDB().ExecContext(ctx,
 		`UPDATE runs SET status = 'dismissed', updated_at = datetime('now') WHERE id = ? AND status = 'interrupted'`,
 		runID,
 	)
-	if err != nil {
-		http.Error(w, "failed to dismiss run", http.StatusInternalServerError)
-		return
-	}
-	http.Redirect(w, r, pageOperateRuns, http.StatusSeeOther)
+	return err
 }
 
 func (s *Server) handleRunEvents(w http.ResponseWriter, r *http.Request) {
