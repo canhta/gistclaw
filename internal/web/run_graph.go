@@ -93,7 +93,8 @@ type runGraphNodeView struct {
 }
 
 func buildRunGraphView(snapshot replay.RunGraphSnapshot) runGraphView {
-	nodes := buildGraphNodes(snapshot)
+	rootAgentID := runGraphRootAgentID(snapshot)
+	nodes := buildGraphNodes(snapshot, rootAgentID)
 	activePath := buildActivePath(nodes)
 	markActivePath(nodes, activePath)
 	summary := summarizeRunGraph(nodes)
@@ -104,13 +105,22 @@ func buildRunGraphView(snapshot replay.RunGraphSnapshot) runGraphView {
 		Summary:    summary,
 		Lanes:      buildGraphLanes(nodes, snapshot.RootRunID),
 		Nodes:      nodes,
-		Edges:      buildGraphEdges(nodes),
+		Edges:      buildGraphEdges(nodes, rootAgentID),
 		Legend:     buildGraphLegend(),
 		ActivePath: activePath,
 	}
 }
 
-func buildGraphNodes(snapshot replay.RunGraphSnapshot) []runGraphNodeView {
+func runGraphRootAgentID(snapshot replay.RunGraphSnapshot) string {
+	for _, node := range snapshot.Nodes {
+		if node.ID == snapshot.RootRunID {
+			return node.AgentID
+		}
+	}
+	return ""
+}
+
+func buildGraphNodes(snapshot replay.RunGraphSnapshot, rootAgentID string) []runGraphNodeView {
 	childCountByID := make(map[string]int, len(snapshot.Nodes))
 	parentByID := make(map[string]string, len(snapshot.Nodes))
 	for _, node := range snapshot.Nodes {
@@ -124,7 +134,7 @@ func buildGraphNodes(snapshot replay.RunGraphSnapshot) []runGraphNodeView {
 	for _, node := range snapshot.Nodes {
 		preview := buildStructuredTextView(node.Objective, 2)
 		kind := graphNodeKind(snapshot.RootRunID, node.ID, node.AgentID)
-		laneID := graphLaneID(kind, node.AgentID)
+		laneID := graphLaneID(kind, node.AgentID, rootAgentID)
 		graphNode := runGraphNodeView{
 			ID:                   node.ID,
 			ShortID:              compactIdentifier(node.ID),
@@ -186,13 +196,13 @@ func summarizeRunGraph(nodes []runGraphNodeView) runGraphSummaryView {
 	return summary
 }
 
-func buildGraphEdges(nodes []runGraphNodeView) []runGraphEdgeView {
+func buildGraphEdges(nodes []runGraphNodeView, rootAgentID string) []runGraphEdgeView {
 	edges := make([]runGraphEdgeView, 0, len(nodes)*2)
 	for _, node := range nodes {
 		if node.ParentRunID == "" {
 			continue
 		}
-		kind, label := graphDelegationEdge(node)
+		kind, label := graphDelegationEdge(node, rootAgentID)
 		edges = append(edges, runGraphEdgeView{
 			ID:          fmt.Sprintf("%s->%s:%s", node.ParentRunID, node.ID, kind),
 			From:        node.ParentRunID,
@@ -356,12 +366,12 @@ func graphNodeKind(rootRunID, nodeID, agentID string) string {
 	}
 }
 
-func graphLaneID(kind, agentID string) string {
+func graphLaneID(kind, agentID, rootAgentID string) string {
 	if kind == "root" {
 		return "coordination"
 	}
 	switch agentID {
-	case "assistant":
+	case rootAgentID:
 		return "coordination"
 	case "researcher":
 		return "research"
@@ -401,11 +411,13 @@ func graphBranchLabel(node runGraphNodeView, rootRunID string) string {
 	return fmt.Sprintf("%s agent", node.AgentID)
 }
 
-func graphDelegationEdge(node runGraphNodeView) (kind, label string) {
+func graphDelegationEdge(node runGraphNodeView, rootAgentID string) (kind, label string) {
 	if node.Status == string(model.RunStatusNeedsApproval) {
 		return "blocked", "approve"
 	}
 	switch node.AgentID {
+	case rootAgentID:
+		return "delegates", "coordinate"
 	case "researcher":
 		return "delegates", "research"
 	case "patcher":
@@ -414,8 +426,6 @@ func graphDelegationEdge(node runGraphNodeView) (kind, label string) {
 		return "delegates", "review"
 	case "verifier":
 		return "delegates", "verify"
-	case "assistant":
-		return "delegates", "coordinate"
 	default:
 		return "delegates", "delegate"
 	}

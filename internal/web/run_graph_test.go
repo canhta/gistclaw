@@ -56,6 +56,26 @@ func TestBuildRunGraphViewAssignsLanesKindsAndEdgeSemantics(t *testing.T) {
 	}
 }
 
+func TestBuildRunGraphViewUsesRootAgentForCoordinationLane(t *testing.T) {
+	t.Parallel()
+
+	snapshot := replay.RunGraphSnapshot{
+		RootRunID: "root",
+		Nodes: []replay.GraphNode{
+			{ID: "root", AgentID: "lead", Status: model.RunStatusActive},
+			{ID: "child-front", ParentRunID: "root", AgentID: "lead", Status: model.RunStatusCompleted},
+		},
+	}
+
+	view := buildRunGraphView(snapshot)
+	if got := findGraphNode(t, view.Nodes, "child-front").LaneID; got != "coordination" {
+		t.Fatalf("expected renamed front agent child to use coordination lane, got %q", got)
+	}
+	if got := findGraphEdge(t, view.Edges, "root", "child-front", "delegates").Label; got != "coordinate" {
+		t.Fatalf("expected renamed front agent edge label %q, got %q", "coordinate", got)
+	}
+}
+
 func findGraphNode(t *testing.T, nodes []runGraphNodeView, id string) runGraphNodeView {
 	t.Helper()
 
