@@ -23,8 +23,6 @@
 		navigation={data.navigation}
 		project={data.project!}
 		currentPath={data.currentPath}
-		title={surface.title}
-		description={surface.description}
 		inspectorTitle={surface.inspectorTitle}
 		inspectorItems={surface.inspectorItems}
 	>
