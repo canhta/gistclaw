@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/canhta/gistclaw/internal/connectors/threadstate"
 	"github.com/canhta/gistclaw/internal/connectors/zalopersonal/protocol"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
@@ -37,9 +38,14 @@ type Connector struct {
 	outbound               *OutboundDispatcher
 	inbound                *InboundDispatcher
 	health                 *HealthState
+	threadState            *threadstate.Store
 	login                  func(ctx context.Context, creds StoredCredentials) (*listenerSession, error)
 	listFriends            func(ctx context.Context, creds StoredCredentials) ([]protocol.FriendInfo, error)
 	listGroups             func(ctx context.Context, creds StoredCredentials) ([]protocol.GroupListInfo, error)
+	fetchUnreadMarks       func(ctx context.Context, creds StoredCredentials) ([]protocol.UnreadMarkInfo, error)
+	fetchPinnedThreads     func(ctx context.Context, creds StoredCredentials) ([]protocol.PinnedConversationInfo, error)
+	fetchHiddenThreads     func(ctx context.Context, creds StoredCredentials) ([]protocol.HiddenConversationInfo, error)
+	fetchArchivedThreads   func(ctx context.Context, creds StoredCredentials) ([]protocol.ArchivedConversationInfo, error)
 	sendText               func(ctx context.Context, creds StoredCredentials, chatID, text string) error
 	newListener            func(sess *listenerSession) (SessionListener, error)
 	credentialPollInterval time.Duration
@@ -54,6 +60,7 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 	connector := &Connector{
 		inbound:                NewInboundDispatcher(rt, defaultAgentID),
 		health:                 NewHealthState(),
+		threadState:            threadstate.New(db),
 		credentialPollInterval: 5 * time.Second,
 		reconnectDelay:         2 * time.Second,
 		duplicateSessionDelay:  60 * time.Second,
@@ -111,6 +118,54 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 			return nil, err
 		}
 		return protocol.FetchGroups(ctx, sess)
+	}
+	connector.fetchUnreadMarks = func(ctx context.Context, creds StoredCredentials) ([]protocol.UnreadMarkInfo, error) {
+		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
+			IMEI:      creds.IMEI,
+			Cookie:    creds.Cookie,
+			UserAgent: creds.UserAgent,
+			Language:  optionalLanguage(creds.Language),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return protocol.FetchUnreadMarks(ctx, sess)
+	}
+	connector.fetchPinnedThreads = func(ctx context.Context, creds StoredCredentials) ([]protocol.PinnedConversationInfo, error) {
+		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
+			IMEI:      creds.IMEI,
+			Cookie:    creds.Cookie,
+			UserAgent: creds.UserAgent,
+			Language:  optionalLanguage(creds.Language),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return protocol.FetchPinnedConversations(ctx, sess)
+	}
+	connector.fetchHiddenThreads = func(ctx context.Context, creds StoredCredentials) ([]protocol.HiddenConversationInfo, error) {
+		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
+			IMEI:      creds.IMEI,
+			Cookie:    creds.Cookie,
+			UserAgent: creds.UserAgent,
+			Language:  optionalLanguage(creds.Language),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return protocol.FetchHiddenConversations(ctx, sess)
+	}
+	connector.fetchArchivedThreads = func(ctx context.Context, creds StoredCredentials) ([]protocol.ArchivedConversationInfo, error) {
+		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
+			IMEI:      creds.IMEI,
+			Cookie:    creds.Cookie,
+			UserAgent: creds.UserAgent,
+			Language:  optionalLanguage(creds.Language),
+		})
+		if err != nil {
+			return nil, err
+		}
+		return protocol.FetchArchivedConversations(ctx, sess)
 	}
 	connector.newListener = func(sess *listenerSession) (SessionListener, error) {
 		return newProtocolSessionListener(sess)
@@ -257,6 +312,18 @@ func (c *Connector) SendText(ctx context.Context, chatID, text string) error {
 			return err
 		}
 	}
+	if c.threadState != nil {
+		if err := c.threadState.Upsert(ctx, threadstate.Summary{
+			ConnectorID:        c.Metadata().ID,
+			AccountID:          creds.AccountID,
+			ThreadID:           strings.TrimSpace(chatID),
+			ThreadType:         threadTypeLabel(c.threadTypeForChat(chatID)),
+			LastMessagePreview: strings.TrimSpace(text),
+			LastMessageAt:      time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -313,6 +380,12 @@ func (c *Connector) runListener(ctx context.Context, listener SessionListener) e
 				}
 				continue
 			}
+			if err := c.recordThreadActivity(ctx, msg); err != nil {
+				if isContextDone(err) {
+					return ctx.Err()
+				}
+				return fmt.Errorf("listener thread activity: %w", err)
+			}
 			env, err := NormalizeInboundMessageWithPolicy(msg, c.groupPolicy)
 			if err != nil {
 				if strings.Contains(err.Error(), "DM only") ||
@@ -350,6 +423,34 @@ func (c *Connector) runListener(ctx context.Context, listener SessionListener) e
 			return fmt.Errorf("listener disconnected: %w", err)
 		}
 	}
+}
+
+func (c *Connector) recordThreadActivity(ctx context.Context, msg IncomingMessage) error {
+	if c.threadState == nil {
+		return nil
+	}
+	return c.threadState.Upsert(ctx, threadstate.Summary{
+		ConnectorID:        c.Metadata().ID,
+		AccountID:          strings.TrimSpace(msg.AccountID),
+		ThreadID:           strings.TrimSpace(msg.ConversationID),
+		ThreadType:         incomingThreadTypeLabel(msg),
+		LastMessagePreview: strings.TrimSpace(msg.Text),
+		LastMessageAt:      time.Now().UTC(),
+	})
+}
+
+func incomingThreadTypeLabel(msg IncomingMessage) string {
+	if msg.IsDirect {
+		return "contact"
+	}
+	return "group"
+}
+
+func threadTypeLabel(threadType protocol.ThreadType) string {
+	if threadType == protocol.ThreadTypeGroup {
+		return "group"
+	}
+	return "contact"
 }
 
 func optionalLanguage(language string) *string {

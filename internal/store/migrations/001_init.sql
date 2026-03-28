@@ -190,6 +190,24 @@ CREATE TABLE IF NOT EXISTS outbound_intents (
     last_attempt_at DATETIME
 );
 
+CREATE TABLE IF NOT EXISTS connector_threads (
+    connector_id TEXT NOT NULL,
+    account_id TEXT NOT NULL DEFAULT '',
+    thread_id TEXT NOT NULL,
+    thread_type TEXT NOT NULL DEFAULT '',
+    title TEXT NOT NULL DEFAULT '',
+    subtitle TEXT NOT NULL DEFAULT '',
+    last_message_preview TEXT NOT NULL DEFAULT '',
+    last_message_at DATETIME,
+    metadata_json BLOB NOT NULL DEFAULT '{}',
+    created_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    updated_at DATETIME NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (connector_id, account_id, thread_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_connector_threads_connector_account_last_message_at
+    ON connector_threads(connector_id, account_id, last_message_at DESC, updated_at DESC);
+
 CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,

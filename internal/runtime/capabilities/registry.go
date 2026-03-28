@@ -18,6 +18,32 @@ type DirectoryListRequest struct {
 	Limit       int    `json:"limit,omitempty"`
 }
 
+type InboxListRequest struct {
+	ConnectorID string `json:"connector_id"`
+	Scope       string `json:"scope,omitempty"`
+	Query       string `json:"query,omitempty"`
+	Limit       int    `json:"limit,omitempty"`
+	UnreadOnly  bool   `json:"unread_only,omitempty"`
+}
+
+type InboxEntry struct {
+	ThreadID           string            `json:"thread_id"`
+	ThreadType         string            `json:"thread_type,omitempty"`
+	Title              string            `json:"title"`
+	Subtitle           string            `json:"subtitle,omitempty"`
+	UnreadCount        int               `json:"unread_count,omitempty"`
+	IsUnread           bool              `json:"is_unread,omitempty"`
+	LastMessagePreview string            `json:"last_message_preview,omitempty"`
+	LastMessageAt      time.Time         `json:"last_message_at,omitempty"`
+	Metadata           map[string]string `json:"metadata,omitempty"`
+}
+
+type InboxListResult struct {
+	ConnectorID string       `json:"connector_id"`
+	Scope       string       `json:"scope,omitempty"`
+	Entries     []InboxEntry `json:"entries"`
+}
+
 type DirectoryEntry struct {
 	ID       string            `json:"id"`
 	Title    string            `json:"title"`
@@ -101,6 +127,10 @@ type DirectoryAdapter interface {
 	CapabilityListDirectory(context.Context, DirectoryListRequest) (DirectoryListResult, error)
 }
 
+type InboxAdapter interface {
+	CapabilityListInbox(context.Context, InboxListRequest) (InboxListResult, error)
+}
+
 type TargetResolver interface {
 	CapabilityResolveTarget(context.Context, TargetResolveRequest) (TargetResolveResult, error)
 }
@@ -122,6 +152,7 @@ type healthSnapshotProvider interface {
 }
 
 type connectorAdapters struct {
+	inbox     InboxAdapter
 	directory DirectoryAdapter
 	resolver  TargetResolver
 	sender    Sender
@@ -153,6 +184,9 @@ func (r *Registry) RegisterConnector(conn model.Connector) {
 	}
 
 	adapters := connectorAdapters{}
+	if adapter, ok := conn.(InboxAdapter); ok {
+		adapters.inbox = adapter
+	}
 	if adapter, ok := conn.(DirectoryAdapter); ok {
 		adapters.directory = adapter
 	}
@@ -208,6 +242,21 @@ func (r *Registry) DirectoryList(ctx context.Context, req DirectoryListRequest) 
 		req.Limit = 50
 	}
 	return adapter.directory.CapabilityListDirectory(ctx, req)
+}
+
+func (r *Registry) InboxList(ctx context.Context, req InboxListRequest) (InboxListResult, error) {
+	adapter, connectorID, err := r.lookupConnector(req.ConnectorID)
+	if err != nil {
+		return InboxListResult{}, err
+	}
+	if adapter.inbox == nil {
+		return InboxListResult{}, fmt.Errorf("capabilities: connector %q does not support inbox listing", connectorID)
+	}
+	req.ConnectorID = connectorID
+	if req.Limit <= 0 {
+		req.Limit = 50
+	}
+	return adapter.inbox.CapabilityListInbox(ctx, req)
 }
 
 func (r *Registry) ResolveTarget(ctx context.Context, req TargetResolveRequest) (TargetResolveResult, error) {

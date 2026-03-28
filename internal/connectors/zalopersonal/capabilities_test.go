@@ -3,7 +3,9 @@ package zalopersonal
 import (
 	"context"
 	"testing"
+	"time"
 
+	"github.com/canhta/gistclaw/internal/connectors/threadstate"
 	"github.com/canhta/gistclaw/internal/connectors/zalopersonal/protocol"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/runtime/capabilities"
@@ -53,6 +55,194 @@ func TestCapabilities_ListDirectory(t *testing.T) {
 	}
 	if result.Entries[1].ID != "user-1" || result.Entries[1].Kind != "contact" {
 		t.Fatalf("unexpected contact entry: %+v", result.Entries[1])
+	}
+}
+
+func TestCapabilities_ListInbox(t *testing.T) {
+	db := setupZaloOutboundDB(t)
+	if err := SaveStoredCredentials(context.Background(), db, StoredCredentials{
+		AccountID:   "acc-1",
+		DisplayName: "Canh",
+		IMEI:        "imei-1",
+		Cookie:      "cookie-1",
+		UserAgent:   "ua-1",
+	}); err != nil {
+		t.Fatalf("SaveStoredCredentials: %v", err)
+	}
+
+	connector := NewConnector(db, conversations.NewConversationStore(db), &stubInboundRuntime{}, "assistant")
+	now := time.Unix(1700000000, 0).UTC()
+	if err := connector.threadState.Upsert(context.Background(), threadstate.Summary{
+		ConnectorID:        "zalo_personal",
+		AccountID:          "acc-1",
+		ThreadID:           "user-1",
+		ThreadType:         "contact",
+		LastMessagePreview: "alo",
+		LastMessageAt:      now,
+	}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	connector.listFriends = func(context.Context, StoredCredentials) ([]protocol.FriendInfo, error) {
+		return []protocol.FriendInfo{
+			{UserID: "user-1", DisplayName: "Mẹ"},
+		}, nil
+	}
+	connector.listGroups = func(context.Context, StoredCredentials) ([]protocol.GroupListInfo, error) {
+		return []protocol.GroupListInfo{
+			{GroupID: "group-1", Name: "Gia đình"},
+		}, nil
+	}
+	connector.fetchPinnedThreads = func(context.Context, StoredCredentials) ([]protocol.PinnedConversationInfo, error) {
+		return nil, nil
+	}
+	connector.fetchHiddenThreads = func(context.Context, StoredCredentials) ([]protocol.HiddenConversationInfo, error) {
+		return nil, nil
+	}
+	connector.fetchArchivedThreads = func(context.Context, StoredCredentials) ([]protocol.ArchivedConversationInfo, error) {
+		return nil, nil
+	}
+	connector.fetchUnreadMarks = func(context.Context, StoredCredentials) ([]protocol.UnreadMarkInfo, error) {
+		return []protocol.UnreadMarkInfo{
+			{ThreadID: "user-1", ThreadType: protocol.ThreadTypeUser, MarkedAt: now.Add(2 * time.Minute)},
+			{ThreadID: "group-1", ThreadType: protocol.ThreadTypeGroup, MarkedAt: now.Add(time.Minute)},
+		}, nil
+	}
+
+	result, err := connector.CapabilityListInbox(context.Background(), capabilities.InboxListRequest{
+		ConnectorID: "zalo_personal",
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("CapabilityListInbox: %v", err)
+	}
+	if len(result.Entries) != 2 {
+		t.Fatalf("expected 2 inbox entries, got %+v", result.Entries)
+	}
+	if result.Entries[0].ThreadID != "user-1" || !result.Entries[0].IsUnread || result.Entries[0].Title != "Mẹ" {
+		t.Fatalf("unexpected first inbox entry: %+v", result.Entries[0])
+	}
+	if result.Entries[1].ThreadID != "group-1" || result.Entries[1].Title != "Gia đình" || !result.Entries[1].IsUnread {
+		t.Fatalf("unexpected second inbox entry: %+v", result.Entries[1])
+	}
+}
+
+func TestCapabilities_ListInboxUnreadOnly(t *testing.T) {
+	db := setupZaloOutboundDB(t)
+	if err := SaveStoredCredentials(context.Background(), db, StoredCredentials{
+		AccountID:   "acc-1",
+		DisplayName: "Canh",
+		IMEI:        "imei-1",
+		Cookie:      "cookie-1",
+		UserAgent:   "ua-1",
+	}); err != nil {
+		t.Fatalf("SaveStoredCredentials: %v", err)
+	}
+
+	connector := NewConnector(db, conversations.NewConversationStore(db), &stubInboundRuntime{}, "assistant")
+	now := time.Unix(1700000000, 0).UTC()
+	if err := connector.threadState.Upsert(context.Background(), threadstate.Summary{
+		ConnectorID:        "zalo_personal",
+		AccountID:          "acc-1",
+		ThreadID:           "user-1",
+		ThreadType:         "contact",
+		LastMessagePreview: "alo",
+		LastMessageAt:      now,
+	}); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	connector.listFriends = func(context.Context, StoredCredentials) ([]protocol.FriendInfo, error) {
+		return []protocol.FriendInfo{
+			{UserID: "user-1", DisplayName: "Mẹ"},
+		}, nil
+	}
+	connector.listGroups = func(context.Context, StoredCredentials) ([]protocol.GroupListInfo, error) {
+		return nil, nil
+	}
+	connector.fetchUnreadMarks = func(context.Context, StoredCredentials) ([]protocol.UnreadMarkInfo, error) {
+		return nil, nil
+	}
+	connector.fetchPinnedThreads = func(context.Context, StoredCredentials) ([]protocol.PinnedConversationInfo, error) {
+		return nil, nil
+	}
+	connector.fetchHiddenThreads = func(context.Context, StoredCredentials) ([]protocol.HiddenConversationInfo, error) {
+		return nil, nil
+	}
+	connector.fetchArchivedThreads = func(context.Context, StoredCredentials) ([]protocol.ArchivedConversationInfo, error) {
+		return nil, nil
+	}
+
+	result, err := connector.CapabilityListInbox(context.Background(), capabilities.InboxListRequest{
+		ConnectorID: "zalo_personal",
+		UnreadOnly:  true,
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("CapabilityListInbox: %v", err)
+	}
+	if len(result.Entries) != 0 {
+		t.Fatalf("expected unread-only inbox to filter entries, got %+v", result.Entries)
+	}
+}
+
+func TestCapabilities_ListInboxIncludesThreadFlags(t *testing.T) {
+	db := setupZaloOutboundDB(t)
+	if err := SaveStoredCredentials(context.Background(), db, StoredCredentials{
+		AccountID:   "acc-1",
+		DisplayName: "Canh",
+		IMEI:        "imei-1",
+		Cookie:      "cookie-1",
+		UserAgent:   "ua-1",
+	}); err != nil {
+		t.Fatalf("SaveStoredCredentials: %v", err)
+	}
+
+	connector := NewConnector(db, conversations.NewConversationStore(db), &stubInboundRuntime{}, "assistant")
+	connector.listFriends = func(context.Context, StoredCredentials) ([]protocol.FriendInfo, error) {
+		return []protocol.FriendInfo{
+			{UserID: "user-1", DisplayName: "Mẹ", Avatar: "https://example.com/me.png"},
+		}, nil
+	}
+	connector.listGroups = func(context.Context, StoredCredentials) ([]protocol.GroupListInfo, error) {
+		return nil, nil
+	}
+	connector.fetchUnreadMarks = func(context.Context, StoredCredentials) ([]protocol.UnreadMarkInfo, error) {
+		return []protocol.UnreadMarkInfo{
+			{ThreadID: "user-1", ThreadType: protocol.ThreadTypeUser},
+		}, nil
+	}
+	connector.fetchPinnedThreads = func(context.Context, StoredCredentials) ([]protocol.PinnedConversationInfo, error) {
+		return []protocol.PinnedConversationInfo{
+			{ThreadID: "user-1", ThreadType: protocol.ThreadTypeUser},
+		}, nil
+	}
+	connector.fetchHiddenThreads = func(context.Context, StoredCredentials) ([]protocol.HiddenConversationInfo, error) {
+		return []protocol.HiddenConversationInfo{
+			{ThreadID: "user-1", ThreadType: protocol.ThreadTypeUser},
+		}, nil
+	}
+	connector.fetchArchivedThreads = func(context.Context, StoredCredentials) ([]protocol.ArchivedConversationInfo, error) {
+		return []protocol.ArchivedConversationInfo{
+			{ThreadID: "user-1", ThreadType: protocol.ThreadTypeUser},
+		}, nil
+	}
+
+	result, err := connector.CapabilityListInbox(context.Background(), capabilities.InboxListRequest{
+		ConnectorID: "zalo_personal",
+		UnreadOnly:  true,
+		Limit:       10,
+	})
+	if err != nil {
+		t.Fatalf("CapabilityListInbox: %v", err)
+	}
+	if len(result.Entries) != 1 {
+		t.Fatalf("expected 1 flagged inbox entry, got %+v", result.Entries)
+	}
+	entry := result.Entries[0]
+	if entry.Metadata["pinned"] != "true" || entry.Metadata["hidden"] != "true" || entry.Metadata["archived"] != "true" {
+		t.Fatalf("expected thread flags in metadata, got %+v", entry.Metadata)
+	}
+	if entry.Metadata["avatar"] != "https://example.com/me.png" {
+		t.Fatalf("expected directory metadata to be preserved, got %+v", entry.Metadata)
 	}
 }
 

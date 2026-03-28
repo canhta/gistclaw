@@ -17,6 +17,28 @@ func TestEngine_Recommend(t *testing.T) {
 		wantTools []string
 	}{
 		{
+			name: "direct for unread inbox lookup",
+			input: Input{
+				Objective: "kiểm tra xem có tin nhắn nào chưa đọc trên Zalo không",
+				Agent: model.AgentProfile{
+					AgentID:         "assistant",
+					BaseProfile:     model.BaseProfileOperator,
+					ToolFamilies:    []model.ToolFamily{model.ToolFamilyConnectorCapability, model.ToolFamilyDelegate},
+					DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
+				},
+				VisibleTools: []model.ToolSpec{
+					{Name: "connector_inbox_list", Family: model.ToolFamilyConnectorCapability, Intents: []model.ToolIntent{model.ToolIntentInboxList}},
+					{Name: "delegate_task", Family: model.ToolFamilyDelegate, Intents: []model.ToolIntent{model.ToolIntentDelegate}},
+				},
+				Specialists: map[string]model.AgentProfile{
+					"researcher": {AgentID: "researcher", BaseProfile: model.BaseProfileResearch},
+				},
+			},
+			want:      ModeDirect,
+			wantHas:   []string{"direct"},
+			wantTools: []string{"connector_inbox_list"},
+		},
+		{
 			name: "direct for bounded connector action",
 			input: Input{
 				Objective: "List my Zalo contacts and send hello to Anh on Zalo.",

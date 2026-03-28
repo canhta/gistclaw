@@ -1271,6 +1271,136 @@ func TestRunEngine_IncludesExecutionRecommendationAndSpecialistRosterInProviderR
 	}
 }
 
+func TestRunEngine_DirectInboxFlowDoesNotSpawnChildRun(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	var inboxCalls []capabilities.InboxListRequest
+	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "web_fetch", Family: model.ToolFamilyWebRead, Risk: model.RiskLow, SideEffect: "read"}})
+	tools.RegisterCapabilityTools(reg, tools.CapabilityHandlers{
+		InboxList: func(_ context.Context, req capabilities.InboxListRequest) (capabilities.InboxListResult, error) {
+			inboxCalls = append(inboxCalls, req)
+			return capabilities.InboxListResult{
+				ConnectorID: "zalo_personal",
+				Entries: []capabilities.InboxEntry{
+					{
+						ThreadID:           "user-1",
+						ThreadType:         "contact",
+						Title:              "Mẹ",
+						IsUnread:           true,
+						UnreadCount:        1,
+						LastMessagePreview: "alo",
+					},
+				},
+			}, nil
+		},
+	})
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				Content: "I will check the unread inbox directly.",
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:        "call-inbox",
+						ToolName:  "connector_inbox_list",
+						InputJSON: []byte(`{"connector_id":"zalo_personal","unread_only":true,"limit":10}`),
+					},
+				},
+				StopReason: "tool_calls",
+			},
+			{
+				Content:    "You have one unread Zalo conversation from Mẹ.",
+				StopReason: "end_turn",
+			},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
+		DelegateTask: rt.DelegateTaskTool,
+	})
+
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID: "default",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:                     "assistant",
+				Role:                        "front assistant",
+				Instructions:                "prefer direct execution before delegation",
+				BaseProfile:                 model.BaseProfileOperator,
+				ToolFamilies:                []model.ToolFamily{model.ToolFamilyConnectorCapability, model.ToolFamilyDelegate},
+				DelegationKinds:             []model.DelegationKind{model.DelegationKindResearch},
+				SpecialistSummaryVisibility: model.SpecialistSummaryFull,
+			},
+			"researcher": {
+				AgentID:      "researcher",
+				BaseProfile:  model.BaseProfileResearch,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyWebRead},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-zalo-unread",
+		AgentID:        "assistant",
+		Objective:      "kiểm tra xem có tin nhắn nào chưa đọc trên Zalo không",
+		CWD:            t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if run.Status != model.RunStatusCompleted {
+		t.Fatalf("expected run completed, got %q", run.Status)
+	}
+	if len(inboxCalls) != 1 {
+		t.Fatalf("expected 1 inbox call, got %d", len(inboxCalls))
+	}
+	if !inboxCalls[0].UnreadOnly {
+		t.Fatalf("expected unread_only request, got %+v", inboxCalls[0])
+	}
+
+	var childRuns int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM runs WHERE parent_run_id = ?",
+		run.ID,
+	).Scan(&childRuns); err != nil {
+		t.Fatalf("count child runs: %v", err)
+	}
+	if childRuns != 0 {
+		t.Fatalf("expected no child runs for direct inbox flow, got %d", childRuns)
+	}
+
+	if len(prov.Requests) != 2 {
+		t.Fatalf("expected 2 provider requests, got %d", len(prov.Requests))
+	}
+	gotNames := make(map[string]bool, len(prov.Requests[0].ToolSpecs))
+	for _, spec := range prov.Requests[0].ToolSpecs {
+		gotNames[spec.Name] = true
+	}
+	if !gotNames["connector_inbox_list"] {
+		t.Fatalf("expected connector_inbox_list to be visible, got %+v", gotNames)
+	}
+	if !gotNames["delegate_task"] {
+		t.Fatalf("expected delegate_task to remain visible as fallback, got %+v", gotNames)
+	}
+	if !gotNames["web_fetch"] {
+		t.Fatalf("expected web_fetch to remain visible as fallback, got %+v", gotNames)
+	}
+	if prov.Requests[0].ToolSpecs[0].Name != "connector_inbox_list" {
+		t.Fatalf("expected connector_inbox_list to be ranked first, got %q", prov.Requests[0].ToolSpecs[0].Name)
+	}
+	for _, want := range []string{
+		"Mode: direct",
+		"Preferred direct tool path:",
+		"connector_inbox_list",
+		"Use these before delegation",
+	} {
+		if !strings.Contains(prov.Requests[0].Instructions, want) {
+			t.Fatalf("expected direct inbox instructions to include %q, got:\n%s", want, prov.Requests[0].Instructions)
+		}
+	}
+}
+
 func TestRunEngine_DirectConnectorFlowPausesForApprovalWithoutChildRun(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	var directoryCalls []capabilities.DirectoryListRequest

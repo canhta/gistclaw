@@ -44,7 +44,7 @@ func TestMigrate_FreshDB(t *testing.T) {
 	tables := []string{
 		"conversations", "events", "runs", "sessions", "session_messages",
 		"session_bindings", "inbound_receipts", "tool_calls", "approvals", "receipts",
-		"memory_items", "outbound_intents", "settings", "run_summaries",
+		"memory_items", "outbound_intents", "settings", "connector_threads", "run_summaries",
 	}
 	for _, table := range tables {
 		var name string
@@ -67,6 +67,7 @@ func TestMigrate_FreshDB(t *testing.T) {
 		"idx_inbound_receipts_conversation_source_message",
 		"idx_approvals_run_id_status",
 		"idx_memory_items_project_id_agent_id_scope",
+		"idx_connector_threads_connector_account_last_message_at",
 		"idx_run_summaries_project_id_run_id",
 		"idx_runs_session_id_status_updated_at",
 	}

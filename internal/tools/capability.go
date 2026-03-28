@@ -10,11 +10,16 @@ import (
 )
 
 type CapabilityHandlers struct {
+	InboxList     func(context.Context, capabilities.InboxListRequest) (capabilities.InboxListResult, error)
 	DirectoryList func(context.Context, capabilities.DirectoryListRequest) (capabilities.DirectoryListResult, error)
 	ResolveTarget func(context.Context, capabilities.TargetResolveRequest) (capabilities.TargetResolveResult, error)
 	Send          func(context.Context, capabilities.SendRequest) (capabilities.SendResult, error)
 	Status        func(context.Context, capabilities.StatusRequest) (capabilities.StatusResult, error)
 	AppAction     func(context.Context, capabilities.AppActionRequest) (capabilities.AppActionResult, error)
+}
+
+type ConnectorInboxListTool struct {
+	list func(context.Context, capabilities.InboxListRequest) (capabilities.InboxListResult, error)
 }
 
 type ConnectorDirectoryListTool struct {
@@ -41,6 +46,9 @@ func RegisterCapabilityTools(reg *Registry, handlers CapabilityHandlers) {
 	if reg == nil {
 		return
 	}
+	if handlers.InboxList != nil {
+		reg.Register(&ConnectorInboxListTool{list: handlers.InboxList})
+	}
 	if handlers.DirectoryList != nil {
 		reg.Register(&ConnectorDirectoryListTool{list: handlers.DirectoryList})
 	}
@@ -56,6 +64,38 @@ func RegisterCapabilityTools(reg *Registry, handlers CapabilityHandlers) {
 	if handlers.AppAction != nil {
 		reg.Register(&AppActionTool{action: handlers.AppAction})
 	}
+}
+
+func (t *ConnectorInboxListTool) Name() string { return "connector_inbox_list" }
+
+func (t *ConnectorInboxListTool) Spec() model.ToolSpec {
+	return model.ToolSpec{
+		Name:            t.Name(),
+		Description:     "List recent connector inbox threads and unread conversation state.",
+		InputSchemaJSON: `{"type":"object","properties":{"connector_id":{"type":"string"},"scope":{"type":"string"},"query":{"type":"string"},"limit":{"type":"integer","minimum":1},"unread_only":{"type":"boolean"}},"required":["connector_id"]}`,
+		Family:          model.ToolFamilyConnectorCapability,
+		Intents:         []model.ToolIntent{model.ToolIntentInboxList},
+		Risk:            model.RiskLow,
+		SideEffect:      effectRead,
+	}
+}
+
+func (t *ConnectorInboxListTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
+	if t.list == nil {
+		return model.ToolResult{}, fmt.Errorf("connector_inbox_list: handler is required")
+	}
+	var input capabilities.InboxListRequest
+	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
+		return model.ToolResult{}, fmt.Errorf("connector_inbox_list: decode input: %w", err)
+	}
+	if input.ConnectorID == "" {
+		return model.ToolResult{}, fmt.Errorf("connector_inbox_list: connector_id is required")
+	}
+	result, err := t.list(ctx, input)
+	if err != nil {
+		return model.ToolResult{}, err
+	}
+	return marshalCapabilityResult("connector_inbox_list", result)
 }
 
 func (t *ConnectorDirectoryListTool) Name() string { return "connector_directory_list" }

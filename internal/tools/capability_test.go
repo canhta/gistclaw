@@ -12,6 +12,9 @@ import (
 func TestRegisterCapabilityTools_RegistersCapabilityTools(t *testing.T) {
 	reg := NewRegistry()
 	RegisterCapabilityTools(reg, CapabilityHandlers{
+		InboxList: func(context.Context, capabilities.InboxListRequest) (capabilities.InboxListResult, error) {
+			return capabilities.InboxListResult{}, nil
+		},
 		DirectoryList: func(context.Context, capabilities.DirectoryListRequest) (capabilities.DirectoryListResult, error) {
 			return capabilities.DirectoryListResult{}, nil
 		},
@@ -30,6 +33,7 @@ func TestRegisterCapabilityTools_RegistersCapabilityTools(t *testing.T) {
 	})
 
 	for _, name := range []string{
+		"connector_inbox_list",
 		"connector_directory_list",
 		"connector_target_resolve",
 		"connector_send",
@@ -39,6 +43,39 @@ func TestRegisterCapabilityTools_RegistersCapabilityTools(t *testing.T) {
 		if _, ok := reg.Get(name); !ok {
 			t.Fatalf("expected %q to be registered", name)
 		}
+	}
+}
+
+func TestConnectorInboxListTool_InvokeNormalizesOutput(t *testing.T) {
+	tool := &ConnectorInboxListTool{
+		list: func(_ context.Context, req capabilities.InboxListRequest) (capabilities.InboxListResult, error) {
+			if req.ConnectorID != "zalo_personal" || !req.UnreadOnly || req.Query != "mẹ" || req.Limit != 5 {
+				t.Fatalf("unexpected request: %+v", req)
+			}
+			return capabilities.InboxListResult{
+				ConnectorID: "zalo_personal",
+				Entries: []capabilities.InboxEntry{
+					{ThreadID: "user-1", ThreadType: "contact", Title: "Mẹ", IsUnread: true, UnreadCount: 1},
+				},
+			}, nil
+		},
+	}
+
+	result, err := tool.Invoke(context.Background(), model.ToolCall{
+		ID:        "call-1",
+		ToolName:  tool.Name(),
+		InputJSON: []byte(`{"connector_id":"zalo_personal","query":"mẹ","limit":5,"unread_only":true}`),
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	var payload capabilities.InboxListResult
+	if err := json.Unmarshal([]byte(result.Output), &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if payload.ConnectorID != "zalo_personal" || len(payload.Entries) != 1 || !payload.Entries[0].IsUnread {
+		t.Fatalf("unexpected output payload: %+v", payload)
 	}
 }
 

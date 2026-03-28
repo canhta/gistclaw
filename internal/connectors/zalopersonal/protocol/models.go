@@ -23,11 +23,13 @@ type LoginInfo struct {
 }
 
 type ZpwServiceMapV3 struct {
-	Chat      []string `json:"chat"`
-	Group     []string `json:"group"`
-	File      []string `json:"file"`
-	Profile   []string `json:"profile"`
-	GroupPoll []string `json:"group_poll"`
+	Chat         []string `json:"chat"`
+	Group        []string `json:"group"`
+	File         []string `json:"file"`
+	Profile      []string `json:"profile"`
+	GroupPoll    []string `json:"group_poll"`
+	Conversation []string `json:"conversation"`
+	Label        []string `json:"label"`
 }
 
 type ServerInfo struct {

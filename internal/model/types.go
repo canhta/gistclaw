@@ -161,6 +161,7 @@ func IsValidToolFamily(s string) bool {
 type ToolIntent string
 
 const (
+	ToolIntentInboxList     ToolIntent = "inbox_list"
 	ToolIntentDirectoryList ToolIntent = "directory_list"
 	ToolIntentTargetResolve ToolIntent = "target_resolve"
 	ToolIntentMessageSend   ToolIntent = "message_send"
@@ -173,6 +174,7 @@ const (
 )
 
 var validToolIntents = map[ToolIntent]bool{
+	ToolIntentInboxList:     true,
 	ToolIntentDirectoryList: true,
 	ToolIntentTargetResolve: true,
 	ToolIntentMessageSend:   true,

@@ -483,6 +483,7 @@ func buildToolRegistry(ctx context.Context, cfg Config, factory tools.MCPFactory
 	}
 	if capabilityRegistry != nil {
 		opts.Capabilities = tools.CapabilityHandlers{
+			InboxList:     capabilityRegistry.InboxList,
 			DirectoryList: capabilityRegistry.DirectoryList,
 			ResolveTarget: capabilityRegistry.ResolveTarget,
 			Send:          capabilityRegistry.Send,

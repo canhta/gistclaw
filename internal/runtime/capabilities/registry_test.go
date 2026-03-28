@@ -11,15 +11,18 @@ import (
 type stubConnector struct {
 	id              string
 	aliases         []string
+	inboxCalls      []InboxListRequest
 	directoryCalls  []DirectoryListRequest
 	resolveCalls    []TargetResolveRequest
 	sendCalls       []SendRequest
 	statusCalls     []StatusRequest
+	inboxResult     InboxListResult
 	directoryResult DirectoryListResult
 	resolveResult   TargetResolveResult
 	sendResult      SendResult
 	statusResult    ConnectorStatus
 	snapshot        model.ConnectorHealthSnapshot
+	inboxErr        error
 	directoryErr    error
 	resolveErr      error
 	sendErr         error
@@ -39,6 +42,11 @@ func (c *stubConnector) Drain(context.Context) error { return nil }
 func (c *stubConnector) CapabilityListDirectory(_ context.Context, req DirectoryListRequest) (DirectoryListResult, error) {
 	c.directoryCalls = append(c.directoryCalls, req)
 	return c.directoryResult, c.directoryErr
+}
+
+func (c *stubConnector) CapabilityListInbox(_ context.Context, req InboxListRequest) (InboxListResult, error) {
+	c.inboxCalls = append(c.inboxCalls, req)
+	return c.inboxResult, c.inboxErr
 }
 
 func (c *stubConnector) CapabilityResolveTarget(_ context.Context, req TargetResolveRequest) (TargetResolveResult, error) {
@@ -96,6 +104,12 @@ func TestCapabilityRegistry_InvokesRegisteredConnectorAdapters(t *testing.T) {
 	reg := NewRegistry()
 	connector := &stubConnector{
 		id: "zalo_personal",
+		inboxResult: InboxListResult{
+			ConnectorID: "zalo_personal",
+			Entries: []InboxEntry{
+				{ThreadID: "user-1", ThreadType: "contact", Title: "Anh An", IsUnread: true, UnreadCount: 1},
+			},
+		},
 		directoryResult: DirectoryListResult{
 			ConnectorID: "zalo_personal",
 			Scope:       "contacts",
@@ -125,6 +139,21 @@ func TestCapabilityRegistry_InvokesRegisteredConnectorAdapters(t *testing.T) {
 		},
 	}
 	reg.RegisterConnector(connector)
+
+	inboxResult, err := reg.InboxList(context.Background(), InboxListRequest{
+		ConnectorID: "zalo_personal",
+		UnreadOnly:  true,
+		Limit:       5,
+	})
+	if err != nil {
+		t.Fatalf("InboxList: %v", err)
+	}
+	if len(inboxResult.Entries) != 1 || inboxResult.Entries[0].ThreadID != "user-1" {
+		t.Fatalf("unexpected inbox result: %+v", inboxResult)
+	}
+	if len(connector.inboxCalls) != 1 || !connector.inboxCalls[0].UnreadOnly {
+		t.Fatalf("unexpected inbox calls: %+v", connector.inboxCalls)
+	}
 
 	dirResult, err := reg.DirectoryList(context.Background(), DirectoryListRequest{
 		ConnectorID: "zalo_personal",
@@ -189,6 +218,12 @@ func TestCapabilityRegistry_ResolvesConnectorAliases(t *testing.T) {
 	connector := &stubConnector{
 		id:      "zalo_personal",
 		aliases: []string{"zalo", "zalo personal"},
+		inboxResult: InboxListResult{
+			ConnectorID: "zalo_personal",
+			Entries: []InboxEntry{
+				{ThreadID: "user-1", ThreadType: "contact", Title: "Anh An", IsUnread: true, UnreadCount: 1},
+			},
+		},
 		directoryResult: DirectoryListResult{
 			ConnectorID: "zalo_personal",
 			Scope:       "contacts",
@@ -209,6 +244,13 @@ func TestCapabilityRegistry_ResolvesConnectorAliases(t *testing.T) {
 		},
 	}
 	reg.RegisterConnector(connector)
+
+	if _, err := reg.InboxList(context.Background(), InboxListRequest{ConnectorID: "zalo"}); err != nil {
+		t.Fatalf("InboxList alias lookup: %v", err)
+	}
+	if len(connector.inboxCalls) != 1 || connector.inboxCalls[0].ConnectorID != "zalo_personal" {
+		t.Fatalf("expected inbox alias to resolve to canonical connector id, got %+v", connector.inboxCalls)
+	}
 
 	if _, err := reg.DirectoryList(context.Background(), DirectoryListRequest{ConnectorID: "zalo"}); err != nil {
 		t.Fatalf("DirectoryList alias lookup: %v", err)
