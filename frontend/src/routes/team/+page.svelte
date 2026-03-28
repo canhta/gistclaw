@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
+	import { beforeNavigate, invalidateAll } from '$app/navigation';
 	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
@@ -7,6 +7,8 @@
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	let editMode = $state(false);
 
 	let noticeOverride = $state<string | null>(null);
 	let errorMessage = $state('');
@@ -50,6 +52,32 @@
 		memberDrafts = null;
 		errorMessage = '';
 	}
+
+	function hasDraft(): boolean {
+		if (nameOverride !== null) return true;
+		if (frontAgentOverride !== null) return true;
+		if (Object.keys(roleOverrides).length > 0) return true;
+		if (Object.keys(baseProfileOverrides).length > 0) return true;
+		if (Object.keys(toolFamilyOverrides).length > 0) return true;
+		if (Object.keys(delegationKindOverrides).length > 0) return true;
+		if (memberDrafts !== null) return true;
+		return false;
+	}
+
+	function confirmDiscardDraft(): boolean {
+		if (!hasDraft()) return true;
+		// eslint-disable-next-line no-alert
+		return confirm('Discard unsaved changes?');
+	}
+
+	beforeNavigate(({ cancel }) => {
+		if (hasDraft()) {
+			// eslint-disable-next-line no-alert
+			if (!confirm('You have unsaved changes. Leave without saving?')) {
+				cancel();
+			}
+		}
+	});
 
 	function teamMembers(): TeamMemberResponse[] {
 		return memberDrafts ?? data.team.team.members;
@@ -156,6 +184,7 @@
 	}
 
 	async function useProfile(profileID: string): Promise<void> {
+		if (!confirmDiscardDraft()) return;
 		busyAction = `use:${profileID}`;
 		errorMessage = '';
 
@@ -317,6 +346,40 @@
 </svelte:head>
 
 <div class="grid gap-6">
+	{#if hasDraft()}
+		<div class="gc-panel-soft flex items-center justify-between gap-4 border-[var(--gc-orange)] px-4 py-4">
+			<p class="gc-stamp text-[var(--gc-orange)]">Unsaved changes</p>
+			<div class="flex gap-3">
+				<SurfaceActionButton tone="solid" onclick={() => document.querySelector('form')?.requestSubmit()}>
+					Save now
+				</SurfaceActionButton>
+				<SurfaceActionButton onclick={resetDraft}>Discard</SurfaceActionButton>
+			</div>
+		</div>
+	{/if}
+
+	{#if !editMode}
+		<section class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
+			<div class="flex items-start justify-between gap-4">
+				<div>
+					<p class="gc-stamp">Current setup</p>
+					<h2 class="gc-section-title mt-3">{data.team.team.name}</h2>
+				</div>
+				<SurfaceActionButton onclick={() => (editMode = true)}>Edit setup</SurfaceActionButton>
+			</div>
+			<div class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+				{#each data.team.team.members as member (member.id)}
+					<div class="gc-panel-soft px-4 py-4">
+						<p class="gc-stamp">{member.role}</p>
+						<p class="gc-panel-title mt-2 text-[1rem]">{member.base_profile}</p>
+						<p class="gc-machine mt-2">{member.tool_families.length} tool families</p>
+					</div>
+				{/each}
+			</div>
+		</section>
+	{/if}
+
+	{#if editMode}
 	<section class="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
 		<form class="gc-panel px-5 py-5 lg:px-6 lg:py-6" onsubmit={saveTeam}>
 			<p class="gc-stamp">Active setup</p>
@@ -607,4 +670,5 @@
 			{/each}
 		</div>
 	</section>
+	{/if}
 </div>

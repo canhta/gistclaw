@@ -87,24 +87,15 @@ describe('Team page', () => {
 			}
 		});
 
+		// Overview panel is shown by default (editMode = false)
 		expect(body).toContain('Review Crew');
-		expect(body).toContain('Profile review created and selected.');
-		expect(body).toContain(
-			'Choose who leads the work, which specialists help, and what each role is allowed to do.'
-		);
-		expect(body).toContain('review');
-		expect(body).toContain('default');
-		expect(body).toContain('reviewer');
+		expect(body).toContain('Current setup');
+		expect(body).toContain('Edit setup');
+		// Member cards visible in overview
 		expect(body).toContain('front assistant');
 		expect(body).toContain('scoped write specialist');
 		expect(body).toContain('diff reviewer');
-		expect(body).toContain('Save setup');
-		expect(body).toContain('Create setup');
-		expect(body).toContain('Copy setup');
-		expect(body).toContain('Delete setup');
-		expect(body).toContain('Import setup file');
-		expect(body).toContain('Export YAML');
-		expect(body).toContain('Add another role');
-		expect(body).toContain('/tmp/storage/projects/proj-primary/teams/review/team.yaml');
+		// Edit form is hidden until editMode is toggled
+		expect(body).not.toContain('Save setup');
 	});
 });
