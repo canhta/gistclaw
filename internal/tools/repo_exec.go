@@ -1,7 +1,6 @@
 package tools
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -81,37 +80,18 @@ func (r commandRunner) runPiped(ctx context.Context, req commandRequest) (model.
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	stdoutPipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return model.ToolResult{}, fmt.Errorf("tools: stdout pipe: %w", err)
-	}
-	stderrPipe, err := cmd.StderrPipe()
-	if err != nil {
-		return model.ToolResult{}, fmt.Errorf("tools: stderr pipe: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
-		return model.ToolResult{}, fmt.Errorf("tools: start command: %w", err)
-	}
-
 	sink := toolLogSinkFromContext(ctx)
-	stdoutDone := make(chan error, 1)
-	stderrDone := make(chan error, 1)
-	go func() {
-		stdoutDone <- streamCommandOutput(ctx, stdoutPipe, &stdout, sink, "stdout")
-	}()
-	go func() {
-		stderrDone <- streamCommandOutput(ctx, stderrPipe, &stderr, sink, "stderr")
-	}()
+	stdoutWriter := newStreamCaptureWriter(ctx, sink, "stdout", &stdout)
+	stderrWriter := newStreamCaptureWriter(ctx, sink, "stderr", &stderr)
+	cmd.Stdout = stdoutWriter
+	cmd.Stderr = stderrWriter
 
-	err = cmd.Wait()
-	stdoutErr := <-stdoutDone
-	stderrErr := <-stderrDone
-	if err == nil {
-		if stdoutErr != nil && !isClosedCommandPipe(stdoutErr) {
-			err = stdoutErr
-		} else if stderrErr != nil && !isClosedCommandPipe(stderrErr) {
-			err = stderrErr
-		}
+	err := cmd.Run()
+	if flushErr := stdoutWriter.Flush(); err == nil && flushErr != nil {
+		err = flushErr
+	}
+	if flushErr := stderrWriter.Flush(); err == nil && flushErr != nil {
+		err = flushErr
 	}
 	result := commandResult{
 		Command: strings.TrimSpace(strings.Join(append([]string{req.command}, req.args...), " ")),
@@ -235,32 +215,6 @@ func (r commandRunner) runPTY(ctx context.Context, req commandRequest) (model.To
 	return toolResult, nil
 }
 
-func streamCommandOutput(ctx context.Context, reader io.Reader, buffer *bytes.Buffer, sink ToolLogSink, stream string) error {
-	buf := bufio.NewReader(reader)
-	for {
-		chunk, err := buf.ReadString('\n')
-		if chunk != "" {
-			buffer.WriteString(chunk)
-			if sink != nil {
-				if err := sink.Record(ctx, ToolLogRecord{
-					Stream:     stream,
-					Text:       chunk,
-					OccurredAt: time.Now().UTC(),
-				}); err != nil {
-					return err
-				}
-			}
-		}
-		if err == nil {
-			continue
-		}
-		if errors.Is(err, io.EOF) {
-			return nil
-		}
-		return err
-	}
-}
-
 func streamTerminalOutput(ctx context.Context, reader io.Reader, buffer *bytes.Buffer, sink ToolLogSink) error {
 	chunk := make([]byte, 4096)
 	for {
@@ -288,6 +242,74 @@ func streamTerminalOutput(ctx context.Context, reader io.Reader, buffer *bytes.B
 	}
 }
 
+type streamCaptureWriter struct {
+	ctx     context.Context
+	sink    ToolLogSink
+	stream  string
+	buffer  *bytes.Buffer
+	pending bytes.Buffer
+}
+
+func newStreamCaptureWriter(ctx context.Context, sink ToolLogSink, stream string, buffer *bytes.Buffer) *streamCaptureWriter {
+	return &streamCaptureWriter{
+		ctx:    ctx,
+		sink:   sink,
+		stream: stream,
+		buffer: buffer,
+	}
+}
+
+func (w *streamCaptureWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	if _, err := w.buffer.Write(p); err != nil {
+		return 0, err
+	}
+	if w.sink == nil {
+		return len(p), nil
+	}
+	if _, err := w.pending.Write(p); err != nil {
+		return 0, err
+	}
+	if err := w.flushLines(false); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+func (w *streamCaptureWriter) Flush() error {
+	return w.flushLines(true)
+}
+
+func (w *streamCaptureWriter) flushLines(includePartial bool) error {
+	if w.sink == nil {
+		return nil
+	}
+	for {
+		data := w.pending.Bytes()
+		idx := bytes.IndexByte(data, '\n')
+		if idx < 0 {
+			if !includePartial || len(data) == 0 {
+				return nil
+			}
+			idx = len(data) - 1
+		}
+		chunk := string(data[:idx+1])
+		if err := w.sink.Record(w.ctx, ToolLogRecord{
+			Stream:     w.stream,
+			Text:       chunk,
+			OccurredAt: time.Now().UTC(),
+		}); err != nil {
+			return err
+		}
+		w.pending.Next(idx + 1)
+		if idx >= len(data)-1 {
+			return nil
+		}
+	}
+}
+
 func isExpectedTerminalReadClose(err error) bool {
 	if err == nil {
 		return false
@@ -296,15 +318,6 @@ func isExpectedTerminalReadClose(err error) bool {
 		return true
 	}
 	return strings.Contains(err.Error(), "input/output error")
-}
-
-func isClosedCommandPipe(err error) bool {
-	if err == nil {
-		return false
-	}
-	return errors.Is(err, os.ErrClosed) ||
-		errors.Is(err, io.ErrClosedPipe) ||
-		strings.Contains(err.Error(), "file already closed")
 }
 
 type ApplyPatchTool struct {
