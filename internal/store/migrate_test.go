@@ -236,16 +236,6 @@ func assertTableHasColumns(t *testing.T, db *DB, tableName string, columns ...st
 	}
 }
 
-func assertTableOmitsColumns(t *testing.T, db *DB, tableName string, columns ...string) {
-	t.Helper()
-	have := tableColumns(t, db, tableName)
-	for _, column := range columns {
-		if have[column] {
-			t.Fatalf("expected table %q to omit column %q", tableName, column)
-		}
-	}
-}
-
 func tableColumns(t *testing.T, db *DB, tableName string) map[string]bool {
 	t.Helper()
 

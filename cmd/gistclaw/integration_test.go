@@ -141,11 +141,6 @@ func buildBinary(t *testing.T) string {
 	return buildBinaryWithArgs(t)
 }
 
-func buildBinaryTrimpath(t *testing.T) string {
-	t.Helper()
-	return buildBinaryWithArgs(t, "-trimpath")
-}
-
 func buildBinaryWithArgs(t *testing.T, extraArgs ...string) string {
 	t.Helper()
 
