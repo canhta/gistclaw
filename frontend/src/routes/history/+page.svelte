@@ -1,5 +1,5 @@
 <script lang="ts">
-	import RunClusterCard from '$lib/components/common/RunClusterCard.svelte';
+	import WorkClusterPanel from '$lib/components/common/WorkClusterPanel.svelte';
 	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import { resolve } from '$app/paths';
@@ -78,7 +78,7 @@
 					/>
 				{:else}
 					{#each data.history.runs as cluster (cluster.root.id)}
-						<RunClusterCard {cluster} actionLabel="Open evidence" />
+						<WorkClusterPanel {cluster} />
 					{/each}
 				{/if}
 			</div>

@@ -105,9 +105,8 @@ describe('Work page', () => {
 		expect(body).toContain('starter-project');
 		expect(body).toContain('/tmp/starter-project');
 		expect(body).toContain('Review the repo');
-		expect(body).toContain('researcher waiting on approval');
 		expect(body).toContain('/work/run-work-root');
-		expect(body).toContain('Open run graph');
+		expect(body).toContain('Open graph');
 		expect(body).toContain('Describe the work you want GistClaw to handle next');
 		expect(body).toContain('Describe the task in plain language.');
 		expect(body).toContain('GistClaw will start it and open the run so you can keep');

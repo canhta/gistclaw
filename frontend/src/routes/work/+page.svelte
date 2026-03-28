@@ -3,7 +3,7 @@
 	import { resolve } from '$app/paths';
 	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
 	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
-	import RunClusterCard from '$lib/components/common/RunClusterCard.svelte';
+	import WorkClusterPanel from '$lib/components/common/WorkClusterPanel.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
 	import type { WorkCreateResponse } from '$lib/types/api';
 	import type { PageData } from './$types';
@@ -14,12 +14,6 @@
 	let errorMessage = $state('');
 	let submitting = $state(false);
 
-	const queueStats = $derived([
-		{ label: 'Root runs', value: data.work.queue_strip.root_runs },
-		{ label: 'Worker runs', value: data.work.queue_strip.worker_runs },
-		{ label: 'Recovery', value: data.work.queue_strip.recovery_runs },
-		{ label: 'Approvals', value: data.work.queue_strip.summary.needs_approval }
-	]);
 
 	async function submit(event: SubmitEvent): Promise<void> {
 		event.preventDefault();
@@ -93,12 +87,22 @@
 			</p>
 
 			<div class="mt-6 grid gap-3 sm:grid-cols-2">
-				{#each queueStats as stat (stat.label)}
-					<div class="gc-panel-soft px-4 py-4">
-						<p class="gc-stamp">{stat.label}</p>
-						<p class="gc-value mt-3">{stat.value}</p>
-					</div>
-				{/each}
+				<div class="gc-panel-soft px-4 py-4">
+					<p class="gc-stamp">Active</p>
+					<p class="gc-value mt-3">{data.work.queue_strip.root_runs}</p>
+				</div>
+				<div class="gc-panel-soft px-4 py-4">
+					<p class="gc-stamp">Workers</p>
+					<p class="gc-value mt-3">{data.work.queue_strip.worker_runs}</p>
+				</div>
+				<div class={`gc-panel-soft px-4 py-4 ${data.work.queue_strip.recovery_runs > 0 ? 'border-[var(--gc-orange)]' : ''}`}>
+					<p class="gc-stamp">Recovery</p>
+					<p class="gc-value mt-3">{data.work.queue_strip.recovery_runs}</p>
+				</div>
+				<div class={`gc-panel-soft px-4 py-4 ${data.work.queue_strip.summary.needs_approval > 0 ? 'border-[var(--gc-orange)]' : ''}`}>
+					<p class="gc-stamp">Approvals</p>
+					<p class="gc-value mt-3">{data.work.queue_strip.summary.needs_approval}</p>
+				</div>
 			</div>
 		</div>
 	</section>
@@ -122,7 +126,7 @@
 		{:else}
 			<div class="mt-6 grid gap-4 xl:grid-cols-2">
 				{#each data.work.clusters as cluster (cluster.root.id)}
-					<RunClusterCard {cluster} />
+					<WorkClusterPanel {cluster} />
 				{/each}
 			</div>
 		{/if}
