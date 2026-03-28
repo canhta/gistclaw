@@ -6,9 +6,28 @@
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
+	import { setInspectorItems } from '$lib/shell/inspector.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	setInspectorItems(() => [
+		{
+			label: 'Open approvals',
+			value: String(data.recover.summary.open_approvals),
+			tone: data.recover.summary.open_approvals > 0 ? 'warning' : 'default'
+		},
+		{
+			label: 'Pending now',
+			value: String(data.recover.summary.pending_approvals),
+			tone: data.recover.summary.pending_approvals > 0 ? 'warning' : 'default'
+		},
+		{
+			label: 'Terminal deliveries',
+			value: String(data.recover.summary.terminal_deliveries),
+			tone: data.recover.summary.terminal_deliveries > 0 ? 'warning' : 'default'
+		}
+	]);
 
 	function statusTextClass(statusClass: string): string {
 		if (statusClass.includes('approval')) return 'text-[var(--gc-orange)]';
@@ -150,7 +169,9 @@
 									<p class="gc-stamp">{approval.tool_name} · {approval.status_label}</p>
 									<h3 class="gc-panel-title mt-3 text-[1rem]">{approval.binding_summary}</h3>
 								</div>
-								<p class={`gc-machine ${statusTextClass(approval.status_class)}`}>{approval.run_id}</p>
+								<p class={`gc-machine ${statusTextClass(approval.status_class)}`}>
+									{approval.run_id}
+								</p>
 							</div>
 
 							<div class="mt-4 flex flex-wrap gap-3">

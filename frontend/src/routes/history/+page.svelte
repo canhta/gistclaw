@@ -3,9 +3,27 @@
 	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import { resolve } from '$app/paths';
+	import { setInspectorItems } from '$lib/shell/inspector.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	setInspectorItems(() => [
+		{
+			label: 'Total runs',
+			value: String(data.history.summary.run_count),
+			tone: 'accent'
+		},
+		{
+			label: 'Completed',
+			value: String(data.history.summary.completed_runs)
+		},
+		{
+			label: 'Recovery',
+			value: String(data.history.summary.recovery_runs),
+			tone: data.history.summary.recovery_runs > 0 ? 'warning' : 'default'
+		}
+	]);
 
 	const summaryCards = $derived([
 		{

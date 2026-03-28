@@ -2,10 +2,28 @@
 	import { resolve } from '$app/paths';
 	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
+	import { setInspectorItems } from '$lib/shell/inspector.svelte';
 	import type { RecoverDeliveryHealthResponse } from '$lib/types/api';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	setInspectorItems(() => [
+		{
+			label: 'Active',
+			value: String(data.conversations.summary.session_count),
+			tone: data.conversations.summary.session_count > 0 ? 'accent' : 'default'
+		},
+		{
+			label: 'Failed deliveries',
+			value: String(data.conversations.summary.terminal_deliveries),
+			tone: data.conversations.summary.terminal_deliveries > 0 ? 'warning' : 'default'
+		},
+		{
+			label: 'Channels',
+			value: String(data.conversations.summary.connector_count)
+		}
+	]);
 
 	function pressureLabel(item: RecoverDeliveryHealthResponse): string {
 		return `${item.pending_count} pending · ${item.retrying_count} retrying · ${item.terminal_count} terminal`;

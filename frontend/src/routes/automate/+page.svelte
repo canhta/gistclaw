@@ -6,9 +6,32 @@
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
+	import { setInspectorItems } from '$lib/shell/inspector.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	setInspectorItems(() => [
+		{
+			label: 'Active now',
+			value: String(data.automate.summary.active_occurrences),
+			tone: data.automate.summary.active_occurrences > 0 ? 'accent' : 'default'
+		},
+		{
+			label: 'Next run',
+			value: data.automate.summary.next_wake_at_label
+		},
+		{
+			label: 'Needs review',
+			value: String(
+				data.automate.health.invalid_schedules + data.automate.health.stuck_dispatching
+			),
+			tone:
+				data.automate.health.invalid_schedules + data.automate.health.stuck_dispatching > 0
+					? 'warning'
+					: 'default'
+		}
+	]);
 
 	let noticeMessage = $state('');
 	let errorMessage = $state('');
@@ -386,7 +409,9 @@
 								<div class="flex items-start justify-between gap-4">
 									<div>
 										<p class="gc-stamp">{occurrence.schedule_name}</p>
-										<h3 class={`gc-panel-title mt-3 text-[1rem] ${statusTextClass(occurrence.status_class)}`}>
+										<h3
+											class={`gc-panel-title mt-3 text-[1rem] ${statusTextClass(occurrence.status_class)}`}
+										>
 											{occurrence.status_label}
 										</h3>
 									</div>
@@ -427,7 +452,9 @@
 								<div class="flex items-start justify-between gap-4">
 									<div>
 										<p class="gc-stamp">{occurrence.schedule_name}</p>
-										<h3 class={`gc-panel-title mt-3 text-[1rem] ${statusTextClass(occurrence.status_class)}`}>
+										<h3
+											class={`gc-panel-title mt-3 text-[1rem] ${statusTextClass(occurrence.status_class)}`}
+										>
 											{occurrence.status_label}
 										</h3>
 									</div>
