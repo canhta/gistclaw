@@ -111,19 +111,19 @@
 			<div class="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
 				<div class="gc-panel-soft px-4 py-4">
 					<p class="gc-stamp">Status</p>
-					<p class="gc-value mt-3 text-[1.05rem]">{detail.run.status_label}</p>
+					<p class="gc-machine mt-3 break-all">{detail.run.status_label}</p>
 				</div>
 				<div class="gc-panel-soft px-4 py-4">
 					<p class="gc-stamp">Trigger</p>
-					<p class="gc-value mt-3 text-[1.05rem]">{detail.run.trigger_label}</p>
+					<p class="gc-machine mt-3 break-all">{detail.run.trigger_label}</p>
 				</div>
 				<div class="gc-panel-soft px-4 py-4">
 					<p class="gc-stamp">Model</p>
-					<p class="gc-value mt-3 text-[1.05rem]">{detail.run.model_display}</p>
+					<p class="gc-machine mt-3 break-all">{detail.run.model_display}</p>
 				</div>
 				<div class="gc-panel-soft px-4 py-4">
 					<p class="gc-stamp">Tokens</p>
-					<p class="gc-value mt-3 text-[1.05rem]">{detail.run.token_summary}</p>
+					<p class="gc-machine mt-3 break-all">{detail.run.token_summary}</p>
 				</div>
 			</div>
 		</div>
