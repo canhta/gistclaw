@@ -41,6 +41,7 @@
 		"vitest": "^4.1.0"
 	},
 	"dependencies": {
-		"@tabler/icons-svelte-runes": "^3.41.0"
+		"@tabler/icons-svelte-runes": "^3.41.0",
+		"@xyflow/svelte": "^1.5.2"
 	}
 }
