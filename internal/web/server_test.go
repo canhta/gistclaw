@@ -1170,16 +1170,47 @@ func TestPageRouteMap(t *testing.T) {
 		}
 	})
 
+	t.Run("user first spa routes render the app shell", func(t *testing.T) {
+		h := newServerHarness(t)
+		wantBody, err := readSPAAsset("index.html")
+		if err != nil {
+			t.Fatalf("read spa index: %v", err)
+		}
+
+		for _, path := range []string{
+			"/work",
+			"/team",
+			"/knowledge",
+			"/recover",
+			"/conversations",
+			"/automate",
+			"/history",
+			"/settings",
+		} {
+			t.Run(path, func(t *testing.T) {
+				rr := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+
+				h.server.ServeHTTP(rr, req)
+
+				if rr.Code != http.StatusOK {
+					t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+				}
+				if rr.Body.String() != string(wantBody) {
+					t.Fatalf("expected %s to serve spa index", path)
+				}
+			})
+		}
+	})
+
 	t.Run("removed page routes stay unavailable", func(t *testing.T) {
 		h := newServerHarness(t)
 
 		for _, path := range []string{
 			"/runs",
 			"/sessions",
-			"/team",
 			"/control",
 			"/approvals",
-			"/settings",
 			"/memory",
 			"/run",
 		} {

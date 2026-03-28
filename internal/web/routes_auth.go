@@ -20,16 +20,10 @@ type loginPageData struct {
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if result := s.authenticateRequest(r, false); result.Authenticated {
-		http.Redirect(w, r, safeRedirectPath(r.URL.Query().Get("next"), pageOperateRuns), http.StatusSeeOther)
+		http.Redirect(w, r, safeRedirectPath(r.URL.Query().Get("next"), pageWork), http.StatusSeeOther)
 		return
 	}
-
-	data, status, err := s.loginPageData(r, "")
-	if err != nil {
-		http.Error(w, "failed to load login state", http.StatusInternalServerError)
-		return
-	}
-	s.renderAuthTemplateStatus(w, r, status, "Login", "login_body", data)
+	s.handleSPADocument(w, r)
 }
 
 func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {

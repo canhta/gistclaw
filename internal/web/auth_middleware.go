@@ -133,6 +133,12 @@ func isPublicPath(path string) bool {
 		return true
 	case strings.HasPrefix(path, "/assets/"):
 		return true
+	case path == "/robots.txt":
+		return true
+	case path == "/api/auth/session", path == "/api/auth/login":
+		return true
+	case path == "/_app" || strings.HasPrefix(path, "/_app/"):
+		return true
 	case strings.HasPrefix(path, "/webhooks/"):
 		return true
 	default:
@@ -143,6 +149,20 @@ func isPublicPath(path string) bool {
 func requiresAuthentication(path string) bool {
 	switch {
 	case path == "/":
+		return true
+	case path == pageWork, strings.HasPrefix(path, pageWork+"/"):
+		return true
+	case path == pageTeam, strings.HasPrefix(path, pageTeam+"/"):
+		return true
+	case path == pageKnowledge, strings.HasPrefix(path, pageKnowledge+"/"):
+		return true
+	case path == pageConversations, strings.HasPrefix(path, pageConversations+"/"):
+		return true
+	case path == pageAutomate, strings.HasPrefix(path, pageAutomate+"/"):
+		return true
+	case path == pageHistory, strings.HasPrefix(path, pageHistory+"/"):
+		return true
+	case path == pageSettings, strings.HasPrefix(path, pageSettings+"/"):
 		return true
 	case path == "/operate", strings.HasPrefix(path, "/operate/"):
 		return true

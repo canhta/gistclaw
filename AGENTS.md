@@ -15,9 +15,15 @@ go test ./...
 go test ./internal/store/...     # single package
 go test -run TestFoo ./...       # single test
 go vet ./...
+cd frontend && bun install
+cd frontend && bun run build
+cd frontend && bun run check
+cd frontend && bun run lint
+cd frontend && bun run format
+cd frontend && bun run test:unit -- --run
 ```
 
-**Tech stack:** Go 1.25+, `modernc.org/sqlite` (pure-Go, no CGO), stdlib `net/http`, Go `testing` package.
+**Tech stack:** Go 1.25+, `modernc.org/sqlite` (pure-Go, no CGO), stdlib `net/http`, Go `testing` package, SvelteKit frontend tooling via `bun`.
 
 ## Problem-Solving Policy
 
@@ -41,6 +47,10 @@ go vet ./...
 
 **Design must follow SOLID and DRY.** Every new boundary, capability seam, or runtime flow must have a single clear responsibility, depend on abstractions rather than concrete connector-specific details, and avoid duplicated logic or parallel ad hoc paths.
 
+**Frontend tooling uses `bun`, not `npm`.** For the SvelteKit rewrite, install and run frontend tasks with `bun`.
+**Frontend hygiene is required from day one.** Keep `.gitignore`, linting, and formatting configured as part of the baseline workspace rather than as cleanup later.
+**Frontend iconography uses Tabler.** Use `@tabler/icons-svelte-runes` for Svelte UI icons instead of mixing icon packs.
+
 - **Errors:** return `error` as the last return value; wrap with `fmt.Errorf("context: %w", err)`; never discard errors silently.
 - **Interfaces:** define interfaces in the consuming package, not the implementing package. Keep them small (1–3 methods).
 - **Goroutines:** every goroutine must have a clear owner and exit path. No fire-and-forget goroutines without a `context.Context`.
@@ -61,7 +71,7 @@ go vet ./...
 
 ## Naming Policy
 
-**No phase or version names in code.** Never embed milestone, phase, or version labels in identifiers, comments, or constants (e.g. no `phase1`, `m2Handler`, `v2Route`). Names must describe what something *is*, not when it was added. Exception: `// TODO(m3): ...` notes are allowed.
+**No phase or version names in code.** Never embed milestone, phase, or version labels in identifiers, comments, or constants (e.g. no `phase1`, `m2Handler`, `v2Route`). Names must describe what something _is_, not when it was added. Exception: `// TODO(m3): ...` notes are allowed.
 
 ## Scope Policy
 
@@ -98,6 +108,7 @@ In QA mode, flag any code that does not match `DESIGN.md`.
 ## Documentation
 
 Read in this order to onboard:
+
 1. `README.md` — product and quick-start overview
 2. `docs/system.md` — current shipped system and package ownership
 3. `docs/vision.md` — long-term product direction

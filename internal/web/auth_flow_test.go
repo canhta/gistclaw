@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,10 @@ import (
 
 func TestAuthLoginPageShowsSetupRequiredWhenPasswordMissing(t *testing.T) {
 	h := newServerHarness(t)
+	wantBody, err := readSPAAsset("index.html")
+	if err != nil {
+		t.Fatalf("read spa index: %v", err)
+	}
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
@@ -22,19 +27,42 @@ func TestAuthLoginPageShowsSetupRequiredWhenPasswordMissing(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
-	body := rr.Body.String()
-	for _, want := range []string{"Setup Required", "Finish setup", "gistclaw auth set-password"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("expected login page to contain %q, got:\n%s", want, body)
-		}
+	if rr.Body.String() != string(wantBody) {
+		t.Fatalf("expected login route to serve spa index")
 	}
-	if strings.Contains(body, `href="/operate/runs"`) {
-		t.Fatalf("expected stripped pre-auth shell, got:\n%s", body)
+
+	stateResp := httptest.NewRecorder()
+	stateReq := httptest.NewRequest(http.MethodGet, "/api/auth/session", nil)
+	h.rawServer.ServeHTTP(stateResp, stateReq)
+	if stateResp.Code != http.StatusOK {
+		t.Fatalf("expected auth session 200, got %d body=%s", stateResp.Code, stateResp.Body.String())
+	}
+
+	var state struct {
+		Authenticated      bool `json:"authenticated"`
+		PasswordConfigured bool `json:"password_configured"`
+		SetupRequired      bool `json:"setup_required"`
+	}
+	if err := json.Unmarshal(stateResp.Body.Bytes(), &state); err != nil {
+		t.Fatalf("decode auth session: %v", err)
+	}
+	if state.Authenticated {
+		t.Fatal("expected unauthenticated session")
+	}
+	if state.PasswordConfigured {
+		t.Fatal("expected password_configured false")
+	}
+	if !state.SetupRequired {
+		t.Fatal("expected setup_required true")
 	}
 }
 
 func TestAuthLoginPageAccessibleWhenOnboardingPending(t *testing.T) {
 	h := newServerHarnessOnboardingPending(t)
+	wantBody, err := readSPAAsset("index.html")
+	if err != nil {
+		t.Fatalf("read spa index: %v", err)
+	}
 
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
@@ -43,11 +71,8 @@ func TestAuthLoginPageAccessibleWhenOnboardingPending(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 	}
-	body := rr.Body.String()
-	for _, want := range []string{"Browser Access", "Setup Required"} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("expected login page to contain %q, got:\n%s", want, body)
-		}
+	if rr.Body.String() != string(wantBody) {
+		t.Fatalf("expected login route to serve spa index while onboarding is pending")
 	}
 }
 
@@ -162,20 +187,23 @@ func TestAuthSettingsPageShowsAccessAndDevicesBoard(t *testing.T) {
 	}
 }
 
-func TestAuthLoginReasonMessages(t *testing.T) {
+func TestAuthLoginRouteServesSPAForReasonQuery(t *testing.T) {
 	h := newServerHarness(t)
 	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Date(2026, time.March, 27, 7, 40, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("SetPassword: %v", err)
+	}
+	wantBody, err := readSPAAsset("index.html")
+	if err != nil {
+		t.Fatalf("read spa index: %v", err)
 	}
 
 	cases := []struct {
 		name   string
 		reason string
-		want   string
 	}{
-		{name: "expired", reason: "expired", want: "Your session expired. Sign in again to continue."},
-		{name: "logged out", reason: "logged_out", want: "You signed out of this browser."},
-		{name: "blocked", reason: "blocked", want: "This device has been blocked."},
+		{name: "expired", reason: "expired"},
+		{name: "logged out", reason: "logged_out"},
+		{name: "blocked", reason: "blocked"},
 	}
 
 	for _, tc := range cases {
@@ -188,8 +216,8 @@ func TestAuthLoginReasonMessages(t *testing.T) {
 			if rr.Code != http.StatusOK {
 				t.Fatalf("expected 200, got %d", rr.Code)
 			}
-			if !strings.Contains(rr.Body.String(), tc.want) {
-				t.Fatalf("expected login page to contain %q, got:\n%s", tc.want, rr.Body.String())
+			if rr.Body.String() != string(wantBody) {
+				t.Fatalf("expected login route to serve spa index for reason=%q", tc.reason)
 			}
 		})
 	}

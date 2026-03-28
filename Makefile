@@ -12,6 +12,7 @@ COVERAGE_MIN ?= 70
 
 .PHONY: dev fmt lint test run hooks-install precommit
 .PHONY: coverage
+.PHONY: ui-install ui-build ui-check ui-test ui-lint ui-format
 
 dev: $(GOIMPORTS) $(GOLANGCI_LINT) $(LEFTHOOK)
 
@@ -39,6 +40,24 @@ coverage:
 
 run:
 	go run ./cmd/gistclaw $(ARGS)
+
+ui-install:
+	cd frontend && bun install
+
+ui-build:
+	cd frontend && bun run build
+
+ui-check:
+	cd frontend && bun run check
+
+ui-test:
+	cd frontend && bun run test:unit -- --run
+
+ui-lint:
+	cd frontend && bun run lint
+
+ui-format:
+	cd frontend && bun run format
 
 hooks-install: $(LEFTHOOK)
 	rm -f .githooks/*.old .githooks/prepare-commit-msg

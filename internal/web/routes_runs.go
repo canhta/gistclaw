@@ -355,22 +355,19 @@ type runApprovalRecord struct {
 	ResolvedAt  string
 }
 
-func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
-	filter := runListFilterFromRequest(r)
-	activeProject, err := runtime.ActiveProject(r.Context(), s.db)
+func (s *Server) loadRunsPageData(ctx context.Context, query url.Values) (runsPageData, error) {
+	filter := runListFilterFromQuery(query)
+	activeProject, err := runtime.ActiveProject(ctx, s.db)
 	if err != nil {
-		http.Error(w, "failed to load active project", http.StatusInternalServerError)
-		return
+		return runsPageData{}, fmt.Errorf("load active project: %w", err)
 	}
 	querySQL, args, err := buildRunListQuery(filter, activeProject)
 	if err != nil {
-		http.Error(w, "failed to build runs query", http.StatusInternalServerError)
-		return
+		return runsPageData{}, fmt.Errorf("build runs query: %w", err)
 	}
-	rows, err := s.db.RawDB().QueryContext(r.Context(), querySQL, args...)
+	rows, err := s.db.RawDB().QueryContext(ctx, querySQL, args...)
 	if err != nil {
-		http.Error(w, "failed to load runs", http.StatusInternalServerError)
-		return
+		return runsPageData{}, fmt.Errorf("query runs: %w", err)
 	}
 	defer rows.Close()
 
@@ -391,31 +388,38 @@ func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
 			&row.UpdatedAt,
 			&row.WorkerCount,
 		); err != nil {
-			http.Error(w, "failed to load runs", http.StatusInternalServerError)
-			return
+			return runsPageData{}, fmt.Errorf("scan runs: %w", err)
 		}
 		runRows = append(runRows, row)
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, "failed to load runs", http.StatusInternalServerError)
-		return
+		return runsPageData{}, fmt.Errorf("iterate runs: %w", err)
 	}
 
-	rootRows, paging := finalizeRunListPage(r.URL.Query(), filter, runRows)
-	descendants, err := loadRunDescendants(r.Context(), s.db.RawDB(), rootRows)
+	rootRows, paging := finalizeRunListPage(query, filter, runRows)
+	descendants, err := loadRunDescendants(ctx, s.db.RawDB(), rootRows)
 	if err != nil {
-		http.Error(w, "failed to load worker runs", http.StatusInternalServerError)
-		return
+		return runsPageData{}, fmt.Errorf("load worker runs: %w", err)
 	}
 	clusters := buildRunListClusters(rootRows, descendants)
-	s.renderTemplate(w, r, "Runs", "runs_body", runsPageData{
+
+	return runsPageData{
 		Clusters:          clusters,
 		Filters:           runListFilters{Query: filter.Query, Status: filter.Status, Limit: filter.Limit, Scope: filter.Scope},
 		Paging:            paging,
 		QueueStrip:        buildRunQueueStrip(clusters),
 		ActiveProjectName: activeProject.Name,
 		ActiveProjectPath: activeProject.PrimaryPath,
-	})
+	}, nil
+}
+
+func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
+	pageData, err := s.loadRunsPageData(r.Context(), r.URL.Query())
+	if err != nil {
+		http.Error(w, "failed to load runs", http.StatusInternalServerError)
+		return
+	}
+	s.renderTemplate(w, r, "Runs", "runs_body", pageData)
 }
 
 func formatWorkerCount(count int) string {
@@ -481,26 +485,18 @@ func incrementRunQueueSummary(view *runQueueStripView, status string) {
 	}
 }
 
-func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
-	runID := r.PathValue("id")
-	visible, err := s.runVisibleInActiveProject(r.Context(), runID)
+func (s *Server) loadRunDetailPageData(ctx context.Context, runID string) (runDetailPageData, error) {
+	visible, err := s.runVisibleInActiveProject(ctx, runID)
 	if err != nil {
-		http.Error(w, "failed to load run", http.StatusInternalServerError)
-		return
+		return runDetailPageData{}, fmt.Errorf("load run visibility: %w", err)
 	}
 	if !visible {
-		http.NotFound(w, r)
-		return
+		return runDetailPageData{}, sql.ErrNoRows
 	}
 
-	replayRun, err := s.replay.LoadRun(r.Context(), runID)
+	replayRun, err := s.replay.LoadRun(ctx, runID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.NotFound(w, r)
-			return
-		}
-		http.Error(w, "failed to load run", http.StatusInternalServerError)
-		return
+		return runDetailPageData{}, err
 	}
 
 	events := make([]runEventView, 0, len(replayRun.Events))
@@ -527,22 +523,18 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 			CreatedAtLabel: formatRunTimestamp(evt.CreatedAt),
 		})
 	}
+
 	startedAt, lastActivity := runEventWindow(replayRun.Events)
-	graphSnapshot, err := s.replay.LoadGraphSnapshot(r.Context(), runID)
+	graphSnapshot, err := s.replay.LoadGraphSnapshot(ctx, runID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.NotFound(w, r)
-			return
-		}
-		http.Error(w, "failed to load run graph", http.StatusInternalServerError)
-		return
+		return runDetailPageData{}, err
 	}
 	graphView := buildRunGraphView(graphSnapshot)
-	graphView, err = decorateRunGraphView(r.Context(), s.db, graphView)
+	graphView, err = decorateRunGraphView(ctx, s.db, graphView)
 	if err != nil {
-		http.Error(w, "failed to decorate run graph", http.StatusInternalServerError)
-		return
+		return runDetailPageData{}, fmt.Errorf("decorate run graph: %w", err)
 	}
+
 	objectiveText, modelDisplay, tokenSummary := runDetailRootSummary(graphView)
 	triggerLabel := runDetailTriggerLabel(graphView)
 	lastEventCursor := ""
@@ -550,7 +542,7 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		lastEventCursor = encodeRunEventCursor(replayRun.Events[len(replayRun.Events)-1])
 	}
 
-	s.renderTemplate(w, r, "Run Detail", "run_detail_body", runDetailPageData{
+	return runDetailPageData{
 		RunID:                 replayRun.RunID,
 		RunShortID:            compactIdentifier(replayRun.RunID),
 		ObjectiveText:         objectiveText,
@@ -572,7 +564,20 @@ func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
 		Events:                events,
 		Graph:                 graphView,
 		ExecutionSnapshot:     buildExecutionSnapshotView(replayRun.TeamID, replayRun.ExecutionSnapshotJSON),
-	})
+	}, nil
+}
+
+func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
+	pageData, err := s.loadRunDetailPageData(r.Context(), r.PathValue("id"))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "failed to load run", http.StatusInternalServerError)
+		return
+	}
+	s.renderTemplate(w, r, "Run Detail", "run_detail_body", pageData)
 }
 
 func (s *Server) handleRunGraph(w http.ResponseWriter, r *http.Request) {
@@ -1416,17 +1421,21 @@ type runListCursor struct {
 }
 
 func runListFilterFromRequest(r *http.Request) runListRequest {
-	cursor, ok := parseRunListCursor(strings.TrimSpace(r.URL.Query().Get("cursor")))
-	direction := strings.TrimSpace(r.URL.Query().Get("direction"))
+	return runListFilterFromQuery(r.URL.Query())
+}
+
+func runListFilterFromQuery(query url.Values) runListRequest {
+	cursor, ok := parseRunListCursor(strings.TrimSpace(query.Get("cursor")))
+	direction := strings.TrimSpace(query.Get("direction"))
 	if direction != "prev" {
 		direction = "next"
 	}
 
 	return runListRequest{
-		Query:     strings.TrimSpace(r.URL.Query().Get("q")),
-		Status:    strings.TrimSpace(r.URL.Query().Get("status")),
-		Limit:     requestNamedLimit(r, "limit", 20),
-		Scope:     runScopeFromRequest(r),
+		Query:     strings.TrimSpace(query.Get("q")),
+		Status:    strings.TrimSpace(query.Get("status")),
+		Limit:     requestLimitFromQuery(query, "limit", 20),
+		Scope:     runScopeFromQuery(query),
 		Cursor:    cursor,
 		HasCursor: ok,
 		Direction: direction,
@@ -1434,7 +1443,11 @@ func runListFilterFromRequest(r *http.Request) runListRequest {
 }
 
 func runScopeFromRequest(r *http.Request) string {
-	if strings.TrimSpace(r.URL.Query().Get("scope")) == "all" {
+	return runScopeFromQuery(r.URL.Query())
+}
+
+func runScopeFromQuery(query url.Values) string {
+	if strings.TrimSpace(query.Get("scope")) == "all" {
 		return "all"
 	}
 	return "active"

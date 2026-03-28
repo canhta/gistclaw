@@ -8,6 +8,14 @@ import (
 const (
 	pageLogin                     = "/login"
 	pageLogout                    = "/logout"
+	pageWork                      = "/work"
+	pageTeam                      = "/team"
+	pageKnowledge                 = "/knowledge"
+	pageRecover                   = "/recover"
+	pageConversations             = "/conversations"
+	pageAutomate                  = "/automate"
+	pageHistory                   = "/history"
+	pageSettings                  = "/settings"
 	pageOperateRuns               = "/operate/runs"
 	pageOperateSessions           = "/operate/sessions"
 	pageOperateStartTask          = "/operate/start-task"
@@ -60,6 +68,22 @@ func runNodeDetailTemplatePath(runID string) string {
 
 func runDismissPath(runID string) string {
 	return runDetailPath(runID) + "/dismiss"
+}
+
+func workAPIPath(runID string) string {
+	return "/api/work/" + url.PathEscape(runID)
+}
+
+func workGraphPath(runID string) string {
+	return workAPIPath(runID) + "/graph"
+}
+
+func workEventsPath(runID string) string {
+	return workAPIPath(runID) + "/events"
+}
+
+func workNodeDetailTemplatePath(runID string) string {
+	return workAPIPath(runID) + "/nodes/__RUN_ID__"
 }
 
 func sessionDetailPath(sessionID string) string {

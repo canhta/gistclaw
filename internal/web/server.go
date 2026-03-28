@@ -104,6 +104,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) registerRoutes() {
+	spaAssets := serveSPAAssets()
 	s.mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, pageOperateRuns, http.StatusSeeOther)
 	})
@@ -113,13 +114,30 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /configure", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, pageConfigureTeam, http.StatusSeeOther)
 	})
-	s.mux.HandleFunc("GET /recover", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, pageRecoverApprovals, http.StatusSeeOther)
-	})
 	s.mux.Handle("GET /assets/{path...}", http.StripPrefix("/assets/", http.FileServer(http.FS(staticAssetFS()))))
+	s.mux.Handle("GET /_app/{path...}", spaAssets)
+	s.mux.Handle("GET /robots.txt", spaAssets)
 	s.mux.HandleFunc("GET "+pageLogin, s.handleLogin)
 	s.mux.HandleFunc("POST "+pageLogin, s.handleLoginSubmit)
 	s.mux.HandleFunc("POST "+pageLogout, s.handleLogout)
+	s.mux.HandleFunc("GET "+pageWork, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageTeam, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageKnowledge, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageRecover, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageConversations, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageAutomate, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageHistory, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageSettings, s.handleSPADocument)
+	s.mux.HandleFunc("GET /api/auth/session", s.handleAuthSession)
+	s.mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
+	s.mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
+	s.mux.HandleFunc("GET /api/bootstrap", s.handleBootstrap)
+	s.mux.HandleFunc("GET /api/work", s.handleWorkIndex)
+	s.mux.Handle("POST /api/work", s.adminAuth(http.HandlerFunc(s.handleWorkCreate)))
+	s.mux.HandleFunc("GET /api/work/{id}", s.handleWorkDetail)
+	s.mux.HandleFunc("GET /api/work/{id}/graph", s.handleRunGraph)
+	s.mux.HandleFunc("GET /api/work/{id}/nodes/{node_id}", s.handleRunNodeDetail)
+	s.mux.HandleFunc("GET /api/work/{id}/events", s.handleRunEvents)
 	if s.whatsAppWebhook != nil {
 		s.mux.Handle("GET /webhooks/whatsapp", s.whatsAppWebhook)
 		s.mux.Handle("POST /webhooks/whatsapp", s.whatsAppWebhook)

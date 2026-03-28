@@ -14,7 +14,11 @@ type pageLinks struct {
 }
 
 func requestNamedLimit(r *http.Request, key string, fallback int) int {
-	raw := r.URL.Query().Get(key)
+	return requestLimitFromQuery(r.URL.Query(), key, fallback)
+}
+
+func requestLimitFromQuery(query url.Values, key string, fallback int) int {
+	raw := query.Get(key)
 	if raw == "" {
 		return fallback
 	}
