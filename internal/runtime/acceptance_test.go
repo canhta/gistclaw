@@ -10,6 +10,7 @@ import (
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/replay"
+	"github.com/canhta/gistclaw/internal/runtime/capabilities"
 	"github.com/canhta/gistclaw/internal/sessions"
 	"github.com/canhta/gistclaw/internal/store"
 	"github.com/canhta/gistclaw/internal/tools"
@@ -48,7 +49,7 @@ func TestAcceptance_EndToEnd(t *testing.T) {
 		ConversationID: "conv-m1-e2e",
 		AgentID:        "agent-lead",
 		Objective:      "Review the codebase for common Go antipatterns",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -157,7 +158,7 @@ func TestAcceptance_MemoryReadPathExercised(t *testing.T) {
 		ConversationID: "conv-mem-spy",
 		AgentID:        "agent-a",
 		Objective:      "memory test",
-		CWD:  t.TempDir(),
+		CWD:            t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
@@ -215,7 +216,7 @@ func TestAcceptance_FrontSessionCanSpawnAndReceiveAnnounce(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Review the docs and summarize the outcome.",
-		CWD: t.TempDir(),
+		CWD:           t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
@@ -268,6 +269,65 @@ func TestAcceptance_FrontSessionCanSpawnAndReceiveAnnounce(t *testing.T) {
 	}
 }
 
+func TestAcceptance_RemoteFrontSessionEmitsAutomaticPresence(t *testing.T) {
+	db, cs, mem, reg := setupMilestoneTestDeps(t)
+	capReg := capabilities.NewRegistry()
+	connector := &presenceRecordingConnector{
+		meta: model.ConnectorMetadata{
+			ID:       "zalo_personal",
+			Exposure: model.ConnectorExposureRemote,
+		},
+		policy: capabilities.PresencePolicy{
+			StartupDelay:      5 * time.Millisecond,
+			KeepaliveInterval: 50 * time.Millisecond,
+			MaxDuration:       time.Second,
+		},
+	}
+	capReg.RegisterConnector(connector)
+	finish := make(chan struct{})
+	prov := &delayedStreamingProvider{
+		delay:  30 * time.Millisecond,
+		finish: finish,
+	}
+	rt := New(db, cs, reg, capReg, mem, prov, &model.NoopEventSink{})
+	rt.SetConnectors([]model.Connector{connector})
+
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+			ConversationKey: conversations.ConversationKey{
+				ConnectorID: "zalo_personal",
+				AccountID:   "acct-1",
+				ExternalID:  "user-1",
+				ThreadID:    "main",
+			},
+			FrontAgentID:  "assistant",
+			InitialPrompt: "Kiểm tra inbox Zalo giúp tôi.",
+			CWD:           t.TempDir(),
+		})
+		errCh <- err
+	}()
+
+	waitForCondition(t, 200*time.Millisecond, func() bool {
+		return connector.emitCount() > 0
+	}, "automatic presence emit")
+	close(finish)
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("StartFrontSession: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for remote front session to complete")
+	}
+
+	last := connector.lastEmit()
+	if last.ThreadID != "user-1" || last.Mode != capabilities.PresenceModeTyping {
+		t.Fatalf("unexpected presence emit: %+v", last)
+	}
+}
+
 func TestAcceptance_RuntimeExposesSessionDirectoryAndHistory(t *testing.T) {
 	db, cs, mem, reg := setupMilestoneTestDeps(t)
 	prov := NewMockProvider(
@@ -289,7 +349,7 @@ func TestAcceptance_RuntimeExposesSessionDirectoryAndHistory(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Inspect the repo.",
-		CWD: t.TempDir(),
+		CWD:           t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
@@ -359,7 +419,7 @@ func TestAcceptance_FrontMailboxSpansMultipleRuns(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "First prompt",
-		CWD: workspaceRoot,
+		CWD:           workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("first StartFrontSession failed: %v", err)
@@ -374,7 +434,7 @@ func TestAcceptance_FrontMailboxSpansMultipleRuns(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "Second prompt",
-		CWD: workspaceRoot,
+		CWD:           workspaceRoot,
 	})
 	if err != nil {
 		t.Fatalf("second StartFrontSession failed: %v", err)
@@ -422,7 +482,7 @@ func TestAcceptance_FrontMailboxIncludesAssistantReplies(t *testing.T) {
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "User prompt.",
-		CWD: t.TempDir(),
+		CWD:           t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)
@@ -467,7 +527,7 @@ func TestAcceptance_FrontSessionQueuesOutboundIntentForExternalRoute(t *testing.
 		},
 		FrontAgentID:  "assistant",
 		InitialPrompt: "User prompt.",
-		CWD: t.TempDir(),
+		CWD:           t.TempDir(),
 	})
 	if err != nil {
 		t.Fatalf("StartFrontSession failed: %v", err)

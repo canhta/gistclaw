@@ -321,6 +321,62 @@ func boolString(v bool) string {
 	return "false"
 }
 
+func TestCapabilities_EmitPresence(t *testing.T) {
+	db := setupZaloOutboundDB(t)
+	if err := SaveStoredCredentials(context.Background(), db, StoredCredentials{
+		AccountID:   "acc-1",
+		DisplayName: "Canh",
+		IMEI:        "imei-1",
+		Cookie:      "cookie-1",
+		UserAgent:   "ua-1",
+	}); err != nil {
+		t.Fatalf("SaveStoredCredentials: %v", err)
+	}
+
+	connector := NewConnector(db, conversations.NewConversationStore(db), &stubInboundRuntime{}, "assistant")
+	var got []string
+	connector.emitPresence = func(_ context.Context, creds StoredCredentials, threadID string, threadType protocol.ThreadType) error {
+		got = append(got, creds.AccountID+":"+threadID+":"+threadTypeLabel(threadType))
+		return nil
+	}
+
+	policy := connector.CapabilityPresencePolicy(context.Background())
+	if policy.StartupDelay <= 0 || policy.KeepaliveInterval <= 0 || policy.MaxDuration <= 0 {
+		t.Fatalf("expected positive presence policy timings, got %+v", policy)
+	}
+	if policy.MaxConsecutiveFailures <= 0 {
+		t.Fatalf("expected positive failure threshold, got %+v", policy)
+	}
+
+	cases := []struct {
+		name       string
+		threadID   string
+		threadType string
+		want       string
+	}{
+		{name: "direct thread", threadID: "user-1", threadType: "contact", want: "acc-1:user-1:contact"},
+		{name: "group thread", threadID: "group-1", threadType: "group", want: "acc-1:group-1:group"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got = nil
+			err := connector.CapabilityEmitPresence(context.Background(), capabilities.PresenceEmitRequest{
+				ConnectorID: "zalo_personal",
+				ThreadID:    tc.threadID,
+				ThreadType:  tc.threadType,
+				Mode:        capabilities.PresenceModeTyping,
+			})
+			if err != nil {
+				t.Fatalf("CapabilityEmitPresence: %v", err)
+			}
+			if len(got) != 1 || got[0] != tc.want {
+				t.Fatalf("unexpected presence trace: %+v", got)
+			}
+		})
+	}
+}
+
 func TestCapabilities_ResolveTarget(t *testing.T) {
 	db := setupZaloOutboundDB(t)
 	if err := SaveStoredCredentials(context.Background(), db, StoredCredentials{

@@ -149,6 +149,10 @@ func UpdateHiddenConversation(ctx context.Context, sess *Session, threadID strin
 }
 
 func postConversationState(ctx context.Context, sess *Session, reqURL string, payload map[string]any) error {
+	return postEncryptedAction(ctx, sess, reqURL, payload, "conversation state")
+}
+
+func postEncryptedAction(ctx context.Context, sess *Session, reqURL string, payload map[string]any, action string) error {
 	encData, err := encryptPayload(sess, payload)
 	if err != nil {
 		return err
@@ -174,7 +178,7 @@ func postConversationState(ctx context.Context, sess *Session, reqURL string, pa
 		return err
 	}
 	if envelope.ErrorCode != 0 {
-		return fmt.Errorf("zalo personal protocol: conversation state error code %d: %s", envelope.ErrorCode, envelope.ErrorMessage)
+		return fmt.Errorf("zalo personal protocol: %s error code %d: %s", action, envelope.ErrorCode, envelope.ErrorMessage)
 	}
 	return nil
 }

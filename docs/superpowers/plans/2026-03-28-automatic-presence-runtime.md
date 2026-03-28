@@ -53,8 +53,8 @@
 ## Task 1: Add Generic Presence Capability Seam
 
 **Files:**
-- Modify: `/Users/canh/Projects/OSS/gistclaw/internal/runtime/capabilities/registry.go`
-- Test: `/Users/canh/Projects/OSS/gistclaw/internal/runtime/capabilities/registry_test.go`
+- Modify: `internal/runtime/capabilities/registry.go`
+- Test: `internal/runtime/capabilities/registry_test.go`
 
 - [ ] **Step 1: Write the failing registry tests**
 
@@ -132,10 +132,10 @@ git commit -m "feat: add generic presence capability seam"
 ## Task 2: Add Runtime Presence Controller And Manager
 
 **Files:**
-- Create: `/Users/canh/Projects/OSS/gistclaw/internal/runtime/presence/controller.go`
-- Create: `/Users/canh/Projects/OSS/gistclaw/internal/runtime/presence/controller_test.go`
-- Create: `/Users/canh/Projects/OSS/gistclaw/internal/runtime/presence/manager.go`
-- Create: `/Users/canh/Projects/OSS/gistclaw/internal/runtime/presence/manager_test.go`
+- Create: `internal/runtime/presence/controller.go`
+- Create: `internal/runtime/presence/controller_test.go`
+- Create: `internal/runtime/presence/manager.go`
+- Create: `internal/runtime/presence/manager_test.go`
 
 - [ ] **Step 1: Write the failing controller and manager tests**
 
@@ -202,10 +202,10 @@ git commit -m "feat: add runtime presence controller"
 ## Task 3: Wire Presence Into Runtime Run Lifecycle
 
 **Files:**
-- Modify: `/Users/canh/Projects/OSS/gistclaw/internal/app/bootstrap.go`
-- Modify: `/Users/canh/Projects/OSS/gistclaw/internal/runtime/runs.go`
-- Modify: `/Users/canh/Projects/OSS/gistclaw/internal/runtime/provider.go`
-- Test: `/Users/canh/Projects/OSS/gistclaw/internal/runtime/runs_test.go`
+- Modify: `internal/app/bootstrap.go`
+- Modify: `internal/runtime/runs.go`
+- Modify: `internal/runtime/provider.go`
+- Test: `internal/runtime/runs_test.go`
 
 - [ ] **Step 1: Write the failing runtime tests**
 
@@ -271,11 +271,11 @@ git commit -m "feat: wire automatic presence into runtime"
 ## Task 4: Add Zalo Presence Adapter And Protocol
 
 **Files:**
-- Create: `/Users/canh/Projects/OSS/gistclaw/internal/connectors/zalopersonal/capabilities_presence.go`
-- Create: `/Users/canh/Projects/OSS/gistclaw/internal/connectors/zalopersonal/protocol/typing.go`
-- Create: `/Users/canh/Projects/OSS/gistclaw/internal/connectors/zalopersonal/protocol/typing_test.go`
-- Modify: `/Users/canh/Projects/OSS/gistclaw/internal/connectors/zalopersonal/connector.go`
-- Test: `/Users/canh/Projects/OSS/gistclaw/internal/connectors/zalopersonal/capabilities_test.go`
+- Create: `internal/connectors/zalopersonal/capabilities_presence.go`
+- Create: `internal/connectors/zalopersonal/protocol/typing.go`
+- Create: `internal/connectors/zalopersonal/protocol/typing_test.go`
+- Modify: `internal/connectors/zalopersonal/connector.go`
+- Test: `internal/connectors/zalopersonal/capabilities_test.go`
 
 - [ ] **Step 1: Write the failing connector and protocol tests**
 
@@ -328,9 +328,9 @@ git commit -m "feat: add zalo automatic typing adapter"
 ## Task 5: Final Integration, Docs, And Verification
 
 **Files:**
-- Modify: `/Users/canh/Projects/OSS/gistclaw/docs/system.md`
-- Test: `/Users/canh/Projects/OSS/gistclaw/internal/app/bootstrap_test.go`
-- Test: `/Users/canh/Projects/OSS/gistclaw/internal/runtime/acceptance_test.go`
+- Modify: `docs/system.md`
+- Test: `internal/app/bootstrap_test.go`
+- Test: `internal/runtime/acceptance_test.go`
 
 - [ ] **Step 1: Write the failing integration tests**
 

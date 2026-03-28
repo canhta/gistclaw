@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -106,6 +107,30 @@ func TestBootstrap_AdminTokenGeneratedOnFirstStart(t *testing.T) {
 	}
 	if _, err := hex.DecodeString(token); err != nil {
 		t.Fatalf("admin_token is not valid hex: %v", err)
+	}
+}
+
+func TestBootstrap_InjectsCapabilityRegistryIntoRuntime(t *testing.T) {
+	cfg := Config{
+		DatabasePath: ":memory:",
+		StateDir:     t.TempDir(),
+		StorageRoot:  t.TempDir(),
+	}
+
+	app, err := Bootstrap(cfg)
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	defer app.db.Close()
+
+	rv := reflect.ValueOf(app.runtime).Elem()
+	capabilityField := rv.FieldByName("capabilities")
+	if !capabilityField.IsValid() || capabilityField.IsNil() {
+		t.Fatal("expected bootstrap runtime to receive a capability registry")
+	}
+	presenceField := rv.FieldByName("presence")
+	if !presenceField.IsValid() || presenceField.IsNil() {
+		t.Fatal("expected bootstrap runtime to initialize a presence manager")
 	}
 }
 
