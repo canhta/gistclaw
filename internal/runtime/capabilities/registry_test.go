@@ -12,17 +12,20 @@ type stubConnector struct {
 	id              string
 	aliases         []string
 	inboxCalls      []InboxListRequest
+	inboxUpdates    []InboxUpdateRequest
 	directoryCalls  []DirectoryListRequest
 	resolveCalls    []TargetResolveRequest
 	sendCalls       []SendRequest
 	statusCalls     []StatusRequest
 	inboxResult     InboxListResult
+	inboxUpdate     InboxUpdateResult
 	directoryResult DirectoryListResult
 	resolveResult   TargetResolveResult
 	sendResult      SendResult
 	statusResult    ConnectorStatus
 	snapshot        model.ConnectorHealthSnapshot
 	inboxErr        error
+	inboxUpdateErr  error
 	directoryErr    error
 	resolveErr      error
 	sendErr         error
@@ -47,6 +50,11 @@ func (c *stubConnector) CapabilityListDirectory(_ context.Context, req Directory
 func (c *stubConnector) CapabilityListInbox(_ context.Context, req InboxListRequest) (InboxListResult, error) {
 	c.inboxCalls = append(c.inboxCalls, req)
 	return c.inboxResult, c.inboxErr
+}
+
+func (c *stubConnector) CapabilityUpdateInbox(_ context.Context, req InboxUpdateRequest) (InboxUpdateResult, error) {
+	c.inboxUpdates = append(c.inboxUpdates, req)
+	return c.inboxUpdate, c.inboxUpdateErr
 }
 
 func (c *stubConnector) CapabilityResolveTarget(_ context.Context, req TargetResolveRequest) (TargetResolveResult, error) {
@@ -110,6 +118,14 @@ func TestCapabilityRegistry_InvokesRegisteredConnectorAdapters(t *testing.T) {
 				{ThreadID: "user-1", ThreadType: "contact", Title: "Anh An", IsUnread: true, UnreadCount: 1},
 			},
 		},
+		inboxUpdate: InboxUpdateResult{
+			ConnectorID: "zalo_personal",
+			ThreadID:    "user-1",
+			ThreadType:  "contact",
+			Action:      "mark_read",
+			Applied:     true,
+			Summary:     "conversation updated",
+		},
 		directoryResult: DirectoryListResult{
 			ConnectorID: "zalo_personal",
 			Scope:       "contacts",
@@ -153,6 +169,22 @@ func TestCapabilityRegistry_InvokesRegisteredConnectorAdapters(t *testing.T) {
 	}
 	if len(connector.inboxCalls) != 1 || !connector.inboxCalls[0].UnreadOnly {
 		t.Fatalf("unexpected inbox calls: %+v", connector.inboxCalls)
+	}
+
+	updateResult, err := reg.InboxUpdate(context.Background(), InboxUpdateRequest{
+		ConnectorID: "zalo_personal",
+		ThreadID:    "user-1",
+		ThreadType:  "contact",
+		Action:      "mark_read",
+	})
+	if err != nil {
+		t.Fatalf("InboxUpdate: %v", err)
+	}
+	if !updateResult.Applied || updateResult.Action != "mark_read" {
+		t.Fatalf("unexpected inbox update result: %+v", updateResult)
+	}
+	if len(connector.inboxUpdates) != 1 || connector.inboxUpdates[0].Action != "mark_read" {
+		t.Fatalf("unexpected inbox update calls: %+v", connector.inboxUpdates)
 	}
 
 	dirResult, err := reg.DirectoryList(context.Background(), DirectoryListRequest{
@@ -224,6 +256,14 @@ func TestCapabilityRegistry_ResolvesConnectorAliases(t *testing.T) {
 				{ThreadID: "user-1", ThreadType: "contact", Title: "Anh An", IsUnread: true, UnreadCount: 1},
 			},
 		},
+		inboxUpdate: InboxUpdateResult{
+			ConnectorID: "zalo_personal",
+			ThreadID:    "user-1",
+			ThreadType:  "contact",
+			Action:      "pin",
+			Applied:     true,
+			Summary:     "conversation updated",
+		},
 		directoryResult: DirectoryListResult{
 			ConnectorID: "zalo_personal",
 			Scope:       "contacts",
@@ -250,6 +290,17 @@ func TestCapabilityRegistry_ResolvesConnectorAliases(t *testing.T) {
 	}
 	if len(connector.inboxCalls) != 1 || connector.inboxCalls[0].ConnectorID != "zalo_personal" {
 		t.Fatalf("expected inbox alias to resolve to canonical connector id, got %+v", connector.inboxCalls)
+	}
+
+	if _, err := reg.InboxUpdate(context.Background(), InboxUpdateRequest{
+		ConnectorID: "zalo",
+		ThreadID:    "user-1",
+		Action:      "pin",
+	}); err != nil {
+		t.Fatalf("InboxUpdate alias lookup: %v", err)
+	}
+	if len(connector.inboxUpdates) != 1 || connector.inboxUpdates[0].ConnectorID != "zalo_personal" {
+		t.Fatalf("expected inbox update alias to resolve to canonical connector id, got %+v", connector.inboxUpdates)
 	}
 
 	if _, err := reg.DirectoryList(context.Background(), DirectoryListRequest{ConnectorID: "zalo"}); err != nil {

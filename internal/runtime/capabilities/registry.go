@@ -44,6 +44,22 @@ type InboxListResult struct {
 	Entries     []InboxEntry `json:"entries"`
 }
 
+type InboxUpdateRequest struct {
+	ConnectorID string `json:"connector_id"`
+	ThreadID    string `json:"thread_id"`
+	ThreadType  string `json:"thread_type,omitempty"`
+	Action      string `json:"action"`
+}
+
+type InboxUpdateResult struct {
+	ConnectorID string `json:"connector_id"`
+	ThreadID    string `json:"thread_id"`
+	ThreadType  string `json:"thread_type,omitempty"`
+	Action      string `json:"action"`
+	Applied     bool   `json:"applied"`
+	Summary     string `json:"summary,omitempty"`
+}
+
 type DirectoryEntry struct {
 	ID       string            `json:"id"`
 	Title    string            `json:"title"`
@@ -131,6 +147,10 @@ type InboxAdapter interface {
 	CapabilityListInbox(context.Context, InboxListRequest) (InboxListResult, error)
 }
 
+type InboxUpdater interface {
+	CapabilityUpdateInbox(context.Context, InboxUpdateRequest) (InboxUpdateResult, error)
+}
+
 type TargetResolver interface {
 	CapabilityResolveTarget(context.Context, TargetResolveRequest) (TargetResolveResult, error)
 }
@@ -152,11 +172,12 @@ type healthSnapshotProvider interface {
 }
 
 type connectorAdapters struct {
-	inbox     InboxAdapter
-	directory DirectoryAdapter
-	resolver  TargetResolver
-	sender    Sender
-	status    StatusAdapter
+	inbox       InboxAdapter
+	inboxUpdate InboxUpdater
+	directory   DirectoryAdapter
+	resolver    TargetResolver
+	sender      Sender
+	status      StatusAdapter
 }
 
 type Registry struct {
@@ -186,6 +207,9 @@ func (r *Registry) RegisterConnector(conn model.Connector) {
 	adapters := connectorAdapters{}
 	if adapter, ok := conn.(InboxAdapter); ok {
 		adapters.inbox = adapter
+	}
+	if adapter, ok := conn.(InboxUpdater); ok {
+		adapters.inboxUpdate = adapter
 	}
 	if adapter, ok := conn.(DirectoryAdapter); ok {
 		adapters.directory = adapter
@@ -257,6 +281,18 @@ func (r *Registry) InboxList(ctx context.Context, req InboxListRequest) (InboxLi
 		req.Limit = 50
 	}
 	return adapter.inbox.CapabilityListInbox(ctx, req)
+}
+
+func (r *Registry) InboxUpdate(ctx context.Context, req InboxUpdateRequest) (InboxUpdateResult, error) {
+	adapter, connectorID, err := r.lookupConnector(req.ConnectorID)
+	if err != nil {
+		return InboxUpdateResult{}, err
+	}
+	if adapter.inboxUpdate == nil {
+		return InboxUpdateResult{}, fmt.Errorf("capabilities: connector %q does not support inbox updates", connectorID)
+	}
+	req.ConnectorID = connectorID
+	return adapter.inboxUpdate.CapabilityUpdateInbox(ctx, req)
 }
 
 func (r *Registry) ResolveTarget(ctx context.Context, req TargetResolveRequest) (TargetResolveResult, error) {

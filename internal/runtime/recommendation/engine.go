@@ -141,6 +141,7 @@ func directObjectiveIntents(intents []model.ToolIntent) []model.ToolIntent {
 	for _, intent := range intents {
 		switch intent {
 		case model.ToolIntentInboxList,
+			model.ToolIntentInboxUpdate,
 			model.ToolIntentDirectoryList,
 			model.ToolIntentTargetResolve,
 			model.ToolIntentMessageSend,
@@ -284,6 +285,9 @@ func detectObjectiveIntents(text string) []model.ToolIntent {
 	}
 	if containsAny(text, "verify", "test", "validate", "confirm", "check that") {
 		add(model.ToolIntentVerify)
+	}
+	if containsAny(text, "mark read", "mark unread", "pin", "unpin", "archive", "unarchive", "hide", "unhide", "đánh dấu", "đã đọc", "ghim", "bỏ ghim", "lưu trữ", "bỏ lưu trữ", "ẩn", "bỏ ẩn") {
+		add(model.ToolIntentInboxUpdate)
 	}
 	if containsAny(text, "unread", "inbox", "conversation", "thread", "chat", "chưa đọc", "hộp thư", "cuộc trò chuyện", "tin nhắn gần đây") {
 		add(model.ToolIntentInboxList)

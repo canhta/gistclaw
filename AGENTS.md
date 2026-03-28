@@ -39,6 +39,8 @@ go vet ./...
 
 **Go idioms and DRY always.** Follow standard Go conventions (`gofmt`, `go vet`, effective Go). Extract shared logic once — no duplicated code paths. Use the stdlib before reaching for helpers. Keep functions small and names self-documenting.
 
+**Design must follow SOLID and DRY.** Every new boundary, capability seam, or runtime flow must have a single clear responsibility, depend on abstractions rather than concrete connector-specific details, and avoid duplicated logic or parallel ad hoc paths.
+
 - **Errors:** return `error` as the last return value; wrap with `fmt.Errorf("context: %w", err)`; never discard errors silently.
 - **Interfaces:** define interfaces in the consuming package, not the implementing package. Keep them small (1–3 methods).
 - **Goroutines:** every goroutine must have a clear owner and exit path. No fire-and-forget goroutines without a `context.Context`.

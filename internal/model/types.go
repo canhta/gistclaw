@@ -162,6 +162,7 @@ type ToolIntent string
 
 const (
 	ToolIntentInboxList     ToolIntent = "inbox_list"
+	ToolIntentInboxUpdate   ToolIntent = "inbox_update"
 	ToolIntentDirectoryList ToolIntent = "directory_list"
 	ToolIntentTargetResolve ToolIntent = "target_resolve"
 	ToolIntentMessageSend   ToolIntent = "message_send"
@@ -175,6 +176,7 @@ const (
 
 var validToolIntents = map[ToolIntent]bool{
 	ToolIntentInboxList:     true,
+	ToolIntentInboxUpdate:   true,
 	ToolIntentDirectoryList: true,
 	ToolIntentTargetResolve: true,
 	ToolIntentMessageSend:   true,

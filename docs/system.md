@@ -30,7 +30,7 @@ This document is the source of truth for what the repository ships today: packag
 - Runtime recommendations are advisory rather than binding. Direct tasks rank local capability tools first, but governed delegation remains available when the front assistant has a strong reason to escalate.
 - Structured delegation is the default specialist path, so the front assistant can request `research`, `write`, `review`, or `verify` work without choosing the worker topology itself.
 - Tool specs now carry execution intents, and team agents may declare specialties in `team.yaml`, so planner and specialist selection are descriptor-driven instead of connector-name-driven.
-- Direct product actions now flow through generic capability tools such as `connector_inbox_list`, `connector_directory_list`, `connector_target_resolve`, `connector_send`, `connector_status`, and `app_action`, backed by runtime capability adapters instead of prompt-only conventions.
+- Direct product actions now flow through generic capability tools such as `connector_inbox_list`, `connector_inbox_update`, `connector_directory_list`, `connector_target_resolve`, `connector_send`, `connector_status`, and `app_action`, backed by runtime capability adapters instead of prompt-only conventions.
 - Risky tool calls still require explicit approval before mutating writes are applied.
 - Connector-bound front sessions can surface blocked approvals as conversational gates, letting the same chat collect approval or denial and resume the run.
 - Outbound delivery can carry transport-agnostic action buttons so chat connectors may offer deterministic approval controls without leaving the active conversation.
@@ -71,7 +71,7 @@ This document is the source of truth for what the repository ships today: packag
 - Telegram is wired through long polling, DM-focused control commands, chat-native approval/blocked-state replies, inline approval buttons, and command fallback that resume pending runs from the same DM.
 - WhatsApp is wired through a webhook handler plus outbound delivery.
 - Zalo Personal is wired through CLI-driven QR authentication, stored SQLite credentials, listener-level retry and duplicate-session recovery, DM plus safe-by-default group handling, friend/group lookup, operator send commands, connector health reporting, and an unofficial reverse-engineered protocol implementation.
-- Zalo Personal also exposes direct inbox/unread lookup through the generic runtime capability seam, backed by connector-owned recent thread summaries plus upstream unread, pinned, hidden, and archived conversation signals.
+- Zalo Personal also exposes direct inbox/unread lookup and bounded inbox state updates through the generic runtime capability seam, backed by connector-owned recent thread summaries plus upstream unread, pinned, hidden, and archived conversation signals.
 - Connector helper packages also exist for control-plane delivery plumbing and SMTP email, while bootstrap currently wires Telegram, WhatsApp, and optional Zalo Personal for live runtime use.
 
 ## Extension Seams
@@ -121,7 +121,7 @@ The codebase is past the original reset, but a few surfaces are still intentiona
 
 - broader connector and gateway coverage
 - official Zalo OA coverage
-- generic conversation-state mutation tools beyond inbox listing
+- destructive thread actions, typing/presence, and retention controls beyond the current inbox state surface
 - dedicated web schedule pages
 - explicit storage-maintenance commands beyond health reporting
 - extra packaging channels beyond GitHub Releases and the blessed installer

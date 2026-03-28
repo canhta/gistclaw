@@ -1401,6 +1401,112 @@ func TestRunEngine_DirectInboxFlowDoesNotSpawnChildRun(t *testing.T) {
 	}
 }
 
+func TestRunEngine_DirectInboxUpdateFlowDoesNotSpawnChildRun(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	var updateCalls []capabilities.InboxUpdateRequest
+	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "web_fetch", Family: model.ToolFamilyWebRead, Risk: model.RiskLow, SideEffect: "read"}})
+	tools.RegisterCapabilityTools(reg, tools.CapabilityHandlers{
+		InboxUpdate: func(_ context.Context, req capabilities.InboxUpdateRequest) (capabilities.InboxUpdateResult, error) {
+			updateCalls = append(updateCalls, req)
+			return capabilities.InboxUpdateResult{
+				ConnectorID: req.ConnectorID,
+				ThreadID:    req.ThreadID,
+				ThreadType:  req.ThreadType,
+				Action:      req.Action,
+				Applied:     true,
+				Summary:     "conversation updated",
+			}, nil
+		},
+	})
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				Content: "I will mark the Zalo conversation as read directly.",
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:        "call-inbox-update",
+						ToolName:  "connector_inbox_update",
+						InputJSON: []byte(`{"connector_id":"zalo_personal","thread_id":"user-1","thread_type":"contact","action":"mark_read"}`),
+					},
+				},
+				StopReason: "tool_calls",
+			},
+			{
+				Content:    "Đã đánh dấu cuộc chat với Mẹ là đã đọc trên Zalo.",
+				StopReason: "end_turn",
+			},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
+		DelegateTask: rt.DelegateTaskTool,
+	})
+
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID: "default",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:                     "assistant",
+				Role:                        "front assistant",
+				Instructions:                "prefer direct execution before delegation",
+				BaseProfile:                 model.BaseProfileOperator,
+				ToolFamilies:                []model.ToolFamily{model.ToolFamilyConnectorCapability, model.ToolFamilyDelegate},
+				DelegationKinds:             []model.DelegationKind{model.DelegationKindResearch},
+				SpecialistSummaryVisibility: model.SpecialistSummaryFull,
+			},
+			"researcher": {
+				AgentID:      "researcher",
+				BaseProfile:  model.BaseProfileResearch,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyWebRead},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	run, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-zalo-mark-read",
+		AgentID:        "assistant",
+		Objective:      "đánh dấu cuộc chat với Mẹ là đã đọc trên Zalo",
+		CWD:            t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	if run.Status != model.RunStatusCompleted {
+		t.Fatalf("expected run completed, got %q", run.Status)
+	}
+	if len(updateCalls) != 1 || updateCalls[0].Action != "mark_read" {
+		t.Fatalf("unexpected inbox update calls: %+v", updateCalls)
+	}
+
+	var childRuns int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM runs WHERE parent_run_id = ?",
+		run.ID,
+	).Scan(&childRuns); err != nil {
+		t.Fatalf("count child runs: %v", err)
+	}
+	if childRuns != 0 {
+		t.Fatalf("expected no child runs for direct inbox update flow, got %d", childRuns)
+	}
+
+	if len(prov.Requests) != 2 {
+		t.Fatalf("expected 2 provider requests, got %d", len(prov.Requests))
+	}
+	gotNames := make(map[string]bool, len(prov.Requests[0].ToolSpecs))
+	for _, spec := range prov.Requests[0].ToolSpecs {
+		gotNames[spec.Name] = true
+	}
+	if !gotNames["connector_inbox_update"] {
+		t.Fatalf("expected connector_inbox_update to be visible, got %+v", gotNames)
+	}
+	if prov.Requests[0].ToolSpecs[0].Name != "connector_inbox_update" {
+		t.Fatalf("expected connector_inbox_update to be ranked first, got %q", prov.Requests[0].ToolSpecs[0].Name)
+	}
+}
+
 func TestRunEngine_DirectConnectorFlowPausesForApprovalWithoutChildRun(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	var directoryCalls []capabilities.DirectoryListRequest

@@ -11,6 +11,7 @@ import (
 
 type CapabilityHandlers struct {
 	InboxList     func(context.Context, capabilities.InboxListRequest) (capabilities.InboxListResult, error)
+	InboxUpdate   func(context.Context, capabilities.InboxUpdateRequest) (capabilities.InboxUpdateResult, error)
 	DirectoryList func(context.Context, capabilities.DirectoryListRequest) (capabilities.DirectoryListResult, error)
 	ResolveTarget func(context.Context, capabilities.TargetResolveRequest) (capabilities.TargetResolveResult, error)
 	Send          func(context.Context, capabilities.SendRequest) (capabilities.SendResult, error)
@@ -20,6 +21,10 @@ type CapabilityHandlers struct {
 
 type ConnectorInboxListTool struct {
 	list func(context.Context, capabilities.InboxListRequest) (capabilities.InboxListResult, error)
+}
+
+type ConnectorInboxUpdateTool struct {
+	update func(context.Context, capabilities.InboxUpdateRequest) (capabilities.InboxUpdateResult, error)
 }
 
 type ConnectorDirectoryListTool struct {
@@ -48,6 +53,9 @@ func RegisterCapabilityTools(reg *Registry, handlers CapabilityHandlers) {
 	}
 	if handlers.InboxList != nil {
 		reg.Register(&ConnectorInboxListTool{list: handlers.InboxList})
+	}
+	if handlers.InboxUpdate != nil {
+		reg.Register(&ConnectorInboxUpdateTool{update: handlers.InboxUpdate})
 	}
 	if handlers.DirectoryList != nil {
 		reg.Register(&ConnectorDirectoryListTool{list: handlers.DirectoryList})
@@ -96,6 +104,44 @@ func (t *ConnectorInboxListTool) Invoke(ctx context.Context, call model.ToolCall
 		return model.ToolResult{}, err
 	}
 	return marshalCapabilityResult("connector_inbox_list", result)
+}
+
+func (t *ConnectorInboxUpdateTool) Name() string { return "connector_inbox_update" }
+
+func (t *ConnectorInboxUpdateTool) Spec() model.ToolSpec {
+	return model.ToolSpec{
+		Name:            t.Name(),
+		Description:     "Apply a bounded inbox state change such as mark read, pin, archive, or hide on a connector thread.",
+		InputSchemaJSON: `{"type":"object","properties":{"connector_id":{"type":"string"},"thread_id":{"type":"string"},"thread_type":{"type":"string"},"action":{"type":"string"}},"required":["connector_id","thread_id","action"]}`,
+		Family:          model.ToolFamilyConnectorCapability,
+		Intents:         []model.ToolIntent{model.ToolIntentInboxUpdate},
+		Risk:            model.RiskLow,
+		SideEffect:      "connector_inbox_update",
+	}
+}
+
+func (t *ConnectorInboxUpdateTool) Invoke(ctx context.Context, call model.ToolCall) (model.ToolResult, error) {
+	if t.update == nil {
+		return model.ToolResult{}, fmt.Errorf("connector_inbox_update: handler is required")
+	}
+	var input capabilities.InboxUpdateRequest
+	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
+		return model.ToolResult{}, fmt.Errorf("connector_inbox_update: decode input: %w", err)
+	}
+	if input.ConnectorID == "" {
+		return model.ToolResult{}, fmt.Errorf("connector_inbox_update: connector_id is required")
+	}
+	if input.ThreadID == "" {
+		return model.ToolResult{}, fmt.Errorf("connector_inbox_update: thread_id is required")
+	}
+	if input.Action == "" {
+		return model.ToolResult{}, fmt.Errorf("connector_inbox_update: action is required")
+	}
+	result, err := t.update(ctx, input)
+	if err != nil {
+		return model.ToolResult{}, err
+	}
+	return marshalCapabilityResult("connector_inbox_update", result)
 }
 
 func (t *ConnectorDirectoryListTool) Name() string { return "connector_directory_list" }

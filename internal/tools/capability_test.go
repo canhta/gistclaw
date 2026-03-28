@@ -15,6 +15,9 @@ func TestRegisterCapabilityTools_RegistersCapabilityTools(t *testing.T) {
 		InboxList: func(context.Context, capabilities.InboxListRequest) (capabilities.InboxListResult, error) {
 			return capabilities.InboxListResult{}, nil
 		},
+		InboxUpdate: func(context.Context, capabilities.InboxUpdateRequest) (capabilities.InboxUpdateResult, error) {
+			return capabilities.InboxUpdateResult{}, nil
+		},
 		DirectoryList: func(context.Context, capabilities.DirectoryListRequest) (capabilities.DirectoryListResult, error) {
 			return capabilities.DirectoryListResult{}, nil
 		},
@@ -34,6 +37,7 @@ func TestRegisterCapabilityTools_RegistersCapabilityTools(t *testing.T) {
 
 	for _, name := range []string{
 		"connector_inbox_list",
+		"connector_inbox_update",
 		"connector_directory_list",
 		"connector_target_resolve",
 		"connector_send",
@@ -43,6 +47,41 @@ func TestRegisterCapabilityTools_RegistersCapabilityTools(t *testing.T) {
 		if _, ok := reg.Get(name); !ok {
 			t.Fatalf("expected %q to be registered", name)
 		}
+	}
+}
+
+func TestConnectorInboxUpdateTool_InvokeNormalizesOutput(t *testing.T) {
+	tool := &ConnectorInboxUpdateTool{
+		update: func(_ context.Context, req capabilities.InboxUpdateRequest) (capabilities.InboxUpdateResult, error) {
+			if req.ConnectorID != "zalo_personal" || req.ThreadID != "user-1" || req.ThreadType != "contact" || req.Action != "mark_read" {
+				t.Fatalf("unexpected request: %+v", req)
+			}
+			return capabilities.InboxUpdateResult{
+				ConnectorID: "zalo_personal",
+				ThreadID:    "user-1",
+				ThreadType:  "contact",
+				Action:      "mark_read",
+				Applied:     true,
+				Summary:     "conversation updated",
+			}, nil
+		},
+	}
+
+	result, err := tool.Invoke(context.Background(), model.ToolCall{
+		ID:        "call-1",
+		ToolName:  tool.Name(),
+		InputJSON: []byte(`{"connector_id":"zalo_personal","thread_id":"user-1","thread_type":"contact","action":"mark_read"}`),
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	var payload capabilities.InboxUpdateResult
+	if err := json.Unmarshal([]byte(result.Output), &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if !payload.Applied || payload.Action != "mark_read" || payload.ThreadID != "user-1" {
+		t.Fatalf("unexpected output payload: %+v", payload)
 	}
 }
 

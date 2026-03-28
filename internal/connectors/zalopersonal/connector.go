@@ -43,9 +43,13 @@ type Connector struct {
 	listFriends            func(ctx context.Context, creds StoredCredentials) ([]protocol.FriendInfo, error)
 	listGroups             func(ctx context.Context, creds StoredCredentials) ([]protocol.GroupListInfo, error)
 	fetchUnreadMarks       func(ctx context.Context, creds StoredCredentials) ([]protocol.UnreadMarkInfo, error)
+	updateUnreadMark       func(ctx context.Context, creds StoredCredentials, threadID string, threadType protocol.ThreadType, unread bool) error
 	fetchPinnedThreads     func(ctx context.Context, creds StoredCredentials) ([]protocol.PinnedConversationInfo, error)
+	updatePinnedThread     func(ctx context.Context, creds StoredCredentials, threadID string, threadType protocol.ThreadType, enabled bool) error
 	fetchHiddenThreads     func(ctx context.Context, creds StoredCredentials) ([]protocol.HiddenConversationInfo, error)
+	updateHiddenThread     func(ctx context.Context, creds StoredCredentials, threadID string, threadType protocol.ThreadType, enabled bool) error
 	fetchArchivedThreads   func(ctx context.Context, creds StoredCredentials) ([]protocol.ArchivedConversationInfo, error)
+	updateArchivedThread   func(ctx context.Context, creds StoredCredentials, threadID string, threadType protocol.ThreadType, enabled bool) error
 	sendText               func(ctx context.Context, creds StoredCredentials, chatID, text string) error
 	newListener            func(sess *listenerSession) (SessionListener, error)
 	credentialPollInterval time.Duration
@@ -131,6 +135,18 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 		}
 		return protocol.FetchUnreadMarks(ctx, sess)
 	}
+	connector.updateUnreadMark = func(ctx context.Context, creds StoredCredentials, threadID string, threadType protocol.ThreadType, unread bool) error {
+		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
+			IMEI:      creds.IMEI,
+			Cookie:    creds.Cookie,
+			UserAgent: creds.UserAgent,
+			Language:  optionalLanguage(creds.Language),
+		})
+		if err != nil {
+			return err
+		}
+		return protocol.UpdateUnreadMark(ctx, sess, threadID, threadType, unread)
+	}
 	connector.fetchPinnedThreads = func(ctx context.Context, creds StoredCredentials) ([]protocol.PinnedConversationInfo, error) {
 		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
 			IMEI:      creds.IMEI,
@@ -142,6 +158,18 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 			return nil, err
 		}
 		return protocol.FetchPinnedConversations(ctx, sess)
+	}
+	connector.updatePinnedThread = func(ctx context.Context, creds StoredCredentials, threadID string, threadType protocol.ThreadType, enabled bool) error {
+		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
+			IMEI:      creds.IMEI,
+			Cookie:    creds.Cookie,
+			UserAgent: creds.UserAgent,
+			Language:  optionalLanguage(creds.Language),
+		})
+		if err != nil {
+			return err
+		}
+		return protocol.UpdatePinnedConversation(ctx, sess, threadID, threadType, enabled)
 	}
 	connector.fetchHiddenThreads = func(ctx context.Context, creds StoredCredentials) ([]protocol.HiddenConversationInfo, error) {
 		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
@@ -155,6 +183,18 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 		}
 		return protocol.FetchHiddenConversations(ctx, sess)
 	}
+	connector.updateHiddenThread = func(ctx context.Context, creds StoredCredentials, threadID string, threadType protocol.ThreadType, enabled bool) error {
+		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
+			IMEI:      creds.IMEI,
+			Cookie:    creds.Cookie,
+			UserAgent: creds.UserAgent,
+			Language:  optionalLanguage(creds.Language),
+		})
+		if err != nil {
+			return err
+		}
+		return protocol.UpdateHiddenConversation(ctx, sess, threadID, threadType, enabled)
+	}
 	connector.fetchArchivedThreads = func(ctx context.Context, creds StoredCredentials) ([]protocol.ArchivedConversationInfo, error) {
 		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
 			IMEI:      creds.IMEI,
@@ -166,6 +206,18 @@ func NewConnector(db *store.DB, cs *conversations.ConversationStore, rt Connecto
 			return nil, err
 		}
 		return protocol.FetchArchivedConversations(ctx, sess)
+	}
+	connector.updateArchivedThread = func(ctx context.Context, creds StoredCredentials, threadID string, threadType protocol.ThreadType, enabled bool) error {
+		sess, err := protocol.LoginWithCredentials(ctx, protocol.Credentials{
+			IMEI:      creds.IMEI,
+			Cookie:    creds.Cookie,
+			UserAgent: creds.UserAgent,
+			Language:  optionalLanguage(creds.Language),
+		})
+		if err != nil {
+			return err
+		}
+		return protocol.UpdateArchivedConversation(ctx, sess, threadID, threadType, enabled)
 	}
 	connector.newListener = func(sess *listenerSession) (SessionListener, error) {
 		return newProtocolSessionListener(sess)

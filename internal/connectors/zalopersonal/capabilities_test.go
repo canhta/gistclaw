@@ -246,6 +246,81 @@ func TestCapabilities_ListInboxIncludesThreadFlags(t *testing.T) {
 	}
 }
 
+func TestCapabilities_UpdateInbox(t *testing.T) {
+	db := setupZaloOutboundDB(t)
+	if err := SaveStoredCredentials(context.Background(), db, StoredCredentials{
+		AccountID:   "acc-1",
+		DisplayName: "Canh",
+		IMEI:        "imei-1",
+		Cookie:      "cookie-1",
+		UserAgent:   "ua-1",
+	}); err != nil {
+		t.Fatalf("SaveStoredCredentials: %v", err)
+	}
+
+	connector := NewConnector(db, conversations.NewConversationStore(db), &stubInboundRuntime{}, "assistant")
+	var got []string
+	connector.updateUnreadMark = func(_ context.Context, creds StoredCredentials, threadID string, threadType protocol.ThreadType, unread bool) error {
+		got = append(got, "unread:"+creds.AccountID+":"+threadID+":"+threadTypeLabel(threadType)+":"+boolString(unread))
+		return nil
+	}
+	connector.updatePinnedThread = func(_ context.Context, creds StoredCredentials, threadID string, threadType protocol.ThreadType, enabled bool) error {
+		got = append(got, "pin:"+creds.AccountID+":"+threadID+":"+threadTypeLabel(threadType)+":"+boolString(enabled))
+		return nil
+	}
+	connector.updateArchivedThread = func(_ context.Context, creds StoredCredentials, threadID string, threadType protocol.ThreadType, enabled bool) error {
+		got = append(got, "archive:"+creds.AccountID+":"+threadID+":"+threadTypeLabel(threadType)+":"+boolString(enabled))
+		return nil
+	}
+	connector.updateHiddenThread = func(_ context.Context, creds StoredCredentials, threadID string, threadType protocol.ThreadType, enabled bool) error {
+		got = append(got, "hidden:"+creds.AccountID+":"+threadID+":"+threadTypeLabel(threadType)+":"+boolString(enabled))
+		return nil
+	}
+
+	cases := []struct {
+		name   string
+		action string
+		want   string
+	}{
+		{name: "mark read", action: "mark_read", want: "unread:acc-1:user-1:contact:false"},
+		{name: "mark unread", action: "mark_unread", want: "unread:acc-1:user-1:contact:true"},
+		{name: "pin", action: "pin", want: "pin:acc-1:user-1:contact:true"},
+		{name: "unpin", action: "unpin", want: "pin:acc-1:user-1:contact:false"},
+		{name: "archive", action: "archive", want: "archive:acc-1:user-1:contact:true"},
+		{name: "unarchive", action: "unarchive", want: "archive:acc-1:user-1:contact:false"},
+		{name: "hide", action: "hide", want: "hidden:acc-1:user-1:contact:true"},
+		{name: "unhide", action: "unhide", want: "hidden:acc-1:user-1:contact:false"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got = nil
+			result, err := connector.CapabilityUpdateInbox(context.Background(), capabilities.InboxUpdateRequest{
+				ConnectorID: "zalo_personal",
+				ThreadID:    "user-1",
+				ThreadType:  "contact",
+				Action:      tc.action,
+			})
+			if err != nil {
+				t.Fatalf("CapabilityUpdateInbox: %v", err)
+			}
+			if !result.Applied || result.Action != tc.action {
+				t.Fatalf("unexpected result: %+v", result)
+			}
+			if len(got) != 1 || got[0] != tc.want {
+				t.Fatalf("unexpected call trace: %+v", got)
+			}
+		})
+	}
+}
+
+func boolString(v bool) string {
+	if v {
+		return "true"
+	}
+	return "false"
+}
+
 func TestCapabilities_ResolveTarget(t *testing.T) {
 	db := setupZaloOutboundDB(t)
 	if err := SaveStoredCredentials(context.Background(), db, StoredCredentials{
