@@ -172,6 +172,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		Replay:          rp,
 		Broadcaster:     broadcaster,
 		Runtime:         rt,
+		Schedules:       application,
 		StorageRoot:     cfg.StorageRoot,
 		WhatsAppWebhook: buildWhatsAppWebhook(cfg, db, convStore, rt, whatsappHealth),
 		ConnectorHealth: application,

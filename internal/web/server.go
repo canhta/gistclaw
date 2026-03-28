@@ -15,6 +15,7 @@ import (
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
+	"github.com/canhta/gistclaw/internal/scheduler"
 	"github.com/canhta/gistclaw/internal/store"
 )
 
@@ -23,6 +24,7 @@ type Options struct {
 	Replay          *replay.Service
 	Broadcaster     *SSEBroadcaster
 	Runtime         *runtime.Runtime
+	Schedules       scheduleService
 	StorageRoot     string
 	WhatsAppWebhook http.Handler
 	ConnectorHealth connectorHealthSource
@@ -33,6 +35,7 @@ type Server struct {
 	replay          *replay.Service
 	broadcaster     *SSEBroadcaster
 	rt              *runtime.Runtime
+	schedules       scheduleService
 	storageRoot     string
 	whatsAppWebhook http.Handler
 	connectorHealth connectorHealthSource
@@ -42,6 +45,18 @@ type Server struct {
 
 type connectorHealthSource interface {
 	ConnectorHealth(context.Context) ([]model.ConnectorHealthSnapshot, error)
+}
+
+type scheduleService interface {
+	CreateSchedule(context.Context, scheduler.CreateScheduleInput) (scheduler.Schedule, error)
+	UpdateSchedule(context.Context, string, scheduler.UpdateScheduleInput) (scheduler.Schedule, error)
+	ListSchedules(context.Context) ([]scheduler.Schedule, error)
+	LoadSchedule(context.Context, string) (scheduler.Schedule, error)
+	EnableSchedule(context.Context, string) (scheduler.Schedule, error)
+	DisableSchedule(context.Context, string) (scheduler.Schedule, error)
+	DeleteSchedule(context.Context, string) error
+	ScheduleStatus(context.Context) (scheduler.StatusSummary, error)
+	RunScheduleNow(context.Context, string) (*scheduler.ClaimedOccurrence, error)
 }
 
 type layoutData struct {
@@ -87,6 +102,7 @@ func NewServer(opts Options) (*Server, error) {
 		replay:          opts.Replay,
 		broadcaster:     opts.Broadcaster,
 		rt:              opts.Runtime,
+		schedules:       opts.Schedules,
 		storageRoot:     opts.StorageRoot,
 		whatsAppWebhook: opts.WhatsAppWebhook,
 		connectorHealth: opts.ConnectorHealth,
@@ -159,6 +175,12 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/conversations/{id}", s.handleConversationDetail)
 	s.mux.Handle("POST /api/conversations/{id}/messages", s.adminAuth(http.HandlerFunc(s.handleSessionSend)))
 	s.mux.Handle("POST /api/conversations/{id}/deliveries/{delivery_id}/retry", s.adminAuth(http.HandlerFunc(s.handleSessionRetryDelivery)))
+	s.mux.HandleFunc("GET /api/automate", s.handleAutomateIndex)
+	s.mux.Handle("POST /api/automate", s.adminAuth(http.HandlerFunc(s.handleAutomateCreate)))
+	s.mux.Handle("POST /api/automate/{id}/enable", s.adminAuth(http.HandlerFunc(s.handleAutomateEnable)))
+	s.mux.Handle("POST /api/automate/{id}/disable", s.adminAuth(http.HandlerFunc(s.handleAutomateDisable)))
+	s.mux.Handle("POST /api/automate/{id}/run", s.adminAuth(http.HandlerFunc(s.handleAutomateRun)))
+	s.mux.HandleFunc("GET /api/history", s.handleHistoryIndex)
 	if s.whatsAppWebhook != nil {
 		s.mux.Handle("GET /webhooks/whatsapp", s.whatsAppWebhook)
 		s.mux.Handle("POST /webhooks/whatsapp", s.whatsAppWebhook)

@@ -357,6 +357,101 @@ export interface ConversationsResponse {
 	runtime_connectors: RecoverRuntimeHealthResponse[];
 }
 
+export interface AutomateScheduleResponse {
+	id: string;
+	name: string;
+	objective: string;
+	kind: string;
+	kind_label: string;
+	cadence_label: string;
+	enabled: boolean;
+	enabled_label: string;
+	status_label: string;
+	status_class: string;
+	next_run_at_label: string;
+	last_run_at_label: string;
+	last_error: string;
+	project_id: string;
+	cwd: string;
+	consecutive_failures: number;
+	schedule_error_count: number;
+}
+
+export interface AutomateOccurrenceResponse {
+	id: string;
+	schedule_id: string;
+	schedule_name: string;
+	status: string;
+	status_label: string;
+	status_class: string;
+	slot_at_label: string;
+	updated_at_label: string;
+	run_id?: string;
+	conversation_id?: string;
+	error?: string;
+	skip_reason?: string;
+}
+
+export interface AutomateResponse {
+	summary: {
+		total_schedules: number;
+		enabled_schedules: number;
+		due_schedules: number;
+		active_occurrences: number;
+		next_wake_at_label: string;
+	};
+	health: {
+		invalid_schedules: number;
+		stuck_dispatching: number;
+		missing_next_run: number;
+	};
+	schedules: AutomateScheduleResponse[];
+	open_occurrences: AutomateOccurrenceResponse[];
+	recent_occurrences: AutomateOccurrenceResponse[];
+}
+
+export interface HistoryApprovalResponse {
+	id: string;
+	run_id: string;
+	tool_name: string;
+	status: string;
+	status_label: string;
+	resolved_by: string;
+	resolved_at_label: string;
+}
+
+export interface HistoryDeliveryResponse {
+	id: string;
+	run_id: string;
+	connector_id: string;
+	chat_id: string;
+	status: string;
+	status_label: string;
+	attempts_label: string;
+	last_attempt_at_label: string;
+	message_preview: string;
+}
+
+export interface HistoryResponse {
+	summary: {
+		run_count: number;
+		completed_runs: number;
+		recovery_runs: number;
+		approval_events: number;
+		delivery_outcomes: number;
+	};
+	filters: {
+		query: string;
+		status: string;
+		scope: string;
+		limit: number;
+	};
+	paging: PageLinksResponse;
+	runs: WorkClusterResponse[];
+	approvals: HistoryApprovalResponse[];
+	deliveries: HistoryDeliveryResponse[];
+}
+
 export interface ConversationDetailResponse {
 	session: {
 		id: string;
