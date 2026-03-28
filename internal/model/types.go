@@ -432,9 +432,7 @@ type AgentProfile struct {
 	DenyTools                   []string
 	DelegationKinds             []DelegationKind
 	SpecialistSummaryVisibility SpecialistSummaryVisibility
-	ToolProfile                 string
 	MemoryScope                 string
-	CanSpawn                    []string
 	CanMessage                  []string
 }
 

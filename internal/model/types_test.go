@@ -113,6 +113,7 @@ func TestAgentProfile_ExposesAdaptivePolicyFields(t *testing.T) {
 		"DelegationKinds",
 		"SpecialistSummaryVisibility",
 	)
+	assertOmitsField(t, agentType, "ToolProfile", "CanSpawn")
 }
 
 func TestToolSpec_ExposesFamily(t *testing.T) {

@@ -20,28 +20,22 @@ func LoadExecutionSnapshot(teamDir string) (model.ExecutionSnapshot, error) {
 }
 
 func buildAgentProfile(agent AgentConfig) (model.AgentProfile, error) {
-	if agent.ToolPosture == "" {
-		return model.AgentProfile{}, fmt.Errorf("tool_posture is required")
-	}
-
-	capability, err := toolPostureCapability(agent.ToolPosture)
-	if err != nil {
-		return model.AgentProfile{}, err
-	}
-
-	capabilities := []model.AgentCapability{capability}
-	if len(agent.CanSpawn) > 0 {
-		capabilities = append(capabilities, model.CapSpawn)
+	if agent.BaseProfile == "" {
+		return model.AgentProfile{}, fmt.Errorf("base_profile is required")
 	}
 
 	return model.AgentProfile{
-		AgentID:      agent.ID,
-		Role:         agent.Role,
-		Instructions: renderSoulInstructions(agent.Soul.Extra),
-		Capabilities: capabilities,
-		ToolProfile:  agent.ToolPosture,
-		CanSpawn:     append([]string(nil), agent.CanSpawn...),
-		CanMessage:   append([]string(nil), agent.CanMessage...),
+		AgentID:                     agent.ID,
+		Role:                        agent.Role,
+		Instructions:                renderSoulInstructions(agent.Soul.Extra),
+		Capabilities:                baseProfileCapabilities(agent.BaseProfile),
+		BaseProfile:                 agent.BaseProfile,
+		ToolFamilies:                append([]model.ToolFamily(nil), agent.ToolFamilies...),
+		AllowTools:                  append([]string(nil), agent.AllowTools...),
+		DenyTools:                   append([]string(nil), agent.DenyTools...),
+		DelegationKinds:             append([]model.DelegationKind(nil), agent.DelegationKinds...),
+		SpecialistSummaryVisibility: agent.SpecialistSummaryVisibility,
+		CanMessage:                  append([]string(nil), agent.CanMessage...),
 	}, nil
 }
 
@@ -147,17 +141,17 @@ func writeSoulListItem(b *strings.Builder, value any, indent int) {
 	}
 }
 
-func toolPostureCapability(toolPosture string) (model.AgentCapability, error) {
-	switch toolPosture {
-	case "scoped_write":
-		return model.CapScopedWrite, nil
-	case "operator_facing":
-		return model.CapOperatorFacing, nil
-	case "read_heavy":
-		return model.CapReadHeavy, nil
-	case "propose_only":
-		return model.CapProposeOnly, nil
+func baseProfileCapabilities(profile model.BaseProfile) []model.AgentCapability {
+	switch profile {
+	case model.BaseProfileOperator:
+		return []model.AgentCapability{model.CapOperatorFacing}
+	case model.BaseProfileWrite:
+		return []model.AgentCapability{model.CapScopedWrite}
+	case model.BaseProfileResearch, model.BaseProfileReview, model.BaseProfileSpecialist:
+		return []model.AgentCapability{model.CapReadHeavy}
+	case model.BaseProfileVerify:
+		return []model.AgentCapability{model.CapProposeOnly}
 	default:
-		return "", fmt.Errorf("unknown tool_posture %q", toolPosture)
+		return nil
 	}
 }

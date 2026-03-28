@@ -17,19 +17,23 @@ type Config struct {
 }
 
 type AgentConfig struct {
-	ID          string
-	SoulFile    string
-	Role        string
-	ToolPosture string
-	CanSpawn    []string
-	CanMessage  []string
-	Soul        SoulSpec
+	ID                          string
+	SoulFile                    string
+	Role                        string
+	BaseProfile                 model.BaseProfile
+	ToolFamilies                []model.ToolFamily
+	AllowTools                  []string
+	DenyTools                   []string
+	DelegationKinds             []model.DelegationKind
+	CanMessage                  []string
+	SpecialistSummaryVisibility model.SpecialistSummaryVisibility
+	Soul                        SoulSpec
 }
 
 type SoulSpec struct {
-	Role        string         `yaml:"role,omitempty"`
-	ToolPosture string         `yaml:"tool_posture"`
-	Extra       map[string]any `yaml:",inline"`
+	Role              string         `yaml:"role,omitempty"`
+	LegacyToolPosture string         `yaml:"tool_posture,omitempty"`
+	Extra             map[string]any `yaml:",inline"`
 }
 
 type editableFile struct {
@@ -39,13 +43,19 @@ type editableFile struct {
 }
 
 type editableFileAgent struct {
-	ID          string         `yaml:"id"`
-	SoulFile    string         `yaml:"soul_file,omitempty"`
-	Role        string         `yaml:"role,omitempty"`
-	ToolPosture string         `yaml:"tool_posture"`
-	CanSpawn    []string       `yaml:"can_spawn"`
-	CanMessage  []string       `yaml:"can_message"`
-	SoulExtra   map[string]any `yaml:"soul_extra,omitempty"`
+	ID                          string                            `yaml:"id"`
+	SoulFile                    string                            `yaml:"soul_file,omitempty"`
+	Role                        string                            `yaml:"role,omitempty"`
+	BaseProfile                 model.BaseProfile                 `yaml:"base_profile"`
+	ToolFamilies                []model.ToolFamily                `yaml:"tool_families"`
+	AllowTools                  []string                          `yaml:"allow_tools,omitempty"`
+	DenyTools                   []string                          `yaml:"deny_tools,omitempty"`
+	DelegationKinds             []model.DelegationKind            `yaml:"delegation_kinds,omitempty"`
+	CanMessage                  []string                          `yaml:"can_message"`
+	SpecialistSummaryVisibility model.SpecialistSummaryVisibility `yaml:"specialist_summary_visibility,omitempty"`
+	LegacyToolPosture           string                            `yaml:"tool_posture,omitempty"`
+	LegacyCanSpawn              []string                          `yaml:"can_spawn,omitempty"`
+	SoulExtra                   map[string]any                    `yaml:"soul_extra,omitempty"`
 }
 
 func LoadConfig(teamDir string) (Config, error) {
@@ -73,13 +83,17 @@ func LoadConfig(teamDir string) (Config, error) {
 			return Config{}, fmt.Errorf("team: agent %q: %w", agent.ID, err)
 		}
 		cfg.Agents = append(cfg.Agents, AgentConfig{
-			ID:          agent.ID,
-			SoulFile:    agent.SoulFile,
-			Role:        soul.Role,
-			ToolPosture: soul.ToolPosture,
-			CanSpawn:    append([]string(nil), agent.CanSpawn...),
-			CanMessage:  append([]string(nil), agent.CanMessage...),
-			Soul:        soul,
+			ID:                          agent.ID,
+			SoulFile:                    agent.SoulFile,
+			Role:                        soul.Role,
+			BaseProfile:                 agent.BaseProfile,
+			ToolFamilies:                append([]model.ToolFamily(nil), agent.ToolFamilies...),
+			AllowTools:                  append([]string(nil), agent.AllowTools...),
+			DenyTools:                   append([]string(nil), agent.DenyTools...),
+			DelegationKinds:             append([]model.DelegationKind(nil), agent.DelegationKinds...),
+			CanMessage:                  append([]string(nil), agent.CanMessage...),
+			SpecialistSummaryVisibility: agent.SpecialistSummaryVisibility,
+			Soul:                        soul,
 		})
 	}
 
@@ -109,10 +123,15 @@ func WriteConfig(teamDir string, cfg Config) error {
 			return fmt.Errorf("team: agent id is required")
 		}
 		spec.Agents = append(spec.Agents, AgentSpec{
-			ID:         agent.ID,
-			SoulFile:   agent.SoulFile,
-			CanSpawn:   append([]string(nil), agent.CanSpawn...),
-			CanMessage: append([]string(nil), agent.CanMessage...),
+			ID:                          agent.ID,
+			SoulFile:                    agent.SoulFile,
+			BaseProfile:                 agent.BaseProfile,
+			ToolFamilies:                append([]model.ToolFamily(nil), agent.ToolFamilies...),
+			AllowTools:                  append([]string(nil), agent.AllowTools...),
+			DenyTools:                   append([]string(nil), agent.DenyTools...),
+			DelegationKinds:             append([]model.DelegationKind(nil), agent.DelegationKinds...),
+			CanMessage:                  append([]string(nil), agent.CanMessage...),
+			SpecialistSummaryVisibility: agent.SpecialistSummaryVisibility,
 		})
 	}
 	if err := validateSpec(&spec); err != nil {
@@ -133,7 +152,6 @@ func WriteConfig(teamDir string, cfg Config) error {
 	for _, agent := range cfg.Agents {
 		soul := agent.Soul
 		soul.Role = agent.Role
-		soul.ToolPosture = agent.ToolPosture
 		if err := writeSoulSpec(filepath.Join(teamDir, agent.SoulFile), soul); err != nil {
 			return fmt.Errorf("team: write soul for %q: %w", agent.ID, err)
 		}
@@ -157,12 +175,16 @@ func ExportEditableYAML(cfg Config) ([]byte, error) {
 	}
 	for _, agent := range cfg.Agents {
 		fileAgent := editableFileAgent{
-			ID:          agent.ID,
-			SoulFile:    agent.SoulFile,
-			Role:        agent.Role,
-			ToolPosture: agent.ToolPosture,
-			CanSpawn:    append([]string(nil), agent.CanSpawn...),
-			CanMessage:  append([]string(nil), agent.CanMessage...),
+			ID:                          agent.ID,
+			SoulFile:                    agent.SoulFile,
+			Role:                        agent.Role,
+			BaseProfile:                 agent.BaseProfile,
+			ToolFamilies:                append([]model.ToolFamily(nil), agent.ToolFamilies...),
+			AllowTools:                  append([]string(nil), agent.AllowTools...),
+			DenyTools:                   append([]string(nil), agent.DenyTools...),
+			DelegationKinds:             append([]model.DelegationKind(nil), agent.DelegationKinds...),
+			CanMessage:                  append([]string(nil), agent.CanMessage...),
+			SpecialistSummaryVisibility: agent.SpecialistSummaryVisibility,
 		}
 		if len(agent.Soul.Extra) > 0 {
 			fileAgent.SoulExtra = cloneSoulExtra(agent.Soul.Extra)
@@ -191,26 +213,35 @@ func LoadEditableYAML(data []byte) (Config, error) {
 		if agent.ID == "" {
 			return Config{}, fmt.Errorf("team: agent id is required")
 		}
+		if agent.LegacyToolPosture != "" {
+			return Config{}, fmt.Errorf("team: agent %q: legacy field %q is not supported", agent.ID, "tool_posture")
+		}
+		if len(agent.LegacyCanSpawn) > 0 {
+			return Config{}, fmt.Errorf("team: agent %q: legacy field %q is not supported", agent.ID, "can_spawn")
+		}
 		soulFile := agent.SoulFile
 		if soulFile == "" {
 			soulFile = SuggestedSoulFile(agent.ID)
 		}
-		if agent.ToolPosture == "" {
-			return Config{}, fmt.Errorf("team: agent %q: tool_posture is required", agent.ID)
+		if agent.BaseProfile == "" {
+			return Config{}, fmt.Errorf("team: agent %q: base_profile is required", agent.ID)
 		}
 		soul := SoulSpec{
-			Role:        agent.Role,
-			ToolPosture: agent.ToolPosture,
-			Extra:       cloneSoulExtra(agent.SoulExtra),
+			Role:  agent.Role,
+			Extra: cloneSoulExtra(agent.SoulExtra),
 		}
 		cfg.Agents = append(cfg.Agents, AgentConfig{
-			ID:          agent.ID,
-			SoulFile:    soulFile,
-			Role:        agent.Role,
-			ToolPosture: agent.ToolPosture,
-			CanSpawn:    append([]string(nil), agent.CanSpawn...),
-			CanMessage:  append([]string(nil), agent.CanMessage...),
-			Soul:        soul,
+			ID:                          agent.ID,
+			SoulFile:                    soulFile,
+			Role:                        agent.Role,
+			BaseProfile:                 agent.BaseProfile,
+			ToolFamilies:                append([]model.ToolFamily(nil), agent.ToolFamilies...),
+			AllowTools:                  append([]string(nil), agent.AllowTools...),
+			DenyTools:                   append([]string(nil), agent.DenyTools...),
+			DelegationKinds:             append([]model.DelegationKind(nil), agent.DelegationKinds...),
+			CanMessage:                  append([]string(nil), agent.CanMessage...),
+			SpecialistSummaryVisibility: agent.SpecialistSummaryVisibility,
+			Soul:                        soul,
 		})
 	}
 
@@ -221,10 +252,15 @@ func LoadEditableYAML(data []byte) (Config, error) {
 	}
 	for _, agent := range cfg.Agents {
 		spec.Agents = append(spec.Agents, AgentSpec{
-			ID:         agent.ID,
-			SoulFile:   agent.SoulFile,
-			CanSpawn:   append([]string(nil), agent.CanSpawn...),
-			CanMessage: append([]string(nil), agent.CanMessage...),
+			ID:                          agent.ID,
+			SoulFile:                    agent.SoulFile,
+			BaseProfile:                 agent.BaseProfile,
+			ToolFamilies:                append([]model.ToolFamily(nil), agent.ToolFamilies...),
+			AllowTools:                  append([]string(nil), agent.AllowTools...),
+			DenyTools:                   append([]string(nil), agent.DenyTools...),
+			DelegationKinds:             append([]model.DelegationKind(nil), agent.DelegationKinds...),
+			CanMessage:                  append([]string(nil), agent.CanMessage...),
+			SpecialistSummaryVisibility: agent.SpecialistSummaryVisibility,
 		})
 	}
 	if err := validateSpec(&spec); err != nil {
@@ -258,8 +294,8 @@ func loadSoulSpec(path string) (SoulSpec, error) {
 	if err := yaml.Unmarshal(data, &soul); err != nil {
 		return SoulSpec{}, fmt.Errorf("parse soul yaml: %w", err)
 	}
-	if soul.ToolPosture == "" {
-		return SoulSpec{}, fmt.Errorf("tool_posture is required")
+	if soul.LegacyToolPosture != "" {
+		return SoulSpec{}, fmt.Errorf("parse soul yaml: legacy field %q is not supported", "tool_posture")
 	}
 	if soul.Extra == nil {
 		soul.Extra = map[string]any{}
@@ -268,9 +304,7 @@ func loadSoulSpec(path string) (SoulSpec, error) {
 }
 
 func writeSoulSpec(path string, soul SoulSpec) error {
-	if soul.ToolPosture == "" {
-		return fmt.Errorf("tool_posture is required")
-	}
+	soul.LegacyToolPosture = ""
 	raw, err := yaml.Marshal(&soul)
 	if err != nil {
 		return fmt.Errorf("marshal soul yaml: %w", err)

@@ -9,7 +9,7 @@ import (
 	"github.com/canhta/gistclaw/internal/model"
 )
 
-func TestLoadExecutionSnapshot_BuildsAgentProfilesFromTeamAndSoulFiles(t *testing.T) {
+func TestLoadExecutionSnapshot_BuildsAgentProfilesFromAdaptiveTeamConfig(t *testing.T) {
 	dir := t.TempDir()
 	writeTeamFile(t, filepath.Join(dir, "team.yaml"), `
 name: default
@@ -17,15 +17,22 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: [patcher]
+    base_profile: operator
+    tool_families: [repo_read, connector_capability, delegate]
+    allow_tools: [connector_directory_list]
+    deny_tools: [repo_write]
+    delegation_kinds: [research, write]
     can_message: [patcher]
+    specialist_summary_visibility: basic
   - id: patcher
     soul_file: patcher.soul.yaml
-    can_spawn: []
+    base_profile: write
+    tool_families: [repo_read, repo_write]
     can_message: [assistant]
+    specialist_summary_visibility: none
 `)
-	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: operator_facing\ndecision_boundaries:\n  - must route scoped writes through patcher\n")
-	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "tool_posture: scoped_write\n")
+	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: front assistant\ndecision_policy:\n  - prefer direct capability execution\n")
+	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: write specialist\n")
 
 	snapshot, err := LoadExecutionSnapshot(dir)
 	if err != nil {
@@ -42,44 +49,47 @@ agents:
 	if !ok {
 		t.Fatal("expected assistant profile")
 	}
-	if assistant.ToolProfile != "operator_facing" {
-		t.Fatalf("expected assistant operator_facing, got %q", assistant.ToolProfile)
+	if assistant.BaseProfile != model.BaseProfileOperator {
+		t.Fatalf("expected assistant operator base profile, got %q", assistant.BaseProfile)
 	}
-	if assistant.Role != "coordinator" {
-		t.Fatalf("expected assistant role coordinator, got %q", assistant.Role)
+	if len(assistant.ToolFamilies) != 3 {
+		t.Fatalf("expected assistant tool families, got %#v", assistant.ToolFamilies)
 	}
-	if !strings.Contains(assistant.Instructions, "must route scoped writes through patcher") {
-		t.Fatalf("expected assistant instructions to contain delegation rule, got %q", assistant.Instructions)
+	if len(assistant.AllowTools) != 1 || assistant.AllowTools[0] != "connector_directory_list" {
+		t.Fatalf("expected assistant allow_tools, got %#v", assistant.AllowTools)
 	}
-	if !hasCapability(assistant.Capabilities, model.CapOperatorFacing) {
-		t.Fatalf("expected assistant operator_facing capability, got %+v", assistant.Capabilities)
+	if len(assistant.DenyTools) != 1 || assistant.DenyTools[0] != "repo_write" {
+		t.Fatalf("expected assistant deny_tools, got %#v", assistant.DenyTools)
 	}
-	if !hasCapability(assistant.Capabilities, model.CapSpawn) {
-		t.Fatalf("expected assistant spawn capability, got %+v", assistant.Capabilities)
+	if len(assistant.DelegationKinds) != 2 {
+		t.Fatalf("expected assistant delegation kinds, got %#v", assistant.DelegationKinds)
 	}
-	if len(assistant.CanSpawn) != 1 || assistant.CanSpawn[0] != "patcher" {
-		t.Fatalf("expected assistant can_spawn [patcher], got %#v", assistant.CanSpawn)
+	if assistant.SpecialistSummaryVisibility != model.SpecialistSummaryBasic {
+		t.Fatalf("expected assistant basic specialist summary visibility, got %q", assistant.SpecialistSummaryVisibility)
+	}
+	if !strings.Contains(assistant.Instructions, "prefer direct capability execution") {
+		t.Fatalf("expected assistant instructions to contain adaptive rule, got %q", assistant.Instructions)
 	}
 	if len(assistant.CanMessage) != 1 || assistant.CanMessage[0] != "patcher" {
 		t.Fatalf("expected assistant can_message [patcher], got %#v", assistant.CanMessage)
 	}
 
 	patcher := snapshot.Agents["patcher"]
-	if patcher.ToolProfile != "scoped_write" {
-		t.Fatalf("expected patcher scoped_write, got %q", patcher.ToolProfile)
+	if patcher.BaseProfile != model.BaseProfileWrite {
+		t.Fatalf("expected patcher write base profile, got %q", patcher.BaseProfile)
 	}
-	if !hasCapability(patcher.Capabilities, model.CapScopedWrite) {
-		t.Fatalf("expected patcher scoped_write capability, got %+v", patcher.Capabilities)
+	if len(patcher.ToolFamilies) != 2 {
+		t.Fatalf("expected patcher tool families, got %#v", patcher.ToolFamilies)
 	}
-	if len(patcher.CanSpawn) != 0 {
-		t.Fatalf("expected patcher can_spawn empty, got %#v", patcher.CanSpawn)
+	if patcher.SpecialistSummaryVisibility != model.SpecialistSummaryNone {
+		t.Fatalf("expected patcher specialist summary visibility none, got %q", patcher.SpecialistSummaryVisibility)
 	}
 	if len(patcher.CanMessage) != 1 || patcher.CanMessage[0] != "assistant" {
 		t.Fatalf("expected patcher can_message [assistant], got %#v", patcher.CanMessage)
 	}
 }
 
-func TestLoadExecutionSnapshot_RejectsUnknownToolPosture(t *testing.T) {
+func TestLoadExecutionSnapshot_RejectsUnknownAdaptiveFields(t *testing.T) {
 	dir := t.TempDir()
 	writeTeamFile(t, filepath.Join(dir, "team.yaml"), `
 name: default
@@ -87,13 +97,14 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: []
+    base_profile: operator
+    tool_families: [dangerous_mode]
     can_message: []
 `)
-	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "tool_posture: dangerous_mode\n")
+	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: front assistant\n")
 
 	if _, err := LoadExecutionSnapshot(dir); err == nil {
-		t.Fatal("expected unknown tool posture to fail")
+		t.Fatal("expected unknown tool family to fail")
 	}
 }
 
@@ -105,13 +116,4 @@ func writeTeamFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
-}
-
-func hasCapability(capabilities []model.AgentCapability, want model.AgentCapability) bool {
-	for _, capability := range capabilities {
-		if capability == want {
-			return true
-		}
-	}
-	return false
 }

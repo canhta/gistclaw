@@ -31,10 +31,11 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: []
+    base_profile: review
+    tool_families: [repo_read, diff_review]
     can_message: []
 `)
-	writeTeamFile(t, filepath.Join(sourceDir, "assistant.soul.yaml"), "role: reviewer\ntool_posture: read_heavy\n")
+	writeTeamFile(t, filepath.Join(sourceDir, "assistant.soul.yaml"), "role: reviewer\n")
 
 	if err := CloneProfile(profilesRoot, "review", "ops"); err != nil {
 		t.Fatalf("CloneProfile: %v", err)
@@ -59,10 +60,11 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: []
+    base_profile: review
+    tool_families: [repo_read, diff_review]
     can_message: []
 `)
-		writeTeamFile(t, filepath.Join(profileDir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: read_heavy\n")
+		writeTeamFile(t, filepath.Join(profileDir, "assistant.soul.yaml"), "role: assistant\n")
 	}
 
 	profiles, err := ListProfiles(profilesRoot)
@@ -89,10 +91,11 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: []
+    base_profile: review
+    tool_families: [repo_read, diff_review]
     can_message: []
 `)
-	writeTeamFile(t, filepath.Join(profileDir, "assistant.soul.yaml"), "role: reviewer\ntool_posture: read_heavy\n")
+	writeTeamFile(t, filepath.Join(profileDir, "assistant.soul.yaml"), "role: reviewer\n")
 
 	if err := DeleteProfile(profilesRoot, "review"); err != nil {
 		t.Fatalf("DeleteProfile: %v", err)

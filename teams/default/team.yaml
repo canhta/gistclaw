@@ -3,22 +3,33 @@ front_agent: assistant
 
 agents:
   - id: assistant
-    soul_file: coordinator.soul.yaml
-    can_spawn: [patcher, reviewer, verifier, researcher]
+    soul_file: assistant.soul.yaml
+    base_profile: operator
+    tool_families: [repo_read, runtime_capability, connector_capability, delegate]
+    delegation_kinds: [research, write, review, verify]
     can_message: [patcher, reviewer, verifier, researcher]
+    specialist_summary_visibility: full
   - id: patcher
     soul_file: patcher.soul.yaml
-    can_spawn: []
+    base_profile: write
+    tool_families: [repo_read, repo_write]
     can_message: [assistant, reviewer, verifier, researcher]
+    specialist_summary_visibility: basic
   - id: reviewer
     soul_file: reviewer.soul.yaml
-    can_spawn: []
+    base_profile: review
+    tool_families: [repo_read, diff_review]
     can_message: [assistant, patcher, verifier, researcher]
+    specialist_summary_visibility: basic
   - id: verifier
     soul_file: verifier.soul.yaml
-    can_spawn: []
+    base_profile: verify
+    tool_families: [repo_read, verification]
     can_message: [assistant, patcher, reviewer, researcher]
+    specialist_summary_visibility: basic
   - id: researcher
     soul_file: researcher.soul.yaml
-    can_spawn: []
+    base_profile: research
+    tool_families: [repo_read, web_read]
     can_message: [assistant, patcher, reviewer, verifier]
+    specialist_summary_visibility: basic

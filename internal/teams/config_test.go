@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/canhta/gistclaw/internal/model"
 )
 
 func TestLoadConfig_CombinesTeamAndSoulFields(t *testing.T) {
@@ -15,15 +17,21 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: [patcher]
+    base_profile: operator
+    tool_families: [repo_read, connector_capability, delegate]
+    allow_tools: [connector_directory_list]
+    deny_tools: [repo_write]
+    delegation_kinds: [research, write]
     can_message: [patcher]
+    specialist_summary_visibility: basic
   - id: patcher
     soul_file: patcher.soul.yaml
-    can_spawn: []
+    base_profile: write
+    tool_families: [repo_read, repo_write]
     can_message: [assistant]
 `)
-	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: operator_facing\ntone: direct\n")
-	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: scoped_write\n")
+	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: front assistant\ntone: direct\n")
+	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\n")
 
 	cfg, err := LoadConfig(dir)
 	if err != nil {
@@ -38,13 +46,30 @@ agents:
 	if len(cfg.Agents) != 2 {
 		t.Fatalf("expected 2 agents, got %d", len(cfg.Agents))
 	}
-	if cfg.Agents[0].Role != "coordinator" {
-		t.Fatalf("expected assistant role, got %q", cfg.Agents[0].Role)
+
+	assistant := cfg.Agents[0]
+	if assistant.Role != "front assistant" {
+		t.Fatalf("expected assistant role, got %q", assistant.Role)
 	}
-	if cfg.Agents[0].ToolPosture != "operator_facing" {
-		t.Fatalf("expected assistant posture, got %q", cfg.Agents[0].ToolPosture)
+	if assistant.BaseProfile != model.BaseProfileOperator {
+		t.Fatalf("expected operator base profile, got %q", assistant.BaseProfile)
 	}
-	if got := cfg.Agents[0].Soul.Extra["tone"]; got != "direct" {
+	if len(assistant.ToolFamilies) != 3 {
+		t.Fatalf("expected 3 tool families, got %#v", assistant.ToolFamilies)
+	}
+	if len(assistant.AllowTools) != 1 || assistant.AllowTools[0] != "connector_directory_list" {
+		t.Fatalf("expected allow_tools to round-trip, got %#v", assistant.AllowTools)
+	}
+	if len(assistant.DenyTools) != 1 || assistant.DenyTools[0] != "repo_write" {
+		t.Fatalf("expected deny_tools to round-trip, got %#v", assistant.DenyTools)
+	}
+	if len(assistant.DelegationKinds) != 2 {
+		t.Fatalf("expected delegation kinds to round-trip, got %#v", assistant.DelegationKinds)
+	}
+	if assistant.SpecialistSummaryVisibility != model.SpecialistSummaryBasic {
+		t.Fatalf("expected basic specialist summary visibility, got %q", assistant.SpecialistSummaryVisibility)
+	}
+	if got := assistant.Soul.Extra["tone"]; got != "direct" {
 		t.Fatalf("expected assistant tone to be preserved, got %#v", got)
 	}
 }
@@ -57,15 +82,21 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: [patcher]
+    base_profile: operator
+    tool_families: [repo_read, delegate]
+    allow_tools: [connector_directory_list]
+    deny_tools: [repo_write]
+    delegation_kinds: [research]
     can_message: [patcher]
+    specialist_summary_visibility: basic
   - id: patcher
     soul_file: patcher.soul.yaml
-    can_spawn: []
+    base_profile: write
+    tool_families: [repo_read, repo_write]
     can_message: [assistant]
 `)
-	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: operator_facing\ntone: direct\n")
-	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: scoped_write\nnotes: edits files\n")
+	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: front assistant\ntone: direct\n")
+	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\nnotes: edits files\n")
 
 	cfg, err := LoadConfig(dir)
 	if err != nil {
@@ -73,10 +104,17 @@ agents:
 	}
 	cfg.Name = "Platform Crew"
 	cfg.FrontAgent = "patcher"
-	cfg.Agents[0].Role = "front reviewer"
-	cfg.Agents[0].ToolPosture = "read_heavy"
-	cfg.Agents[0].CanSpawn = []string{"patcher"}
+	cfg.Agents[0].Role = "adaptive assistant"
+	cfg.Agents[0].BaseProfile = model.BaseProfileResearch
+	cfg.Agents[0].ToolFamilies = []model.ToolFamily{
+		model.ToolFamilyRepoRead,
+		model.ToolFamilyWebRead,
+	}
+	cfg.Agents[0].AllowTools = []string{"web_search"}
+	cfg.Agents[0].DenyTools = []string{"repo_write"}
+	cfg.Agents[0].DelegationKinds = []model.DelegationKind{model.DelegationKindReview}
 	cfg.Agents[0].CanMessage = []string{"patcher"}
+	cfg.Agents[0].SpecialistSummaryVisibility = model.SpecialistSummaryFull
 
 	if err := WriteConfig(dir, cfg); err != nil {
 		t.Fatalf("WriteConfig: %v", err)
@@ -92,11 +130,17 @@ agents:
 	if reloaded.FrontAgent != "patcher" {
 		t.Fatalf("expected updated front agent, got %q", reloaded.FrontAgent)
 	}
-	if reloaded.Agents[0].Role != "front reviewer" {
+	if reloaded.Agents[0].Role != "adaptive assistant" {
 		t.Fatalf("expected updated role, got %q", reloaded.Agents[0].Role)
 	}
-	if reloaded.Agents[0].ToolPosture != "read_heavy" {
-		t.Fatalf("expected updated posture, got %q", reloaded.Agents[0].ToolPosture)
+	if reloaded.Agents[0].BaseProfile != model.BaseProfileResearch {
+		t.Fatalf("expected updated base profile, got %q", reloaded.Agents[0].BaseProfile)
+	}
+	if len(reloaded.Agents[0].ToolFamilies) != 2 {
+		t.Fatalf("expected updated tool families, got %#v", reloaded.Agents[0].ToolFamilies)
+	}
+	if reloaded.Agents[0].SpecialistSummaryVisibility != model.SpecialistSummaryFull {
+		t.Fatalf("expected updated specialist summary visibility, got %q", reloaded.Agents[0].SpecialistSummaryVisibility)
 	}
 
 	assistantSoul, err := os.ReadFile(filepath.Join(dir, "assistant.soul.yaml"))
@@ -116,15 +160,18 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: [patcher]
+    base_profile: operator
+    tool_families: [repo_read, delegate]
+    allow_tools: [connector_directory_list]
     can_message: [patcher]
   - id: patcher
     soul_file: patcher.soul.yaml
-    can_spawn: []
+    base_profile: write
+    tool_families: [repo_read, repo_write]
     can_message: [assistant]
 `)
-	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: operator_facing\ntone: direct\n")
-	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: scoped_write\n")
+	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: front assistant\ntone: direct\n")
+	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\n")
 
 	cfg, err := LoadConfig(dir)
 	if err != nil {
@@ -133,24 +180,31 @@ agents:
 	cfg.FrontAgent = "assistant"
 	cfg.Agents = []AgentConfig{
 		{
-			ID:          cfg.Agents[0].ID,
-			SoulFile:    cfg.Agents[0].SoulFile,
-			Role:        cfg.Agents[0].Role,
-			ToolPosture: cfg.Agents[0].ToolPosture,
-			CanSpawn:    []string{"researcher"},
-			CanMessage:  []string{"researcher"},
-			Soul:        cfg.Agents[0].Soul,
+			ID:                         cfg.Agents[0].ID,
+			SoulFile:                   cfg.Agents[0].SoulFile,
+			Role:                       cfg.Agents[0].Role,
+			BaseProfile:                cfg.Agents[0].BaseProfile,
+			ToolFamilies:               cfg.Agents[0].ToolFamilies,
+			AllowTools:                 append([]string(nil), cfg.Agents[0].AllowTools...),
+			DenyTools:                  append([]string(nil), cfg.Agents[0].DenyTools...),
+			DelegationKinds:            []model.DelegationKind{model.DelegationKindResearch},
+			CanMessage:                 []string{"researcher"},
+			SpecialistSummaryVisibility: model.SpecialistSummaryBasic,
+			Soul:                       cfg.Agents[0].Soul,
 		},
 		{
 			ID:          "researcher",
 			SoulFile:    "researcher.soul.yaml",
-			Role:        "researcher",
-			ToolPosture: "read_heavy",
-			CanSpawn:    nil,
-			CanMessage:  []string{"assistant"},
+			Role:        "research specialist",
+			BaseProfile: model.BaseProfileResearch,
+			ToolFamilies: []model.ToolFamily{
+				model.ToolFamilyRepoRead,
+				model.ToolFamilyWebRead,
+			},
+			CanMessage:                 []string{"assistant"},
+			SpecialistSummaryVisibility: model.SpecialistSummaryBasic,
 			Soul: SoulSpec{
-				Role:        "researcher",
-				ToolPosture: "read_heavy",
+				Role: "research specialist",
 				Extra: map[string]any{
 					"notes": "finds references",
 				},
@@ -178,15 +232,21 @@ front_agent: assistant
 agents:
   - id: assistant
     soul_file: assistant.soul.yaml
-    can_spawn: [patcher]
+    base_profile: operator
+    tool_families: [repo_read, connector_capability, delegate]
+    allow_tools: [connector_directory_list]
+    deny_tools: [repo_write]
+    delegation_kinds: [research, write]
     can_message: [patcher]
+    specialist_summary_visibility: basic
   - id: patcher
     soul_file: patcher.soul.yaml
-    can_spawn: []
+    base_profile: write
+    tool_families: [repo_read, repo_write]
     can_message: [assistant]
 `)
-	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: coordinator\ntool_posture: operator_facing\ntone: direct\n")
-	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\ntool_posture: scoped_write\nnotes: edits files\n")
+	writeTeamFile(t, filepath.Join(dir, "assistant.soul.yaml"), "role: front assistant\ntone: direct\n")
+	writeTeamFile(t, filepath.Join(dir, "patcher.soul.yaml"), "role: patcher\nnotes: edits files\n")
 
 	cfg, err := LoadConfig(dir)
 	if err != nil {
@@ -199,8 +259,10 @@ agents:
 	}
 	for _, want := range []string{
 		"name: Repo Task Team",
-		"role: coordinator",
-		"tool_posture: operator_facing",
+		"role: front assistant",
+		"base_profile: operator",
+		"tool_families:",
+		"delegation_kinds:",
 		"soul_file: assistant.soul.yaml",
 		"soul_extra:",
 	} {
@@ -219,10 +281,30 @@ agents:
 	if len(reloaded.Agents) != len(cfg.Agents) {
 		t.Fatalf("expected %d agents, got %d", len(cfg.Agents), len(reloaded.Agents))
 	}
-	if reloaded.Agents[0].Role != "coordinator" || reloaded.Agents[0].ToolPosture != "operator_facing" {
+	if reloaded.Agents[0].Role != "front assistant" || reloaded.Agents[0].BaseProfile != model.BaseProfileOperator {
 		t.Fatalf("expected editable fields to round-trip, got %+v", reloaded.Agents[0])
 	}
 	if got := reloaded.Agents[0].Soul.Extra["tone"]; got != "direct" {
 		t.Fatalf("expected soul extra tone to round-trip, got %#v", got)
 	}
 }
+
+func TestLoadEditableYAML_RejectsLegacyCoordinatorFields(t *testing.T) {
+	raw := []byte(`
+name: Repo Task Team
+front_agent: assistant
+agents:
+  - id: assistant
+    soul_file: assistant.soul.yaml
+    role: front assistant
+    base_profile: operator
+    tool_families: [repo_read]
+    tool_posture: operator_facing
+    can_spawn: [patcher]
+`)
+
+	if _, err := LoadEditableYAML(raw); err == nil {
+		t.Fatal("expected legacy coordinator fields to be rejected")
+	}
+}
+
