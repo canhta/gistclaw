@@ -193,16 +193,14 @@ func renderDirectCapabilityGuidance(decision recommendationpkg.Decision, toolSpe
 	for _, name := range names {
 		lines = append(lines, "- "+name)
 	}
-	if len(decision.PreferredToolNames) > 0 {
+	if len(decision.RankedToolNames) > 0 {
 		lines = append(lines, "Preferred direct tool path:")
-		for _, name := range decision.PreferredToolNames {
+		for _, name := range decision.RankedToolNames {
 			lines = append(lines, "- "+name)
 		}
 	}
 	lines = append(lines, "Use these before delegation for bounded local or connector tasks.")
-	if len(decision.FocusedFamilies) > 0 {
-		lines = append(lines, "Stay within this direct tool surface unless it materially fails to complete the task.")
-	}
+	lines = append(lines, "Other governed tools remain available if the task grows beyond the direct path.")
 	return strings.Join(lines, "\n")
 }
 

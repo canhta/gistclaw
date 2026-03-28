@@ -10,12 +10,11 @@ func TestEngine_Recommend(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name         string
-		input        Input
-		want         Mode
-		wantHas      []string
-		wantTools    []string
-		wantFamilies []model.ToolFamily
+		name      string
+		input     Input
+		want      Mode
+		wantHas   []string
+		wantTools []string
 	}{
 		{
 			name: "direct for bounded connector action",
@@ -28,21 +27,43 @@ func TestEngine_Recommend(t *testing.T) {
 					DelegationKinds: []model.DelegationKind{model.DelegationKindResearch, model.DelegationKindWrite},
 				},
 				VisibleTools: []model.ToolSpec{
-					{Name: "connector_directory_list", Family: model.ToolFamilyConnectorCapability},
-					{Name: "connector_target_resolve", Family: model.ToolFamilyConnectorCapability},
-					{Name: "connector_send", Family: model.ToolFamilyConnectorCapability},
-					{Name: "delegate_task", Family: model.ToolFamilyDelegate},
-					{Name: "web_fetch", Family: model.ToolFamilyWebRead},
+					{Name: "connector_directory_list", Family: model.ToolFamilyConnectorCapability, Intents: []model.ToolIntent{model.ToolIntentDirectoryList}},
+					{Name: "connector_target_resolve", Family: model.ToolFamilyConnectorCapability, Intents: []model.ToolIntent{model.ToolIntentTargetResolve}},
+					{Name: "connector_send", Family: model.ToolFamilyConnectorCapability, Intents: []model.ToolIntent{model.ToolIntentMessageSend}},
+					{Name: "delegate_task", Family: model.ToolFamilyDelegate, Intents: []model.ToolIntent{model.ToolIntentDelegate}},
+					{Name: "web_fetch", Family: model.ToolFamilyWebRead, Intents: []model.ToolIntent{model.ToolIntentResearchRead}},
 				},
 				Specialists: map[string]model.AgentProfile{
 					"researcher": {AgentID: "researcher", BaseProfile: model.BaseProfileResearch},
 					"patcher":    {AgentID: "patcher", BaseProfile: model.BaseProfileWrite},
 				},
 			},
-			want:         ModeDirect,
-			wantHas:      []string{"bounded", "connector"},
-			wantTools:    []string{"connector_directory_list", "connector_send"},
-			wantFamilies: []model.ToolFamily{model.ToolFamilyConnectorCapability, model.ToolFamilyRuntimeCapability},
+			want:      ModeDirect,
+			wantHas:   []string{"bounded", "connector"},
+			wantTools: []string{"connector_directory_list", "connector_send"},
+		},
+		{
+			name: "direct ranking follows tool intents instead of hardcoded tool names",
+			input: Input{
+				Objective: "Find Anh and send hello.",
+				Agent: model.AgentProfile{
+					AgentID:         "assistant",
+					BaseProfile:     model.BaseProfileOperator,
+					ToolFamilies:    []model.ToolFamily{model.ToolFamilyConnectorCapability, model.ToolFamilyDelegate},
+					DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
+				},
+				VisibleTools: []model.ToolSpec{
+					{Name: "people_lookup", Family: model.ToolFamilyConnectorCapability, Intents: []model.ToolIntent{model.ToolIntentTargetResolve, model.ToolIntentDirectoryList}},
+					{Name: "direct_message_deliver", Family: model.ToolFamilyConnectorCapability, Intents: []model.ToolIntent{model.ToolIntentMessageSend}},
+					{Name: "delegate_task", Family: model.ToolFamilyDelegate, Intents: []model.ToolIntent{model.ToolIntentDelegate}},
+				},
+				Specialists: map[string]model.AgentProfile{
+					"researcher": {AgentID: "researcher", BaseProfile: model.BaseProfileResearch},
+				},
+			},
+			want:      ModeDirect,
+			wantHas:   []string{"bounded", "direct"},
+			wantTools: []string{"people_lookup", "direct_message_deliver"},
 		},
 		{
 			name: "delegate for research-heavy work",
@@ -100,13 +121,8 @@ func TestEngine_Recommend(t *testing.T) {
 				t.Fatalf("expected confidence to be set, got %f", got.Confidence)
 			}
 			for _, want := range tc.wantTools {
-				if !containsString(got.PreferredToolNames, want) {
-					t.Fatalf("expected preferred tool names %+v to contain %q", got.PreferredToolNames, want)
-				}
-			}
-			for _, want := range tc.wantFamilies {
-				if !containsFamily(got.FocusedFamilies, want) {
-					t.Fatalf("expected focused families %+v to contain %q", got.FocusedFamilies, want)
+				if !containsString(got.RankedToolNames, want) {
+					t.Fatalf("expected ranked tool names %+v to contain %q", got.RankedToolNames, want)
 				}
 			}
 		})
@@ -114,15 +130,6 @@ func TestEngine_Recommend(t *testing.T) {
 }
 
 func containsString(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-	return false
-}
-
-func containsFamily(values []model.ToolFamily, want model.ToolFamily) bool {
 	for _, value := range values {
 		if value == want {
 			return true

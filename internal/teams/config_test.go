@@ -22,6 +22,7 @@ agents:
     allow_tools: [connector_directory_list]
     deny_tools: [repo_write]
     delegation_kinds: [research, write]
+    specialties: [routing, messaging]
     can_message: [patcher]
     specialist_summary_visibility: basic
   - id: patcher
@@ -65,6 +66,9 @@ agents:
 	}
 	if len(assistant.DelegationKinds) != 2 {
 		t.Fatalf("expected delegation kinds to round-trip, got %#v", assistant.DelegationKinds)
+	}
+	if len(assistant.Specialties) != 2 || assistant.Specialties[0] != "routing" || assistant.Specialties[1] != "messaging" {
+		t.Fatalf("expected specialties to round-trip, got %#v", assistant.Specialties)
 	}
 	if assistant.SpecialistSummaryVisibility != model.SpecialistSummaryBasic {
 		t.Fatalf("expected basic specialist summary visibility, got %q", assistant.SpecialistSummaryVisibility)
@@ -237,6 +241,7 @@ agents:
     allow_tools: [connector_directory_list]
     deny_tools: [repo_write]
     delegation_kinds: [research, write]
+    specialties: [routing, messaging]
     can_message: [patcher]
     specialist_summary_visibility: basic
   - id: patcher
@@ -263,6 +268,9 @@ agents:
 		"base_profile: operator",
 		"tool_families:",
 		"delegation_kinds:",
+		"specialties:",
+		"routing",
+		"messaging",
 		"soul_file: assistant.soul.yaml",
 		"soul_extra:",
 	} {
@@ -283,6 +291,9 @@ agents:
 	}
 	if reloaded.Agents[0].Role != "front assistant" || reloaded.Agents[0].BaseProfile != model.BaseProfileOperator {
 		t.Fatalf("expected editable fields to round-trip, got %+v", reloaded.Agents[0])
+	}
+	if len(reloaded.Agents[0].Specialties) != 2 || reloaded.Agents[0].Specialties[0] != "routing" {
+		t.Fatalf("expected specialties to round-trip, got %#v", reloaded.Agents[0].Specialties)
 	}
 	if got := reloaded.Agents[0].Soul.Extra["tone"]; got != "direct" {
 		t.Fatalf("expected soul extra tone to round-trip, got %#v", got)

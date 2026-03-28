@@ -20,6 +20,13 @@ type stubCommandConnector struct {
 	snapshot model.ConnectorHealthSnapshot
 }
 
+type stubConfiguredReadinessConnector struct {
+	stubCommandConnector
+	fallback model.ConnectorHealthSnapshot
+	ok       bool
+	err      error
+}
+
 func (c *stubCommandConnector) Metadata() model.ConnectorMetadata {
 	return model.NormalizeConnectorMetadata(model.ConnectorMetadata{ID: c.id})
 }
@@ -34,6 +41,10 @@ func (c *stubCommandConnector) Drain(context.Context) error { return nil }
 
 func (c *stubCommandConnector) ConnectorHealthSnapshot() model.ConnectorHealthSnapshot {
 	return c.snapshot
+}
+
+func (c *stubConfiguredReadinessConnector) ConfiguredConnectorHealth(context.Context) (model.ConnectorHealthSnapshot, bool, error) {
+	return c.fallback, c.ok, c.err
 }
 
 func TestApp_RunTaskAndInspect(t *testing.T) {
@@ -411,6 +422,38 @@ func TestConfiguredConnectorHealth_UsesStoredZaloCredentialsBeforeFirstDaemonSta
 	}
 	if snapshots[0].CheckedAt.IsZero() {
 		t.Fatalf("expected stored credentials summary to set checked timestamp, got %+v", snapshots[0])
+	}
+}
+
+func TestFallbackConfiguredConnectorHealth_UsesConnectorAdapter(t *testing.T) {
+	snapshot := model.ConnectorHealthSnapshot{
+		ConnectorID: "custom",
+		State:       model.ConnectorHealthUnknown,
+		Summary:     "awaiting first poll",
+	}
+
+	got, ok, err := fallbackConfiguredConnectorHealth(
+		context.Background(),
+		&stubConfiguredReadinessConnector{
+			stubCommandConnector: stubCommandConnector{id: "custom", snapshot: snapshot},
+			fallback: model.ConnectorHealthSnapshot{
+				ConnectorID: "custom",
+				State:       model.ConnectorHealthUnknown,
+				Summary:     "credentials stored",
+				CheckedAt:   time.Now().UTC(),
+			},
+			ok: true,
+		},
+		snapshot,
+	)
+	if err != nil {
+		t.Fatalf("fallbackConfiguredConnectorHealth failed: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected connector readiness adapter to apply")
+	}
+	if got.Summary != "credentials stored" {
+		t.Fatalf("expected connector readiness summary, got %+v", got)
 	}
 }
 

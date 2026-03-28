@@ -263,6 +263,23 @@ func (c *Connector) ConnectorHealthSnapshot() model.ConnectorHealthSnapshot {
 	return c.health.snapshotCopy()
 }
 
+func (c *Connector) ConfiguredConnectorHealth(ctx context.Context) (model.ConnectorHealthSnapshot, bool, error) {
+	_, ok, err := LoadStoredCredentials(ctx, c.outbound.db)
+	if err != nil {
+		return model.ConnectorHealthSnapshot{}, false, err
+	}
+	if !ok {
+		return model.ConnectorHealthSnapshot{}, false, nil
+	}
+	return model.ConnectorHealthSnapshot{
+		ConnectorID:      c.Metadata().ID,
+		State:            model.ConnectorHealthUnknown,
+		Summary:          "credentials stored",
+		CheckedAt:        time.Now().UTC(),
+		RestartSuggested: false,
+	}, true, nil
+}
+
 func (c *Connector) runListener(ctx context.Context, listener SessionListener) error {
 	messages := listener.Messages()
 	errors := listener.Errors()

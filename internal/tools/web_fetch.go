@@ -40,6 +40,7 @@ func (t *WebFetchTool) Spec() model.ToolSpec {
 		Description:     "Fetch one HTTP or HTTPS URL and return status, content type, readable text, and truncation metadata.",
 		InputSchemaJSON: `{"type":"object","properties":{"url":{"type":"string","format":"uri"}},"required":["url"]}`,
 		Family:          model.ToolFamilyWebRead,
+		Intents:         []model.ToolIntent{model.ToolIntentResearchRead},
 		Risk:            model.RiskLow,
 		SideEffect:      "none",
 		Approval:        "never",

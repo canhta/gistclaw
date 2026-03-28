@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -631,7 +632,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			Specialists:  specialists,
 			VisibleTools: visibleTools,
 		})
-		visibleTools = focusVisibleToolSpecs(visibleTools, executionRecommendation)
+		visibleTools = rankVisibleToolSpecs(visibleTools, executionRecommendation)
 		providerReq, err := r.contexts.Assemble(ctx, ContextAssemblyInput{
 			SessionID:               sessionID,
 			AgentID:                 agentID,
@@ -1945,36 +1946,35 @@ func (r *Runtime) visibleToolSpecs(agent model.AgentProfile) []model.ToolSpec {
 	return visible
 }
 
-func focusVisibleToolSpecs(
+func rankVisibleToolSpecs(
 	specs []model.ToolSpec,
 	decision recommendationpkg.Decision,
 ) []model.ToolSpec {
-	if decision.Mode != recommendationpkg.ModeDirect || len(specs) == 0 {
+	if decision.Mode != recommendationpkg.ModeDirect || len(specs) == 0 || len(decision.RankedToolNames) == 0 {
 		return specs
 	}
-	if len(decision.FocusedFamilies) == 0 {
-		return specs
-	}
-	allowedFamilies := make(map[model.ToolFamily]bool, len(decision.FocusedFamilies))
-	for _, family := range decision.FocusedFamilies {
-		if family != "" {
-			allowedFamilies[family] = true
+	order := make(map[string]int, len(decision.RankedToolNames))
+	for i, name := range decision.RankedToolNames {
+		if name != "" {
+			order[name] = i
 		}
 	}
-	if len(allowedFamilies) == 0 {
-		return specs
-	}
-
-	focused := make([]model.ToolSpec, 0, len(specs))
-	for _, spec := range specs {
-		if allowedFamilies[spec.Family] {
-			focused = append(focused, spec)
+	ranked := append([]model.ToolSpec(nil), specs...)
+	sort.SliceStable(ranked, func(i, j int) bool {
+		left, leftOK := order[ranked[i].Name]
+		right, rightOK := order[ranked[j].Name]
+		switch {
+		case leftOK && rightOK:
+			return left < right
+		case leftOK:
+			return true
+		case rightOK:
+			return false
+		default:
+			return false
 		}
-	}
-	if len(focused) == 0 {
-		return specs
-	}
-	return focused
+	})
+	return ranked
 }
 
 func agentContextFromSnapshot(snapshotJSON []byte, agentID string) (model.AgentProfile, map[string]model.AgentProfile, error) {

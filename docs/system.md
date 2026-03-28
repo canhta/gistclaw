@@ -27,8 +27,9 @@ This document is the source of truth for what the repository ships today: packag
 - The active team snapshot declares the `front_agent`, and runtime entry points resolve that agent from team state instead of hardcoding assistant IDs.
 - Connector configs may leave `agent_id` blank; bootstrap resolves those connectors to the active team `front_agent` instead of assuming `assistant`.
 - Connectors are self-describing at the interface seam, so runtime authority and delivery logic use connector metadata instead of hardcoded connector ID lists.
-- Raw specialist spawning is now opt-in and guarded by the runtime recommendation, so tasks classified as `direct` must use local capabilities instead of spawning by default.
+- Runtime recommendations are advisory rather than binding. Direct tasks rank local capability tools first, but governed delegation remains available when the front assistant has a strong reason to escalate.
 - Structured delegation is the default specialist path, so the front assistant can request `research`, `write`, `review`, or `verify` work without choosing the worker topology itself.
+- Tool specs now carry execution intents, and team agents may declare specialties in `team.yaml`, so planner and specialist selection are descriptor-driven instead of connector-name-driven.
 - Direct product actions now flow through generic capability tools such as `connector_directory_list`, `connector_target_resolve`, `connector_send`, `connector_status`, and `app_action`, backed by runtime capability adapters instead of prompt-only conventions.
 - Risky tool calls still require explicit approval before mutating writes are applied.
 - Connector-bound front sessions can surface blocked approvals as conversational gates, letting the same chat collect approval or denial and resume the run.
@@ -106,7 +107,7 @@ internal/runtime/recommendation/  execution recommendation engine for direct, de
 internal/scheduler/               schedule definitions, claiming, repair, reconciliation, CLI-facing service
 internal/sessions/                session directory, routes, pagination, delivery listings
 internal/store/                   SQLite open/migrate helpers and schema
-internal/teams/                   team.yaml validation
+internal/teams/                   team.yaml load/write/validation and execution snapshots
 internal/tools/                   tool registry, policy, approvals, MCP, research, scoped apply
 internal/web/                     HTTP server, SSE, pages, JSON APIs
 teams/default/                    shipped team and soul files

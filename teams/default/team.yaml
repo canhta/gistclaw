@@ -7,29 +7,34 @@ agents:
     base_profile: operator
     tool_families: [repo_read, runtime_capability, connector_capability, delegate]
     delegation_kinds: [research, write, review, verify]
+    specialties: [routing, messaging, coordination]
     can_message: [patcher, reviewer, verifier, researcher]
     specialist_summary_visibility: full
   - id: patcher
     soul_file: patcher.soul.yaml
     base_profile: write
     tool_families: [repo_read, repo_write]
+    specialties: [implementation, refactor, bugfix]
     can_message: [assistant, reviewer, verifier, researcher]
     specialist_summary_visibility: basic
   - id: reviewer
     soul_file: reviewer.soul.yaml
     base_profile: review
     tool_families: [repo_read, diff_review]
+    specialties: [review, regression, diff]
     can_message: [assistant, patcher, verifier, researcher]
     specialist_summary_visibility: basic
   - id: verifier
     soul_file: verifier.soul.yaml
     base_profile: verify
     tool_families: [repo_read, verification]
+    specialties: [verification, tests, qa]
     can_message: [assistant, patcher, reviewer, researcher]
     specialist_summary_visibility: basic
   - id: researcher
     soul_file: researcher.soul.yaml
     base_profile: research
     tool_families: [repo_read, web_read]
+    specialties: [research, docs, external]
     can_message: [assistant, patcher, reviewer, verifier]
     specialist_summary_visibility: basic

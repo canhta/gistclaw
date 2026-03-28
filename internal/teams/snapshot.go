@@ -33,6 +33,7 @@ func buildAgentProfile(agent AgentConfig) (model.AgentProfile, error) {
 		AllowTools:                  append([]string(nil), agent.AllowTools...),
 		DenyTools:                   append([]string(nil), agent.DenyTools...),
 		DelegationKinds:             append([]model.DelegationKind(nil), agent.DelegationKinds...),
+		Specialties:                 append([]string(nil), agent.Specialties...),
 		SpecialistSummaryVisibility: agent.SpecialistSummaryVisibility,
 		CanMessage:                  append([]string(nil), agent.CanMessage...),
 	}, nil

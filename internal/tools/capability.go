@@ -66,6 +66,7 @@ func (t *ConnectorDirectoryListTool) Spec() model.ToolSpec {
 		Description:     "List direct connector directory entries such as contacts or groups.",
 		InputSchemaJSON: `{"type":"object","properties":{"connector_id":{"type":"string"},"scope":{"type":"string"},"query":{"type":"string"},"limit":{"type":"integer","minimum":1}},"required":["connector_id"]}`,
 		Family:          model.ToolFamilyConnectorCapability,
+		Intents:         []model.ToolIntent{model.ToolIntentDirectoryList},
 		Risk:            model.RiskLow,
 		SideEffect:      effectRead,
 	}
@@ -97,6 +98,7 @@ func (t *ConnectorTargetResolveTool) Spec() model.ToolSpec {
 		Description:     "Resolve a user-provided connector target name or query into concrete targets.",
 		InputSchemaJSON: `{"type":"object","properties":{"connector_id":{"type":"string"},"query":{"type":"string"},"scope":{"type":"string"},"limit":{"type":"integer","minimum":1}},"required":["connector_id","query"]}`,
 		Family:          model.ToolFamilyConnectorCapability,
+		Intents:         []model.ToolIntent{model.ToolIntentTargetResolve},
 		Risk:            model.RiskLow,
 		SideEffect:      effectRead,
 	}
@@ -131,6 +133,7 @@ func (t *ConnectorSendTool) Spec() model.ToolSpec {
 		Description:     "Send a direct message through a registered connector target.",
 		InputSchemaJSON: `{"type":"object","properties":{"connector_id":{"type":"string"},"target_id":{"type":"string"},"target_type":{"type":"string"},"message":{"type":"string"},"metadata":{"type":"object","additionalProperties":{"type":"string"}}},"required":["connector_id","target_id","message"]}`,
 		Family:          model.ToolFamilyConnectorCapability,
+		Intents:         []model.ToolIntent{model.ToolIntentMessageSend},
 		Risk:            model.RiskMedium,
 		SideEffect:      "connector_send",
 		Approval:        "required",
@@ -169,6 +172,7 @@ func (t *ConnectorStatusTool) Spec() model.ToolSpec {
 		Description:     "Read connector health and readiness state.",
 		InputSchemaJSON: `{"type":"object","properties":{"connector_id":{"type":"string"}}}`,
 		Family:          model.ToolFamilyConnectorCapability,
+		Intents:         []model.ToolIntent{model.ToolIntentStatusRead},
 		Risk:            model.RiskLow,
 		SideEffect:      effectRead,
 	}
@@ -197,6 +201,7 @@ func (t *AppActionTool) Spec() model.ToolSpec {
 		Description:     "Run a deterministic built-in app action such as system status.",
 		InputSchemaJSON: `{"type":"object","properties":{"name":{"type":"string"},"arguments":{"type":"object"}},"required":["name"]}`,
 		Family:          model.ToolFamilyRuntimeCapability,
+		Intents:         []model.ToolIntent{model.ToolIntentStatusRead},
 		Risk:            model.RiskLow,
 		SideEffect:      effectRead,
 	}

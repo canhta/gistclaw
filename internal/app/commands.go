@@ -9,7 +9,6 @@ import (
 	"time"
 
 	authpkg "github.com/canhta/gistclaw/internal/auth"
-	"github.com/canhta/gistclaw/internal/connectors/zalopersonal"
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -165,12 +164,21 @@ func ConfiguredConnectorHealth(ctx context.Context, cfg Config, db *store.DB) ([
 	if err != nil {
 		return nil, err
 	}
+	connectorsByID := make(map[string]model.Connector, len(app.connectors))
+	for _, connector := range app.connectors {
+		meta := connector.Metadata()
+		if meta.ID == "" {
+			continue
+		}
+		connectorsByID[meta.ID] = connector
+	}
 	for i := range snapshots {
 		if snapshot, ok := persisted[snapshots[i].ConnectorID]; ok {
 			snapshots[i] = snapshot
 			continue
 		}
-		if snapshot, ok, err := fallbackConfiguredConnectorHealth(ctx, db, snapshots[i]); err != nil {
+		connector := connectorsByID[snapshots[i].ConnectorID]
+		if snapshot, ok, err := fallbackConfiguredConnectorHealth(ctx, connector, snapshots[i]); err != nil {
 			return nil, err
 		} else if ok {
 			snapshots[i] = snapshot
@@ -179,24 +187,26 @@ func ConfiguredConnectorHealth(ctx context.Context, cfg Config, db *store.DB) ([
 	return snapshots, nil
 }
 
-func fallbackConfiguredConnectorHealth(ctx context.Context, db *store.DB, snapshot model.ConnectorHealthSnapshot) (model.ConnectorHealthSnapshot, bool, error) {
-	if snapshot.ConnectorID != "zalo_personal" {
+func fallbackConfiguredConnectorHealth(
+	ctx context.Context,
+	connector model.Connector,
+	snapshot model.ConnectorHealthSnapshot,
+) (model.ConnectorHealthSnapshot, bool, error) {
+	reporter, ok := connector.(model.ConnectorConfiguredHealthReporter)
+	if !ok {
 		return model.ConnectorHealthSnapshot{}, false, nil
 	}
-
-	_, ok, err := zalopersonal.LoadStoredCredentials(ctx, db)
+	fallback, ok, err := reporter.ConfiguredConnectorHealth(ctx)
 	if err != nil {
-		return model.ConnectorHealthSnapshot{}, false, fmt.Errorf("connector health: load zalo personal credentials: %w", err)
+		return model.ConnectorHealthSnapshot{}, false, fmt.Errorf("connector health: configured readiness for %s: %w", snapshot.ConnectorID, err)
 	}
 	if !ok {
 		return model.ConnectorHealthSnapshot{}, false, nil
 	}
-
-	snapshot.State = model.ConnectorHealthUnknown
-	snapshot.Summary = "credentials stored"
-	snapshot.CheckedAt = time.Now().UTC()
-	snapshot.RestartSuggested = false
-	return snapshot, true, nil
+	if strings.TrimSpace(fallback.ConnectorID) == "" {
+		fallback.ConnectorID = snapshot.ConnectorID
+	}
+	return fallback, true, nil
 }
 
 func collectConnectorHealthSnapshots(connectors []model.Connector) []model.ConnectorHealthSnapshot {

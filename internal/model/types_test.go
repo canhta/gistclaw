@@ -105,14 +105,15 @@ func TestAgentProfile_ExposesAdaptivePolicyFields(t *testing.T) {
 		"AllowTools",
 		"DenyTools",
 		"DelegationKinds",
+		"Specialties",
 		"SpecialistSummaryVisibility",
 	)
 	assertOmitsField(t, agentType, "Capabilities", "ToolProfile", "CanSpawn")
 }
 
-func TestToolSpec_ExposesFamily(t *testing.T) {
+func TestToolSpec_ExposesDescriptors(t *testing.T) {
 	specType := reflect.TypeOf(ToolSpec{})
-	assertHasField(t, specType, "Family")
+	assertHasField(t, specType, "Family", "Intents")
 }
 
 func TestAdaptivePolicyValidators(t *testing.T) {

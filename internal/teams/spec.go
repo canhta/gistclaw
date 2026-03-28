@@ -23,6 +23,7 @@ type AgentSpec struct {
 	AllowTools                  []string                          `yaml:"allow_tools,omitempty"`
 	DenyTools                   []string                          `yaml:"deny_tools,omitempty"`
 	DelegationKinds             []model.DelegationKind            `yaml:"delegation_kinds,omitempty"`
+	Specialties                 []string                          `yaml:"specialties,omitempty"`
 	CanMessage                  []string                          `yaml:"can_message"`
 	SpecialistSummaryVisibility model.SpecialistSummaryVisibility `yaml:"specialist_summary_visibility,omitempty"`
 }

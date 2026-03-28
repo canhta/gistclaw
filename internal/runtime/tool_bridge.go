@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/canhta/gistclaw/internal/model"
+	recommendationpkg "github.com/canhta/gistclaw/internal/runtime/recommendation"
 	"github.com/canhta/gistclaw/internal/tools"
 )
 
@@ -20,7 +21,7 @@ func (r *Runtime) DelegateTaskTool(ctx context.Context, req tools.DelegateTaskRe
 	if err != nil {
 		return tools.DelegationResult{}, err
 	}
-	targetAgentID, err := selectSpecialistForKind(specialists, req.Kind)
+	targetAgentID, err := selectSpecialistForKind(specialists, req.Kind, req.Objective)
 	if err != nil {
 		return tools.DelegationResult{}, err
 	}
@@ -83,22 +84,69 @@ func (r *Runtime) latestAssistantMessage(ctx context.Context, sessionID string) 
 	return "", fmt.Errorf("runtime: load latest assistant message: %w", err)
 }
 
-func selectSpecialistForKind(specialists map[string]model.AgentProfile, kind model.DelegationKind) (string, error) {
+func selectSpecialistForKind(
+	specialists map[string]model.AgentProfile,
+	kind model.DelegationKind,
+	objective string,
+) (string, error) {
 	targetProfile, ok := delegationKindBaseProfile(kind)
 	if !ok {
 		return "", fmt.Errorf("runtime: unsupported delegation kind %q", kind)
 	}
-	agentIDs := make([]string, 0, len(specialists))
+	descriptor := recommendationpkg.AnalyzeObjective(objective)
+	candidates := make([]specialistCandidate, 0, len(specialists))
 	for agentID, specialist := range specialists {
 		if specialist.BaseProfile == targetProfile {
-			agentIDs = append(agentIDs, agentID)
+			candidates = append(candidates, specialistCandidate{
+				agentID: agentID,
+				score:   specialistScore(descriptor, specialist),
+			})
 		}
 	}
-	if len(agentIDs) == 0 {
+	if len(candidates) == 0 {
 		return "", fmt.Errorf("runtime: no specialist available for %s work", kind)
 	}
-	slices.Sort(agentIDs)
-	return agentIDs[0], nil
+	slices.SortFunc(candidates, func(a, b specialistCandidate) int {
+		switch {
+		case a.score > b.score:
+			return -1
+		case a.score < b.score:
+			return 1
+		case a.agentID < b.agentID:
+			return -1
+		case a.agentID > b.agentID:
+			return 1
+		default:
+			return 0
+		}
+	})
+	return candidates[0].agentID, nil
+}
+
+type specialistCandidate struct {
+	agentID string
+	score   int
+}
+
+func specialistScore(descriptor recommendationpkg.ObjectiveDescriptor, specialist model.AgentProfile) int {
+	score := 0
+	text := " " + descriptor.Text + " "
+	for _, specialty := range specialist.Specialties {
+		normalized := strings.TrimSpace(strings.ToLower(specialty))
+		if normalized == "" {
+			continue
+		}
+		if strings.Contains(text, " "+normalized+" ") || strings.Contains(text, normalized) {
+			score += 4
+			continue
+		}
+		for _, keyword := range descriptor.Keywords {
+			if keyword == normalized {
+				score += 2
+			}
+		}
+	}
+	return score
 }
 
 func delegationKindBaseProfile(kind model.DelegationKind) (model.BaseProfile, bool) {

@@ -465,7 +465,7 @@ func TestRunEngine_DelegateTaskToolCreatesChildRun(t *testing.T) {
 	}
 }
 
-func TestRunEngine_DelegateTaskIsDeniedWhenRuntimeRecommendsDirect(t *testing.T) {
+func TestRunEngine_DelegateTaskAllowsOverrideWhenRuntimeRecommendsDirect(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(
 		[]GenerateResult{
@@ -481,7 +481,8 @@ func TestRunEngine_DelegateTaskIsDeniedWhenRuntimeRecommendsDirect(t *testing.T)
 				InputTokens:  4,
 				OutputTokens: 6,
 			},
-			{Content: "I handled it directly.", InputTokens: 5, OutputTokens: 8, StopReason: "end_turn"},
+			{Content: "Research findings ready.", InputTokens: 5, OutputTokens: 8, StopReason: "end_turn"},
+			{Content: "Delegation complete.", InputTokens: 4, OutputTokens: 6, StopReason: "end_turn"},
 		},
 		nil,
 	)
@@ -535,8 +536,8 @@ func TestRunEngine_DelegateTaskIsDeniedWhenRuntimeRecommendsDirect(t *testing.T)
 	).Scan(&childCount); err != nil {
 		t.Fatalf("query child runs: %v", err)
 	}
-	if childCount != 0 {
-		t.Fatalf("expected no child runs when delegation is denied, got %d", childCount)
+	if childCount != 1 {
+		t.Fatalf("expected 1 child run when direct recommendation is overridden, got %d", childCount)
 	}
 
 	var payload string
@@ -552,8 +553,8 @@ func TestRunEngine_DelegateTaskIsDeniedWhenRuntimeRecommendsDirect(t *testing.T)
 	).Scan(&payload); err != nil {
 		t.Fatalf("query delegate_task tool event: %v", err)
 	}
-	if !strings.Contains(payload, "runtime recommends direct execution") {
-		t.Fatalf("expected delegate_task denial payload to mention direct execution, got %q", payload)
+	if strings.Contains(payload, "runtime recommends direct execution") {
+		t.Fatalf("expected delegation override to proceed without direct-mode denial, got %q", payload)
 	}
 }
 
@@ -1406,20 +1407,26 @@ func TestRunEngine_DirectConnectorFlowPausesForApprovalWithoutChildRun(t *testin
 	if !gotNames["connector_directory_list"] || !gotNames["connector_send"] {
 		t.Fatalf("expected connector capability tools, got %+v", gotNames)
 	}
-	if gotNames["delegate_task"] {
-		t.Fatalf("expected direct connector flow to hide delegate_task, got %+v", gotNames)
+	if !gotNames["delegate_task"] {
+		t.Fatalf("expected direct connector flow to keep delegate_task visible as a fallback, got %+v", gotNames)
 	}
-	if gotNames["web_fetch"] {
-		t.Fatalf("expected direct connector flow to hide web_fetch, got %+v", gotNames)
+	if !gotNames["web_fetch"] {
+		t.Fatalf("expected direct connector flow to keep web_fetch visible as a fallback, got %+v", gotNames)
 	}
-	if len(prov.Requests[0].ToolSpecs) < 2 || len(prov.Requests[0].ToolSpecs) > 4 {
-		t.Fatalf("expected focused direct connector tool surface, got %d tools", len(prov.Requests[0].ToolSpecs))
+	if len(prov.Requests[0].ToolSpecs) < 4 {
+		t.Fatalf("expected ranked direct connector tool surface with fallbacks, got %d tools", len(prov.Requests[0].ToolSpecs))
+	}
+	if prov.Requests[0].ToolSpecs[0].Name != "connector_directory_list" {
+		t.Fatalf("expected connector_directory_list to be ranked first, got %q", prov.Requests[0].ToolSpecs[0].Name)
+	}
+	if prov.Requests[0].ToolSpecs[1].Name != "connector_send" {
+		t.Fatalf("expected connector_send to be ranked second, got %q", prov.Requests[0].ToolSpecs[1].Name)
 	}
 	for _, want := range []string{
 		"Preferred direct tool path:",
 		"connector_directory_list",
 		"connector_send",
-		"Stay within this direct tool surface",
+		"Use these before delegation",
 	} {
 		if !strings.Contains(prov.Requests[0].Instructions, want) {
 			t.Fatalf("expected direct connector instructions to include %q, got:\n%s", want, prov.Requests[0].Instructions)

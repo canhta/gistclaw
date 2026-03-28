@@ -26,6 +26,7 @@ type AgentConfig struct {
 	AllowTools                  []string
 	DenyTools                   []string
 	DelegationKinds             []model.DelegationKind
+	Specialties                 []string
 	CanMessage                  []string
 	SpecialistSummaryVisibility model.SpecialistSummaryVisibility
 	Soul                        SoulSpec
@@ -51,6 +52,7 @@ type editableFileAgent struct {
 	AllowTools                  []string                          `yaml:"allow_tools,omitempty"`
 	DenyTools                   []string                          `yaml:"deny_tools,omitempty"`
 	DelegationKinds             []model.DelegationKind            `yaml:"delegation_kinds,omitempty"`
+	Specialties                 []string                          `yaml:"specialties,omitempty"`
 	CanMessage                  []string                          `yaml:"can_message"`
 	SpecialistSummaryVisibility model.SpecialistSummaryVisibility `yaml:"specialist_summary_visibility,omitempty"`
 	SoulExtra                   map[string]any                    `yaml:"soul_extra,omitempty"`
@@ -89,6 +91,7 @@ func LoadConfig(teamDir string) (Config, error) {
 			AllowTools:                  append([]string(nil), agent.AllowTools...),
 			DenyTools:                   append([]string(nil), agent.DenyTools...),
 			DelegationKinds:             append([]model.DelegationKind(nil), agent.DelegationKinds...),
+			Specialties:                 append([]string(nil), agent.Specialties...),
 			CanMessage:                  append([]string(nil), agent.CanMessage...),
 			SpecialistSummaryVisibility: agent.SpecialistSummaryVisibility,
 			Soul:                        soul,
@@ -128,6 +131,7 @@ func WriteConfig(teamDir string, cfg Config) error {
 			AllowTools:                  append([]string(nil), agent.AllowTools...),
 			DenyTools:                   append([]string(nil), agent.DenyTools...),
 			DelegationKinds:             append([]model.DelegationKind(nil), agent.DelegationKinds...),
+			Specialties:                 append([]string(nil), agent.Specialties...),
 			CanMessage:                  append([]string(nil), agent.CanMessage...),
 			SpecialistSummaryVisibility: agent.SpecialistSummaryVisibility,
 		})
@@ -181,6 +185,7 @@ func ExportEditableYAML(cfg Config) ([]byte, error) {
 			AllowTools:                  append([]string(nil), agent.AllowTools...),
 			DenyTools:                   append([]string(nil), agent.DenyTools...),
 			DelegationKinds:             append([]model.DelegationKind(nil), agent.DelegationKinds...),
+			Specialties:                 append([]string(nil), agent.Specialties...),
 			CanMessage:                  append([]string(nil), agent.CanMessage...),
 			SpecialistSummaryVisibility: agent.SpecialistSummaryVisibility,
 		}
@@ -231,6 +236,7 @@ func LoadEditableYAML(data []byte) (Config, error) {
 			AllowTools:                  append([]string(nil), agent.AllowTools...),
 			DenyTools:                   append([]string(nil), agent.DenyTools...),
 			DelegationKinds:             append([]model.DelegationKind(nil), agent.DelegationKinds...),
+			Specialties:                 append([]string(nil), agent.Specialties...),
 			CanMessage:                  append([]string(nil), agent.CanMessage...),
 			SpecialistSummaryVisibility: agent.SpecialistSummaryVisibility,
 			Soul:                        soul,
@@ -251,6 +257,7 @@ func LoadEditableYAML(data []byte) (Config, error) {
 			AllowTools:                  append([]string(nil), agent.AllowTools...),
 			DenyTools:                   append([]string(nil), agent.DenyTools...),
 			DelegationKinds:             append([]model.DelegationKind(nil), agent.DelegationKinds...),
+			Specialties:                 append([]string(nil), agent.Specialties...),
 			CanMessage:                  append([]string(nil), agent.CanMessage...),
 			SpecialistSummaryVisibility: agent.SpecialistSummaryVisibility,
 		})

@@ -158,6 +158,36 @@ func IsValidToolFamily(s string) bool {
 	return validToolFamilies[ToolFamily(s)]
 }
 
+type ToolIntent string
+
+const (
+	ToolIntentDirectoryList ToolIntent = "directory_list"
+	ToolIntentTargetResolve ToolIntent = "target_resolve"
+	ToolIntentMessageSend   ToolIntent = "message_send"
+	ToolIntentStatusRead    ToolIntent = "status_read"
+	ToolIntentResearchRead  ToolIntent = "research_read"
+	ToolIntentWrite         ToolIntent = "write"
+	ToolIntentReview        ToolIntent = "review"
+	ToolIntentVerify        ToolIntent = "verify"
+	ToolIntentDelegate      ToolIntent = "delegate"
+)
+
+var validToolIntents = map[ToolIntent]bool{
+	ToolIntentDirectoryList: true,
+	ToolIntentTargetResolve: true,
+	ToolIntentMessageSend:   true,
+	ToolIntentStatusRead:    true,
+	ToolIntentResearchRead:  true,
+	ToolIntentWrite:         true,
+	ToolIntentReview:        true,
+	ToolIntentVerify:        true,
+	ToolIntentDelegate:      true,
+}
+
+func IsValidToolIntent(s string) bool {
+	return validToolIntents[ToolIntent(s)]
+}
+
 type DelegationKind string
 
 const (
@@ -404,6 +434,7 @@ type AgentProfile struct {
 	AllowTools                  []string
 	DenyTools                   []string
 	DelegationKinds             []DelegationKind
+	Specialties                 []string
 	SpecialistSummaryVisibility SpecialistSummaryVisibility
 	MemoryScope                 string
 	CanMessage                  []string
@@ -420,6 +451,7 @@ type ToolSpec struct {
 	Description           string
 	InputSchemaJSON       string
 	Family                ToolFamily
+	Intents               []ToolIntent
 	Risk                  ToolRisk
 	SideEffect            string
 	EffectClassifier      ToolEffectClassifier

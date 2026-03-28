@@ -111,11 +111,18 @@ func TestDelegateTaskTool_InvokeUsesRuntimeSelectedSpecialist(t *testing.T) {
 	}
 }
 
-func TestDelegateTaskTool_InvokeRejectsDirectRecommendation(t *testing.T) {
+func TestDelegateTaskTool_InvokeAllowsRecommendationOverride(t *testing.T) {
+	var called bool
 	tool := &DelegateTaskTool{
 		delegate: func(context.Context, DelegateTaskRequest) (DelegationResult, error) {
-			t.Fatal("delegate handler must not be called")
-			return DelegationResult{}, nil
+			called = true
+			return DelegationResult{
+				RunID:     "run-child",
+				SessionID: "session-child",
+				AgentID:   "researcher",
+				Status:    model.RunStatusCompleted,
+				Output:    "research complete",
+			}, nil
 		},
 	}
 
@@ -130,13 +137,23 @@ func TestDelegateTaskTool_InvokeRejectsDirectRecommendation(t *testing.T) {
 			"researcher": {AgentID: "researcher", BaseProfile: model.BaseProfileResearch},
 		},
 	})
-	_, err := tool.Invoke(ctx, model.ToolCall{
+	result, err := tool.Invoke(ctx, model.ToolCall{
 		ID:        "call-1",
 		ToolName:  "delegate_task",
 		InputJSON: []byte(`{"kind":"research","objective":"Inspect OpenClaw"}`),
 	})
-	if err == nil || err.Error() != "delegate_task: runtime recommends direct execution for this task; use local capabilities first" {
-		t.Fatalf("expected direct-execution guardrail, got %v", err)
+	if err != nil {
+		t.Fatalf("expected direct-mode override to be allowed, got %v", err)
+	}
+	if !called {
+		t.Fatal("expected delegate handler to be called")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result.Output), &payload); err != nil {
+		t.Fatalf("unmarshal output: %v", err)
+	}
+	if payload["agent_id"] != "researcher" {
+		t.Fatalf("expected researcher output, got %+v", payload)
 	}
 }
 

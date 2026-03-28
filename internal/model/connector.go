@@ -57,3 +57,10 @@ type Connector interface {
 	// Called once on startup before the connector begins receiving new events.
 	Drain(ctx context.Context) error
 }
+
+// ConnectorConfiguredHealthReporter optionally reports pre-runtime readiness
+// state for a configured connector, such as persisted credentials that exist
+// before the receive loop has emitted a live health snapshot.
+type ConnectorConfiguredHealthReporter interface {
+	ConfiguredConnectorHealth(ctx context.Context) (ConnectorHealthSnapshot, bool, error)
+}

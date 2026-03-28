@@ -48,6 +48,7 @@ func (t *DelegateTaskTool) Spec() model.ToolSpec {
 		Description:     "Delegate a specialist task by kind and let the runtime choose the matching worker.",
 		InputSchemaJSON: `{"type":"object","properties":{"kind":{"type":"string","enum":["research","write","review","verify"]},"objective":{"type":"string"}},"required":["kind","objective"],"additionalProperties":false}`,
 		Family:          model.ToolFamilyDelegate,
+		Intents:         []model.ToolIntent{model.ToolIntentDelegate},
 		Risk:            model.RiskLow,
 	}
 }
@@ -108,21 +109,6 @@ func validateDelegationKind(meta InvocationContext, toolName string, kind model.
 	if !containsDelegationKind(meta.Agent.DelegationKinds, kind) {
 		return fmt.Errorf("%s: %s cannot delegate %s work", toolName, meta.Agent.AgentID, kind)
 	}
-	return validateDelegationRecommendation(meta, toolName, kind)
-}
-
-func validateDelegationRecommendation(meta InvocationContext, toolName string, kind model.DelegationKind) error {
-	if meta.DelegationMode == "direct" {
-		return fmt.Errorf("%s: runtime recommends direct execution for this task; use local capabilities first", toolName)
-	}
-	if len(meta.SuggestedDelegationKinds) > 0 && !containsDelegationKind(meta.SuggestedDelegationKinds, kind) {
-		return fmt.Errorf(
-			"%s: runtime recommends %s work, not %s",
-			toolName,
-			joinDelegationKinds(meta.SuggestedDelegationKinds),
-			kind,
-		)
-	}
 	return nil
 }
 
@@ -133,14 +119,6 @@ func containsDelegationKind(values []model.DelegationKind, want model.Delegation
 		}
 	}
 	return false
-}
-
-func joinDelegationKinds(values []model.DelegationKind) string {
-	items := make([]string, 0, len(values))
-	for _, value := range values {
-		items = append(items, string(value))
-	}
-	return strings.Join(items, ", ")
 }
 
 func containsString(values []string, want string) bool {

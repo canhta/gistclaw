@@ -185,6 +185,33 @@ func TestRuntime_DelegateTaskToolReturnsLatestAssistantMessage(t *testing.T) {
 	}
 }
 
+func TestSelectSpecialistForKind_PrefersSpecialtyMatch(t *testing.T) {
+	t.Parallel()
+
+	agentID, err := selectSpecialistForKind(
+		map[string]model.AgentProfile{
+			"market-researcher": {
+				AgentID:     "market-researcher",
+				BaseProfile: model.BaseProfileResearch,
+				Specialties: []string{"competition", "pricing"},
+			},
+			"docs-researcher": {
+				AgentID:     "docs-researcher",
+				BaseProfile: model.BaseProfileResearch,
+				Specialties: []string{"docs", "api", "messaging"},
+			},
+		},
+		model.DelegationKindResearch,
+		"Research the API docs for connector messaging flows.",
+	)
+	if err != nil {
+		t.Fatalf("selectSpecialistForKind failed: %v", err)
+	}
+	if agentID != "docs-researcher" {
+		t.Fatalf("expected docs-researcher, got %q", agentID)
+	}
+}
+
 func TestRuntime_DelegateTaskToolReturnsBudgetInterruptionReason(t *testing.T) {
 	rt, _ := newCollaborationRuntime(t, []GenerateResult{
 		{Content: "Assistant ready.", InputTokens: 2, OutputTokens: 3, StopReason: "end_turn"},
