@@ -1,284 +1,344 @@
 # Design System — GistClaw
 
 ## Product Context
-
-- **What this is:** A local-first multi-agent runtime for software repo tasks. The operator submits work, approves risky actions, and inspects how the runtime delegated, executed, and recovered that work.
-- **Who it's for:** Developers and operators running GistClaw locally on their own machine.
-- **Space/industry:** Local AI developer tools and operator dashboards. Adjacent to repo-task assistants, terminal-native tools, and control-plane-style internal tooling.
-- **Project type:** Local operator web app. Desktop-first, but fully responsive. Server-rendered with Go `html/template`, no frontend framework, no build step.
+- **What this is:** A local-first multi-agent assistant platform and control deck for software repo work. The user should feel like they are steering work through one capable assistant surface, not navigating an exposed pile of subsystems.
+- **Who it's for:** Developers and operators who want one local-first assistant surface with real orchestration, recovery, and evidence, not a thin chat shell or a generic admin dashboard.
+- **Space/industry:** Local AI developer tools, assistant platforms, orchestration control planes, and operator workspaces. Closest DNA: OpenClaw and GoClaw. Adjacent reference products: n8n, Trigger.dev, Langfuse, Temporal.
+- **Project type:** Desktop-first but responsive web application, being rewritten in SvelteKit with Tailwind CSS and `@xyflow/svelte`, while the Go runtime remains the authority for auth, API, SSE, and orchestration state.
 
 ## Aesthetic Direction
+- **Direction:** Industrial Operator Brutalism
+- **Decoration level:** Intentional
+- **Mood:** GistClaw should feel like a working control surface, not a polished SaaS dashboard. It should look assembled, instrumented, and authority-bearing: visible seams, hard panels, stamped labels, live signal rails, and enough visual heat to show that the system is active.
+- **Reference sites:** [https://openclaw.ai](https://openclaw.ai), [https://github.com/openclaw/openclaw](https://github.com/openclaw/openclaw), [https://docs.goclaw.sh](https://docs.goclaw.sh), [https://n8n.io](https://n8n.io), [https://trigger.dev](https://trigger.dev), [https://langfuse.com](https://langfuse.com), [https://temporal.io](https://temporal.io)
 
-- **Direction:** Orchestrated Workshop Brutalism
-- **Decoration level:** Minimal
-- **Mood:** A disciplined workbench for multi-agent operations. The product should feel serious, local, inspectable, and in control. It must communicate ownership, blockage, approval state, and recovery paths without looking crowded.
-- **Reference sites:** None. This system was derived from product context and an approved in-repo preview, not competitive research.
-- **What to avoid:** Soft gradients, drop shadows, generic dashboard gloss, rounded-corner friendliness, background status tints, or any page composition where multiple panels compete equally for attention.
+## Core Product Stance
+- GistClaw is not a small operator dashboard with a graph bolted on.
+- GistClaw is not a workflow builder first.
+- GistClaw is not an observability tool first.
+- GistClaw is an assistant platform cockpit. The UI must expose the machine itself: command intake, orchestration graph, active lanes, session routes, approvals, recoveries, memory, and connector state.
 
-## Core Principle
+## User Point Of View
+- The product must speak in the user's job language first and the system's internal language second.
+- The user should immediately understand:
+  - what they can do now
+  - what the assistant is doing for them
+  - what needs their decision
+  - what just happened and why
+- System nouns are allowed where precision matters, but they should live inside work surfaces and inspectors, not dominate the top-level mental model.
+- Every major page should answer a human task before it answers a system question.
 
-The UI is organized around **operator jobs first** and **system nouns second**.
-
-Top-level navigation should answer:
-
-1. What am I operating right now?
-2. What shapes future runs?
-3. What needs intervention or recovery?
-
-The system nouns still matter, but they live one level down instead of all competing equally in the top bar.
+### UI Language Rules
+- Prefer task language over subsystem language wherever the user's job is not inherently technical.
+- Labels should describe intent and outcome, not implementation detail.
+- The UI should avoid making the user think in connector plumbing, table names, or runtime policy terminology just to navigate.
+- Precision terms such as route, approval, replay, or connector are valid when the user is already doing recovery or diagnostic work.
 
 ## Information Architecture
 
 ### Top-Level Navigation
 
 ```text
-gistclaw | Operate | Configure | Recover             [Project Switcher] [Start Task] [Theme]
+gistclaw | Work | Team | Knowledge | Recover | Conversations | Automate | History | Settings
 ```
 
-- `Operate` is for active work and runtime inspection.
-- `Configure` is for shaping future behavior.
-- `Recover` is for approvals, routing, and delivery intervention.
-- The project switcher lives in the shell, beside `Start Task`, because active project context is global operator state.
-- `Start Task` is a persistent primary action. It is not buried as just another page.
+- `Work` is the front door. It replaces the feeling of a passive dashboard with an active control deck.
+- `Team` is where the user understands who is helping, how collaboration is shaped, and which roles are active.
+- `Knowledge` is scoped, durable context for future work, not a hidden implementation table.
+- `Recover` is the bench for approvals, blocked runs, retries, replay inspection, and route repair.
+- `Conversations` owns session routes, connector health, delivery visibility, and external surfaces.
+- `Automate` owns wakeups, recurring tasks, and future execution timing.
+- `History` owns replay evidence, run history, delivery evidence, and operator-visible machine facts.
+- `Settings` is machine and deployment configuration only.
 
-### Second-Level Navigation
+### Navigation Rules
+- The shell must feel like a machine console, not a website navbar.
+- The most important surfaces belong in the first rail, not buried behind “configure” groupings.
+- Top-level items are product capabilities, not documentation nouns.
+- If a page feels like a passive list, it is under-designed.
 
-- **Operate**
-  - `Runs`
-  - `Sessions`
-- **Configure**
-  - `Team`
-  - `Memory`
-  - `Settings`
-- **Recover**
-  - `Approvals`
-  - `Routes & Deliveries`
+## Layout
+- **Approach:** Hybrid command-workspace
+- **Grid:** 16 columns desktop, 10 tablet, 4 mobile
+- **Max content width:** `1600px`
+- **Shell:** a persistent application shell with:
+  - left navigation rail for system families
+  - central workspace for graph, boards, run surfaces, and live activity
+  - right inspector for details, actions, and evidence
+- **Border radius:** `0px` by default. Exception: tiny circular indicators only.
 
-### Naming Rules
-
-- Use job-oriented labels at the top level.
-- Use precise system nouns inside each section.
-- Rename the current `Control` page to **Routes & Deliveries**. The new name says exactly what the page is for.
-- Treat `Onboarding` as a temporary setup flow, not a peer destination once the operator has chosen a starter project or replacement repo.
+### Layout Principles
+- The primary mental model is workspace, not page stack.
+- Most major surfaces should be split into:
+  - navigation or lane selection
+  - active workspace or board
+  - inspector or evidence sidebar
+- Run graph, route graph, and active system signal belong in the central workspace, not buried below tables.
+- Secondary details should move into inspector panels before adding more full-width sections.
+- The UI should feel wider and more capable than the current product, not denser and more cramped.
 
 ## Page Roles
 
-Every page must have one primary sentence of purpose. If a page cannot be described in one sentence, its hierarchy is wrong.
-
-### Operate
-
-- **Runs:** The operational queue. This page answers what is active, blocked, pending approval, completed, or failed.
-- **Run Detail:** The live execution board for one run. This page owns orchestration, status, output, and evidence.
-- **Sessions:** The mailbox and actor directory. It explains who the runtime actors are and what they have been told.
-- **Session Detail:** Conversation, route, and delivery context for one session. It should not repeat the role of Run Detail.
-
-### Configure
-
-- **Team:** The builder for future runs. This is where the operator shapes default collaboration behavior.
-- **Memory:** Editable remembered facts that shape future assistant behavior.
-- **Settings:** Machine-level and runtime-level configuration only. Raw workspace editing is an advanced override, not the primary project-switching workflow.
-
-### Recover
-
-- **Approvals:** The operator decision queue. Open approval work should dominate; resolved history is secondary.
-- **Routes & Deliveries:** The recovery bench for route bindings, delivery failures, retries, and operator interventions.
-
-## Graph Placement
-
-The orchestration graph is a core product concept. It must stay central.
-
-- `Operate > Runs` includes a **compact live orchestration strip** near the top of the page.
-  - Purpose: show the current collaboration shape without turning the queue into a full forensic view.
-- `Run Detail` includes the **full collaboration graph as the first major panel**.
-  - Purpose: explain ownership, delegation, and blockage before the operator reads output or event logs.
-- `Sessions` does **not** own the main graph.
-  - Sessions are important, but they are supporting runtime structure, not the primary explanation of a run.
-
-## Hierarchy Rules
-
-- A page header explains the page in plain language before any dense panel appears.
-- Each page has one **primary board** and any number of **secondary evidence panels**.
-- The primary board appears first and should be visually dominant.
-- Reference material, metadata, or historical evidence should never compete with the primary board for equal emphasis.
-- Filters belong above the directory they control, not mixed into unrelated control panels.
-- Actions belong beside the object they act on. Avoid mixing file import/export, editing, and recovery actions into one visual cluster unless they are directly related.
-
-## Typography
-
-- **Body/UI:** `system-ui, -apple-system, "Segoe UI", sans-serif`
-  - Local, fast, reliable, and visually quiet.
-- **Code/Metadata:** `"JetBrains Mono", "Fira Code", monospace`
-  - Use for run IDs, session IDs, routes, timestamps, tokens, paths, technical metadata, and graph facts.
-- **Weight philosophy:** Prefer strong jumps in emphasis instead of many near-identical weights. The app should mainly rely on `400` and `700`, with limited `600` use for section labels.
-- **Scale:**
-
-  | Role | Size | Weight | Usage |
-  |------|------|--------|-------|
-  | Page title | 28px | 700 | Primary page heading |
-  | Section title | 16px | 700 | Major panel heading |
-  | Card title | 14px | 700 | Row and card emphasis |
-  | Body | 14px | 400 | Standard reading text |
-  | Secondary | 13px | 400 | Descriptions and supporting copy |
-  | Label | 11px | 700 | Eyebrows, small labels, grouped controls |
-  | Mono metadata | 12px | 400/500 | IDs, timestamps, routes, graph facts |
-
-- **Line height:** body `1.5`, headings `1.2`, monospace `1.6`
-- **Letter spacing:** uppercase labels `0.08em`, prose `0`
-- **Loading:** JetBrains Mono via Google Fonts CDN or a self-hosted equivalent. Body text must not depend on a remote font.
-
-## Color
-
-- **Approach:** Restrained warm monochrome. Color communicates state and interactivity, not decoration.
-- **Primary action:** `#1c5dff`
-- **Primary hover:** `#1848c7`
-- **Canvas:** `#ede5d8`
-- **Surface:** `#fffdf8`
-- **Ink:** `#1c1917`
-- **Secondary text:** `#6b6258`
-- **Tertiary text:** `#9b9083`
-
-### Semantic Colors
-
-- **Active:** `#0284c7`
-- **Approval:** `#b45309`
-- **Success:** `#15803d`
-- **Error:** `#dc2626`
-- **Muted/interrupted:** `#6b7280`
-
-### Neutrals
-
-- **Light neutrals:** `#fffdf8`, `#f7f0e5`, `#ede5d8`
-- **Border neutrals:** `#cfc5b6`, `#1c1917`
-
-### Dark Mode
-
-- **Strategy:** Night-shift control room, not literal inversion.
-- **Dark canvas:** `#12100e`
-- **Dark surface:** `#1b1815`
-- **Dark border:** `#f5f0e8`
-- **Dark secondary border:** `#4a433c`
-- **Dark text:** `#f5f0e8`, `#b6aa9a`, `#8f8477`
-- **Dark action:** `#6ea0ff`
-- **Rule:** Preserve the same meaning in both themes. Dark mode changes atmosphere, not hierarchy.
-
-### Status Usage Rule
-
-Status colors appear on borders, text, and graph rails. Avoid soft filled boxes for system state.
-
-Preferred pattern:
-
-```css
-.status-panel {
-  border: 1.5px solid var(--border-hard);
-  border-left: 4px solid var(--active);
-}
-```
-
-Use filled backgrounds only where convention requires them for legibility, such as code diffs.
-
-## Spacing
-
-- **Base unit:** 4px
-- **Density:** Comfortable. The app should feel ordered and deliberate, not cramped.
-- **Scale:** `2, 4, 8, 12, 16, 24, 32, 48`
-- **Priority gaps:**
-  - page header to primary board: `24px`
-  - primary board to secondary board: `32px`
-  - controls inside one board: `12px` to `16px`
-  - micro relationships like icon + label or badge + text: `4px` to `8px`
-
-## Layout
-
-- **Approach:** Hybrid
-  - top-level navigation is grouped by operator jobs
-  - page internals remain grid-disciplined and brutalist
-- **Grid:** 12 columns desktop, 8 tablet, 4 mobile
-- **Max content width:** `1080px`
-- **Shell:** full-width top bar with a centered content column below it
-- **Border radius:** `0px` everywhere
-- **Shadows:** none
-
-### Responsive Rules
-
-- Never depend on horizontal page scroll for primary workflows.
-- Top-level jobs must remain visible and understandable on mobile.
-- Sub-navigation may wrap, but must stay readable.
-- Multi-panel detail pages stack cleanly on smaller screens.
-- The graph must remain readable on narrow widths through stacking and content reduction, not by becoming inaccessible.
-
-## Page Composition Rules
-
-### Runs
-
-- Header explains the queue in plain language.
-- Compact graph strip appears near the top.
-- Queue rows appear below the graph strip.
-- Rows emphasize:
-  - run ID
-  - objective
-  - owner
-  - current blocker
-  - status
-
-### Run Detail
-
-- Header + live status banner
-- Full collaboration graph first
-- Execution snapshot second
-- Output and event timeline after the graph
-- Approval content appears inline when needed, but the graph still stays first
-
-### Sessions
-
-- Sessions are navigable and inspectable, but visually quieter than the run queue.
-- Session Detail focuses on mailbox, route context, and delivery state.
-- Do not make Session Detail feel like a second run dashboard.
+### Work
+- The primary cockpit surface.
+- Owns:
+  - command intake
+  - current objective
+  - orchestration graph
+  - active run or lane state
+  - immediate machine signal
+- It should feel like the operator is steering the system live.
 
 ### Team
-
-- Team cards are operational objects, not profile cards.
+- The topology and posture surface.
 - Show:
-  - agent ID
-  - role
-  - tool posture
-  - collaboration edges
-  - capability summary
-- Import/export actions should be visually separated from save/edit actions.
+  - front agent
+  - specialists
+  - delegation posture
+  - tool families
+  - execution recommendations
+  - current responsibilities and lane occupancy
 
-### Approvals
+### Knowledge
+- The scoped context surface.
+- Show:
+  - promoted memory
+  - project-scoped rules
+  - machine-level facts
+  - why each memory item matters
+- Do not render it as a bare key-value admin table.
 
-- Pending approval work appears first and most prominently.
-- Resolved history is available but visually demoted.
-- Approval actions must sit directly on the approval card they affect.
+### Recover
+- The intervention bench.
+- Show:
+  - approval queue
+  - blocked runs
+  - replay evidence
+  - route repair actions
+  - delivery retry actions
+- Pending operator work must dominate resolved history.
 
-### Routes & Deliveries
+### Conversations
+- The connector and route authority surface.
+- Show:
+  - bound sessions
+  - route ownership
+  - connector health
+  - active delivery states
+  - last-success and last-failure evidence
 
-- This page is a recovery bench, not a generic status dump.
-- Separate route bindings, live delivery queues, and route history into clearly named panels.
-- Keep retry and deactivate actions beside the exact route or delivery item they affect.
+### Automate
+- The future-work surface.
+- Show:
+  - next wakeups
+  - recent executions
+  - lane occupancy
+  - schedule health
+- It should feel operational, not calendar-like.
+
+### History
+- The evidence surface.
+- Show:
+  - run history
+  - replay
+  - operator interventions
+  - delivery outcomes
+  - durable runtime evidence
+
+## Graphs And XYFlow
+- Graphs are first-class product surfaces, not decorative illustrations.
+- `@xyflow/svelte` should be used to render:
+  - orchestration graph on `Command`
+  - team/delegation topology on `Agents`
+  - route and delivery topology on `Channels` or `Recover` when useful
+- Graphs must behave like instrument panels:
+  - hard-edged nodes
+  - visible rails and route lines
+  - minimal glow
+  - strong labels
+  - state expressed by borders, rails, and badges before animation
+- Avoid playful graph styling, soft blobs, or generic “workflow canvas” aesthetics.
+- Node cards should look like mounted modules, not floating pastel cards.
+- The graph must remain readable on smaller screens by collapsing inspector detail and simplifying labels, not by hiding the graph.
+
+## Typography
+- **Display/Hero:** `Space Grotesk`
+  - Use for page titles, command deck headings, major counters, and system-level callouts.
+  - Rationale: sharp, technical, assertive, and less generic than typical startup sans choices.
+- **Body:** `Instrument Sans`
+  - Use for reading text, controls, panel copy, and operational instructions.
+  - Rationale: neutral enough for dense UI, but cleaner and more contemporary than system-ui.
+- **UI/Labels:** `IBM Plex Mono`
+  - Use for stamped labels, panel headers, route facts, statuses, tabs, counters, metadata, and badges.
+  - Rationale: turns the interface into an instrument panel rather than a polished content app.
+- **Data/Tables:** `IBM Plex Mono`
+  - Must use tabular numerals where supported.
+  - Rationale: session IDs, timestamps, tokens, connectors, schedules, and run counters should read like machine facts.
+- **Code:** `JetBrains Mono`
+  - Use for logs, tool traces, command snippets, policy text, and code-like content.
+- **Loading:** Use self-hosted fonts or explicit CDN loading during preview and early implementation. Final shipped UI should not depend on fragile third-party font delivery for basic readability.
+
+### Type Scale
+- Display XL: `88px / 700 / 0.9`
+- Display L: `64px / 700 / 0.92`
+- Page title: `40px / 700 / 0.95`
+- Section title: `28px / 700 / 1.0`
+- Panel title: `18px / 700 / 1.1`
+- Body: `15px / 500 / 1.5`
+- Secondary: `13px / 500 / 1.45`
+- Label: `11px / 700 / 1.0`
+- Machine meta: `12px / 500 / 1.45`
+
+### Typography Rules
+- Major headings should often be uppercase or near-uppercase when the tone benefits from it.
+- Do not use too many weights. Prefer a strong contrast between body and emphasis.
+- Use mono labels aggressively where the UI is describing machine state.
+- Do not use soft editorial italics or decorative serif accents in the app shell.
+
+## Color
+- **Approach:** Restrained, high-contrast, signal-driven
+- **Primary:** `#FF5C39`
+  - Meaning: operator heat, primary action, escalation, focus, approval-adjacent urgency
+- **Primary hover:** `#FF744F`
+- **Secondary / Signal:** `#53C7F0`
+  - Meaning: topology, live machine state, route signal, orchestration rails, information status
+- **Canvas:** `#0A0F14`
+- **Surface:** `#121A23`
+- **Surface raised:** `#16212D`
+- **Surface soft:** `#1D2734`
+- **Ink:** `#F4F7FB`
+- **Secondary text:** `#97A6B6`
+- **Tertiary text:** `#6F8194`
+- **Border:** `#314356`
+- **Border strong:** `#4C637C`
+
+### Semantic Colors
+- **Success:** `#65D98A`
+- **Warning:** `#F5B64D`
+- **Error:** `#FF6A78`
+- **Info:** `#53C7F0`
+
+### Dark Mode
+- **Strategy:** Default mode is dark. The dark theme is the primary identity of the product.
+- Dark mode should feel like a functioning machine room, not a neon sci-fi fantasy.
+- Use gradients sparingly and structurally, not as a blanket visual effect.
+- Glow is allowed only as a minor live-state hint, never as the main source of emphasis.
+
+### Light Mode
+- Light mode should preserve the same hard-edged hierarchy.
+- It is not a soft inversion. It should feel like a daylight service manual version of the same machine.
+- Borders and seams remain visible. Do not wash them out.
+
+### Color Usage Rules
+- Use orange for operator authority, not for generic decoration.
+- Use cyan for machine signal, not for CTA competition.
+- Let borders and rails communicate state before fills and backgrounds.
+- Avoid full-surface pastel status blocks.
+- Avoid purple as a default accent.
+
+## Spacing
+- **Base unit:** `4px`
+- **Density:** Comfortable-compact
+- **Scale:** `2, 4, 8, 12, 16, 24, 32, 48, 64`
+
+### Spacing Rules
+- External panel rhythm:
+  - page sections: `24-32px`
+  - workspace lane gaps: `16-24px`
+  - inspector stack gaps: `12-16px`
+- Internal panel rhythm:
+  - labels to titles: `6-10px`
+  - titles to content: `10-14px`
+  - rows in dense machine views: `8-12px`
+- Never use oversized airy spacing that makes the platform feel empty.
+- Never compress so far that the interface feels cramped or “small”.
+
+## Borders, Panels, And Surfaces
+- Hard borders are part of the identity.
+- Panels should feel mounted into the UI, not floating above it.
+- Prefer `2px` borders for primary structural surfaces.
+- Use visible seams between navigation, workspace, and inspector columns.
+- Shadows are minimal to none. Structure comes from borders, contrast, and layout, not elevation fog.
+- Blur and glass effects are out of bounds for the shipped product.
 
 ## Components
+- **Panels:** hard-edged, visible seams, no rounded friendliness, no soft glass
+- **Buttons:** rectangular, mono-friendly labels, strong contrast, no gradients
+- **Badges:** compact, stamped, mono, state-driven
+- **Eyebrows:** boxed or bordered mono labels, not airy section whispers
+- **Forms:** feel like console inputs or control fields, not glossy SaaS forms
+- **Tables:** strong row separators, mono-heavy metadata, machine readability first
+- **Cards:** should read like mounted modules or control plates, not content marketing cards
+- **Inspectors:** right-side detail panels should feel like diagnostic trays
 
-- **Panels:** hard borders, no shadows, no decorative fills
-- **Buttons:** rectangular, strong contrast, no gradient fills
-- **Badges:** compact, mono-friendly, used for state or category
-- **Eyebrows:** uppercase mono labels for page and section framing
-- **Tables and card directories:** use tables on wide screens, card stacks on narrow screens
-- **Forms:** grouped by task; do not mix unrelated intents in one undifferentiated field column
+## DRY And SOLID Design Rules
+- The UI architecture must follow `DRY` and `SOLID`, not just the backend code.
+- One surface, one primary responsibility:
+  - `Work` steers current work
+  - `Team` shapes collaboration
+  - `Knowledge` shapes future behavior through durable context
+  - `Recover` handles intervention
+  - `Conversations` handles external surface control
+  - `Automate` handles future execution
+  - `History` explains what happened
+- Do not create multiple pages that each partly solve the same job.
+- Shared patterns must be extracted once:
+  - panel shell
+  - inspector shell
+  - graph node card
+  - status badge
+  - evidence row
+  - action strip
+- Avoid duplicated one-off variants that differ only in icon, spacing, or border treatment.
+- If two surfaces present the same class of state, they should use the same visual primitive unless there is a real user-task reason not to.
+- Component responsibilities must stay narrow:
+  - navigation components navigate
+  - graph components explain topology
+  - inspector components explain one selected object
+  - action components mutate one object or one workflow
+  - evidence components explain what happened
+- Structural changes and behavior changes should be separated where possible. Do not hide new behavior inside cosmetic refactors.
 
 ## Motion
-
 - **Approach:** Minimal-functional
-- **Use motion only for:** live status updates, section transitions, expand/collapse, and state changes that improve comprehension
-- **Avoid:** decorative animation, bounce, float, or motion that competes with live operational signals
 - **Easing:** enter `ease-out`, exit `ease-in`, move `ease-in-out`
-- **Duration:** micro `50-100ms`, short `150-250ms`, medium `250-400ms`
+- **Duration:** micro `50-100ms`, short `120-180ms`, medium `180-260ms`, long `260-400ms`
+
+### Motion Rules
+- Motion exists to reveal state change, not to decorate.
+- Graph transitions may ease into place, but should remain crisp.
+- Avoid bounce, springiness, float, drift, or atmospheric motion.
+- Live indicators may pulse subtly, but borders and labels remain the primary signal.
+
+## Anti-Patterns
+- Do not drift back into generic admin dashboard layouts.
+- Do not use soft cards with subtle shadows as the default UI grammar.
+- Do not turn the command surface into a chat page plus a sidebar.
+- Do not make the graph feel like a secondary details widget.
+- Do not use overly rounded controls.
+- Do not use purple gradients, glassmorphism, or “AI startup” gloss.
+- Do not make every surface visually equivalent; the active workspace must dominate.
+
+## Implementation Guidance
+- The SvelteKit rewrite should preserve the product promise of a single authoritative Go runtime.
+- SvelteKit should own the frontend experience, not redefine the system model.
+- Use Tailwind for utility expression, but encode the design system as stable tokens first.
+- Build a token layer for:
+  - colors
+  - border weights
+  - panel spacing
+  - typography
+  - rail sizes
+  - inspector widths
+- Prefer reusable shell primitives before building page-specific styling.
 
 ## Decisions Log
-
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-03-25 | Reframed the app around operator jobs: Operate, Configure, Recover | The previous top-level structure exposed too many system nouns at once and made several pages feel overlapping or unclear |
-| 2026-03-25 | Kept the warm brutalist visual language | The identity already fit the product; the problem was page hierarchy, not visual brand mismatch |
-| 2026-03-25 | Kept a compact graph on Runs and the full graph on Run Detail | The graph is central to the product story and should stay visible without overwhelming the queue |
-| 2026-03-25 | Renamed Control to Routes & Deliveries | The new name explains the page's purpose directly |
+| 2026-03-28 | Replaced the prior operator-panel design with Industrial Operator Brutalism | The old design made the product feel smaller and more limited than the actual runtime |
+| 2026-03-28 | Reframed GistClaw from operator dashboard to assistant platform control deck | OpenClaw and GoClaw DNA point to a broader machine-facing product, not a narrow admin surface |
+| 2026-03-28 | Reframed navigation and page naming around user jobs instead of system nouns | The product must read from the user's point of view first, with system precision moved into the work surfaces |
+| 2026-03-28 | Chose `Space Grotesk`, `Instrument Sans`, `IBM Plex Mono`, and `JetBrains Mono` | The new system needs a sharper product voice plus machine-readable UI language |
+| 2026-03-28 | Chose claw orange and signal cyan as the two key accents | Orange carries operator authority and heat; cyan carries live machine signal and topology |
+| 2026-03-28 | Required XYFlow graphs to behave like instrument surfaces, not decorative canvases | The graph is core product evidence and must read as part of the machine itself |
+| 2026-03-28 | Made DRY and SOLID explicit design constraints for the UI architecture | The rewrite must avoid overlapping surfaces and one-off component drift, not just backend duplication |

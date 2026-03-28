@@ -85,13 +85,14 @@ The important current boundaries are:
 ## Design System
 
 Always read `DESIGN.md` before making any visual or UI decision.
-All navigation, page hierarchy, graph placement, font choices, colors, spacing, and aesthetic direction are defined there.
+All navigation, page hierarchy, graph placement, typography, colors, spacing, motion, and aesthetic direction for the SvelteKit rewrite are defined there.
 Do not deviate without explicit user approval.
 In QA mode, flag any code that does not match `DESIGN.md`.
 
 ## UI Language & Concern Separation Policy
 
 - UI text must use the user's vocabulary — never internal field names, enum values, or DB identifiers.
+- Navigation and page naming must default to user tasks and outcomes before system nouns or implementation concepts.
 - Each page/panel serves one user task. Workflows that differ must live in separate surfaces.
 
 ## Documentation
