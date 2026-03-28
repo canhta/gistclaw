@@ -95,12 +95,6 @@ func TestSessionMessageKindsRemainStable(t *testing.T) {
 	}
 }
 
-func TestIsValidCapability_RecognizesSpawn(t *testing.T) {
-	if !IsValidCapability("spawn") {
-		t.Fatal("expected spawn to be a valid capability")
-	}
-}
-
 func TestAgentProfile_ExposesAdaptivePolicyFields(t *testing.T) {
 	agentType := reflect.TypeOf(AgentProfile{})
 	assertHasField(
@@ -113,7 +107,7 @@ func TestAgentProfile_ExposesAdaptivePolicyFields(t *testing.T) {
 		"DelegationKinds",
 		"SpecialistSummaryVisibility",
 	)
-	assertOmitsField(t, agentType, "ToolProfile", "CanSpawn")
+	assertOmitsField(t, agentType, "Capabilities", "ToolProfile", "CanSpawn")
 }
 
 func TestToolSpec_ExposesFamily(t *testing.T) {

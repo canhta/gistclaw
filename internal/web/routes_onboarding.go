@@ -312,9 +312,14 @@ func (s *Server) handleOnboardingStep3Submit(w http.ResponseWriter, r *http.Requ
 		s.renderOnboardingStep3(w, r, http.StatusServiceUnavailable, "Unable to load the active project. Check the runtime configuration and try again.", task)
 		return
 	}
+	frontAgentID, err := s.rt.FrontAgentID(r.Context())
+	if err != nil {
+		s.renderOnboardingStep3(w, r, http.StatusServiceUnavailable, "Unable to resolve the front assistant for preview runs. Check the team configuration and try again.", task)
+		return
+	}
 	run, err := s.rt.StartAsync(r.Context(), runtime.StartRun{
 		ConversationID: "onboarding",
-		AgentID:        "coordinator",
+		AgentID:        frontAgentID,
 		Objective:      task,
 		ProjectID:      project.ID,
 		CWD:            project.PrimaryPath,

@@ -98,6 +98,27 @@ func (r *Runtime) executionSnapshotForContext(ctx context.Context) (model.Execut
 	return snapshot, raw, nil
 }
 
+func (r *Runtime) FrontAgentID(ctx context.Context) (string, error) {
+	snapshot, _, err := r.executionSnapshotForContext(ctx)
+	if err != nil {
+		return "", err
+	}
+	return frontAgentIDFromSnapshot(snapshot)
+}
+
+func frontAgentIDFromSnapshot(snapshot model.ExecutionSnapshot) (string, error) {
+	frontAgentID := strings.TrimSpace(snapshot.FrontAgentID)
+	if frontAgentID == "" {
+		return "", fmt.Errorf("runtime: front agent is not configured")
+	}
+	if len(snapshot.Agents) > 0 {
+		if _, ok := snapshot.Agents[frontAgentID]; !ok {
+			return "", fmt.Errorf("runtime: front agent %q is not present in execution snapshot", frontAgentID)
+		}
+	}
+	return frontAgentID, nil
+}
+
 func (r *Runtime) TeamConfig(ctx context.Context) (teams.Config, error) {
 	teamDir, err := r.resolveReadableTeamDir(ctx)
 	if err != nil {

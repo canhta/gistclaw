@@ -2118,9 +2118,8 @@ func (r *Runtime) SubmitTask(ctx context.Context, objective, cwd string) (model.
 			ExternalID:  "default",
 			ThreadID:    "main",
 		},
-		FrontAgentID: "assistant",
-		Body:         objective,
-		CWD:          cwd,
+		Body: objective,
+		CWD:  cwd,
 	})
 }
 

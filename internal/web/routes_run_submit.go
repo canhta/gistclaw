@@ -45,13 +45,12 @@ func (s *Server) handleRunSubmit(w http.ResponseWriter, r *http.Request) {
 		ConversationKey: conversations.ConversationKey{
 			ConnectorID: "web",
 			AccountID:   "local",
-			ExternalID:  "assistant",
+			ExternalID:  "default",
 			ThreadID:    "main",
 		},
-		FrontAgentID: "assistant",
-		Body:         task,
-		ProjectID:    activeProject.ID,
-		CWD:          activeProject.PrimaryPath,
+		Body:      task,
+		ProjectID: activeProject.ID,
+		CWD:       activeProject.PrimaryPath,
 	})
 	if err != nil {
 		http.Error(w, "failed to start run: "+err.Error(), http.StatusInternalServerError)

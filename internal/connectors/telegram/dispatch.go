@@ -33,7 +33,7 @@ type InboundDispatcher struct {
 }
 
 // NewInboundDispatcher creates a dispatcher that routes inbound envelopes to rt.ReceiveInboundMessage().
-// defaultAgentID is the agent assigned to new runs (e.g. "coordinator").
+// defaultAgentID is the front agent assigned to new runs for this connector account.
 func NewInboundDispatcher(rt InboundMessageReceiver, defaultAgentID string) *InboundDispatcher {
 	return &InboundDispatcher{
 		rt:             rt,

@@ -252,7 +252,6 @@ func (s *Service) dispatchClaimedOccurrence(ctx context.Context, claimed Claimed
 			ExternalID:  "job:" + claimed.Schedule.ID,
 			ThreadID:    claimed.Occurrence.ThreadID,
 		},
-		FrontAgentID:    "assistant",
 		Body:            claimed.Schedule.Objective,
 		SourceMessageID: claimed.Occurrence.ID,
 		ProjectID:       claimed.Schedule.ProjectID,

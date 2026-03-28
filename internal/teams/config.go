@@ -263,8 +263,9 @@ func LoadEditableYAML(data []byte) (Config, error) {
 
 func (c Config) Snapshot() (model.ExecutionSnapshot, error) {
 	snapshot := model.ExecutionSnapshot{
-		TeamID: c.Name,
-		Agents: make(map[string]model.AgentProfile, len(c.Agents)),
+		TeamID:       c.Name,
+		FrontAgentID: c.FrontAgent,
+		Agents:       make(map[string]model.AgentProfile, len(c.Agents)),
 	}
 	for _, agent := range c.Agents {
 		profile, err := buildAgentProfile(agent)

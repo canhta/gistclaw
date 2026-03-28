@@ -801,6 +801,54 @@ func TestRuntime_ReceiveInboundMessageReusesBoundFrontSessionWithConnectorProven
 	}
 }
 
+func TestRuntime_ReceiveInboundMessageResolvesFrontAgentWhenUnset(t *testing.T) {
+	rt, db := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "done", StopReason: "end_turn"},
+	})
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID:       "default",
+		FrontAgentID: "lead",
+		Agents: map[string]model.AgentProfile{
+			"lead": {
+				AgentID:      "lead",
+				BaseProfile:  model.BaseProfileOperator,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	run, err := rt.ReceiveInboundMessage(context.Background(), InboundMessageCommand{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "telegram",
+			AccountID:   "acct-1",
+			ExternalID:  "chat-1",
+			ThreadID:    "thread-1",
+		},
+		Body:            "Inspect the repo.",
+		SourceMessageID: "msg-1",
+		CWD:             t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("ReceiveInboundMessage failed: %v", err)
+	}
+	if run.AgentID != "lead" {
+		t.Fatalf("run agent_id = %q, want %q", run.AgentID, "lead")
+	}
+
+	var sessionAgentID string
+	if err := db.RawDB().QueryRow(
+		"SELECT agent_id FROM sessions WHERE id = ?",
+		run.SessionID,
+	).Scan(&sessionAgentID); err != nil {
+		t.Fatalf("query session agent_id: %v", err)
+	}
+	if sessionAgentID != "lead" {
+		t.Fatalf("session agent_id = %q, want %q", sessionAgentID, "lead")
+	}
+}
+
 func TestRuntime_ReceiveInboundMessageRejectsRemoteConnectorWithAutoApproveElevated(t *testing.T) {
 	rt, db := newCollaborationRuntime(t, []GenerateResult{
 		{Content: "unsafe", StopReason: "end_turn"},

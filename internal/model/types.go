@@ -108,30 +108,6 @@ const (
 	PhaseEscalation   RunPhase = "escalation"
 )
 
-type AgentCapability string
-
-const (
-	CapScopedWrite    AgentCapability = "scoped_write"
-	CapOperatorFacing AgentCapability = "operator_facing"
-	CapReadHeavy      AgentCapability = "read_heavy"
-	CapProposeOnly    AgentCapability = "propose_only"
-	CapSpawn          AgentCapability = "spawn"
-)
-
-// validCapabilities is the canonical set of allowed agent capability flag strings.
-var validCapabilities = map[AgentCapability]bool{
-	CapScopedWrite:    true,
-	CapOperatorFacing: true,
-	CapReadHeavy:      true,
-	CapProposeOnly:    true,
-	CapSpawn:          true,
-}
-
-// IsValidCapability reports whether s names a known AgentCapability flag.
-func IsValidCapability(s string) bool {
-	return validCapabilities[AgentCapability(s)]
-}
-
 type BaseProfile string
 
 const (
@@ -425,7 +401,6 @@ type AgentProfile struct {
 	AgentID                     string
 	Role                        string
 	Instructions                string
-	Capabilities                []AgentCapability
 	BaseProfile                 BaseProfile
 	ToolFamilies                []ToolFamily
 	AllowTools                  []string
@@ -437,8 +412,9 @@ type AgentProfile struct {
 }
 
 type ExecutionSnapshot struct {
-	TeamID string                  `json:"team_id"`
-	Agents map[string]AgentProfile `json:"agents"`
+	TeamID       string                  `json:"team_id"`
+	FrontAgentID string                  `json:"front_agent_id"`
+	Agents       map[string]AgentProfile `json:"agents"`
 }
 
 type ToolSpec struct {

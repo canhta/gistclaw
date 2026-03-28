@@ -63,6 +63,13 @@ type SendSessionCommand struct {
 }
 
 func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) (model.Run, error) {
+	if strings.TrimSpace(cmd.FrontAgentID) == "" {
+		frontAgentID, err := r.FrontAgentID(ctx)
+		if err != nil {
+			return model.Run{}, err
+		}
+		cmd.FrontAgentID = frontAgentID
+	}
 	scopedKey, project, err := r.scopeConversationKey(ctx, cmd.ConversationKey, cmd.ProjectID, cmd.CWD)
 	if err != nil {
 		return model.Run{}, err
@@ -145,6 +152,13 @@ func (r *Runtime) ReceiveInboundMessageAsync(ctx context.Context, cmd InboundMes
 }
 
 func (r *Runtime) receiveInboundMessage(ctx context.Context, cmd InboundMessageCommand, detached bool) (model.Run, error) {
+	if strings.TrimSpace(cmd.FrontAgentID) == "" {
+		frontAgentID, err := r.FrontAgentID(ctx)
+		if err != nil {
+			return model.Run{}, err
+		}
+		cmd.FrontAgentID = frontAgentID
+	}
 	scopedKey, project, err := r.scopeConversationKey(ctx, cmd.ConversationKey, cmd.ProjectID, cmd.CWD)
 	if err != nil {
 		return model.Run{}, err

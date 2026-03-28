@@ -32,8 +32,8 @@ func TestService_RunOnceDispatchesDueOccurrenceAndPersistsRunLink(t *testing.T) 
 			if cmd.ConversationKey.ThreadID != "2026-03-26T02:00:00Z" {
 				t.Fatalf("thread_id = %q, want %q", cmd.ConversationKey.ThreadID, "2026-03-26T02:00:00Z")
 			}
-			if cmd.FrontAgentID != "assistant" {
-				t.Fatalf("front_agent_id = %q, want %q", cmd.FrontAgentID, "assistant")
+			if cmd.FrontAgentID != "" {
+				t.Fatalf("front_agent_id = %q, want empty for runtime resolution", cmd.FrontAgentID)
 			}
 			if cmd.Body != schedule.Objective {
 				t.Fatalf("body = %q, want %q", cmd.Body, schedule.Objective)

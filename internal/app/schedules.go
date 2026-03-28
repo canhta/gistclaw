@@ -16,6 +16,14 @@ type schedulerRuntimeDispatcher struct {
 }
 
 func (d schedulerRuntimeDispatcher) DispatchScheduled(ctx context.Context, cmd scheduler.DispatchCommand) (model.Run, error) {
+	frontAgentID := strings.TrimSpace(cmd.FrontAgentID)
+	if frontAgentID == "" {
+		var err error
+		frontAgentID, err = d.runtime.FrontAgentID(ctx)
+		if err != nil {
+			return model.Run{}, err
+		}
+	}
 	return d.runtime.ReceiveInboundMessageAsync(ctx, runtime.InboundMessageCommand{
 		ConversationKey: conversations.ConversationKey{
 			ConnectorID: cmd.ConversationKey.ConnectorID,
@@ -23,7 +31,7 @@ func (d schedulerRuntimeDispatcher) DispatchScheduled(ctx context.Context, cmd s
 			ExternalID:  cmd.ConversationKey.ExternalID,
 			ThreadID:    cmd.ConversationKey.ThreadID,
 		},
-		FrontAgentID:    cmd.FrontAgentID,
+		FrontAgentID:    frontAgentID,
 		Body:            cmd.Body,
 		SourceMessageID: cmd.SourceMessageID,
 		ProjectID:       cmd.ProjectID,

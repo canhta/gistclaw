@@ -41,6 +41,9 @@ agents:
 	if snapshot.TeamID != "default" {
 		t.Fatalf("expected team id default, got %q", snapshot.TeamID)
 	}
+	if snapshot.FrontAgentID != "assistant" {
+		t.Fatalf("expected front agent assistant, got %q", snapshot.FrontAgentID)
+	}
 	if len(snapshot.Agents) != 2 {
 		t.Fatalf("expected 2 agent profiles, got %d", len(snapshot.Agents))
 	}

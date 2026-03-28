@@ -28,7 +28,6 @@ func buildAgentProfile(agent AgentConfig) (model.AgentProfile, error) {
 		AgentID:                     agent.ID,
 		Role:                        agent.Role,
 		Instructions:                renderSoulInstructions(agent.Soul.Extra),
-		Capabilities:                baseProfileCapabilities(agent.BaseProfile),
 		BaseProfile:                 agent.BaseProfile,
 		ToolFamilies:                append([]model.ToolFamily(nil), agent.ToolFamilies...),
 		AllowTools:                  append([]string(nil), agent.AllowTools...),
@@ -138,20 +137,5 @@ func writeSoulListItem(b *strings.Builder, value any, indent int) {
 		}
 	default:
 		b.WriteString(prefix + "- " + strings.TrimSpace(fmt.Sprint(value)) + "\n")
-	}
-}
-
-func baseProfileCapabilities(profile model.BaseProfile) []model.AgentCapability {
-	switch profile {
-	case model.BaseProfileOperator:
-		return []model.AgentCapability{model.CapOperatorFacing}
-	case model.BaseProfileWrite:
-		return []model.AgentCapability{model.CapScopedWrite}
-	case model.BaseProfileResearch, model.BaseProfileReview, model.BaseProfileSpecialist:
-		return []model.AgentCapability{model.CapReadHeavy}
-	case model.BaseProfileVerify:
-		return []model.AgentCapability{model.CapProposeOnly}
-	default:
-		return nil
 	}
 }

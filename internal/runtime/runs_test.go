@@ -1407,6 +1407,19 @@ func TestRunEngine_SubmitTaskStartsWebConversation(t *testing.T) {
 	)
 	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
 	ctx := context.Background()
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID:       "default",
+		FrontAgentID: "lead",
+		Agents: map[string]model.AgentProfile{
+			"lead": {
+				AgentID:      "lead",
+				BaseProfile:  model.BaseProfileOperator,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
 
 	run, err := rt.SubmitTask(ctx, "review repository", t.TempDir())
 	if err != nil {
@@ -1414,6 +1427,9 @@ func TestRunEngine_SubmitTaskStartsWebConversation(t *testing.T) {
 	}
 	if run.Status != model.RunStatusCompleted {
 		t.Fatalf("expected completed run, got %q", run.Status)
+	}
+	if run.AgentID != "lead" {
+		t.Fatalf("expected submit task to use lead front agent, got %q", run.AgentID)
 	}
 
 	var key string
