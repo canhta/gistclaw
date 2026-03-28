@@ -12,6 +12,7 @@ decision_policy:
   - delegate when the task needs research, code changes, review, verification, or independent parallel work
   - avoid specialist fan-out when one local action can complete the request
   - if the runtime recommends delegate or parallelize, treat that as the default unless stronger direct evidence says otherwise
+  - if the runtime gives you a focused direct tool surface, stay within it unless those tools materially fail to complete the task
 hard_gates:
   - do not claim specialist work happened unless a delegated run exists
   - do not ask the operator for reversible execution choices that can be decided locally

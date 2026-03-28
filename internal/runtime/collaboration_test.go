@@ -147,41 +147,77 @@ func TestRuntime_StartFrontSessionCreatesFrontRunAndSession(t *testing.T) {
 	}
 }
 
-func TestRuntime_SpawnToolReturnsLatestAssistantMessage(t *testing.T) {
+func TestRuntime_DelegateTaskToolReturnsLatestAssistantMessage(t *testing.T) {
 	rt, _ := newCollaborationRuntime(t, []GenerateResult{
-		{Content: "Coordinator ready.", InputTokens: 2, OutputTokens: 3, StopReason: "end_turn"},
+		{Content: "Assistant ready.", InputTokens: 2, OutputTokens: 3, StopReason: "end_turn"},
 		{Content: "Research findings ready.", InputTokens: 4, OutputTokens: 5, StopReason: "end_turn"},
 	})
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID: "default",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:         "assistant",
+				BaseProfile:     model.BaseProfileOperator,
+				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
+				DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
+			},
+			"researcher": {
+				AgentID:      "researcher",
+				BaseProfile:  model.BaseProfileResearch,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyWebRead},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
 
 	parent := startFrontRun(t, rt, "Coordinate research")
-	result, err := rt.SpawnTool(context.Background(), tools.SessionSpawnRequest{
+	result, err := rt.DelegateTaskTool(context.Background(), tools.DelegateTaskRequest{
 		ControllerSessionID: parent.SessionID,
-		AgentID:             "researcher",
-		Prompt:              "Inspect OpenClaw",
+		Kind:                model.DelegationKindResearch,
+		Objective:           "Inspect OpenClaw",
 	})
 	if err != nil {
-		t.Fatalf("SpawnTool failed: %v", err)
+		t.Fatalf("DelegateTaskTool failed: %v", err)
 	}
 	if result.Output != "Research findings ready." {
 		t.Fatalf("expected latest assistant message, got %q", result.Output)
 	}
 }
 
-func TestRuntime_SpawnToolReturnsBudgetInterruptionReason(t *testing.T) {
+func TestRuntime_DelegateTaskToolReturnsBudgetInterruptionReason(t *testing.T) {
 	rt, _ := newCollaborationRuntime(t, []GenerateResult{
-		{Content: "Coordinator ready.", InputTokens: 2, OutputTokens: 3, StopReason: "end_turn"},
+		{Content: "Assistant ready.", InputTokens: 2, OutputTokens: 3, StopReason: "end_turn"},
 		{Content: "Still reviewing.", InputTokens: 300, OutputTokens: 300, StopReason: "tool_use"},
 	})
 	rt.budget.PerRunTokenCap = 500
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID: "default",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:         "assistant",
+				BaseProfile:     model.BaseProfileOperator,
+				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
+				DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
+			},
+			"researcher": {
+				AgentID:      "researcher",
+				BaseProfile:  model.BaseProfileResearch,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyWebRead},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
 
 	parent := startFrontRun(t, rt, "Coordinate research")
-	result, err := rt.SpawnTool(context.Background(), tools.SessionSpawnRequest{
+	result, err := rt.DelegateTaskTool(context.Background(), tools.DelegateTaskRequest{
 		ControllerSessionID: parent.SessionID,
-		AgentID:             "researcher",
-		Prompt:              "Inspect OpenClaw",
+		Kind:                model.DelegationKindResearch,
+		Objective:           "Inspect OpenClaw",
 	})
 	if err != nil {
-		t.Fatalf("SpawnTool failed: %v", err)
+		t.Fatalf("DelegateTaskTool failed: %v", err)
 	}
 	if result.Status != model.RunStatusInterrupted {
 		t.Fatalf("expected interrupted child run, got %s", result.Status)

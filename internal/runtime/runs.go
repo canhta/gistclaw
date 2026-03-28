@@ -631,6 +631,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			Specialists:  specialists,
 			VisibleTools: visibleTools,
 		})
+		visibleTools = focusVisibleToolSpecs(visibleTools, executionRecommendation)
 		providerReq, err := r.contexts.Assemble(ctx, ContextAssemblyInput{
 			SessionID:               sessionID,
 			AgentID:                 agentID,
@@ -915,7 +916,7 @@ func (r *Runtime) executeToolCalls(
 				return outcome, err
 			}
 			outcome.events = append(outcome.events, event)
-			if tool.Spec().Family == model.ToolFamilyDelegate && spawnedRunStillActive(result) {
+			if tool.Spec().Family == model.ToolFamilyDelegate && delegatedRunStillActive(result) {
 				outcome.paused = true
 				return outcome, nil
 			}
@@ -1453,7 +1454,7 @@ func (r *Runtime) loadApprovalToolCallID(ctx context.Context, runID, approvalID 
 	return "", nil
 }
 
-func spawnedRunStillActive(result model.ToolResult) bool {
+func delegatedRunStillActive(result model.ToolResult) bool {
 	if strings.TrimSpace(result.Output) == "" {
 		return false
 	}
@@ -1562,7 +1563,7 @@ func (r *Runtime) appendUpdatedParentSpawnResult(ctx context.Context, parent mod
 		parent.ID,
 	)
 	if err != nil {
-		return fmt.Errorf("load parent spawn tool call: %w", err)
+		return fmt.Errorf("load parent delegated tool call: %w", err)
 	}
 	defer rows.Close()
 
@@ -1578,7 +1579,7 @@ func (r *Runtime) appendUpdatedParentSpawnResult(ctx context.Context, parent mod
 	for rows.Next() {
 		var payloadJSON []byte
 		if err := rows.Scan(&payloadJSON); err != nil {
-			return fmt.Errorf("scan parent spawn tool call: %w", err)
+			return fmt.Errorf("scan parent delegated tool call: %w", err)
 		}
 		var payload struct {
 			ToolCallID string          `json:"tool_call_id"`
@@ -1589,7 +1590,7 @@ func (r *Runtime) appendUpdatedParentSpawnResult(ctx context.Context, parent mod
 			ApprovalID string          `json:"approval_id"`
 		}
 		if err := json.Unmarshal(payloadJSON, &payload); err != nil {
-			return fmt.Errorf("decode parent spawn tool call: %w", err)
+			return fmt.Errorf("decode parent delegated tool call: %w", err)
 		}
 		if payload.ToolFamily != string(model.ToolFamilyDelegate) || payload.Decision != string(model.DecisionAllow) {
 			continue
@@ -1603,13 +1604,13 @@ func (r *Runtime) appendUpdatedParentSpawnResult(ctx context.Context, parent mod
 		found = true
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate parent spawn tool calls: %w", err)
+		return fmt.Errorf("iterate parent delegated tool calls: %w", err)
 	}
 	if !found {
 		return nil
 	}
 
-	spawnOutputJSON, err := json.Marshal(tools.SessionSpawnResult{
+	delegationOutputJSON, err := json.Marshal(tools.DelegationResult{
 		RunID:     child.ID,
 		SessionID: child.SessionID,
 		AgentID:   child.AgentID,
@@ -1617,11 +1618,11 @@ func (r *Runtime) appendUpdatedParentSpawnResult(ctx context.Context, parent mod
 		Output:    body,
 	})
 	if err != nil {
-		return fmt.Errorf("marshal updated spawn result: %w", err)
+		return fmt.Errorf("marshal updated delegated result: %w", err)
 	}
-	toolResultJSON, err := json.Marshal(model.ToolResult{Output: string(spawnOutputJSON)})
+	toolResultJSON, err := json.Marshal(model.ToolResult{Output: string(delegationOutputJSON)})
 	if err != nil {
-		return fmt.Errorf("marshal updated spawn tool result: %w", err)
+		return fmt.Errorf("marshal updated delegated tool result: %w", err)
 	}
 	payloadJSON, err := json.Marshal(map[string]any{
 		"tool_call_id": match.ToolCallID,
@@ -1633,7 +1634,7 @@ func (r *Runtime) appendUpdatedParentSpawnResult(ctx context.Context, parent mod
 		"approval_id":  match.ApprovalID,
 	})
 	if err != nil {
-		return fmt.Errorf("marshal updated parent spawn tool call: %w", err)
+		return fmt.Errorf("marshal updated parent delegated tool call: %w", err)
 	}
 	if err := r.convStore.AppendEvent(ctx, model.Event{
 		ID:             generateID(),
@@ -1642,7 +1643,7 @@ func (r *Runtime) appendUpdatedParentSpawnResult(ctx context.Context, parent mod
 		Kind:           "tool_call_recorded",
 		PayloadJSON:    payloadJSON,
 	}); err != nil {
-		return fmt.Errorf("journal updated parent spawn tool call: %w", err)
+		return fmt.Errorf("journal updated parent delegated tool call: %w", err)
 	}
 	return nil
 }
@@ -1942,6 +1943,38 @@ func (r *Runtime) visibleToolSpecs(agent model.AgentProfile) []model.ToolSpec {
 		visible = append(visible, spec)
 	}
 	return visible
+}
+
+func focusVisibleToolSpecs(
+	specs []model.ToolSpec,
+	decision recommendationpkg.Decision,
+) []model.ToolSpec {
+	if decision.Mode != recommendationpkg.ModeDirect || len(specs) == 0 {
+		return specs
+	}
+	if len(decision.FocusedFamilies) == 0 {
+		return specs
+	}
+	allowedFamilies := make(map[model.ToolFamily]bool, len(decision.FocusedFamilies))
+	for _, family := range decision.FocusedFamilies {
+		if family != "" {
+			allowedFamilies[family] = true
+		}
+	}
+	if len(allowedFamilies) == 0 {
+		return specs
+	}
+
+	focused := make([]model.ToolSpec, 0, len(specs))
+	for _, spec := range specs {
+		if allowedFamilies[spec.Family] {
+			focused = append(focused, spec)
+		}
+	}
+	if len(focused) == 0 {
+		return specs
+	}
+	return focused
 }
 
 func agentContextFromSnapshot(snapshotJSON []byte, agentID string) (model.AgentProfile, map[string]model.AgentProfile, error) {

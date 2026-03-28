@@ -92,7 +92,7 @@ func TestPolicy_Decide_AdaptiveLayers(t *testing.T) {
 				ToolFamilies: []model.ToolFamily{model.ToolFamilyDelegate},
 			},
 			spec: model.ToolSpec{
-				Name:       "session_spawn",
+				Name:       "delegate_task",
 				Family:     model.ToolFamilyDelegate,
 				SideEffect: effectRead,
 				Approval:   "never",

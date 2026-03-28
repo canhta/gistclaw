@@ -111,7 +111,6 @@ func Bootstrap(cfg Config) (*App, error) {
 		return nil, fmt.Errorf("bootstrap: load budget settings: %w", err)
 	}
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
-		Spawn:        rt.SpawnTool,
 		DelegateTask: rt.DelegateTaskTool,
 	})
 	rt.SetStorageRoot(cfg.StorageRoot)

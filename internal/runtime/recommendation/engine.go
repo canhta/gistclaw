@@ -17,10 +17,12 @@ const (
 )
 
 type Decision struct {
-	Mode           Mode
-	Rationale      string
-	Confidence     float64
-	SuggestedKinds []model.DelegationKind
+	Mode               Mode
+	Rationale          string
+	Confidence         float64
+	SuggestedKinds     []model.DelegationKind
+	FocusedFamilies    []model.ToolFamily
+	PreferredToolNames []string
 }
 
 type Input struct {
@@ -50,7 +52,7 @@ func (Engine) Recommend(input Input) Decision {
 	writeSignal := containsAny(objective, "fix", "implement", "edit", "change", "modify", "refactor", "patch", "write code")
 	reviewSignal := containsAny(objective, "review", "audit", "inspect the diff", "code review")
 	verifySignal := containsAny(objective, "verify", "test", "validate", "confirm", "check that")
-	boundedAction := containsAny(objective, "list", "show", "status", "lookup", "resolve", "send", "message", "contacts", "transfer", "route", "handoff")
+	boundedAction := containsAny(objective, "list", "show", "status", "lookup", "resolve", "send", "message", "contacts", "transfer", "route", "handoff", "forward", "relay")
 	connectorAction := containsAny(objective, "telegram", "whatsapp", "zalo", "email", "contact", "contacts", "message")
 
 	kinds := make([]model.DelegationKind, 0, 4)
@@ -69,16 +71,20 @@ func (Engine) Recommend(input Input) Decision {
 
 	if boundedAction && connectorAction && (hasConnectorCapability || hasRuntimeCapability) {
 		return Decision{
-			Mode:       ModeDirect,
-			Rationale:  "bounded connector action with no specialist advantage; execute directly",
-			Confidence: 0.9,
+			Mode:               ModeDirect,
+			Rationale:          "bounded connector action with no specialist advantage; execute directly",
+			Confidence:         0.9,
+			FocusedFamilies:    []model.ToolFamily{model.ToolFamilyConnectorCapability, model.ToolFamilyRuntimeCapability},
+			PreferredToolNames: preferredDirectTools(objective, input.VisibleTools),
 		}
 	}
 	if boundedAction && !researchSignal && !writeSignal && !reviewSignal && !verifySignal {
 		return Decision{
-			Mode:       ModeDirect,
-			Rationale:  "bounded local action with no specialist advantage; execute directly",
-			Confidence: 0.8,
+			Mode:               ModeDirect,
+			Rationale:          "bounded local action with no specialist advantage; execute directly",
+			Confidence:         0.8,
+			FocusedFamilies:    []model.ToolFamily{model.ToolFamilyRuntimeCapability, model.ToolFamilyConnectorCapability},
+			PreferredToolNames: preferredDirectTools(objective, input.VisibleTools),
 		}
 	}
 	if shouldParallelize(kinds) {
@@ -183,4 +189,33 @@ func containsAny(text string, needles ...string) bool {
 
 func normalize(text string) string {
 	return strings.ToLower(strings.TrimSpace(text))
+}
+
+func preferredDirectTools(objective string, visibleTools []model.ToolSpec) []string {
+	available := make(map[string]bool, len(visibleTools))
+	for _, spec := range visibleTools {
+		available[spec.Name] = true
+	}
+	preferred := make([]string, 0, 4)
+	add := func(name string) {
+		if !available[name] || slices.Contains(preferred, name) {
+			return
+		}
+		preferred = append(preferred, name)
+	}
+
+	if containsAny(objective, "resolve", "to ", "contact", "someone", "name", "person") {
+		add("connector_target_resolve")
+	}
+	if containsAny(objective, "list", "show", "contacts", "groups") {
+		add("connector_directory_list")
+	}
+	if containsAny(objective, "send", "message", "transfer", "route", "relay", "forward", "handoff") {
+		add("connector_send")
+	}
+	if containsAny(objective, "status", "health", "connected") {
+		add("connector_status")
+		add("app_action")
+	}
+	return preferred
 }

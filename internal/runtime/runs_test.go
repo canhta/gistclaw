@@ -178,8 +178,8 @@ func (t *loggingTool) Invoke(ctx context.Context, _ model.ToolCall) (model.ToolR
 }
 
 type delegateAliasTool struct {
-	name  string
-	spawn func(context.Context, tools.SessionSpawnRequest) (tools.SessionSpawnResult, error)
+	name     string
+	delegate func(context.Context, string, string, string) (tools.DelegationResult, error)
 }
 
 func (t *delegateAliasTool) Name() string { return t.name }
@@ -206,11 +206,7 @@ func (t *delegateAliasTool) Invoke(ctx context.Context, call model.ToolCall) (mo
 	if err := json.Unmarshal(call.InputJSON, &input); err != nil {
 		return model.ToolResult{}, fmt.Errorf("%s: decode input: %w", t.Name(), err)
 	}
-	result, err := t.spawn(ctx, tools.SessionSpawnRequest{
-		ControllerSessionID: meta.SessionID,
-		AgentID:             strings.TrimSpace(input.AgentID),
-		Prompt:              strings.TrimSpace(input.Prompt),
-	})
+	result, err := t.delegate(ctx, meta.SessionID, strings.TrimSpace(input.AgentID), strings.TrimSpace(input.Prompt))
 	if err != nil {
 		return model.ToolResult{}, err
 	}
@@ -293,7 +289,6 @@ func TestRunEngine_FailsHungProviderTurnsAfterTimeout(t *testing.T) {
 
 func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
-	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "session_spawn", Family: model.ToolFamilyDelegate, Risk: model.RiskLow, RequiresExplicitAllow: true}})
 	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "delegate_task", Family: model.ToolFamilyDelegate, Risk: model.RiskLow}})
 	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "write_new_file", Family: model.ToolFamilyRepoWrite, Risk: model.RiskMedium, SideEffect: "create"}})
 	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "coder_exec", Family: model.ToolFamilyRepoWrite, Risk: model.RiskHigh, SideEffect: "exec_write"}})
@@ -339,9 +334,6 @@ func TestRunEngine_AdvertisesOnlyAllowedToolsForCurrentAgent(t *testing.T) {
 	}
 	if !gotNames["delegate_task"] {
 		t.Fatalf("expected delegate_task to be visible, got %+v", gotNames)
-	}
-	if gotNames["session_spawn"] {
-		t.Fatalf("expected raw session_spawn to stay hidden by default, got %+v", gotNames)
 	}
 	if gotNames["write_new_file"] {
 		t.Fatalf("expected write_new_file to be hidden, got %+v", gotNames)
@@ -397,86 +389,6 @@ func TestRunEngine_AdvertisesCoderExecToScopedWriteAgent(t *testing.T) {
 	}
 }
 
-func TestRunEngine_SessionSpawnToolCreatesChildRun(t *testing.T) {
-	db, cs, mem, reg := setupRunTestDeps(t)
-	prov := NewMockProvider(
-		[]GenerateResult{
-			{
-				Content: "I will delegate this to patcher.",
-				ToolCalls: []model.ToolCallRequest{
-					{
-						ID:       "call-spawn",
-						ToolName: "session_spawn",
-						InputJSON: []byte(`{
-							"agent_id":"researcher",
-							"prompt":"Research OpenClaw and report back."
-						}`),
-					},
-				},
-				InputTokens:  4,
-				OutputTokens: 6,
-			},
-			{Content: "OpenClaw uses first-class session tools.", InputTokens: 5, OutputTokens: 9, StopReason: "end_turn"},
-			{Content: "Research complete.", InputTokens: 6, OutputTokens: 10, StopReason: "end_turn"},
-		},
-		nil,
-	)
-	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
-	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
-		Spawn: rt.SpawnTool,
-	})
-
-	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
-		TeamID: "default",
-		Agents: map[string]model.AgentProfile{
-			"assistant": {
-				AgentID:         "assistant",
-				BaseProfile:     model.BaseProfileOperator,
-				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
-				AllowTools:      []string{"session_spawn"},
-				DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
-			},
-			"researcher": {
-				AgentID:      "researcher",
-				BaseProfile:  model.BaseProfileResearch,
-				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyWebRead},
-			},
-		},
-	}); err != nil {
-		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
-	}
-
-	run, err := rt.StartFrontSession(context.Background(), StartFrontSession{
-		ConversationKey: conversations.ConversationKey{
-			ConnectorID: "web",
-			AccountID:   "local",
-			ExternalID:  "assistant",
-			ThreadID:    "main",
-		},
-		FrontAgentID:  "assistant",
-		InitialPrompt: "Coordinate research.",
-		CWD:           t.TempDir(),
-	})
-	if err != nil {
-		t.Fatalf("StartFrontSession failed: %v", err)
-	}
-	if run.Status != model.RunStatusCompleted {
-		t.Fatalf("expected completed run, got %s", run.Status)
-	}
-
-	var childCount int
-	err = db.RawDB().QueryRow(
-		"SELECT count(*) FROM runs WHERE parent_run_id = ? AND agent_id = 'researcher'",
-		run.ID,
-	).Scan(&childCount)
-	if err != nil {
-		t.Fatalf("query child runs: %v", err)
-	}
-	if childCount != 1 {
-		t.Fatalf("expected 1 child researcher run, got %d", childCount)
-	}
-}
-
 func TestRunEngine_DelegateTaskToolCreatesChildRun(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(
@@ -500,7 +412,6 @@ func TestRunEngine_DelegateTaskToolCreatesChildRun(t *testing.T) {
 	)
 	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
-		Spawn:        rt.SpawnTool,
 		DelegateTask: rt.DelegateTaskTool,
 	})
 
@@ -554,7 +465,7 @@ func TestRunEngine_DelegateTaskToolCreatesChildRun(t *testing.T) {
 	}
 }
 
-func TestRunEngine_SessionSpawnIsDeniedWhenRuntimeRecommendsDirect(t *testing.T) {
+func TestRunEngine_DelegateTaskIsDeniedWhenRuntimeRecommendsDirect(t *testing.T) {
 	db, cs, mem, reg := setupRunTestDeps(t)
 	prov := NewMockProvider(
 		[]GenerateResult{
@@ -562,12 +473,9 @@ func TestRunEngine_SessionSpawnIsDeniedWhenRuntimeRecommendsDirect(t *testing.T)
 				Content: "I will delegate this.",
 				ToolCalls: []model.ToolCallRequest{
 					{
-						ID:       "call-spawn",
-						ToolName: "session_spawn",
-						InputJSON: []byte(`{
-							"agent_id":"researcher",
-							"prompt":"Research OpenClaw and report back."
-						}`),
+						ID:        "call-delegate",
+						ToolName:  "delegate_task",
+						InputJSON: []byte(`{"kind":"research","objective":"Research OpenClaw and report back."}`),
 					},
 				},
 				InputTokens:  4,
@@ -579,7 +487,7 @@ func TestRunEngine_SessionSpawnIsDeniedWhenRuntimeRecommendsDirect(t *testing.T)
 	)
 	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
-		Spawn: rt.SpawnTool,
+		DelegateTask: rt.DelegateTaskTool,
 	})
 
 	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
@@ -589,7 +497,6 @@ func TestRunEngine_SessionSpawnIsDeniedWhenRuntimeRecommendsDirect(t *testing.T)
 				AgentID:                     "assistant",
 				BaseProfile:                 model.BaseProfileOperator,
 				ToolFamilies:                []model.ToolFamily{model.ToolFamilyConnectorCapability, model.ToolFamilyDelegate},
-				AllowTools:                  []string{"session_spawn"},
 				DelegationKinds:             []model.DelegationKind{model.DelegationKindResearch},
 				SpecialistSummaryVisibility: model.SpecialistSummaryFull,
 			},
@@ -638,19 +545,19 @@ func TestRunEngine_SessionSpawnIsDeniedWhenRuntimeRecommendsDirect(t *testing.T)
 		 FROM events
 		 WHERE run_id = ?
 		   AND kind = 'tool_call_recorded'
-		   AND json_extract(payload_json, '$.tool_name') = 'session_spawn'
+		   AND json_extract(payload_json, '$.tool_name') = 'delegate_task'
 		 ORDER BY created_at ASC, id ASC
 		 LIMIT 1`,
 		run.ID,
 	).Scan(&payload); err != nil {
-		t.Fatalf("query session_spawn tool event: %v", err)
+		t.Fatalf("query delegate_task tool event: %v", err)
 	}
 	if !strings.Contains(payload, "runtime recommends direct execution") {
-		t.Fatalf("expected session_spawn denial payload to mention direct execution, got %q", payload)
+		t.Fatalf("expected delegate_task denial payload to mention direct execution, got %q", payload)
 	}
 }
 
-func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testing.T) {
+func TestRunEngine_DelegateTaskPausesParentUntilApprovedChildCompletes(t *testing.T) {
 	db, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -675,12 +582,9 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 			{
 				ToolCalls: []model.ToolCallRequest{
 					{
-						ID:       "call-spawn",
-						ToolName: "session_spawn",
-						InputJSON: []byte(`{
-							"agent_id":"patcher",
-							"prompt":"Create created.txt in the workspace."
-						}`),
+						ID:        "call-delegate",
+						ToolName:  "delegate_task",
+						InputJSON: []byte(`{"kind":"write","objective":"Create created.txt in the workspace."}`),
 					},
 				},
 				InputTokens:  4,
@@ -704,7 +608,7 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 	)
 	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
-		Spawn: rt.SpawnTool,
+		DelegateTask: rt.DelegateTaskTool,
 	})
 
 	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
@@ -714,7 +618,6 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 				AgentID:         "assistant",
 				BaseProfile:     model.BaseProfileOperator,
 				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
-				AllowTools:      []string{"session_spawn"},
 				DelegationKinds: []model.DelegationKind{model.DelegationKindWrite},
 			},
 			"patcher": {
@@ -758,7 +661,7 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 		t.Fatalf("query assistant session messages: %v", err)
 	}
 	if assistantMessagesBeforeApproval != 0 {
-		t.Fatalf("expected no assistant reply before spawned work finishes, got %d messages", assistantMessagesBeforeApproval)
+		t.Fatalf("expected no assistant reply before delegated work finishes, got %d messages", assistantMessagesBeforeApproval)
 	}
 
 	var completedEvents int
@@ -824,11 +727,11 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 		t.Fatalf("query parent tool_call_recorded events: %v", err)
 	}
 	if parentToolCallEvents < 2 {
-		t.Fatalf("expected parent run to record an updated session_spawn result, got %d tool_call_recorded events", parentToolCallEvents)
+		t.Fatalf("expected parent run to record an updated delegate_task result, got %d tool_call_recorded events", parentToolCallEvents)
 	}
 
 	var sawWorkerResult bool
-	var spawnToolCallCount int
+	var delegateToolCallCount int
 	for _, evt := range prov.Requests[3].ConversationCtx {
 		switch evt.Kind {
 		case "session_message_added":
@@ -849,42 +752,42 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 			if err := json.Unmarshal(evt.PayloadJSON, &payload); err != nil {
 				t.Fatalf("unmarshal resumed parent tool payload: %v", err)
 			}
-			if payload.ToolName != "session_spawn" {
+			if payload.ToolName != "delegate_task" {
 				continue
 			}
-			spawnToolCallCount++
+			delegateToolCallCount++
 			var toolResult struct {
 				Output string `json:"output"`
 				Error  string `json:"error"`
 			}
 			if err := json.Unmarshal(payload.OutputJSON, &toolResult); err != nil {
-				t.Fatalf("unmarshal resumed session_spawn tool result: %v", err)
+				t.Fatalf("unmarshal resumed delegate_task tool result: %v", err)
 			}
 			var output struct {
 				Status model.RunStatus `json:"status"`
 				Output string          `json:"output"`
 			}
 			if err := json.Unmarshal([]byte(toolResult.Output), &output); err != nil {
-				t.Fatalf("unmarshal resumed session_spawn output: %v", err)
+				t.Fatalf("unmarshal resumed delegate_task output: %v", err)
 			}
 			if output.Status != model.RunStatusCompleted {
 				t.Fatalf(
-					"expected resumed session_spawn status %q, got %q (tool result=%s)",
+					"expected resumed delegate_task status %q, got %q (tool result=%s)",
 					model.RunStatusCompleted,
 					output.Status,
 					toolResult.Output,
 				)
 			}
 			if !strings.Contains(output.Output, "Created file.") {
-				t.Fatalf("expected resumed session_spawn output to include child result, got %q", output.Output)
+				t.Fatalf("expected resumed delegate_task output to include child result, got %q", output.Output)
 			}
 		}
 	}
 	if !sawWorkerResult {
 		t.Fatalf("expected resumed parent context to include child result, got %+v", prov.Requests[3].ConversationCtx)
 	}
-	if spawnToolCallCount != 1 {
-		t.Fatalf("expected exactly 1 session_spawn tool result in resumed context, got %d", spawnToolCallCount)
+	if delegateToolCallCount != 1 {
+		t.Fatalf("expected exactly 1 delegate_task tool result in resumed context, got %d", delegateToolCallCount)
 	}
 }
 
@@ -942,8 +845,10 @@ func TestRunEngine_DelegateFamilyToolPausesAndResumesWithoutHardcodedName(t *tes
 	)
 	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
 	reg.Register(&delegateAliasTool{
-		name:  "delegate_helper",
-		spawn: rt.SpawnTool,
+		name: "delegate_helper",
+		delegate: func(ctx context.Context, controllerSessionID, agentID, prompt string) (tools.DelegationResult, error) {
+			return rt.delegateToAgent(ctx, controllerSessionID, agentID, prompt)
+		},
 	})
 
 	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
@@ -1059,7 +964,7 @@ func TestRunEngine_DelegateFamilyToolPausesAndResumesWithoutHardcodedName(t *tes
 	}
 }
 
-func TestRunEngine_SessionSpawnInterruptsParentWhenChildInterrupts(t *testing.T) {
+func TestRunEngine_DelegateTaskInterruptsParentWhenChildInterrupts(t *testing.T) {
 	db, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("Open failed: %v", err)
@@ -1084,12 +989,9 @@ func TestRunEngine_SessionSpawnInterruptsParentWhenChildInterrupts(t *testing.T)
 			{
 				ToolCalls: []model.ToolCallRequest{
 					{
-						ID:       "call-spawn",
-						ToolName: "session_spawn",
-						InputJSON: []byte(`{
-							"agent_id":"patcher",
-							"prompt":"Run the missing binary in the workspace."
-						}`),
+						ID:        "call-delegate",
+						ToolName:  "delegate_task",
+						InputJSON: []byte(`{"kind":"write","objective":"Run the missing binary in the workspace."}`),
 					},
 				},
 				InputTokens:  4,
@@ -1112,7 +1014,7 @@ func TestRunEngine_SessionSpawnInterruptsParentWhenChildInterrupts(t *testing.T)
 	)
 	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
-		Spawn: rt.SpawnTool,
+		DelegateTask: rt.DelegateTaskTool,
 	})
 
 	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
@@ -1122,7 +1024,6 @@ func TestRunEngine_SessionSpawnInterruptsParentWhenChildInterrupts(t *testing.T)
 				AgentID:         "assistant",
 				BaseProfile:     model.BaseProfileOperator,
 				ToolFamilies:    []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyDelegate},
-				AllowTools:      []string{"session_spawn"},
 				DelegationKinds: []model.DelegationKind{model.DelegationKindWrite},
 			},
 			"patcher": {
@@ -1373,6 +1274,7 @@ func TestRunEngine_DirectConnectorFlowPausesForApprovalWithoutChildRun(t *testin
 	db, cs, mem, reg := setupRunTestDeps(t)
 	var directoryCalls []capabilities.DirectoryListRequest
 	var sendCalls []capabilities.SendRequest
+	reg.Register(&specOnlyTool{spec: model.ToolSpec{Name: "web_fetch", Family: model.ToolFamilyWebRead, Risk: model.RiskLow, SideEffect: "read"}})
 	tools.RegisterCapabilityTools(reg, tools.CapabilityHandlers{
 		DirectoryList: func(_ context.Context, req capabilities.DirectoryListRequest) (capabilities.DirectoryListResult, error) {
 			directoryCalls = append(directoryCalls, req)
@@ -1428,7 +1330,6 @@ func TestRunEngine_DirectConnectorFlowPausesForApprovalWithoutChildRun(t *testin
 	)
 	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
 	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
-		Spawn:        rt.SpawnTool,
 		DelegateTask: rt.DelegateTaskTool,
 	})
 
@@ -1505,11 +1406,24 @@ func TestRunEngine_DirectConnectorFlowPausesForApprovalWithoutChildRun(t *testin
 	if !gotNames["connector_directory_list"] || !gotNames["connector_send"] {
 		t.Fatalf("expected connector capability tools, got %+v", gotNames)
 	}
-	if !gotNames["delegate_task"] {
-		t.Fatalf("expected delegate_task to remain available, got %+v", gotNames)
+	if gotNames["delegate_task"] {
+		t.Fatalf("expected direct connector flow to hide delegate_task, got %+v", gotNames)
 	}
-	if gotNames["session_spawn"] {
-		t.Fatalf("expected raw session_spawn to stay hidden, got %+v", gotNames)
+	if gotNames["web_fetch"] {
+		t.Fatalf("expected direct connector flow to hide web_fetch, got %+v", gotNames)
+	}
+	if len(prov.Requests[0].ToolSpecs) < 2 || len(prov.Requests[0].ToolSpecs) > 4 {
+		t.Fatalf("expected focused direct connector tool surface, got %d tools", len(prov.Requests[0].ToolSpecs))
+	}
+	for _, want := range []string{
+		"Preferred direct tool path:",
+		"connector_directory_list",
+		"connector_send",
+		"Stay within this direct tool surface",
+	} {
+		if !strings.Contains(prov.Requests[0].Instructions, want) {
+			t.Fatalf("expected direct connector instructions to include %q, got:\n%s", want, prov.Requests[0].Instructions)
+		}
 	}
 }
 

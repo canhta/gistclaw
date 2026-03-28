@@ -11,52 +11,53 @@ import (
 	"github.com/canhta/gistclaw/internal/tools"
 )
 
-func (r *Runtime) SpawnTool(ctx context.Context, req tools.SessionSpawnRequest) (tools.SessionSpawnResult, error) {
+func (r *Runtime) DelegateTaskTool(ctx context.Context, req tools.DelegateTaskRequest) (tools.DelegationResult, error) {
+	controllerSession, controllerRun, err := r.loadSessionRun(ctx, req.ControllerSessionID)
+	if err != nil {
+		return tools.DelegationResult{}, err
+	}
+	_, specialists, err := r.agentContextForRun(ctx, controllerRun.ID, controllerRun.AgentID)
+	if err != nil {
+		return tools.DelegationResult{}, err
+	}
+	targetAgentID, err := selectSpecialistForKind(specialists, req.Kind)
+	if err != nil {
+		return tools.DelegationResult{}, err
+	}
+	return r.delegateToAgent(ctx, controllerSession.ID, targetAgentID, req.Objective)
+}
+
+func (r *Runtime) delegateToAgent(
+	ctx context.Context,
+	controllerSessionID string,
+	targetAgentID string,
+	objective string,
+) (tools.DelegationResult, error) {
 	run, err := r.Spawn(ctx, SpawnCommand{
-		ControllerSessionID: req.ControllerSessionID,
-		AgentID:             req.AgentID,
-		Prompt:              req.Prompt,
+		ControllerSessionID: controllerSessionID,
+		AgentID:             targetAgentID,
+		Prompt:              objective,
 	})
 	if err != nil {
-		return tools.SessionSpawnResult{}, err
+		return tools.DelegationResult{}, err
 	}
 	output, err := r.latestAssistantMessage(ctx, run.SessionID)
 	if err != nil {
-		return tools.SessionSpawnResult{}, err
+		return tools.DelegationResult{}, err
 	}
 	if strings.TrimSpace(output) == "" && isTerminalRunStatus(run.Status) {
 		output, err = r.childTerminalMessage(ctx, run)
 		if err != nil {
-			return tools.SessionSpawnResult{}, err
+			return tools.DelegationResult{}, err
 		}
 	}
-	return tools.SessionSpawnResult{
+	return tools.DelegationResult{
 		RunID:     run.ID,
 		SessionID: run.SessionID,
 		AgentID:   run.AgentID,
 		Status:    run.Status,
 		Output:    output,
 	}, nil
-}
-
-func (r *Runtime) DelegateTaskTool(ctx context.Context, req tools.DelegateTaskRequest) (tools.SessionSpawnResult, error) {
-	controllerSession, controllerRun, err := r.loadSessionRun(ctx, req.ControllerSessionID)
-	if err != nil {
-		return tools.SessionSpawnResult{}, err
-	}
-	_, specialists, err := r.agentContextForRun(ctx, controllerRun.ID, controllerRun.AgentID)
-	if err != nil {
-		return tools.SessionSpawnResult{}, err
-	}
-	targetAgentID, err := selectSpecialistForKind(specialists, req.Kind)
-	if err != nil {
-		return tools.SessionSpawnResult{}, err
-	}
-	return r.SpawnTool(ctx, tools.SessionSpawnRequest{
-		ControllerSessionID: controllerSession.ID,
-		AgentID:             targetAgentID,
-		Prompt:              req.Objective,
-	})
 }
 
 func (r *Runtime) latestAssistantMessage(ctx context.Context, sessionID string) (string, error) {
