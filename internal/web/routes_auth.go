@@ -18,54 +18,12 @@ var (
 	errSettingsDeviceMissing          = errors.New("web: settings device missing")
 )
 
-type loginPageData struct {
-	Next               string
-	PasswordConfigured bool
-	SetupRequired      bool
-	Message            string
-	MessageClass       string
-}
-
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if result := s.authenticateRequest(r, false); result.Authenticated {
 		http.Redirect(w, r, safeRedirectPath(r.URL.Query().Get("next"), s.defaultEntryPath()), http.StatusSeeOther)
 		return
 	}
 	s.handleSPADocument(w, r)
-}
-
-func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "invalid form", http.StatusBadRequest)
-		return
-	}
-
-	next := safeRedirectPath(r.FormValue("next"), s.defaultEntryPath())
-	password := r.FormValue("password")
-	deviceCookieValue := ""
-	if cookie, err := r.Cookie(deviceCookieName); err == nil {
-		deviceCookieValue = cookie.Value
-	}
-
-	issued, err := authpkg.Login(r.Context(), s.db, authpkg.LoginInput{
-		Password:          password,
-		DeviceCookieValue: deviceCookieValue,
-		UserAgent:         r.UserAgent(),
-		IP:                requestIP(r),
-		Now:               time.Now().UTC(),
-	})
-	if err != nil {
-		data, status, dataErr := s.loginPageData(r, loginFailureMessage(err))
-		if dataErr != nil {
-			http.Error(w, "failed to load login state", http.StatusInternalServerError)
-			return
-		}
-		s.renderAuthTemplateStatus(w, r, status, "Login", "login_body", data)
-		return
-	}
-
-	setAuthCookies(w, r, issued)
-	http.Redirect(w, r, next, http.StatusSeeOther)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -209,41 +167,6 @@ func (s *Server) mutateSettingsDevice(
 		return settingsDeviceMutationResult{}, errSettingsDeviceMissing
 	}
 	return mutate(r, deviceID, session.DeviceID == deviceID)
-}
-
-func (s *Server) loginPageData(r *http.Request, explicitMessage string) (loginPageData, int, error) {
-	configured, err := authpkg.PasswordConfigured(r.Context(), s.db)
-	if err != nil {
-		return loginPageData{}, 0, err
-	}
-
-	data := loginPageData{
-		Next:               safeRedirectPath(r.FormValue("next"), safeRedirectPath(r.URL.Query().Get("next"), pageOperateRuns)),
-		PasswordConfigured: configured,
-	}
-	if !configured {
-		data.SetupRequired = true
-		return data, http.StatusOK, nil
-	}
-
-	if explicitMessage != "" {
-		data.Message = explicitMessage
-		data.MessageClass = "error"
-		return data, http.StatusOK, nil
-	}
-
-	switch r.URL.Query().Get("reason") {
-	case "expired":
-		data.Message = "Your session expired. Sign in again to continue."
-		data.MessageClass = "notice-panel"
-	case "logged_out":
-		data.Message = "You signed out of this browser."
-		data.MessageClass = "notice-panel"
-	case "blocked":
-		data.Message = "This device has been blocked. Use another authorized device or reset access locally with the CLI."
-		data.MessageClass = "error"
-	}
-	return data, http.StatusOK, nil
 }
 
 func loginFailureMessage(err error) string {

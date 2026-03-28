@@ -25,7 +25,6 @@ func TestTemplatesAvoidInlineStyles(t *testing.T) {
 	files := []string{
 		"approvals.html",
 		"memory.html",
-		"onboarding.html",
 		"routes_deliveries.html",
 		"session_detail.html",
 		"sessions.html",
@@ -233,10 +232,6 @@ func TestCriticalTemplatesDefineConfirmationMessages(t *testing.T) {
 			`data-confirm="Forget this memory?"`,
 			`data-confirm="Save this edit?"`,
 		},
-		"onboarding.html": {
-			`data-confirm="Use this repo?"`,
-			`data-confirm="Start this preview?"`,
-		},
 		"run_submit.html": {
 			`data-confirm="Start this task?"`,
 		},
@@ -289,25 +284,6 @@ func TestTemplatesUseTaskFramedCopy(t *testing.T) {
 	}
 
 	cases := map[string]copyExpectations{
-		"login.html": {
-			wants: []string{
-				"Connect this browser to your local GistClaw machine.",
-				"Use the admin password to open runs, approvals, and settings.",
-			},
-			unwanted: []string{
-				"Unlock the local operator runtime for this browser.",
-			},
-		},
-		"onboarding.html": {
-			wants: []string{
-				"Pick the project GistClaw should work in.",
-				"Start with a preview task. You can inspect the result before files change.",
-				"Preview only. Files stay untouched.",
-			},
-			unwanted: []string{
-				"bind an existing repo",
-			},
-		},
 		"runs.html": {
 			wants: []string{
 				"Recent work, blockers, and finished tasks for this project.",

@@ -9,14 +9,12 @@ import (
 
 var templateFiles = []string{
 	"templates/layout.html",
-	"templates/login.html",
 	"templates/runs.html",
 	"templates/run_detail.html",
 	"templates/run_submit.html",
 	"templates/approvals.html",
 	"templates/settings.html",
 	"templates/team.html",
-	"templates/onboarding.html",
 	"templates/memory.html",
 	"templates/sessions.html",
 	"templates/routes_deliveries.html",

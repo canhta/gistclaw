@@ -132,7 +132,6 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("GET /_app/{path...}", spaAssets)
 	s.mux.Handle("GET /robots.txt", spaAssets)
 	s.mux.HandleFunc("GET "+pageLogin, s.handleLogin)
-	s.mux.HandleFunc("POST "+pageLogin, s.handleLoginSubmit)
 	s.mux.HandleFunc("POST "+pageLogout, s.handleLogout)
 	s.mux.HandleFunc("GET "+pageOnboarding, s.handleSPADocument)
 	s.mux.HandleFunc("GET "+pageWork, s.handleSPADocument)
@@ -246,10 +245,6 @@ func (s *Server) renderTemplate(w http.ResponseWriter, r *http.Request, title, b
 
 func (s *Server) renderTemplateStatus(w http.ResponseWriter, r *http.Request, status int, title, bodyTemplate string, data any) {
 	s.renderTemplateStatusMode(w, r, status, title, bodyTemplate, data, shellModeApp)
-}
-
-func (s *Server) renderAuthTemplateStatus(w http.ResponseWriter, r *http.Request, status int, title, bodyTemplate string, data any) {
-	s.renderTemplateStatusMode(w, r, status, title, bodyTemplate, data, shellModeAuth)
 }
 
 func (s *Server) renderTemplateStatusMode(w http.ResponseWriter, r *http.Request, status int, title, bodyTemplate string, data any, mode string) {

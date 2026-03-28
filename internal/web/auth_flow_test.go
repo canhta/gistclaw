@@ -101,30 +101,7 @@ func TestAuthLoginCreatesSessionCookiesAndUnlocksOperatorPages(t *testing.T) {
 		t.Fatalf("SetPassword: %v", err)
 	}
 
-	form := url.Values{
-		"password": {"secret-pass"},
-		"next":     {"/operate/runs"},
-	}
-	loginResp := httptest.NewRecorder()
-	loginReq := httptest.NewRequest(http.MethodPost, "http://localhost/login", strings.NewReader(form.Encode()))
-	loginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	loginReq.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-	h.rawServer.ServeHTTP(loginResp, loginReq)
-
-	if loginResp.Code != http.StatusSeeOther {
-		t.Fatalf("expected 303, got %d body=%s", loginResp.Code, loginResp.Body.String())
-	}
-	if loginResp.Header().Get("Location") != "/operate/runs" {
-		t.Fatalf("expected redirect to /operate/runs, got %q", loginResp.Header().Get("Location"))
-	}
-	sessionCookie := findCookie(loginResp.Result().Cookies(), "gistclaw_session")
-	deviceCookie := findCookie(loginResp.Result().Cookies(), "gistclaw_device")
-	if sessionCookie == nil {
-		t.Fatal("expected gistclaw_session cookie")
-	}
-	if deviceCookie == nil {
-		t.Fatal("expected gistclaw_device cookie")
-	}
+	sessionCookie, deviceCookie := loginForTest(t, h, "secret-pass")
 
 	pageResp := httptest.NewRecorder()
 	pageReq := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
@@ -223,7 +200,7 @@ func TestAuthLoginRouteServesSPAForReasonQuery(t *testing.T) {
 	}
 }
 
-func TestAuthInvalidPasswordRendersInlineErrorWithoutUnauthorizedStatus(t *testing.T) {
+func TestLegacyFormLoginRouteIsMethodNotAllowed(t *testing.T) {
 	h := newServerHarness(t)
 	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Date(2026, time.March, 27, 7, 45, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("SetPassword: %v", err)
@@ -234,11 +211,8 @@ func TestAuthInvalidPasswordRendersInlineErrorWithoutUnauthorizedStatus(t *testi
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	h.rawServer.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusOK {
-		t.Fatalf("expected 200 for inline login error, got %d body=%s", rr.Code, rr.Body.String())
-	}
-	if !strings.Contains(rr.Body.String(), "Password did not match. Try again.") {
-		t.Fatalf("expected inline password error, got:\n%s", rr.Body.String())
+	if rr.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405 for legacy form login route, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
 
@@ -290,21 +264,18 @@ func TestAuthPasswordChangeRotatesBrowserPassword(t *testing.T) {
 	}
 
 	oldLoginResp := httptest.NewRecorder()
-	oldLoginReq := httptest.NewRequest(http.MethodPost, "http://localhost/login", strings.NewReader(url.Values{"password": {"secret-pass"}}.Encode()))
-	oldLoginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	oldLoginReq := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/login", strings.NewReader(`{"password":"secret-pass"}`))
+	oldLoginReq.Header.Set("Content-Type", "application/json")
 	h.rawServer.ServeHTTP(oldLoginResp, oldLoginReq)
-	if oldLoginResp.Code != http.StatusOK {
-		t.Fatalf("expected old password to fail, got %d", oldLoginResp.Code)
-	}
-	if !strings.Contains(oldLoginResp.Body.String(), "Password did not match. Try again.") {
-		t.Fatalf("expected inline password error, got:\n%s", oldLoginResp.Body.String())
+	if oldLoginResp.Code != http.StatusUnauthorized {
+		t.Fatalf("expected old password to fail with 401, got %d body=%s", oldLoginResp.Code, oldLoginResp.Body.String())
 	}
 
 	newLoginResp := httptest.NewRecorder()
-	newLoginReq := httptest.NewRequest(http.MethodPost, "http://localhost/login", strings.NewReader(url.Values{"password": {"new-secret-pass"}}.Encode()))
-	newLoginReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	newLoginReq := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/login", strings.NewReader(`{"password":"new-secret-pass"}`))
+	newLoginReq.Header.Set("Content-Type", "application/json")
 	h.rawServer.ServeHTTP(newLoginResp, newLoginReq)
-	if newLoginResp.Code != http.StatusSeeOther {
+	if newLoginResp.Code != http.StatusOK {
 		t.Fatalf("expected new password login to succeed, got %d body=%s", newLoginResp.Code, newLoginResp.Body.String())
 	}
 }
@@ -340,15 +311,14 @@ func TestAuthLogoutClearsCookiesAndRedirectsToLogin(t *testing.T) {
 func loginForTest(t *testing.T, h *serverHarness, password string) (*http.Cookie, *http.Cookie) {
 	t.Helper()
 
-	form := url.Values{"password": {password}}
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "http://localhost/login", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/login", strings.NewReader(`{"password":"`+password+`"}`))
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 	h.rawServer.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusSeeOther {
-		t.Fatalf("expected login redirect, got %d body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected login success, got %d body=%s", rr.Code, rr.Body.String())
 	}
 
 	sessionCookie := findCookie(rr.Result().Cookies(), "gistclaw_session")

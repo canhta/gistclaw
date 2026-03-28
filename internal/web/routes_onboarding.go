@@ -190,7 +190,6 @@ func validateNewProjectPath(path string) string {
 	return ""
 }
 
-// handleOnboardingStep2 renders the repo-signal scan results.
 // onboardingMiddleware returns a handler that redirects to /onboarding when
 // no project is bound, except for /onboarding paths themselves.
 func (s *Server) onboardingMiddleware(next http.Handler) http.Handler {

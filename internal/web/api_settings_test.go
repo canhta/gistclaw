@@ -343,13 +343,13 @@ func loginForTestWithUserAgent(t *testing.T, h *serverHarness, password, userAge
 	t.Helper()
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "http://localhost/login", strings.NewReader("password="+password))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/login", strings.NewReader(`{"password":"`+password+`"}`))
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 	h.rawServer.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusSeeOther {
-		t.Fatalf("expected login redirect, got %d body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected login success, got %d body=%s", rr.Code, rr.Body.String())
 	}
 
 	sessionCookie := findCookie(rr.Result().Cookies(), sessionCookieName)

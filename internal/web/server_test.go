@@ -2670,13 +2670,13 @@ func TestAdminToken(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "http://localhost/login", strings.NewReader("password=test-password"))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/login", strings.NewReader(`{"password":"test-password"}`))
+		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
 
 		h.rawServer.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusSeeOther {
+		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 303, got %d", rr.Code)
 		}
 
@@ -4966,15 +4966,14 @@ func hostAdminSessionCookie(t *testing.T, h *serverHarness, pageURL string) *htt
 		t.Fatalf("set password: %v", err)
 	}
 
-	form := url.Values{"password": {"test-password"}}
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "http://localhost/login", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/login", strings.NewReader(`{"password":"test-password"}`))
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
 
 	h.rawServer.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusSeeOther {
+	if rr.Code != http.StatusOK {
 		t.Fatalf("expected login to succeed before POST %s, got %d body=%s", pageURL, rr.Code, rr.Body.String())
 	}
 
