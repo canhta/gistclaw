@@ -13,17 +13,23 @@
 
 	function connectorToneClass(stateLabel: string): string {
 		const s = stateLabel.toLowerCase();
-		if (s.includes('error') || s.includes('down') || s.includes('fail')) return 'border-[var(--gc-error)]';
-		if (s.includes('degraded') || s.includes('warn') || s.includes('retry')) return 'border-[var(--gc-orange)]';
-		if (s.includes('connect') || s.includes('ok') || s.includes('active')) return 'border-[var(--gc-cyan)]';
+		if (s.includes('error') || s.includes('down') || s.includes('fail'))
+			return 'border-[var(--gc-error)]';
+		if (s.includes('degraded') || s.includes('warn') || s.includes('retry'))
+			return 'border-[var(--gc-orange)]';
+		if (s.includes('connect') || s.includes('ok') || s.includes('active'))
+			return 'border-[var(--gc-cyan)]';
 		return 'border-[var(--gc-border)]';
 	}
 
 	function connectorStatusTextClass(stateLabel: string): string {
 		const s = stateLabel.toLowerCase();
-		if (s.includes('error') || s.includes('down') || s.includes('fail')) return 'text-[var(--gc-error)]';
-		if (s.includes('degraded') || s.includes('warn') || s.includes('retry')) return 'text-[var(--gc-orange)]';
-		if (s.includes('connect') || s.includes('ok') || s.includes('active')) return 'text-[var(--gc-cyan)]';
+		if (s.includes('error') || s.includes('down') || s.includes('fail'))
+			return 'text-[var(--gc-error)]';
+		if (s.includes('degraded') || s.includes('warn') || s.includes('retry'))
+			return 'text-[var(--gc-orange)]';
+		if (s.includes('connect') || s.includes('ok') || s.includes('active'))
+			return 'text-[var(--gc-cyan)]';
 		return 'text-[var(--gc-text-secondary)]';
 	}
 </script>
@@ -120,7 +126,9 @@
 						<article class={`gc-panel-soft px-4 py-4 ${connectorToneClass(item.state_label)}`}>
 							<div class="flex items-start justify-between gap-3">
 								<p class="gc-stamp">{item.connector_id.toUpperCase()}</p>
-								<p class={`gc-stamp ${connectorStatusTextClass(item.state_label)}`}>{item.state_label}</p>
+								<p class={`gc-stamp ${connectorStatusTextClass(item.state_label)}`}>
+									{item.state_label}
+								</p>
 							</div>
 							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">{item.summary}</p>
 						</article>

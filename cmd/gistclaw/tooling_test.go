@@ -235,15 +235,37 @@ func TestRepoTooling_ReleaseContract(t *testing.T) {
 			wantSnips: []string{
 				"actions/checkout@v6",
 				"actions/setup-go@v6",
+				"oven-sh/setup-bun@v2",
+				"cd frontend && bun install --frozen-lockfile",
+				"cd frontend && bun run build",
 				"refs/tags/v",
 				"GOOS=darwin",
 				"GOARCH=arm64",
 				"GOOS=linux",
 				"GOARCH=amd64",
-				"-X github.com/canhta/gistclaw/cmd/gistclaw.version=",
+				"-s -w",
+				"-X main.version=",
+				"-X main.commit=",
+				"-X main.buildDate=",
+				"scripts/release-bundle-budget.sh",
+				"scripts/release-rss-smoke.sh",
+				"scripts/render-homebrew-formula.sh",
+				"scripts/update-homebrew-tap.sh",
 				"SHA256SUMS.txt",
 				"scripts/gistclaw-install.sh",
 				"gh release create",
+			},
+		},
+		{
+			path: filepath.Join(root, "packaging", "homebrew", "gistclaw.rb.tmpl"),
+			wantSnips: []string{
+				"class Gistclaw < Formula",
+				"url",
+				"sha256",
+				"def post_install",
+				`etc/"gistclaw/config.yaml"`,
+				`var/"gistclaw"`,
+				"service do",
 			},
 		},
 		{
@@ -281,6 +303,41 @@ func TestRepoTooling_ReleaseContract(t *testing.T) {
 			},
 		},
 		{
+			path: filepath.Join(root, "scripts", "release-bundle-budget.sh"),
+			wantSnips: []string{
+				"bundle_total_kb=",
+				"largest_js_bytes=",
+				"largest_css_bytes=",
+			},
+		},
+		{
+			path: filepath.Join(root, "scripts", "release-rss-smoke.sh"),
+			wantSnips: []string{
+				"RSS",
+				"ps",
+				"gistclaw",
+			},
+		},
+		{
+			path: filepath.Join(root, "scripts", "render-homebrew-formula.sh"),
+			wantSnips: []string{
+				"version",
+				"url",
+				"sha256",
+				"gistclaw.rb.tmpl",
+			},
+		},
+		{
+			path: filepath.Join(root, "scripts", "update-homebrew-tap.sh"),
+			wantSnips: []string{
+				"HOMEBREW_TAP_TOKEN",
+				"HOMEBREW_TAP_REPO",
+				"Formula/gistclaw.rb",
+				"git clone",
+				"git push",
+			},
+		},
+		{
 			path: filepath.Join(root, "README.md"),
 			wantSnips: []string{
 				"GitHub Releases",
@@ -312,10 +369,10 @@ func TestRepoTooling_ReleaseContract(t *testing.T) {
 		{
 			path: filepath.Join(root, "docs", "install-macos.md"),
 			wantSnips: []string{
-				"Apple Silicon",
-				"self-contained",
-				"gistclaw serve",
-				"127.0.0.1:8080",
+				"brew install",
+				"brew services start gistclaw",
+				"config.yaml",
+				"GitHub Releases",
 			},
 		},
 		{
@@ -347,6 +404,9 @@ func TestRepoTooling_ReleaseContract(t *testing.T) {
 					"actions/checkout@v4",
 					"actions/setup-go@v5",
 					"softprops/action-gh-release",
+					"github.com/canhta/gistclaw/cmd/gistclaw.version",
+					"github.com/canhta/gistclaw/cmd/gistclaw.commit",
+					"github.com/canhta/gistclaw/cmd/gistclaw.buildDate",
 				} {
 					if strings.Contains(content, forbidden) {
 						t.Fatalf("%s still contains deprecated release dependency %q", tc.path, forbidden)

@@ -1,0 +1,50 @@
+class Gistclaw < Formula
+  desc "Local-first multi-agent runtime for software repo tasks"
+  homepage "https://github.com/canhta/gistclaw"
+  url "__URL__"
+  version "__VERSION__"
+  sha256 "__SHA256__"
+  license "MIT"
+
+  depends_on arch: :arm64
+
+  def install
+    bin.install "gistclaw"
+  end
+
+  def post_install
+    config_dir = etc/"gistclaw"
+    config_path = config_dir/"config.yaml"
+    state_dir = var/"gistclaw"
+    logs_dir = var/"log"
+
+    mkdir_p config_dir
+    mkdir_p state_dir
+    mkdir_p logs_dir
+
+    return if config_path.exist?
+
+    config_path.write <<~YAML
+      storage_root: #{state_dir}
+      state_dir: #{state_dir}
+      database_path: #{state_dir}/runtime.db
+      provider:
+        name: openai
+        api_key: REPLACE_WITH_REAL_KEY
+      web:
+        listen_addr: 127.0.0.1:8080
+    YAML
+  end
+
+  service do
+    run [opt_bin/"gistclaw", "--config", etc/"gistclaw/config.yaml", "serve"]
+    keep_alive true
+    working_dir var/"gistclaw"
+    log_path var/"log/gistclaw.log"
+    error_log_path var/"log/gistclaw.err.log"
+  end
+
+  test do
+    assert_match "version:", shell_output("#{bin}/gistclaw version")
+  end
+end

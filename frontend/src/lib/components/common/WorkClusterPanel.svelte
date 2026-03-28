@@ -9,9 +9,7 @@
 	} = $props();
 
 	function formatAgentID(agentID: string): string {
-		return agentID
-			.replace(/_/g, ' ')
-			.replace(/\b\w/g, (c, i) => (i === 0 ? c.toUpperCase() : c));
+		return agentID.replace(/_/g, ' ').replace(/\b\w/g, (c, i) => (i === 0 ? c.toUpperCase() : c));
 	}
 
 	function toneClass(statusClass: string): string {
@@ -67,7 +65,9 @@
 								<p class="gc-copy mt-1 truncate text-[var(--gc-ink)]">{child.objective}</p>
 							</div>
 							<div class="shrink-0 text-right">
-								<p class={`gc-stamp ${statusTextClass(child.status_class)}`}>{child.status_label}</p>
+								<p class={`gc-stamp ${statusTextClass(child.status_class)}`}>
+									{child.status_label}
+								</p>
 								<p class="gc-machine mt-1">{child.last_activity_short}</p>
 							</div>
 						</div>
@@ -78,7 +78,9 @@
 	{/if}
 
 	<!-- Footer -->
-	<div class="mt-4 flex items-center justify-between gap-4 border-t-2 border-[var(--gc-border)] pt-3">
+	<div
+		class="mt-4 flex items-center justify-between gap-4 border-t-2 border-[var(--gc-border)] pt-3"
+	>
 		<div class="flex gap-4">
 			<div>
 				<p class="gc-stamp">Started</p>

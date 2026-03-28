@@ -43,7 +43,6 @@
 	let errorMessage = $state('');
 	let submitting = $state(false);
 
-
 	async function submit(event: SubmitEvent): Promise<void> {
 		event.preventDefault();
 		errorMessage = '';
@@ -124,11 +123,15 @@
 					<p class="gc-stamp">Workers</p>
 					<p class="gc-value mt-3">{data.work.queue_strip.worker_runs}</p>
 				</div>
-				<div class={`gc-panel-soft px-4 py-4 ${data.work.queue_strip.recovery_runs > 0 ? 'border-[var(--gc-orange)]' : ''}`}>
+				<div
+					class={`gc-panel-soft px-4 py-4 ${data.work.queue_strip.recovery_runs > 0 ? 'border-[var(--gc-orange)]' : ''}`}
+				>
 					<p class="gc-stamp">Recovery</p>
 					<p class="gc-value mt-3">{data.work.queue_strip.recovery_runs}</p>
 				</div>
-				<div class={`gc-panel-soft px-4 py-4 ${data.work.queue_strip.summary.needs_approval > 0 ? 'border-[var(--gc-orange)]' : ''}`}>
+				<div
+					class={`gc-panel-soft px-4 py-4 ${data.work.queue_strip.summary.needs_approval > 0 ? 'border-[var(--gc-orange)]' : ''}`}
+				>
 					<p class="gc-stamp">Approvals</p>
 					<p class="gc-value mt-3">{data.work.queue_strip.summary.needs_approval}</p>
 				</div>

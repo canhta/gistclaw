@@ -97,10 +97,7 @@
 
 		<div class="border-t-2 border-[var(--gc-border)] px-4 py-3 sm:px-6">
 			<div class="max-w-full overflow-x-auto overflow-y-hidden overscroll-x-contain">
-				<nav
-					aria-label="Primary navigation"
-					class="flex min-w-max gap-3 pb-1"
-				>
+				<nav aria-label="Primary navigation" class="flex min-w-max gap-3 pb-1">
 					{#each navigation as item (item.href)}
 						<a
 							href={item.href}
@@ -121,7 +118,9 @@
 	<!-- Desktop layout -->
 	<div class="grid min-h-screen grid-cols-1 xl:grid-cols-[18rem_minmax(0,1fr)_22rem]">
 		<!-- Left nav -->
-		<aside class="hidden bg-[var(--gc-surface)] xl:flex xl:h-screen xl:flex-col xl:border-r-2 xl:border-[var(--gc-border-strong)]">
+		<aside
+			class="hidden bg-[var(--gc-surface)] xl:flex xl:h-screen xl:flex-col xl:border-r-2 xl:border-[var(--gc-border-strong)]"
+		>
 			<div class="border-b-2 border-[var(--gc-border)] px-5 py-6">
 				<div class="flex items-start gap-3">
 					<img
@@ -138,7 +137,10 @@
 				<p class="gc-machine mt-3 break-all">{project.active_path}</p>
 			</div>
 
-			<nav aria-label="Primary navigation" class="grid flex-1 auto-rows-min gap-2 overflow-y-auto px-3 py-4">
+			<nav
+				aria-label="Primary navigation"
+				class="grid flex-1 auto-rows-min gap-2 overflow-y-auto px-3 py-4"
+			>
 				{#each navigation as item (item.href)}
 					<a
 						href={item.href}
@@ -162,7 +164,9 @@
 		</main>
 
 		<!-- Right inspector -->
-		<aside class="hidden bg-[var(--gc-surface)] px-5 py-6 xl:block xl:h-screen xl:overflow-y-auto xl:border-l-2 xl:border-[var(--gc-border-strong)]">
+		<aside
+			class="hidden bg-[var(--gc-surface)] px-5 py-6 xl:block xl:h-screen xl:overflow-y-auto xl:border-l-2 xl:border-[var(--gc-border-strong)]"
+		>
 			<div class="gc-panel px-4 py-4">
 				<p class="gc-stamp">{inspectorTitle}</p>
 				<div class="mt-4 grid gap-3">

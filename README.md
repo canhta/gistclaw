@@ -25,7 +25,7 @@ Today the repo already ships a working daemon, CLI, local web control plane, rep
 - `gistclaw inspect systemd-unit` prints the canonical service file used by the Ubuntu installer.
 - `gistclaw inspect token` prints the admin token stored in the runtime settings table.
 - The web UI includes a built-in login gate plus onboarding and operator-job pages for `Operate`, `Configure`, and `Recover`.
-- GitHub Releases now carry a self-contained binary for the blessed Ubuntu installer path and Apple Silicon download path.
+- GitHub Releases now carry the self-contained Ubuntu installer assets, Apple Silicon archive, and the Homebrew formula input used for the macOS tap.
 - The Ubuntu installer supports either a quick-start provider key path or an exact `--config-file` reinstall path for VPS operators, plus optional `--public-domain` Caddy bootstrap.
 - Providers: Anthropic and OpenAI-compatible endpoints.
 - Tools: built-in web fetch, optional Tavily search, optional MCP stdio tools.
@@ -43,7 +43,7 @@ Start from [GitHub Releases](https://github.com/canhta/gistclaw/releases).
 - macOS Apple Silicon: [docs/install-macos.md](docs/install-macos.md)
 - Recovery and rollback: [docs/recovery.md](docs/recovery.md)
 
-The Ubuntu path installs a `systemd` service, and the binary itself can show the canonical unit:
+The Ubuntu path installs a `systemd` service. The macOS path is Homebrew-first with `brew install canhta/gistclaw/gistclaw` plus `brew services start gistclaw`. The binary itself can show the canonical unit:
 
 ```bash
 gistclaw version
