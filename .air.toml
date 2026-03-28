@@ -1,0 +1,23 @@
+#:schema https://json.schemastore.org/any.json
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/gistclaw ./cmd/gistclaw"
+entrypoint = ["./tmp/gistclaw"]
+args_bin = ["serve"]
+include_ext = ["go", "sql", "yaml", "yml"]
+exclude_dir = [".git", ".bin", "frontend", "internal/web/appdist", "tmp"]
+exclude_regex = ["_test\\.go"]
+stop_on_error = true
+send_interrupt = true
+
+[color]
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[misc]
+clean_on_exit = true

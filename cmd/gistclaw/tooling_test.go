@@ -19,6 +19,11 @@ func TestRepoTooling_MakeTargets(t *testing.T) {
 		wantSnips []string
 	}{
 		{
+			name:      "dev-tools",
+			target:    "dev-tools",
+			wantSnips: []string{"lefthook", "goimports", "golangci-lint.run/install.sh", "air-verse/air"},
+		},
+		{
 			name:      "fmt",
 			target:    "fmt",
 			wantSnips: []string{"goimports", ".go"},
@@ -46,7 +51,7 @@ func TestRepoTooling_MakeTargets(t *testing.T) {
 		{
 			name:      "dev",
 			target:    "dev",
-			wantSnips: []string{"lefthook", "goimports", "golangci-lint.run/install.sh"},
+			wantSnips: []string{"cd frontend && bun install", ".bin/air -c .air.toml", "cd frontend && VITE_GISTCLAW_API_ORIGIN=", "bun run dev"},
 		},
 		{
 			name:      "hooks-install",
@@ -132,7 +137,16 @@ func TestRepoTooling_ConfigFiles(t *testing.T) {
 			wantSnips: []string{
 				".bin/lefthook",
 				"--no-auto-install",
-				"make dev",
+				"make dev-tools",
+			},
+		},
+		{
+			path: filepath.Join(root, ".air.toml"),
+			wantSnips: []string{
+				`cmd = "go build -o ./tmp/gistclaw ./cmd/gistclaw"`,
+				`entrypoint = ["./tmp/gistclaw"]`,
+				`args_bin = ["serve"]`,
+				`exclude_dir = [".git", ".bin", "frontend", "internal/web/appdist", "tmp"]`,
 			},
 		},
 		{
@@ -150,13 +164,33 @@ func TestRepoTooling_ConfigFiles(t *testing.T) {
 		{
 			path: filepath.Join(root, "README.md"),
 			wantSnips: []string{
+				"make dev-tools",
 				"make dev",
 				"make hooks-install",
+				"127.0.0.1:5173",
 				"make fmt",
 				"make lint",
 				"make test",
 				"make coverage",
 				"70%",
+			},
+		},
+		{
+			path: filepath.Join(root, "CONTRIBUTING.md"),
+			wantSnips: []string{
+				"make dev-tools && make hooks-install",
+				"make dev",
+				"127.0.0.1:5173",
+				"Vite",
+			},
+		},
+		{
+			path: filepath.Join(root, "frontend", "vite.config.ts"),
+			wantSnips: []string{
+				"port: 5173",
+				"strictPort: true",
+				"'/api': {",
+				"VITE_GISTCLAW_API_ORIGIN",
 			},
 		},
 	}

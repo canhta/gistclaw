@@ -57,11 +57,11 @@ gistclaw inspect token
 If you are developing from source, use [CONTRIBUTING.md](CONTRIBUTING.md) for the full setup. The shortest local loop is:
 
 ```bash
-make dev && make hooks-install
-go run ./cmd/gistclaw serve
+make dev-tools && make hooks-install
+make dev
 ```
 
-Create `~/.config/gistclaw/config.yaml` using the minimal example in [CONTRIBUTING.md](CONTRIBUTING.md), then open `http://127.0.0.1:8080`.
+Create `~/.config/gistclaw/config.yaml` using the minimal example in [CONTRIBUTING.md](CONTRIBUTING.md), then open `http://127.0.0.1:5173`. `make dev` starts Air for the Go daemon on `127.0.0.1:8080` and Vite on `127.0.0.1:5173`, with Vite proxying `/api/*` back to Go.
 
 ## Common Commands
 
@@ -98,6 +98,7 @@ go vet ./...
 For repo-local tooling and contributor workflows:
 
 ```bash
+make dev-tools
 make dev
 make hooks-install
 make fmt

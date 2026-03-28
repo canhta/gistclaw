@@ -6,13 +6,14 @@ Start with [AGENTS.md](AGENTS.md) for project policies and [docs/system.md](docs
 
 - Go 1.25 or later
 - `make`
-- `curl` (used by `make dev` when installing `golangci-lint`)
+- `curl` (used by `make dev-tools` when installing `golangci-lint`)
+- `bun`
 
 ## Building
 
 Bootstrap repo-local developer tools once:
 
-Run: `make dev && make hooks-install`
+Run: `make dev-tools && make hooks-install`
 
 Build the binary:
 
@@ -35,11 +36,11 @@ provider:
 
 Pick or create the working project through onboarding or the project switcher after the daemon starts; the config now stores only the daemon's `storage_root`, while run location is resolved from the active project and task context.
 
-Then start the daemon and local web UI:
+Then start the dev loop:
 
-Run: `go run ./cmd/gistclaw serve`
+Run: `make dev`
 
-With the default config, the web UI listens on `127.0.0.1:8080`.
+With the default config, Air keeps the Go daemon on `127.0.0.1:8080`, Vite serves the frontend on `127.0.0.1:5173`, and Vite proxies `/api/*` back to Go.
 
 ## Testing
 

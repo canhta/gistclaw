@@ -8,7 +8,7 @@ dir=$(git rev-parse --show-toplevel)
 bin="$dir/.bin/lefthook"
 
 if [ ! -x "$bin" ]; then
-	echo "Missing $bin. Run 'make dev' to install repo-local tooling." >&2
+	echo "Missing $bin. Run 'make dev-tools' to install repo-local tooling." >&2
 	exit 1
 fi
 
