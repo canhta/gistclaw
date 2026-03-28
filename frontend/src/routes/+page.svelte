@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
+	import { resolveEntryHref } from '$lib/bootstrap/load';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
 
 	$effect(() => {
-		void goto(resolve(data.auth.authenticated ? '/work' : '/login'), { replaceState: true });
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		void goto(resolveEntryHref(data), { replaceState: true });
 	});
 </script>
 

@@ -2,21 +2,29 @@ package web
 
 import (
 	"net/http"
+	"strings"
 
 	authpkg "github.com/canhta/gistclaw/internal/auth"
+	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime"
 )
 
 type bootstrapResponse struct {
-	Auth       authSessionResponse      `json:"auth"`
-	Project    bootstrapProjectResponse `json:"project"`
-	Navigation []bootstrapNavItem       `json:"navigation"`
+	Auth       authSessionResponse       `json:"auth"`
+	Onboarding bootstrapOnboardingStatus `json:"onboarding"`
+	Project    *bootstrapProjectResponse `json:"project"`
+	Navigation []bootstrapNavItem        `json:"navigation"`
 }
 
 type bootstrapProjectResponse struct {
 	ActiveID   string `json:"active_id"`
 	ActiveName string `json:"active_name"`
 	ActivePath string `json:"active_path"`
+}
+
+type bootstrapOnboardingStatus struct {
+	Completed bool   `json:"completed"`
+	EntryHref string `json:"entry_href"`
 }
 
 type bootstrapNavItem struct {
@@ -45,11 +53,11 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 			SetupRequired:      !configured,
 			DeviceID:           auth.Session.DeviceID,
 		},
-		Project: bootstrapProjectResponse{
-			ActiveID:   project.ID,
-			ActiveName: project.Name,
-			ActivePath: project.PrimaryPath,
+		Onboarding: bootstrapOnboardingStatus{
+			Completed: onboardingCompleted(s.db),
+			EntryHref: s.defaultEntryPath(),
 		},
+		Project: bootstrapProjectPointer(project),
 		Navigation: []bootstrapNavItem{
 			{ID: "work", Label: "Work", Href: pageWork},
 			{ID: "team", Label: "Team", Href: pageTeam},
@@ -61,4 +69,15 @@ func (s *Server) handleBootstrap(w http.ResponseWriter, r *http.Request) {
 			{ID: "settings", Label: "Settings", Href: pageSettings},
 		},
 	})
+}
+
+func bootstrapProjectPointer(project model.Project) *bootstrapProjectResponse {
+	if strings.TrimSpace(project.ID) == "" && strings.TrimSpace(project.PrimaryPath) == "" && strings.TrimSpace(project.Name) == "" {
+		return nil
+	}
+	return &bootstrapProjectResponse{
+		ActiveID:   project.ID,
+		ActiveName: project.Name,
+		ActivePath: project.PrimaryPath,
+	}
 }

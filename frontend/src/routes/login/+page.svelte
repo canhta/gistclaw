@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { resolve } from '$app/paths';
+	import { resolveEntryHref } from '$lib/bootstrap/load';
 	import { HTTPError, requestJSON } from '$lib/http/client';
 	import type { AuthLoginResponse } from '$lib/types/api';
 	import type { PageData } from './$types';
@@ -12,7 +12,7 @@
 	let submitting = $state(false);
 
 	const params = $derived(new URLSearchParams(data.currentSearch));
-	const nextPath = $derived(params.get('next') ?? '/work');
+	const requestedNext = $derived(params.get('next') ?? '');
 	const reason = $derived(params.get('reason') ?? data.auth.login_reason ?? '');
 	const reasonMessage = $derived.by(() => {
 		switch (reason) {
@@ -29,7 +29,8 @@
 
 	$effect(() => {
 		if (data.auth.authenticated) {
-			void goto(resolve('/work'), { replaceState: true });
+			// eslint-disable-next-line svelte/no-navigation-without-resolve
+			void goto(resolveEntryHref(data), { replaceState: true });
 		}
 	});
 
@@ -44,7 +45,7 @@
 				headers: { 'content-type': 'application/json' },
 				body: JSON.stringify({
 					password,
-					next: nextPath
+					next: requestedNext || undefined
 				})
 			});
 

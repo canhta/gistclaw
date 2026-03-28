@@ -83,7 +83,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	setAuthCookies(w, r, issued)
 	writeJSON(w, http.StatusOK, authLoginResponse{
 		Authenticated: true,
-		Next:          safeRedirectPath(req.Next, pageWork),
+		Next:          safeRedirectPath(req.Next, s.defaultEntryPath()),
 	})
 }
 

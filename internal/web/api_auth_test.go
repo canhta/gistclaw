@@ -213,6 +213,35 @@ func TestAuthLoginAPIAuthenticatesAndSetsCookies(t *testing.T) {
 	}
 }
 
+func TestAuthLoginAPIDefaultsToOnboardingWhenPending(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarnessOnboardingPending(t)
+	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Now().UTC()); err != nil {
+		t.Fatalf("set password: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"password":"secret-pass"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "GistClaw Test Browser")
+	h.rawServer.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Next string `json:"next"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Next != pageOnboarding {
+		t.Fatalf("next = %q, want %q", resp.Next, pageOnboarding)
+	}
+}
+
 func TestAuthLoginAPIRejectsInvalidPassword(t *testing.T) {
 	t.Parallel()
 

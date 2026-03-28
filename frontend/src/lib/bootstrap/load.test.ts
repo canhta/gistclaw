@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { loadAppShell } from './load';
+import { loadAppShell, resolveEntryHref } from './load';
 
 describe('loadAppShell', () => {
 	it('returns auth-only state when the browser is signed out', async () => {
@@ -25,11 +25,13 @@ describe('loadAppShell', () => {
 		expect(fetcher).toHaveBeenCalledWith('/api/auth/session', expect.any(Object));
 		expect(result.auth.authenticated).toBe(false);
 		expect(result.auth.login_reason).toBe('expired');
+		expect(resolveEntryHref(result)).toBe('/login');
+		expect(result.onboarding).toBeNull();
 		expect(result.project).toBeNull();
 		expect(result.navigation).toEqual([]);
 	});
 
-	it('loads bootstrap navigation and project context for authenticated sessions', async () => {
+	it('loads bootstrap navigation, onboarding state, and project context for authenticated sessions', async () => {
 		const fetcher = vi.fn<typeof fetch>(async (input) => {
 			if (input === '/api/auth/session') {
 				return new Response(
@@ -53,6 +55,10 @@ describe('loadAppShell', () => {
 						password_configured: true,
 						setup_required: false,
 						device_id: 'device-local'
+					},
+					onboarding: {
+						completed: false,
+						entry_href: '/onboarding'
 					},
 					project: {
 						active_id: 'proj-primary',
@@ -78,6 +84,11 @@ describe('loadAppShell', () => {
 			'/api/auth/session',
 			'/api/bootstrap'
 		]);
+		expect(result.onboarding).toEqual({
+			completed: false,
+			entry_href: '/onboarding'
+		});
+		expect(resolveEntryHref(result)).toBe('/onboarding');
 		expect(result.project).toEqual({
 			active_id: 'proj-primary',
 			active_name: 'starter-project',

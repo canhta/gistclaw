@@ -17,6 +17,11 @@ export interface BootstrapProjectResponse {
 	active_path: string;
 }
 
+export interface BootstrapOnboardingResponse {
+	completed: boolean;
+	entry_href: string;
+}
+
 export interface BootstrapNavItem {
 	id: string;
 	label: string;
@@ -25,8 +30,27 @@ export interface BootstrapNavItem {
 
 export interface BootstrapResponse {
 	auth: AuthSessionResponse;
-	project: BootstrapProjectResponse;
+	onboarding: BootstrapOnboardingResponse;
+	project: BootstrapProjectResponse | null;
 	navigation: BootstrapNavItem[];
+}
+
+export interface OnboardingTaskCandidateResponse {
+	kind: string;
+	description: string;
+	signal: string;
+}
+
+export interface OnboardingResponse {
+	completed: boolean;
+	entry_href: string;
+	project: BootstrapProjectResponse | null;
+	suggested_tasks: OnboardingTaskCandidateResponse[];
+}
+
+export interface OnboardingPreviewResponse {
+	run_id: string;
+	next_href: string;
 }
 
 export interface RunGraphSummaryResponse {

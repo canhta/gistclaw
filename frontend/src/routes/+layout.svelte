@@ -8,14 +8,20 @@
 
 	let { data, children }: { data: LayoutData; children: Snippet } = $props();
 	const surface = $derived(surfaceForPath(data.currentPath));
+	const showShell = $derived(
+		data.auth.authenticated &&
+			!!data.project &&
+			!data.currentPath.startsWith('/onboarding') &&
+			data.currentPath !== '/login'
+	);
 </script>
 
 <svelte:head><link rel="icon" href={favicon} /></svelte:head>
 
-{#if data.auth.authenticated && data.project}
+{#if showShell}
 	<AppShell
 		navigation={data.navigation}
-		project={data.project}
+		project={data.project!}
 		currentPath={data.currentPath}
 		title={surface.title}
 		description={surface.description}

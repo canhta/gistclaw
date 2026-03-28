@@ -28,7 +28,7 @@ type loginPageData struct {
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if result := s.authenticateRequest(r, false); result.Authenticated {
-		http.Redirect(w, r, safeRedirectPath(r.URL.Query().Get("next"), pageWork), http.StatusSeeOther)
+		http.Redirect(w, r, safeRedirectPath(r.URL.Query().Get("next"), s.defaultEntryPath()), http.StatusSeeOther)
 		return
 	}
 	s.handleSPADocument(w, r)
@@ -40,7 +40,7 @@ func (s *Server) handleLoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	next := safeRedirectPath(r.FormValue("next"), pageOperateRuns)
+	next := safeRedirectPath(r.FormValue("next"), s.defaultEntryPath())
 	password := r.FormValue("password")
 	deviceCookieValue := ""
 	if cookie, err := r.Cookie(deviceCookieName); err == nil {

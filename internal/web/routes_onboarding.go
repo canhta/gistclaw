@@ -19,18 +19,6 @@ type TaskCandidate struct {
 	Signal      string // why this candidate was suggested
 }
 
-type onboardingStep1Data struct {
-	Error             string
-	ActiveProjectName string
-	ActiveProjectPath string
-}
-
-type onboardingStep3Data struct {
-	Candidates   []TaskCandidate
-	Error        string
-	SelectedTask string
-}
-
 // scanRepoSignals reads the local filesystem of the candidate project path and produces
 // a heuristic list of task candidates. It makes no model calls.
 func scanRepoSignals(projectPath string) []TaskCandidate {
@@ -141,77 +129,6 @@ func fallbackTrio(projectPath string) []TaskCandidate {
 	}
 }
 
-// handleOnboarding renders step 1 of the onboarding wizard.
-// Once onboarding is complete, it redirects to the main Operate queue.
-func (s *Server) handleOnboarding(w http.ResponseWriter, r *http.Request) {
-	if onboardingCompleted(s.db) {
-		http.Redirect(w, r, pageOperateRuns, http.StatusSeeOther)
-		return
-	}
-	s.renderOnboardingStep1(w, r, http.StatusOK, "")
-}
-
-// handleOnboardingStep1Submit validates and persists the submitted project path.
-func (s *Server) handleOnboardingStep1Submit(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	action := strings.TrimSpace(r.FormValue("action"))
-	switch action {
-	case "use_starter":
-		project, err := runtime.ActiveProject(r.Context(), s.db)
-		if err != nil {
-			http.Error(w, "failed to load starter project", http.StatusInternalServerError)
-			return
-		}
-		if project.PrimaryPath == "" {
-			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, "starter project is not ready yet")
-			return
-		}
-	case "create_new":
-		projectPath := strings.TrimSpace(r.FormValue("new_project_path"))
-		if projectPath == "" {
-			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, "new project path is required")
-			return
-		}
-		if errMsg := validateNewProjectPath(projectPath); errMsg != "" {
-			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, errMsg)
-			return
-		}
-		if err := os.MkdirAll(projectPath, 0o755); err != nil {
-			http.Error(w, "failed to create project directory", http.StatusInternalServerError)
-			return
-		}
-		if _, err := runtime.ActivateProjectPath(r.Context(), s.db, projectPath, "", "operator"); err != nil {
-			http.Error(w, "failed to save project", http.StatusInternalServerError)
-			return
-		}
-	default:
-		projectPath := strings.TrimSpace(r.FormValue("project_path"))
-		if projectPath == "" {
-			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, "project path is required")
-			return
-		}
-
-		if errMsg := validateProjectPath(projectPath); errMsg != "" {
-			s.renderOnboardingStep1(w, r, http.StatusUnprocessableEntity, errMsg)
-			return
-		}
-
-		if _, err := runtime.ActivateProjectPath(r.Context(), s.db, projectPath, "", "operator"); err != nil {
-			http.Error(w, "failed to save project", http.StatusInternalServerError)
-			return
-		}
-	}
-
-	if err := markOnboardingCompleted(r.Context(), s.db); err != nil {
-		http.Error(w, "failed to save onboarding state", http.StatusInternalServerError)
-		return
-	}
-	http.Redirect(w, r, "/onboarding/step/2", http.StatusSeeOther)
-}
-
 // validateProjectPath checks that path exists, is a git repo, and is writable.
 // Returns an empty string on success, or a human-readable error message.
 func validateProjectPath(path string) string {
@@ -274,73 +191,6 @@ func validateNewProjectPath(path string) string {
 }
 
 // handleOnboardingStep2 renders the repo-signal scan results.
-func (s *Server) handleOnboardingStep2(w http.ResponseWriter, r *http.Request) {
-	project, err := runtime.ActiveProject(r.Context(), s.db)
-	if err != nil {
-		http.Error(w, "failed to load active project", http.StatusInternalServerError)
-		return
-	}
-	candidates := scanRepoSignals(project.PrimaryPath)
-	s.renderTemplate(w, r, "Choose a Task", "onboarding_step2_body", map[string]any{
-		"Candidates": candidates,
-	})
-}
-
-// handleOnboardingStep3 renders the balanced trio for task selection.
-func (s *Server) handleOnboardingStep3(w http.ResponseWriter, r *http.Request) {
-	s.renderOnboardingStep3(w, r, http.StatusOK, "", "")
-}
-
-// handleOnboardingStep3Submit dispatches a preview-only run for the selected task.
-func (s *Server) handleOnboardingStep3Submit(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	task := strings.TrimSpace(r.FormValue("task"))
-	if task == "" {
-		s.renderOnboardingStep3(w, r, http.StatusUnprocessableEntity, "Choose a preview task before starting the run.", "")
-		return
-	}
-	if s.rt == nil {
-		s.renderOnboardingStep3(w, r, http.StatusServiceUnavailable, "Preview runs are unavailable right now. Check the runtime configuration and try again.", task)
-		return
-	}
-
-	project, err := runtime.ActiveProject(r.Context(), s.db)
-	if err != nil {
-		s.renderOnboardingStep3(w, r, http.StatusServiceUnavailable, "Unable to load the active project. Check the runtime configuration and try again.", task)
-		return
-	}
-	frontAgentID, err := s.rt.FrontAgentID(r.Context())
-	if err != nil {
-		s.renderOnboardingStep3(w, r, http.StatusServiceUnavailable, "Unable to resolve the front assistant for preview runs. Check the team configuration and try again.", task)
-		return
-	}
-	run, err := s.rt.StartAsync(r.Context(), runtime.StartRun{
-		ConversationID: "onboarding",
-		AgentID:        frontAgentID,
-		Objective:      task,
-		ProjectID:      project.ID,
-		CWD:            project.PrimaryPath,
-		AccountID:      "local",
-		PreviewOnly:    true,
-	})
-	if err != nil {
-		s.renderOnboardingStep3(w, r, http.StatusServiceUnavailable, onboardingPreviewStartError(err), task)
-		return
-	}
-	http.Redirect(w, r, "/onboarding/step/4/"+run.ID, http.StatusSeeOther)
-}
-
-// handleOnboardingStep4 renders the live preview view for the onboarding run.
-func (s *Server) handleOnboardingStep4(w http.ResponseWriter, r *http.Request) {
-	runID := r.PathValue("id")
-	s.renderTemplate(w, r, "Preview", "onboarding_step4_body", map[string]any{
-		"RunID": runID,
-	})
-}
-
 // onboardingMiddleware returns a handler that redirects to /onboarding when
 // no project is bound, except for /onboarding paths themselves.
 func (s *Server) onboardingMiddleware(next http.Handler) http.Handler {
@@ -348,42 +198,15 @@ func (s *Server) onboardingMiddleware(next http.Handler) http.Handler {
 		path := r.URL.Path
 		// Public auth, onboarding, assets, and webhook paths must bypass onboarding
 		// gating or unauthenticated browsers can get stuck in a redirect loop.
-		if isPublicPath(path) || strings.HasPrefix(path, "/onboarding") {
+		if isPublicPath(path) || allowsOnboardingSetupPath(path) {
 			next.ServeHTTP(w, r)
 			return
 		}
 		if !onboardingCompleted(s.db) {
-			http.Redirect(w, r, "/onboarding", http.StatusSeeOther)
+			http.Redirect(w, r, pageOnboarding, http.StatusSeeOther)
 			return
 		}
 		next.ServeHTTP(w, r)
-	})
-}
-
-func (s *Server) renderOnboardingStep1(w http.ResponseWriter, r *http.Request, status int, errMsg string) {
-	project, err := runtime.ActiveProject(r.Context(), s.db)
-	if err != nil {
-		http.Error(w, "failed to load onboarding state", http.StatusInternalServerError)
-		return
-	}
-	s.renderTemplateStatus(w, r, status, "Choose Project", "onboarding_step1_body", onboardingStep1Data{
-		Error:             errMsg,
-		ActiveProjectName: project.Name,
-		ActiveProjectPath: project.PrimaryPath,
-	})
-}
-
-func (s *Server) renderOnboardingStep3(w http.ResponseWriter, r *http.Request, status int, errMsg, selectedTask string) {
-	project, err := runtime.ActiveProject(r.Context(), s.db)
-	if err != nil {
-		http.Error(w, "failed to load active project", http.StatusInternalServerError)
-		return
-	}
-	candidates := scanRepoSignals(project.PrimaryPath)
-	s.renderTemplateStatus(w, r, status, "Select Task", "onboarding_step3_body", onboardingStep3Data{
-		Candidates:   candidates,
-		Error:        errMsg,
-		SelectedTask: selectedTask,
 	})
 }
 
@@ -413,4 +236,28 @@ func markOnboardingCompleted(ctx context.Context, db *store.DB) error {
 		return fmt.Errorf("save onboarding_completed_at: %w", err)
 	}
 	return nil
+}
+
+func ensureNewProjectPath(projectPath string) error {
+	return os.MkdirAll(projectPath, 0o755)
+}
+
+func allowsOnboardingSetupPath(path string) bool {
+	switch {
+	case path == pageOnboarding, strings.HasPrefix(path, pageOnboarding+"/"):
+		return true
+	case path == "/api/bootstrap":
+		return true
+	case path == "/api/onboarding", strings.HasPrefix(path, "/api/onboarding/"):
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *Server) defaultEntryPath() string {
+	if !onboardingCompleted(s.db) {
+		return pageOnboarding
+	}
+	return pageWork
 }

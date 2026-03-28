@@ -1121,19 +1121,23 @@ func TestProjectScopedAPIAccess(t *testing.T) {
 }
 
 func TestPageRouteMap(t *testing.T) {
-	t.Run("root redirects to operate runs", func(t *testing.T) {
+	t.Run("root serves the spa entry document", func(t *testing.T) {
 		h := newServerHarness(t)
+		wantBody, err := readSPAAsset("index.html")
+		if err != nil {
+			t.Fatalf("read spa index: %v", err)
+		}
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/", nil)
 
 		h.server.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303, got %d", rr.Code)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rr.Code)
 		}
-		if rr.Header().Get("Location") != "/operate/runs" {
-			t.Fatalf("expected redirect to /operate/runs, got %q", rr.Header().Get("Location"))
+		if rr.Body.String() != string(wantBody) {
+			t.Fatalf("expected root to serve spa index")
 		}
 	})
 

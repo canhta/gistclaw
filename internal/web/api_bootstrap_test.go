@@ -66,3 +66,35 @@ func TestBootstrapAPIReportsUserFirstNavigationAndProjectContext(t *testing.T) {
 		}
 	}
 }
+
+func TestBootstrapAPIReportsOnboardingEntryState(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarnessOnboardingPending(t)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/bootstrap", nil)
+	req.Header.Set("Authorization", "Bearer "+h.adminToken)
+	h.rawServer.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Onboarding struct {
+			Completed bool   `json:"completed"`
+			EntryHref string `json:"entry_href"`
+		} `json:"onboarding"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if resp.Onboarding.Completed {
+		t.Fatal("expected onboarding to remain pending")
+	}
+	if resp.Onboarding.EntryHref != pageOnboarding {
+		t.Fatalf("entry_href = %q, want %q", resp.Onboarding.EntryHref, pageOnboarding)
+	}
+}

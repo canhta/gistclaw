@@ -121,9 +121,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) registerRoutes() {
 	spaAssets := serveSPAAssets()
-	s.mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, pageOperateRuns, http.StatusSeeOther)
-	})
+	s.mux.HandleFunc("GET /{$}", s.handleSPADocument)
 	s.mux.HandleFunc("GET /operate", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, pageOperateRuns, http.StatusSeeOther)
 	})
@@ -136,6 +134,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET "+pageLogin, s.handleLogin)
 	s.mux.HandleFunc("POST "+pageLogin, s.handleLoginSubmit)
 	s.mux.HandleFunc("POST "+pageLogout, s.handleLogout)
+	s.mux.HandleFunc("GET "+pageOnboarding, s.handleSPADocument)
 	s.mux.HandleFunc("GET "+pageWork, s.handleSPADocument)
 	s.mux.HandleFunc("GET "+pageWork+"/{id}", s.handleSPADocument)
 	s.mux.HandleFunc("GET "+pageTeam, s.handleSPADocument)
@@ -150,6 +149,9 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
 	s.mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
 	s.mux.HandleFunc("GET /api/bootstrap", s.handleBootstrap)
+	s.mux.HandleFunc("GET /api/onboarding", s.handleOnboardingAPI)
+	s.mux.Handle("POST /api/onboarding/project", s.adminAuth(http.HandlerFunc(s.handleOnboardingProjectAPI)))
+	s.mux.Handle("POST /api/onboarding/preview", s.adminAuth(http.HandlerFunc(s.handleOnboardingPreviewAPI)))
 	s.mux.HandleFunc("GET /api/work", s.handleWorkIndex)
 	s.mux.Handle("POST /api/work", s.adminAuth(http.HandlerFunc(s.handleWorkCreate)))
 	s.mux.HandleFunc("GET /api/work/{id}", s.handleWorkDetail)
@@ -233,12 +235,6 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET "+pageOperateStartTask, s.handleRunForm)
 	s.mux.Handle("POST "+pageOperateStartTask, s.adminAuth(http.HandlerFunc(s.handleRunSubmit)))
 	s.mux.Handle("POST /projects/activate", s.adminAuth(http.HandlerFunc(s.handleProjectActivate)))
-	s.mux.HandleFunc("GET /onboarding", s.handleOnboarding)
-	s.mux.HandleFunc("POST /onboarding", s.handleOnboardingStep1Submit)
-	s.mux.HandleFunc("GET /onboarding/step/2", s.handleOnboardingStep2)
-	s.mux.HandleFunc("GET /onboarding/step/3", s.handleOnboardingStep3)
-	s.mux.HandleFunc("POST /onboarding/step/3", s.handleOnboardingStep3Submit)
-	s.mux.HandleFunc("GET /onboarding/step/4/{id}", s.handleOnboardingStep4)
 	s.mux.HandleFunc("GET "+pageConfigureMemory, s.handleMemoryList)
 	s.mux.Handle("POST "+pageConfigureMemory+"/{id}/forget", s.adminAuth(http.HandlerFunc(s.handleMemoryForget)))
 	s.mux.Handle("POST "+pageConfigureMemory+"/{id}/edit", s.adminAuth(http.HandlerFunc(s.handleMemoryEdit)))

@@ -12,6 +12,10 @@ describe('Settings page', () => {
 						password_configured: true,
 						setup_required: false
 					},
+					onboarding: {
+						completed: true,
+						entry_href: '/work'
+					},
 					project: {
 						active_id: 'proj-primary',
 						active_name: 'starter-project',

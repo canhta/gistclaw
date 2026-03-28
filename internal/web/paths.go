@@ -8,6 +8,7 @@ import (
 const (
 	pageLogin                     = "/login"
 	pageLogout                    = "/logout"
+	pageOnboarding                = "/onboarding"
 	pageWork                      = "/work"
 	pageTeam                      = "/team"
 	pageKnowledge                 = "/knowledge"
@@ -72,6 +73,10 @@ func runDismissPath(runID string) string {
 
 func workAPIPath(runID string) string {
 	return "/api/work/" + url.PathEscape(runID)
+}
+
+func workPagePath(runID string) string {
+	return pageWork + "/" + url.PathEscape(runID)
 }
 
 func workGraphPath(runID string) string {

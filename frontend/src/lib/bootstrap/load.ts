@@ -2,14 +2,23 @@ import { requestJSON } from '$lib/http/client';
 import type {
 	AuthSessionResponse,
 	BootstrapNavItem,
+	BootstrapOnboardingResponse,
 	BootstrapProjectResponse,
 	BootstrapResponse
 } from '$lib/types/api';
 
 export interface AppShellState {
 	auth: AuthSessionResponse;
+	onboarding: BootstrapOnboardingResponse | null;
 	project: BootstrapProjectResponse | null;
 	navigation: BootstrapNavItem[];
+}
+
+export function resolveEntryHref(state: Pick<AppShellState, 'auth' | 'onboarding'>): string {
+	if (!state.auth.authenticated) {
+		return '/login';
+	}
+	return state.onboarding?.entry_href ?? '/work';
 }
 
 export async function loadAppShell(fetcher: typeof fetch): Promise<AppShellState> {
@@ -18,6 +27,7 @@ export async function loadAppShell(fetcher: typeof fetch): Promise<AppShellState
 	if (!auth.authenticated) {
 		return {
 			auth,
+			onboarding: null,
 			project: null,
 			navigation: []
 		};
@@ -27,6 +37,7 @@ export async function loadAppShell(fetcher: typeof fetch): Promise<AppShellState
 
 	return {
 		auth: bootstrap.auth,
+		onboarding: bootstrap.onboarding,
 		project: bootstrap.project,
 		navigation: bootstrap.navigation
 	};

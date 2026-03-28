@@ -1,17 +1,10 @@
 package web
 
 import (
-	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
-
-	"github.com/canhta/gistclaw/internal/model"
-	"github.com/canhta/gistclaw/internal/runtime"
 )
 
 // newServerHarnessOnboardingPending returns a harness with an active project
@@ -34,142 +27,6 @@ func newServerHarnessNoWorkspace(t *testing.T) *serverHarness {
 		t.Fatalf("remove active_project_id: %v", err)
 	}
 	return h
-}
-
-// TestOnboarding_RedirectsWhenIncomplete verifies that onboarding gating keys
-// off explicit onboarding state rather than only a missing workspace.
-func TestOnboarding_RedirectsWhenIncomplete(t *testing.T) {
-	h := newServerHarnessOnboardingPending(t)
-
-	paths := []string{"/operate/runs", "/operate/start-task", "/recover/approvals", "/configure/settings"}
-	for _, path := range paths {
-		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
-			w := httptest.NewRecorder()
-			h.server.ServeHTTP(w, req)
-			got := w.Code
-			if got != http.StatusSeeOther {
-				t.Fatalf("%s: expected redirect 303 when no workspace bound, got %d", path, got)
-			}
-			loc := w.Header().Get("Location")
-			if !strings.HasPrefix(loc, "/onboarding") {
-				t.Fatalf("%s: expected redirect to /onboarding, got %q", path, loc)
-			}
-		})
-	}
-}
-
-// TestOnboarding_RedirectsWhenNoWorkspace verifies that when onboarding is
-// incomplete and no workspace is available, non-static requests redirect to
-// /onboarding.
-func TestOnboarding_RedirectsWhenNoWorkspace(t *testing.T) {
-	h := newServerHarnessNoWorkspace(t)
-
-	paths := []string{"/operate/runs", "/operate/start-task", "/recover/approvals", "/configure/settings"}
-	for _, path := range paths {
-		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
-			w := httptest.NewRecorder()
-			h.server.ServeHTTP(w, req)
-			got := w.Code
-			if got != http.StatusSeeOther {
-				t.Fatalf("%s: expected redirect 303 when no workspace bound, got %d", path, got)
-			}
-			loc := w.Header().Get("Location")
-			if !strings.HasPrefix(loc, "/onboarding") {
-				t.Fatalf("%s: expected redirect to /onboarding, got %q", path, loc)
-			}
-		})
-	}
-}
-
-// TestOnboardingStep1_Renders verifies that GET /onboarding renders a form.
-func TestOnboardingStep1_Renders(t *testing.T) {
-	h := newServerHarnessNoWorkspace(t)
-	req := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
-	w := httptest.NewRecorder()
-	h.server.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-	body := w.Body.String()
-	if !strings.Contains(body, "form") {
-		t.Fatalf("expected form element in onboarding page, got: %s", truncate(body, 200))
-	}
-}
-
-func TestOnboardingStep1_RendersWhenStarterProjectExists(t *testing.T) {
-	h := newServerHarnessOnboardingPending(t)
-	req := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
-	w := httptest.NewRecorder()
-	h.server.ServeHTTP(w, req)
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200 when onboarding is pending, got %d body=%s", w.Code, w.Body.String())
-	}
-	if !strings.Contains(w.Body.String(), "form") {
-		t.Fatalf("expected onboarding page to render even with starter project, got: %s", truncate(w.Body.String(), 200))
-	}
-	if !strings.Contains(strings.ToLower(w.Body.String()), "starter project") {
-		t.Fatalf("expected onboarding page to mention starter project, got: %s", truncate(w.Body.String(), 300))
-	}
-}
-
-// TestOnboardingStep1_PathNotExist verifies that submitting a non-existent path
-// re-renders step 1 with an inline error.
-func TestOnboardingStep1_PathNotExist(t *testing.T) {
-	h := newServerHarnessNoWorkspace(t)
-	form := url.Values{"project_path": {"/this/path/does/not/exist/ever"}}
-	req := httptest.NewRequest(http.MethodPost, "/onboarding", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
-	h.server.ServeHTTP(w, req)
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("expected 422 for non-existent path, got %d", w.Code)
-	}
-}
-
-// TestOnboardingStep1_NotAGitRepo verifies that submitting a path that exists
-// but has no .git directory returns an inline error.
-func TestOnboardingStep1_NotAGitRepo(t *testing.T) {
-	h := newServerHarnessNoWorkspace(t)
-	dir := t.TempDir() // exists, but no .git
-	form := url.Values{"project_path": {dir}}
-	req := httptest.NewRequest(http.MethodPost, "/onboarding", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
-	h.server.ServeHTTP(w, req)
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("expected 422 for non-git dir, got %d", w.Code)
-	}
-	if !strings.Contains(w.Body.String(), "git") {
-		t.Fatalf("expected error mentioning git, got: %s", truncate(w.Body.String(), 200))
-	}
-}
-
-// TestOnboardingStep1_ValidGitRepo verifies that submitting a valid git repo
-// activates the project path and redirects to step 2.
-func TestOnboardingStep1_ValidGitRepo(t *testing.T) {
-	h := newServerHarnessNoWorkspace(t)
-	dir := makeGitRepo(t)
-	form := url.Values{"project_path": {dir}}
-	req := httptest.NewRequest(http.MethodPost, "/onboarding", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
-	h.server.ServeHTTP(w, req)
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("expected redirect 303, got %d body=%s", w.Code, w.Body.String())
-	}
-	loc := w.Header().Get("Location")
-	if loc != "/onboarding/step/2" {
-		t.Fatalf("expected redirect to /onboarding/step/2, got %q", loc)
-	}
-	project, err := runtime.ActiveProject(req.Context(), h.db)
-	if err != nil {
-		t.Fatalf("ActiveProject: %v", err)
-	}
-	if project.PrimaryPath != dir {
-		t.Fatalf("expected primary_path=%q, got %q", dir, project.PrimaryPath)
-	}
 }
 
 // TestOnboardingStep2_RepoScanReturnsCandidates verifies that the scan returns
@@ -230,135 +87,6 @@ func TestOnboardingStep2_BalancedTrio(t *testing.T) {
 	}
 }
 
-// TestOnboardingStep3_TaskPickDispatchesPreviewRun verifies that picking a task
-// at step 3 dispatches a preview-only run and redirects to step 4.
-func TestOnboardingStep3_TaskPickDispatchesPreviewRun(t *testing.T) {
-	h := newServerHarness(t) // has an active project already set
-	form := url.Values{"task": {"Explain the main package structure"}}
-	req := httptest.NewRequest(http.MethodPost, "/onboarding/step/3", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
-	h.server.ServeHTTP(w, req)
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("expected redirect 303, got %d body=%s", w.Code, w.Body.String())
-	}
-	loc := w.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/onboarding/step/4/") {
-		t.Fatalf("expected redirect to /onboarding/step/4/{runID}, got %q", loc)
-	}
-}
-
-func TestOnboardingStep3_RendersAccessibleTaskChooser(t *testing.T) {
-	h := newServerHarnessOnboardingPending(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/onboarding/step/3", nil)
-	w := httptest.NewRecorder()
-	h.server.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d body=%s", w.Code, w.Body.String())
-	}
-
-	body := w.Body.String()
-	for _, want := range []string{
-		"<fieldset",
-		"<legend>Pick a Preview Task</legend>",
-		`type="radio"`,
-		`for="task-0"`,
-		`id="task-0"`,
-		`checked`,
-	} {
-		if !strings.Contains(body, want) {
-			t.Fatalf("expected onboarding task chooser to contain %q:\n%s", want, body)
-		}
-	}
-}
-
-func TestOnboardingStep3_TaskPickRedirectsBeforeProviderCompletes(t *testing.T) {
-	prov := &blockingProvider{
-		started: make(chan struct{}),
-		release: make(chan struct{}),
-	}
-	h := newServerHarnessWithProvider(t, prov)
-
-	form := url.Values{"task": {"Explain the main package structure"}}
-	req := httptest.NewRequest(http.MethodPost, "/onboarding/step/3", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
-
-	done := make(chan struct{})
-	go func() {
-		h.server.ServeHTTP(w, req)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-	case <-time.After(200 * time.Millisecond):
-		close(prov.release)
-		<-done
-		t.Fatal("expected onboarding preview to redirect before the provider completes")
-	}
-
-	if w.Code != http.StatusSeeOther {
-		close(prov.release)
-		t.Fatalf("expected 303 redirect, got %d body=%s", w.Code, w.Body.String())
-	}
-	loc := w.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/onboarding/step/4/") {
-		close(prov.release)
-		t.Fatalf("expected redirect to /onboarding/step/4/{runID}, got %q", loc)
-	}
-
-	select {
-	case <-prov.started:
-	case <-time.After(time.Second):
-		close(prov.release)
-		t.Fatal("expected provider work to continue in the background")
-	}
-
-	runID := strings.TrimPrefix(loc, "/onboarding/step/4/")
-	var status string
-	if err := h.db.RawDB().QueryRow("SELECT status FROM runs WHERE id = ?", runID).Scan(&status); err != nil {
-		close(prov.release)
-		t.Fatalf("query run status: %v", err)
-	}
-	if status != "active" {
-		close(prov.release)
-		t.Fatalf("expected background preview run to stay active while provider is blocked, got %q", status)
-	}
-
-	close(prov.release)
-	waitForRunStatus(t, h.db, runID, "completed")
-}
-
-func TestOnboardingStep3_TaskPickRedirectsWhenProviderAuthFails(t *testing.T) {
-	prov := runtime.NewMockProvider(nil, []error{
-		&model.ProviderError{
-			Code:    model.ProviderErrorCode("authentication_error"),
-			Message: "invalid x-api-key",
-		},
-	})
-	h := newServerHarnessWithProvider(t, prov)
-
-	form := url.Values{"task": {"Explain the main package structure"}}
-	req := httptest.NewRequest(http.MethodPost, "/onboarding/step/3", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
-	h.server.ServeHTTP(w, req)
-
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("expected 303 redirect, got %d body=%s", w.Code, w.Body.String())
-	}
-	loc := w.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/onboarding/step/4/") {
-		t.Fatalf("expected redirect to /onboarding/step/4/{runID}, got %q", loc)
-	}
-
-	runID := strings.TrimPrefix(loc, "/onboarding/step/4/")
-	waitForRunStatus(t, h.db, runID, "failed")
-}
-
 // TestOnboardingStep3_NoModelCallsDuringScan verifies that repo scanning does
 // not trigger any model API calls. scanRepoSignals is a pure heuristic function
 // that reads only the local filesystem.
@@ -373,50 +101,65 @@ func TestOnboardingStep3_NoModelCallsDuringScan(t *testing.T) {
 	}
 }
 
-// TestOnboarding_RedirectsToOperateRunsWhenCompleted verifies that GET
-// /onboarding redirects to /operate/runs only after onboarding has been
-// explicitly completed.
-func TestOnboarding_RedirectsToOperateRunsWhenCompleted(t *testing.T) {
-	h := newServerHarness(t)
-	req := httptest.NewRequest(http.MethodGet, "/onboarding", nil)
-	w := httptest.NewRecorder()
-	h.server.ServeHTTP(w, req)
-	if w.Code != http.StatusSeeOther {
-		t.Fatalf("expected 303 redirect when onboarding is completed, got %d body=%s", w.Code, w.Body.String())
+func TestValidateNewProjectPath(t *testing.T) {
+	t.Parallel()
+
+	parent := t.TempDir()
+	nonEmptyDir := filepath.Join(parent, "non-empty")
+	if err := os.MkdirAll(nonEmptyDir, 0o755); err != nil {
+		t.Fatalf("mkdir non-empty: %v", err)
 	}
-	loc := w.Header().Get("Location")
-	if loc != "/operate/runs" {
-		t.Fatalf("expected redirect to /operate/runs, got %q", loc)
+	if err := os.WriteFile(filepath.Join(nonEmptyDir, "README.md"), []byte("seed"), 0o644); err != nil {
+		t.Fatalf("write seed file: %v", err)
+	}
+
+	tests := []struct {
+		name string
+		path string
+		want string
+	}{
+		{name: "empty path", path: "", want: "new project path is required"},
+		{name: "non-empty dir", path: nonEmptyDir, want: "not empty"},
+		{name: "missing parent", path: filepath.Join(parent, "missing", "repo"), want: "parent path"},
+		{name: "fresh path", path: filepath.Join(parent, "fresh-repo"), want: ""},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := validateNewProjectPath(tc.path)
+			if tc.want == "" {
+				if got != "" {
+					t.Fatalf("validateNewProjectPath(%q) = %q, want empty string", tc.path, got)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.want) {
+				t.Fatalf("validateNewProjectPath(%q) = %q, want substring %q", tc.path, got, tc.want)
+			}
+		})
 	}
 }
 
-// TestOnboardingStep1_NotWritable verifies that submitting a path that exists
-// but is not writable returns a plain-English error (not a raw Go error string).
-func TestOnboardingStep1_NotWritable(t *testing.T) {
-	h := newServerHarnessNoWorkspace(t)
-	dir := t.TempDir()
-	// Create .git before making the directory read-only.
-	if err := os.MkdirAll(filepath.Join(dir, ".git"), 0o755); err != nil {
-		t.Fatalf("mkdir .git: %v", err)
+func TestAllowsOnboardingSetupPath(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{path: pageOnboarding, want: true},
+		{path: pageOnboarding + "/details", want: true},
+		{path: "/api/bootstrap", want: true},
+		{path: "/api/onboarding/project", want: true},
+		{path: pageWork, want: false},
 	}
-	if err := os.Chmod(dir, 0o555); err != nil {
-		t.Skip("cannot chmod temp dir (may be root):", err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
-	form := url.Values{"project_path": {dir}}
-	req := httptest.NewRequest(http.MethodPost, "/onboarding", strings.NewReader(form.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	w := httptest.NewRecorder()
-	h.server.ServeHTTP(w, req)
-	if w.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("expected 422 for non-writable dir, got %d", w.Code)
-	}
-	body := w.Body.String()
-	if strings.Contains(body, "permission denied") {
-		t.Errorf("error must not expose raw Go error string, got: %s", truncate(body, 300))
-	}
-	if !strings.Contains(strings.ToLower(body), "write") && !strings.Contains(strings.ToLower(body), "permission") {
-		t.Errorf("expected error mentioning write access, got: %s", truncate(body, 300))
+
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			if got := allowsOnboardingSetupPath(tc.path); got != tc.want {
+				t.Fatalf("allowsOnboardingSetupPath(%q) = %v, want %v", tc.path, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -430,11 +173,4 @@ func makeGitRepo(t *testing.T) string {
 		t.Fatalf("makeGitRepo mkdir .git: %v", err)
 	}
 	return dir
-}
-
-func truncate(s string, n int) string {
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
 }
