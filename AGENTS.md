@@ -50,6 +50,7 @@ cd frontend && bun run test:unit -- --run
 **Frontend tooling uses `bun`, not `npm`.** For the SvelteKit rewrite, install and run frontend tasks with `bun`.
 **Frontend hygiene is required from day one.** Keep `.gitignore`, linting, and formatting configured as part of the baseline workspace rather than as cleanup later.
 **Frontend iconography uses Tabler.** Use `@tabler/icons-svelte-runes` for Svelte UI icons instead of mixing icon packs.
+**Frontend surfaces must extract shared UI blocks into common components.** When Svelte pages repeat cards, alerts, inspectors, or form sections, move them into `src/lib/components` instead of letting route files accumulate duplicated markup.
 
 - **Errors:** return `error` as the last return value; wrap with `fmt.Errorf("context: %w", err)`; never discard errors silently.
 - **Interfaces:** define interfaces in the consuming package, not the implementing package. Keep them small (1–3 methods).

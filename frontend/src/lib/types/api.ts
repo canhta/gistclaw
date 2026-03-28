@@ -158,3 +158,71 @@ export interface WorkCreateResponse {
 	run_id: string;
 	objective: string;
 }
+
+export interface TeamProfileResponse {
+	id: string;
+	label: string;
+	active: boolean;
+	save_path?: string;
+}
+
+export interface TeamMemberResponse {
+	id: string;
+	role: string;
+	soul_file: string;
+	base_profile: string;
+	tool_families: string[];
+	delegation_kinds: string[];
+	can_message: string[];
+	specialist_summary_visibility: string;
+	soul_extra: Record<string, unknown>;
+	is_front: boolean;
+}
+
+export interface TeamConfigResponse {
+	name: string;
+	front_agent_id: string;
+	member_count: number;
+	members: TeamMemberResponse[];
+}
+
+export interface TeamResponse {
+	notice?: string;
+	active_profile: TeamProfileResponse;
+	profiles: TeamProfileResponse[];
+	team: TeamConfigResponse;
+}
+
+export interface KnowledgeFilterResponse {
+	scope: string;
+	agent_id: string;
+	query: string;
+	limit: number;
+}
+
+export interface KnowledgeItemResponse {
+	id: string;
+	agent_id: string;
+	scope: string;
+	content: string;
+	source: string;
+	provenance: string;
+	confidence: number;
+	created_at_label: string;
+	updated_at_label: string;
+}
+
+export interface KnowledgeResponse {
+	headline: string;
+	filters: KnowledgeFilterResponse;
+	summary: {
+		visible_count: number;
+	};
+	items: KnowledgeItemResponse[];
+	paging: {
+		next_cursor?: string;
+		prev_cursor?: string;
+		has_next: boolean;
+		has_prev: boolean;
+	};
+}
