@@ -62,5 +62,5 @@ type Connector interface {
 // state for a configured connector, such as persisted credentials that exist
 // before the receive loop has emitted a live health snapshot.
 type ConnectorConfiguredHealthReporter interface {
-	ConfiguredConnectorHealth(ctx context.Context) (ConnectorHealthSnapshot, bool, error)
+	ConfiguredConnectorHealth(ctx context.Context, current ConnectorHealthSnapshot) (ConnectorHealthSnapshot, bool, error)
 }

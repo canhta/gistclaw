@@ -175,7 +175,6 @@ func ConfiguredConnectorHealth(ctx context.Context, cfg Config, db *store.DB) ([
 	for i := range snapshots {
 		if snapshot, ok := persisted[snapshots[i].ConnectorID]; ok {
 			snapshots[i] = snapshot
-			continue
 		}
 		connector := connectorsByID[snapshots[i].ConnectorID]
 		if snapshot, ok, err := fallbackConfiguredConnectorHealth(ctx, connector, snapshots[i]); err != nil {
@@ -196,7 +195,7 @@ func fallbackConfiguredConnectorHealth(
 	if !ok {
 		return model.ConnectorHealthSnapshot{}, false, nil
 	}
-	fallback, ok, err := reporter.ConfiguredConnectorHealth(ctx)
+	fallback, ok, err := reporter.ConfiguredConnectorHealth(ctx, snapshot)
 	if err != nil {
 		return model.ConnectorHealthSnapshot{}, false, fmt.Errorf("connector health: configured readiness for %s: %w", snapshot.ConnectorID, err)
 	}

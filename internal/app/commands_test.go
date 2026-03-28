@@ -43,7 +43,7 @@ func (c *stubCommandConnector) ConnectorHealthSnapshot() model.ConnectorHealthSn
 	return c.snapshot
 }
 
-func (c *stubConfiguredReadinessConnector) ConfiguredConnectorHealth(context.Context) (model.ConnectorHealthSnapshot, bool, error) {
+func (c *stubConfiguredReadinessConnector) ConfiguredConnectorHealth(context.Context, model.ConnectorHealthSnapshot) (model.ConnectorHealthSnapshot, bool, error) {
 	return c.fallback, c.ok, c.err
 }
 
@@ -454,6 +454,68 @@ func TestFallbackConfiguredConnectorHealth_UsesConnectorAdapter(t *testing.T) {
 	}
 	if got.Summary != "credentials stored" {
 		t.Fatalf("expected connector readiness summary, got %+v", got)
+	}
+}
+
+func TestConfiguredConnectorHealth_UsesStoredCredentialsOverPersistedColdStartSnapshot(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "state", "runtime.db")
+	db, err := storeWiring(Config{DatabasePath: dbPath})
+	if err != nil {
+		t.Fatalf("storeWiring failed: %v", err)
+	}
+	defer db.Close()
+
+	if err := zalopersonal.SaveStoredCredentials(context.Background(), db, zalopersonal.StoredCredentials{
+		AccountID:   "zalo-account",
+		DisplayName: "Zalo User",
+		IMEI:        "imei-123",
+		Cookie:      "cookie=abc",
+		UserAgent:   "gistclaw-test",
+		Language:    "vi",
+	}); err != nil {
+		t.Fatalf("SaveStoredCredentials: %v", err)
+	}
+
+	raw, err := json.Marshal(model.ConnectorHealthSnapshot{
+		ConnectorID: "zalo_personal",
+		State:       model.ConnectorHealthDegraded,
+		Summary:     "not authenticated",
+		CheckedAt:   time.Now().UTC(),
+	})
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+		"connector_health.zalo_personal",
+		string(raw),
+	); err != nil {
+		t.Fatalf("insert connector health: %v", err)
+	}
+
+	cfg := Config{
+		DatabasePath: dbPath,
+		StateDir:     filepath.Dir(dbPath),
+		StorageRoot:  t.TempDir(),
+		Provider: ProviderConfig{
+			Name:   "openai",
+			APIKey: "sk-test",
+		},
+		ZaloPersonal: ZaloPersonalConfig{
+			Enabled: true,
+		},
+	}
+
+	snapshots, err := ConfiguredConnectorHealth(context.Background(), cfg, db)
+	if err != nil {
+		t.Fatalf("ConfiguredConnectorHealth failed: %v", err)
+	}
+	if len(snapshots) != 1 {
+		t.Fatalf("expected 1 connector snapshot, got %d", len(snapshots))
+	}
+	if snapshots[0].Summary != "credentials stored" {
+		t.Fatalf("expected configured readiness to override cold-start persisted snapshot, got %+v", snapshots[0])
 	}
 }
 

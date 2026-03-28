@@ -263,12 +263,18 @@ func (c *Connector) ConnectorHealthSnapshot() model.ConnectorHealthSnapshot {
 	return c.health.snapshotCopy()
 }
 
-func (c *Connector) ConfiguredConnectorHealth(ctx context.Context) (model.ConnectorHealthSnapshot, bool, error) {
+func (c *Connector) ConfiguredConnectorHealth(
+	ctx context.Context,
+	current model.ConnectorHealthSnapshot,
+) (model.ConnectorHealthSnapshot, bool, error) {
 	_, ok, err := LoadStoredCredentials(ctx, c.outbound.db)
 	if err != nil {
 		return model.ConnectorHealthSnapshot{}, false, err
 	}
 	if !ok {
+		return model.ConnectorHealthSnapshot{}, false, nil
+	}
+	if !shouldOverrideWithConfiguredReadiness(current) {
 		return model.ConnectorHealthSnapshot{}, false, nil
 	}
 	return model.ConnectorHealthSnapshot{
@@ -278,6 +284,16 @@ func (c *Connector) ConfiguredConnectorHealth(ctx context.Context) (model.Connec
 		CheckedAt:        time.Now().UTC(),
 		RestartSuggested: false,
 	}, true, nil
+}
+
+func shouldOverrideWithConfiguredReadiness(snapshot model.ConnectorHealthSnapshot) bool {
+	summary := strings.TrimSpace(strings.ToLower(snapshot.Summary))
+	switch summary {
+	case "", "awaiting first authentication", "awaiting first poll", "not authenticated":
+		return true
+	default:
+		return snapshot.State == model.ConnectorHealthUnknown
+	}
 }
 
 func (c *Connector) runListener(ctx context.Context, listener SessionListener) error {
