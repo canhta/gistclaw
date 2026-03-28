@@ -10,6 +10,19 @@
 
 	let { data }: { data: PageData } = $props();
 
+	function statusTextClass(statusClass: string): string {
+		if (statusClass.includes('approval')) return 'text-[var(--gc-orange)]';
+		if (
+			statusClass.includes('error') ||
+			statusClass.includes('failed') ||
+			statusClass.includes('interrupted')
+		) {
+			return 'text-[var(--gc-error)]';
+		}
+		if (statusClass.includes('active')) return 'text-[var(--gc-cyan)]';
+		return 'text-[var(--gc-text-secondary)]';
+	}
+
 	let errorMessage = $state('');
 	let actionLabel = $state('');
 
@@ -137,7 +150,7 @@
 									<p class="gc-stamp">{approval.tool_name} · {approval.status_label}</p>
 									<h3 class="gc-panel-title mt-3 text-[1rem]">{approval.binding_summary}</h3>
 								</div>
-								<p class={`gc-machine ${approval.status_class}`}>{approval.run_id}</p>
+								<p class={`gc-machine ${statusTextClass(approval.status_class)}`}>{approval.run_id}</p>
 							</div>
 
 							<div class="mt-4 flex flex-wrap gap-3">

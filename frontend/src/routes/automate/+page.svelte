@@ -386,7 +386,7 @@
 								<div class="flex items-start justify-between gap-4">
 									<div>
 										<p class="gc-stamp">{occurrence.schedule_name}</p>
-										<h3 class={`gc-panel-title mt-3 text-[1rem] ${occurrence.status_class}`}>
+										<h3 class={`gc-panel-title mt-3 text-[1rem] ${statusTextClass(occurrence.status_class)}`}>
 											{occurrence.status_label}
 										</h3>
 									</div>
@@ -427,7 +427,7 @@
 								<div class="flex items-start justify-between gap-4">
 									<div>
 										<p class="gc-stamp">{occurrence.schedule_name}</p>
-										<h3 class={`gc-panel-title mt-3 text-[1rem] ${occurrence.status_class}`}>
+										<h3 class={`gc-panel-title mt-3 text-[1rem] ${statusTextClass(occurrence.status_class)}`}>
 											{occurrence.status_label}
 										</h3>
 									</div>

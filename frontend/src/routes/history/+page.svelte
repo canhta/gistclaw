@@ -11,13 +11,13 @@
 		{
 			label: 'Visible runs',
 			value: String(data.history.summary.run_count),
-			detail: 'Recent root runs visible from the evidence surface.',
+			detail: '',
 			tone: 'accent' as const
 		},
 		{
 			label: 'Completed runs',
 			value: String(data.history.summary.completed_runs),
-			detail: 'Runs that reached a clean terminal state.'
+			detail: ''
 		},
 		{
 			label: 'Recovery cases',
