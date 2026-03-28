@@ -342,7 +342,7 @@
 						oninput={(event) => {
 							nameOverride = event.currentTarget.value;
 						}}
-						class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
+						class="gc-control"
 					/>
 				</label>
 
@@ -353,7 +353,7 @@
 						onchange={(event) => {
 							frontAgentOverride = event.currentTarget.value;
 						}}
-						class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
+						class="gc-control"
 					>
 						{#each teamMembers() as member (member.id)}
 							<option value={member.id}>{member.id}</option>
@@ -404,11 +404,7 @@
 				<div class="mt-4 grid gap-4">
 					<div class="grid gap-2">
 						<p class="gc-stamp">Create setup</p>
-						<input
-							bind:value={createProfileID}
-							placeholder="review"
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-cyan)]"
-						/>
+						<input bind:value={createProfileID} placeholder="review" class="gc-control" />
 						<SurfaceActionButton onclick={createProfile} disabled={busyAction !== ''}>
 							Create setup
 						</SurfaceActionButton>
@@ -416,20 +412,13 @@
 
 					<div class="grid gap-2 border-t-2 border-[var(--gc-border)] pt-4">
 						<p class="gc-stamp">Copy setup</p>
-						<select
-							bind:value={cloneSourceProfileID}
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-cyan)]"
-						>
+						<select bind:value={cloneSourceProfileID} class="gc-control">
 							<option value="">Use active setup</option>
 							{#each data.team.profiles as profile (profile.id)}
 								<option value={profile.id}>{profile.label}</option>
 							{/each}
 						</select>
-						<input
-							bind:value={cloneProfileID}
-							placeholder="review-copy"
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-cyan)]"
-						/>
+						<input bind:value={cloneProfileID} placeholder="review-copy" class="gc-control" />
 						<SurfaceActionButton onclick={cloneProfile} disabled={busyAction !== ''}>
 							Copy setup
 						</SurfaceActionButton>
@@ -437,10 +426,7 @@
 
 					<div class="grid gap-2 border-t-2 border-[var(--gc-border)] pt-4">
 						<p class="gc-stamp">Delete setup</p>
-						<select
-							bind:value={deleteProfileID}
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-						>
+						<select bind:value={deleteProfileID} class="gc-control">
 							<option value="">Pick an inactive setup</option>
 							{#each data.team.profiles.filter((profile) => !profile.active) as profile (profile.id)}
 								<option value={profile.id}>{profile.label}</option>
@@ -463,7 +449,7 @@
 							onchange={(event) => {
 								importFile = event.currentTarget.files?.[0] ?? null;
 							}}
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-cyan)]"
+							class="gc-control"
 						/>
 						<SurfaceActionButton onclick={importSetup} disabled={busyAction !== '' || !importFile}>
 							Import setup file
@@ -540,7 +526,7 @@
 									[member.id]: event.currentTarget.value
 								};
 							}}
-							class="border-2 border-[var(--gc-border)] bg-[var(--gc-surface)] px-3 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-cyan)]"
+							class="gc-control"
 						/>
 					</label>
 
@@ -554,7 +540,7 @@
 									[member.id]: event.currentTarget.value
 								};
 							}}
-							class="border-2 border-[var(--gc-border)] bg-[var(--gc-surface)] px-3 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-cyan)]"
+							class="gc-control"
 						>
 							{#each baseProfiles as baseProfile (baseProfile)}
 								<option value={baseProfile}>{baseProfile}</option>
@@ -568,7 +554,7 @@
 							{#each toolFamilies as toolFamily (toolFamily)}
 								<button
 									type="button"
-									class={`border px-3 py-2 text-xs font-[var(--gc-font-mono)] tracking-[0.16em] uppercase ${memberToolFamilies(member).includes(toolFamily) ? 'border-[var(--gc-cyan)] bg-[rgba(83,199,240,0.08)] text-[var(--gc-ink)]' : 'border-[var(--gc-border)] text-[var(--gc-text-secondary)]'}`}
+									class={`gc-chip ${memberToolFamilies(member).includes(toolFamily) ? 'gc-chip-accent' : ''}`}
 									onclick={() => {
 										toolFamilyOverrides = {
 											...toolFamilyOverrides,
@@ -588,7 +574,7 @@
 							{#each delegationKinds as delegationKind (delegationKind)}
 								<button
 									type="button"
-									class={`border px-3 py-2 text-xs font-[var(--gc-font-mono)] tracking-[0.16em] uppercase ${memberDelegationKinds(member).includes(delegationKind) ? 'border-[var(--gc-orange)] bg-[rgba(255,105,34,0.08)] text-[var(--gc-ink)]' : 'border-[var(--gc-border)] text-[var(--gc-text-secondary)]'}`}
+									class={`gc-chip ${memberDelegationKinds(member).includes(delegationKind) ? 'gc-chip-warning' : ''}`}
 									onclick={() => {
 										delegationKindOverrides = {
 											...delegationKindOverrides,

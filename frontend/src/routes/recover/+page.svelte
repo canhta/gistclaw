@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
+	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
@@ -123,12 +125,11 @@
 
 			<div class="mt-6 grid gap-4">
 				{#if data.recover.approvals.length === 0}
-					<div class="gc-panel-soft px-4 py-4">
-						<p class="gc-stamp">No waiting approvals</p>
-						<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-							Nothing is blocked on an operator decision right now.
-						</p>
-					</div>
+					<SurfaceEmptyState
+						label="No waiting approvals"
+						title="The intervention bench is clear"
+						message="Nothing is blocked on an operator decision right now."
+					/>
 				{:else}
 					{#each data.recover.approvals as approval (approval.id)}
 						<article class="gc-panel-soft px-4 py-4">
@@ -141,22 +142,21 @@
 							</div>
 
 							<div class="mt-4 flex flex-wrap gap-3">
-								<button
+								<SurfaceActionButton
 									type="button"
-									class="border-2 border-[var(--gc-cyan)] px-4 py-3 text-left text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] uppercase transition-colors hover:bg-[rgba(83,199,240,0.1)] disabled:cursor-not-allowed disabled:opacity-60"
 									onclick={() => resolveApproval(approval.id, 'approved')}
 									disabled={actionLabel !== '' && actionLabel !== `approved:${approval.id}`}
 								>
 									Approve
-								</button>
-								<button
+								</SurfaceActionButton>
+								<SurfaceActionButton
 									type="button"
-									class="border-2 border-[var(--gc-orange)] px-4 py-3 text-left text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] uppercase transition-colors hover:bg-[rgba(255,105,34,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
+									tone="warning"
 									onclick={() => resolveApproval(approval.id, 'denied')}
 									disabled={actionLabel !== '' && actionLabel !== `denied:${approval.id}`}
 								>
 									Deny
-								</button>
+								</SurfaceActionButton>
 							</div>
 						</article>
 					{/each}
@@ -213,7 +213,7 @@
 							</div>
 							<button
 								type="button"
-								class="mt-4 border-2 border-[var(--gc-orange)] px-4 py-3 text-left text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] uppercase transition-colors hover:bg-[rgba(255,105,34,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
+								class="gc-action gc-action-warning mt-4"
 								onclick={() => deactivateRoute(route.id)}
 								disabled={actionLabel !== '' && actionLabel !== `route:${route.id}`}
 							>
@@ -228,12 +228,11 @@
 				<p class="gc-stamp">Failed deliveries</p>
 				<div class="mt-4 grid gap-4">
 					{#if data.recover.repair.deliveries.length === 0}
-						<div class="gc-panel-soft px-4 py-4">
-							<p class="gc-stamp">No queued repairs</p>
-							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-								Nothing in the outbound queue needs recovery right now.
-							</p>
-						</div>
+						<SurfaceEmptyState
+							label="No queued repairs"
+							title="Outbound delivery is currently clear"
+							message="Nothing in the outbound queue needs recovery right now."
+						/>
 					{:else}
 						{#each data.recover.repair.deliveries as delivery (delivery.id)}
 							<article class="gc-panel-soft px-4 py-4">
@@ -247,14 +246,14 @@
 								<p class="gc-copy mt-4 text-[var(--gc-text-secondary)]">
 									{delivery.message.plain_text}
 								</p>
-								<button
+								<SurfaceActionButton
 									type="button"
-									class="mt-4 border-2 border-[var(--gc-cyan)] px-4 py-3 text-left text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] uppercase transition-colors hover:bg-[rgba(83,199,240,0.1)] disabled:cursor-not-allowed disabled:opacity-60"
+									className="mt-4"
 									onclick={() => retryDelivery(delivery.id)}
 									disabled={actionLabel !== '' && actionLabel !== `delivery:${delivery.id}`}
 								>
 									Retry delivery
-								</button>
+								</SurfaceActionButton>
 							</article>
 						{/each}
 					{/if}

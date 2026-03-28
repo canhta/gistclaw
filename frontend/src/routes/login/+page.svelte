@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolveEntryHref } from '$lib/bootstrap/load';
+	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
 	import logo from '$lib/assets/logo.svg';
 	import type { AuthLoginResponse } from '$lib/types/api';
@@ -136,7 +137,7 @@
 							type="password"
 							name="password"
 							autocomplete="current-password"
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] transition-colors outline-none focus:border-[var(--gc-orange)]"
+							class="gc-control"
 							placeholder="Enter the browser password"
 							required
 						/>
@@ -149,13 +150,14 @@
 						</div>
 					{/if}
 
-					<button
+					<SurfaceActionButton
 						type="submit"
-						class="mt-2 border-2 border-[var(--gc-orange)] bg-[var(--gc-orange)] px-4 py-3 text-left text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] text-[var(--gc-canvas)] uppercase transition-colors hover:border-[var(--gc-orange-hover)] hover:bg-[var(--gc-orange-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+						tone="solid"
+						className="mt-2 w-full"
 						disabled={submitting}
 					>
 						{submitting ? 'Authenticating' : 'Open control deck'}
-					</button>
+					</SurfaceActionButton>
 				</form>
 			{/if}
 		</section>

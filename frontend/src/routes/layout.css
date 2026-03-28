@@ -153,3 +153,121 @@ select {
 .gc-card-warning {
 	border-color: var(--gc-orange);
 }
+
+.gc-control {
+	box-sizing: border-box;
+	width: 100%;
+	min-height: 3rem;
+	border: 2px solid var(--gc-border-strong);
+	background: var(--gc-surface-soft);
+	padding: 0.8rem 1rem;
+	color: var(--gc-ink);
+	outline: none;
+	transition:
+		border-color 140ms ease,
+		background-color 140ms ease,
+		color 140ms ease;
+}
+
+.gc-control:focus {
+	border-color: var(--gc-orange);
+}
+
+.gc-control::placeholder {
+	color: var(--gc-text-tertiary);
+}
+
+.gc-control option {
+	background: var(--gc-surface);
+	color: var(--gc-ink);
+}
+
+textarea.gc-control {
+	min-height: 7rem;
+	resize: vertical;
+}
+
+.gc-action {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.75rem;
+	min-height: 3rem;
+	border: 2px solid var(--gc-border-strong);
+	padding: 0.75rem 1rem;
+	font-family: var(--gc-font-mono);
+	font-size: 0.78rem;
+	font-weight: 700;
+	letter-spacing: 0.18em;
+	line-height: 1;
+	text-transform: uppercase;
+	transition:
+		border-color 140ms ease,
+		background-color 140ms ease,
+		color 140ms ease,
+		opacity 140ms ease;
+}
+
+.gc-action:hover {
+	color: var(--gc-ink);
+}
+
+.gc-action:disabled,
+.gc-action[aria-disabled='true'] {
+	cursor: not-allowed;
+	opacity: 0.6;
+}
+
+.gc-action-accent {
+	border-color: var(--gc-cyan);
+}
+
+.gc-action-accent:hover {
+	background: rgba(83, 199, 240, 0.1);
+}
+
+.gc-action-warning {
+	border-color: var(--gc-orange);
+}
+
+.gc-action-warning:hover {
+	background: rgba(255, 92, 57, 0.12);
+}
+
+.gc-action-solid {
+	border-color: var(--gc-orange);
+	background: var(--gc-orange);
+	color: var(--gc-canvas);
+}
+
+.gc-action-solid:hover {
+	border-color: var(--gc-orange-hover);
+	background: var(--gc-orange-hover);
+	color: var(--gc-canvas);
+}
+
+.gc-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	border: 2px solid var(--gc-border);
+	background: rgba(10, 15, 20, 0.55);
+	padding: 0.5rem 0.75rem;
+	font-family: var(--gc-font-mono);
+	font-size: 0.72rem;
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	line-height: 1;
+	text-transform: uppercase;
+	color: var(--gc-text-secondary);
+}
+
+.gc-chip-accent {
+	border-color: var(--gc-cyan);
+	color: var(--gc-ink);
+}
+
+.gc-chip-warning {
+	border-color: var(--gc-orange);
+	color: var(--gc-ink);
+}

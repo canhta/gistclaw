@@ -2,6 +2,7 @@
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
+	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
@@ -190,20 +191,12 @@
 				<div class="mt-6 grid gap-4 md:grid-cols-2">
 					<label class="grid gap-2">
 						<span class="gc-stamp">Wakeup name</span>
-						<input
-							bind:value={name}
-							required
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-							placeholder="Nightly repo sweep"
-						/>
+						<input bind:value={name} required class="gc-control" placeholder="Nightly repo sweep" />
 					</label>
 
 					<label class="grid gap-2">
 						<span class="gc-stamp">Cadence type</span>
-						<select
-							bind:value={kind}
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-						>
+						<select bind:value={kind} class="gc-control">
 							<option value="every">Every</option>
 							<option value="at">Once</option>
 							<option value="cron">Cron</option>
@@ -217,7 +210,7 @@
 						bind:value={objective}
 						rows="4"
 						required
-						class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
+						class="gc-control"
 						placeholder="Inspect open pull requests and summarize blockers."
 					></textarea>
 				</label>
@@ -225,23 +218,14 @@
 				{#if kind === 'every' || kind === 'at'}
 					<label class="mt-4 grid gap-2">
 						<span class="gc-stamp">Anchor time</span>
-						<input
-							bind:value={anchorAt}
-							type="datetime-local"
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-						/>
+						<input bind:value={anchorAt} type="datetime-local" class="gc-control" />
 					</label>
 				{/if}
 
 				{#if kind === 'every'}
 					<label class="mt-4 grid gap-2">
 						<span class="gc-stamp">Every hours</span>
-						<input
-							bind:value={everyHours}
-							type="number"
-							min="1"
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-						/>
+						<input bind:value={everyHours} type="number" min="1" class="gc-control" />
 					</label>
 				{/if}
 
@@ -249,18 +233,12 @@
 					<div class="mt-4 grid gap-4 md:grid-cols-2">
 						<label class="grid gap-2">
 							<span class="gc-stamp">Cron expression</span>
-							<input
-								bind:value={cronExpr}
-								class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-							/>
+							<input bind:value={cronExpr} class="gc-control" />
 						</label>
 
 						<label class="grid gap-2">
 							<span class="gc-stamp">Timezone</span>
-							<input
-								bind:value={timezone}
-								class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-							/>
+							<input bind:value={timezone} class="gc-control" />
 						</label>
 					</div>
 				{/if}
@@ -283,12 +261,11 @@
 
 				<div class="mt-6 grid gap-4">
 					{#if data.automate.schedules.length === 0}
-						<div class="gc-panel-soft px-4 py-4">
-							<p class="gc-stamp">No wakeups yet</p>
-							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-								Create the first wakeup to turn recurring operator work into a live daemon promise.
-							</p>
-						</div>
+						<SurfaceEmptyState
+							label="No wakeups yet"
+							title="Nothing is armed for future work"
+							message="Create the first wakeup to turn recurring operator work into a live daemon promise."
+						/>
 					{:else}
 						{#each data.automate.schedules as schedule (schedule.id)}
 							<article class="gc-panel-soft px-4 py-4">
@@ -353,12 +330,11 @@
 				</h2>
 				<div class="mt-4 grid gap-4">
 					{#if data.automate.open_occurrences.length === 0}
-						<div class="gc-panel-soft px-4 py-4">
-							<p class="gc-stamp">No live wakeups</p>
-							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-								Nothing scheduled is occupying a live lane right now.
-							</p>
-						</div>
+						<SurfaceEmptyState
+							label="No live wakeups"
+							title="No schedule owns a lane right now"
+							message="Nothing scheduled is occupying a live lane right now."
+						/>
 					{:else}
 						{#each data.automate.open_occurrences as occurrence (occurrence.id)}
 							<article class="gc-panel-soft px-4 py-4">
@@ -395,12 +371,11 @@
 				<h2 class="gc-section-title mt-3">Read the last result before you trust the next wake</h2>
 				<div class="mt-4 grid gap-4">
 					{#if data.automate.recent_occurrences.length === 0}
-						<div class="gc-panel-soft px-4 py-4">
-							<p class="gc-stamp">No recent executions</p>
-							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-								Execution evidence will appear here once the first wakeup runs.
-							</p>
-						</div>
+						<SurfaceEmptyState
+							label="No recent executions"
+							title="Execution evidence is still empty"
+							message="Execution evidence will appear here once the first wakeup runs."
+						/>
 					{:else}
 						{#each data.automate.recent_occurrences as occurrence (occurrence.id)}
 							<article class="gc-panel-soft px-4 py-4">

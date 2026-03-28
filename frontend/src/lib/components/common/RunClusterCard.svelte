@@ -17,7 +17,7 @@
 			<p class="gc-stamp">{cluster.root.agent_id}</p>
 			<h3 class="gc-panel-title mt-3 text-[1rem]">{cluster.root.objective}</h3>
 		</div>
-		<p class="gc-machine">{cluster.root.status_label}</p>
+		<p class="gc-chip">{cluster.root.status_label}</p>
 	</div>
 
 	<p class="gc-copy mt-4 text-[var(--gc-text-secondary)]">{cluster.blocker_label}</p>
@@ -49,7 +49,7 @@
 
 	<a
 		href={resolve('/work/[runId]', { runId: cluster.root.id })}
-		class="mt-5 inline-flex border-2 border-[var(--gc-cyan)] px-4 py-3 text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] uppercase transition-colors hover:bg-[rgba(83,199,240,0.1)]"
+		class="gc-action gc-action-accent mt-5"
 	>
 		{actionLabel}
 	</a>

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { invalidateAll } from '$app/navigation';
+	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
+	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
@@ -127,7 +129,7 @@
 						onchange={(event) => {
 							filterScopeOverride = event.currentTarget.value;
 						}}
-						class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
+						class="gc-control"
 					>
 						<option value="">All scopes</option>
 						<option value="local">local</option>
@@ -143,7 +145,7 @@
 						oninput={(event) => {
 							filterAgentIDOverride = event.currentTarget.value;
 						}}
-						class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
+						class="gc-control"
 						placeholder="assistant"
 					/>
 				</label>
@@ -155,7 +157,7 @@
 						oninput={(event) => {
 							filterQueryOverride = event.currentTarget.value;
 						}}
-						class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
+						class="gc-control"
 						placeholder="repo rule"
 					/>
 				</label>
@@ -167,16 +169,11 @@
 						oninput={(event) => {
 							filterLimitOverride = event.currentTarget.value;
 						}}
-						class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
+						class="gc-control"
 					/>
 				</label>
 
-				<button
-					type="submit"
-					class="border-2 border-[var(--gc-cyan)] px-4 py-3 text-left text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] uppercase transition-colors hover:bg-[rgba(83,199,240,0.1)]"
-				>
-					Apply filters
-				</button>
+				<SurfaceActionButton type="submit">Apply filters</SurfaceActionButton>
 			</form>
 
 			{#if errorMessage}
@@ -230,12 +227,12 @@
 		</div>
 
 		{#if data.knowledge.items.length === 0}
-			<div class="gc-panel-soft mt-6 px-4 py-4">
-				<p class="gc-stamp">No saved knowledge</p>
-				<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-					Nothing is shaping future work yet for this filter.
-				</p>
-			</div>
+			<SurfaceEmptyState
+				className="mt-6"
+				label="No saved knowledge"
+				title="Nothing is shaping future work yet"
+				message="Nothing is shaping future work yet for this filter."
+			/>
 		{:else}
 			<div class="mt-6 grid gap-4 xl:grid-cols-2">
 				{#each data.knowledge.items as item (item.id)}
@@ -260,8 +257,7 @@
 										[item.id]: event.currentTarget.value
 									};
 								}}
-								class="border-2 border-[var(--gc-border)] bg-[var(--gc-surface)] px-3 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-cyan)]"
-								>{knowledgeContent(item.id)}</textarea
+								class="gc-control">{knowledgeContent(item.id)}</textarea
 							>
 						</label>
 
@@ -277,23 +273,23 @@
 						</div>
 
 						<div class="mt-5 flex flex-wrap gap-3">
-							<button
+							<SurfaceActionButton
 								type="button"
-								class="border-2 border-[var(--gc-orange)] bg-[var(--gc-orange)] px-4 py-3 text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] text-[var(--gc-canvas)] uppercase transition-colors hover:border-[var(--gc-orange-hover)] hover:bg-[var(--gc-orange-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+								tone="solid"
 								onclick={() => saveEdit(item.id)}
 								disabled={savingID !== '' && savingID !== item.id}
 							>
 								{savingID === item.id ? 'Saving edit' : 'Save edit'}
-							</button>
+							</SurfaceActionButton>
 
-							<button
+							<SurfaceActionButton
 								type="button"
-								class="border-2 border-[var(--gc-border-strong)] px-4 py-3 text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] uppercase transition-colors hover:border-[var(--gc-error)] hover:text-[var(--gc-error)] disabled:cursor-not-allowed disabled:opacity-60"
+								tone="warning"
 								onclick={() => forgetItem(item.id)}
 								disabled={forgettingID !== '' && forgettingID !== item.id}
 							>
 								{forgettingID === item.id ? 'Forgetting item' : 'Forget item'}
-							</button>
+							</SurfaceActionButton>
 						</div>
 					</article>
 				{/each}

@@ -22,20 +22,15 @@
 	const toneClass = $derived.by(() => {
 		switch (tone) {
 			case 'warning':
-				return 'border-[var(--gc-orange)] hover:bg-[rgba(255,105,34,0.12)]';
+				return 'gc-action-warning';
 			case 'solid':
-				return 'border-[var(--gc-orange)] bg-[var(--gc-orange)] text-[var(--gc-canvas)] hover:border-[var(--gc-orange-hover)] hover:bg-[var(--gc-orange-hover)]';
+				return 'gc-action-solid';
 			default:
-				return 'border-[var(--gc-cyan)] hover:bg-[rgba(83,199,240,0.1)]';
+				return 'gc-action-accent';
 		}
 	});
 </script>
 
-<button
-	{type}
-	{disabled}
-	{onclick}
-	class={`border-2 px-4 py-3 text-left text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] uppercase transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${toneClass} ${className}`}
->
+<button {type} {disabled} {onclick} class={`gc-action ${toneClass} ${className}`}>
 	{@render children?.()}
 </button>

@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
+	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import RunClusterCard from '$lib/components/common/RunClusterCard.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
 	import type { WorkCreateResponse } from '$lib/types/api';
@@ -65,7 +67,7 @@
 						name="task"
 						rows="5"
 						required
-						class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] transition-colors outline-none focus:border-[var(--gc-orange)]"
+						class="gc-control"
 						placeholder="Audit the repository, identify the highest-risk issues, and draft the first safe patch."
 					></textarea>
 				</label>
@@ -77,13 +79,9 @@
 					</div>
 				{/if}
 
-				<button
-					type="submit"
-					class="border-2 border-[var(--gc-orange)] bg-[var(--gc-orange)] px-4 py-3 text-left text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] text-[var(--gc-canvas)] uppercase transition-colors hover:border-[var(--gc-orange-hover)] hover:bg-[var(--gc-orange-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-					disabled={submitting}
-				>
+				<SurfaceActionButton type="submit" tone="solid" disabled={submitting}>
 					{submitting ? 'Launching work' : 'Launch work'}
-				</button>
+				</SurfaceActionButton>
 			</form>
 		</div>
 
@@ -115,12 +113,12 @@
 		</div>
 
 		{#if data.work.clusters.length === 0}
-			<div class="gc-panel-soft mt-6 px-4 py-4">
-				<p class="gc-stamp">Idle machine</p>
-				<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-					No active work yet. Launch a task to open the first graph.
-				</p>
-			</div>
+			<SurfaceEmptyState
+				className="mt-6"
+				label="Idle machine"
+				title="No active work yet"
+				message="Launch a task to open the first graph."
+			/>
 		{:else}
 			<div class="mt-6 grid gap-4 xl:grid-cols-2">
 				{#each data.work.clusters as cluster (cluster.root.id)}

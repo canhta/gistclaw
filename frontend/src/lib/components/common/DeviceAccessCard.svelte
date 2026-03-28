@@ -36,7 +36,11 @@
 			<h3 class="gc-panel-title mt-3 text-[1rem]">{device.primary_label}</h3>
 			<p class="gc-machine mt-3">{device.secondary_line}</p>
 		</div>
-		<p class="gc-machine border-2 border-[var(--gc-border-strong)] px-3 py-2">{statusLabel}</p>
+		<p
+			class={`gc-chip ${device.blocked ? 'gc-chip-warning' : device.current ? 'gc-chip-accent' : ''}`}
+		>
+			{statusLabel}
+		</p>
 	</div>
 
 	<div class="mt-5 grid gap-3 sm:grid-cols-2">

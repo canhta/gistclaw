@@ -1,5 +1,6 @@
 <script lang="ts">
 	import RunClusterCard from '$lib/components/common/RunClusterCard.svelte';
+	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import { resolve } from '$app/paths';
 	import type { PageData } from './$types';
@@ -71,12 +72,13 @@
 
 			<div class="mt-6 grid gap-4">
 				{#if data.history.runs.length === 0}
-					<div class="gc-panel-soft px-4 py-4">
-						<p class="gc-stamp">No run evidence yet</p>
-						<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-							Completed and recovery runs will collect here once the first session executes.
-						</p>
-					</div>
+					<SurfaceEmptyState
+						label="No run evidence yet"
+						title="History is still empty"
+						message="Completed and recovery runs will collect here once the first session executes."
+						actionHref={resolve('/work')}
+						actionLabel="Launch first run"
+					/>
 				{:else}
 					{#each data.history.runs as cluster (cluster.root.id)}
 						<RunClusterCard {cluster} actionLabel="Open evidence" />
@@ -90,12 +92,11 @@
 				<p class="gc-stamp">Operator interventions</p>
 				<div class="mt-4 grid gap-4">
 					{#if data.history.approvals.length === 0}
-						<div class="gc-panel-soft px-4 py-4">
-							<p class="gc-stamp">No resolved approvals</p>
-							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-								Approval receipts will appear here once a human decision changes a run path.
-							</p>
-						</div>
+						<SurfaceEmptyState
+							label="No resolved approvals"
+							title="No operator decisions are recorded yet"
+							message="Approval receipts will appear here once a human decision changes a run path."
+						/>
 					{:else}
 						{#each data.history.approvals as approval (approval.id)}
 							<article class="gc-panel-soft px-4 py-4">
@@ -125,12 +126,11 @@
 				<p class="gc-stamp">Delivery outcomes</p>
 				<div class="mt-4 grid gap-4">
 					{#if data.history.deliveries.length === 0}
-						<div class="gc-panel-soft px-4 py-4">
-							<p class="gc-stamp">No delivery receipts</p>
-							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-								Connector receipts will appear here once runs reach an external surface.
-							</p>
-						</div>
+						<SurfaceEmptyState
+							label="No delivery receipts"
+							title="No edge evidence is recorded yet"
+							message="Connector receipts will appear here once runs reach an external surface."
+						/>
 					{:else}
 						{#each data.history.deliveries as delivery (delivery.id)}
 							<article class="gc-panel-soft px-4 py-4">

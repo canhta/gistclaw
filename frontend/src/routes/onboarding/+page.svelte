@@ -149,7 +149,7 @@
 						<input
 							bind:value={existingRepoPath}
 							name="project_path"
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
+							class="gc-control"
 							placeholder="/Users/canh/Projects/repo"
 							required
 						/>
@@ -177,7 +177,7 @@
 						<input
 							bind:value={newRepoPath}
 							name="new_project_path"
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
+							class="gc-control"
 							placeholder="/Users/canh/Projects/new-repo"
 							required
 						/>

@@ -38,5 +38,7 @@ describe('AppShell', () => {
 		expect(body).toContain('Intervene in blocked work, evidence, and route repair.');
 		expect(body).toContain('Pending approvals');
 		expect(body).toContain('Route failures');
+		expect(body).toContain('data-shell-mobile-nav');
+		expect(body).toContain('data-shell-mobile-signal');
 	});
 });

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import type { RecoverDeliveryHealthResponse } from '$lib/types/api';
 	import type { PageData } from './$types';
@@ -57,12 +58,13 @@
 
 			<div class="mt-6 grid gap-4">
 				{#if data.conversations.sessions.length === 0}
-					<div class="gc-panel-soft px-4 py-4">
-						<p class="gc-stamp">No active conversations</p>
-						<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-							No bound sessions are visible for this project yet.
-						</p>
-					</div>
+					<SurfaceEmptyState
+						label="No active conversations"
+						title="No bound sessions are visible yet"
+						message="No bound sessions are visible for this project yet."
+						actionHref={resolve('/work')}
+						actionLabel="Open Work"
+					/>
 				{:else}
 					{#each data.conversations.sessions as session (session.id)}
 						<a

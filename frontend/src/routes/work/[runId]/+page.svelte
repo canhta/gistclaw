@@ -138,12 +138,7 @@
 					detail.run.status}
 			</p>
 
-			<a
-				href={resolve('/work')}
-				class="mt-6 inline-flex border-2 border-[var(--gc-border-strong)] px-4 py-3 text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] uppercase transition-colors hover:border-[var(--gc-cyan)]"
-			>
-				Back to queue
-			</a>
+			<a href={resolve('/work')} class="gc-action gc-action-accent mt-6"> Back to queue </a>
 
 			{#if detail.run.dismissible && detail.run.dismiss_url}
 				<SurfaceActionButton

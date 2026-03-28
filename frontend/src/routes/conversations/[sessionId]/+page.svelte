@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
+	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
 	import type { PageData } from './$types';
@@ -87,17 +89,13 @@
 					<textarea
 						rows="4"
 						bind:value={draft}
-						class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-cyan)]"
+						class="gc-control"
 						placeholder="Ask the session what changed, request a retry, or steer the next reply."
 					></textarea>
 				</label>
-				<button
-					type="submit"
-					class="border-2 border-[var(--gc-cyan)] px-4 py-3 text-left text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] uppercase transition-colors hover:bg-[rgba(83,199,240,0.1)] disabled:cursor-not-allowed disabled:opacity-60"
-					disabled={sending || draft.trim() === ''}
-				>
+				<SurfaceActionButton type="submit" disabled={sending || draft.trim() === ''}>
 					{sending ? 'Sending message' : 'Send message'}
-				</button>
+				</SurfaceActionButton>
 			</form>
 		</div>
 
@@ -171,12 +169,11 @@
 				<p class="gc-stamp">Outbound deliveries</p>
 				<div class="mt-4 grid gap-4">
 					{#if data.conversation.deliveries.length === 0}
-						<div class="gc-panel-soft px-4 py-4">
-							<p class="gc-stamp">No outbound deliveries</p>
-							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-								Nothing has been queued from this conversation recently.
-							</p>
-						</div>
+						<SurfaceEmptyState
+							label="No outbound deliveries"
+							title="Nothing has been queued recently"
+							message="Nothing has been queued from this conversation recently."
+						/>
 					{:else}
 						{#each data.conversation.deliveries as delivery (delivery.id)}
 							<article class="gc-panel-soft px-4 py-4">
@@ -186,14 +183,15 @@
 								</p>
 								<p class="gc-machine mt-3">{delivery.attempts_label}</p>
 								{#if delivery.status === 'terminal'}
-									<button
+									<SurfaceActionButton
 										type="button"
-										class="mt-4 border-2 border-[var(--gc-orange)] px-4 py-3 text-left text-sm font-[var(--gc-font-mono)] font-bold tracking-[0.18em] uppercase transition-colors hover:bg-[rgba(255,105,34,0.12)] disabled:cursor-not-allowed disabled:opacity-60"
+										tone="warning"
+										className="mt-4"
 										onclick={() => retryDelivery(delivery.id)}
 										disabled={retryingID !== '' && retryingID !== delivery.id}
 									>
 										Retry delivery
-									</button>
+									</SurfaceActionButton>
 								{/if}
 							</article>
 						{/each}
@@ -205,12 +203,11 @@
 				<p class="gc-stamp">Failure evidence</p>
 				<div class="mt-4 grid gap-4">
 					{#if data.conversation.delivery_failures.length === 0}
-						<div class="gc-panel-soft px-4 py-4">
-							<p class="gc-stamp">No recorded failures</p>
-							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-								No failure receipts are attached to this conversation right now.
-							</p>
-						</div>
+						<SurfaceEmptyState
+							label="No recorded failures"
+							title="No failure receipts are attached"
+							message="No failure receipts are attached to this conversation right now."
+						/>
 					{:else}
 						{#each data.conversation.delivery_failures as failure (failure.id)}
 							<article class="gc-panel-soft px-4 py-4">

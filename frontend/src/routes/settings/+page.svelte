@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import DeviceAccessCard from '$lib/components/common/DeviceAccessCard.svelte';
 	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
+	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
 	import type {
@@ -261,12 +262,11 @@
 							}}
 						/>
 					{:else}
-						<div class="gc-panel-soft px-4 py-4">
-							<p class="gc-stamp">This browser</p>
-							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-								The current session is not tied to a trusted browser cookie.
-							</p>
-						</div>
+						<SurfaceEmptyState
+							label="This browser"
+							title="No trusted browser cookie is attached"
+							message="The current session is not tied to a trusted browser cookie."
+						/>
 					{/if}
 				</div>
 			</div>
@@ -289,11 +289,11 @@
 							/>
 						{/each}
 					{:else}
-						<div class="gc-panel-soft px-4 py-4">
-							<p class="gc-copy text-[var(--gc-text-secondary)]">
-								No other browser currently holds a live session.
-							</p>
-						</div>
+						<SurfaceEmptyState
+							label="Other signed-in browsers"
+							title="No other browser holds a live session"
+							message="No other browser currently holds a live session."
+						/>
 					{/if}
 				</div>
 			</div>
@@ -313,11 +313,11 @@
 							/>
 						{/each}
 					{:else}
-						<div class="gc-panel-soft px-4 py-4">
-							<p class="gc-copy text-[var(--gc-text-secondary)]">
-								No blocked browser is waiting for review.
-							</p>
-						</div>
+						<SurfaceEmptyState
+							label="Blocked browsers"
+							title="No blocked browser is waiting for review"
+							message="No blocked browser is waiting for review."
+						/>
 					{/if}
 				</div>
 			</div>
@@ -335,27 +335,15 @@
 				<div class="mt-6 grid gap-4">
 					<label class="grid gap-2">
 						<span class="gc-stamp">Current password</span>
-						<input
-							type="password"
-							bind:value={currentPassword}
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-						/>
+						<input type="password" bind:value={currentPassword} class="gc-control" />
 					</label>
 					<label class="grid gap-2">
 						<span class="gc-stamp">New password</span>
-						<input
-							type="password"
-							bind:value={newPassword}
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-						/>
+						<input type="password" bind:value={newPassword} class="gc-control" />
 					</label>
 					<label class="grid gap-2">
 						<span class="gc-stamp">Confirm password</span>
-						<input
-							type="password"
-							bind:value={confirmPassword}
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-						/>
+						<input type="password" bind:value={confirmPassword} class="gc-control" />
 					</label>
 				</div>
 
@@ -378,10 +366,7 @@
 				<div class="mt-6 grid gap-4">
 					<label class="grid gap-2">
 						<span class="gc-stamp">Approval mode</span>
-						<select
-							bind:value={approvalMode}
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-						>
+						<select bind:value={approvalMode} class="gc-control">
 							<option value="prompt">Prompt</option>
 							<option value="auto_approve">Auto approve</option>
 						</select>
@@ -389,10 +374,7 @@
 
 					<label class="grid gap-2">
 						<span class="gc-stamp">Host access</span>
-						<select
-							bind:value={hostAccessMode}
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-						>
+						<select bind:value={hostAccessMode} class="gc-control">
 							<option value="standard">Standard</option>
 							<option value="elevated">Elevated</option>
 						</select>
@@ -400,18 +382,12 @@
 
 					<label class="grid gap-2">
 						<span class="gc-stamp">Per-run token budget</span>
-						<input
-							bind:value={perRunTokenBudget}
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-						/>
+						<input bind:value={perRunTokenBudget} class="gc-control" />
 					</label>
 
 					<label class="grid gap-2">
 						<span class="gc-stamp">Daily cost cap (USD)</span>
-						<input
-							bind:value={dailyCostCapUSD}
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
-						/>
+						<input bind:value={dailyCostCapUSD} class="gc-control" />
 					</label>
 
 					<label class="grid gap-2">
@@ -420,7 +396,7 @@
 							bind:value={telegramBotToken}
 							placeholder={settings.machine.telegram_token ||
 								'Leave blank to keep the current token'}
-							class="border-2 border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] px-4 py-3 text-[var(--gc-ink)] outline-none focus:border-[var(--gc-orange)]"
+							class="gc-control"
 						/>
 					</label>
 				</div>
