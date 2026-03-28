@@ -102,6 +102,9 @@ func (t *SessionSpawnTool) Invoke(ctx context.Context, call model.ToolCall) (mod
 }
 
 func validateDelegationTarget(meta InvocationContext, targetAgentID string) error {
+	if meta.DelegationMode == "direct" {
+		return fmt.Errorf("session_spawn: runtime recommends direct execution for this task; use local capabilities first")
+	}
 	target, ok := meta.Specialists[targetAgentID]
 	if !ok {
 		return fmt.Errorf("session_spawn: %s is not a known specialist", targetAgentID)
@@ -112,6 +115,13 @@ func validateDelegationTarget(meta InvocationContext, targetAgentID string) erro
 	}
 	if !containsDelegationKind(meta.Agent.DelegationKinds, kind) {
 		return fmt.Errorf("session_spawn: %s cannot delegate %s work to %s", meta.Agent.AgentID, kind, targetAgentID)
+	}
+	if len(meta.SuggestedDelegationKinds) > 0 && !containsDelegationKind(meta.SuggestedDelegationKinds, kind) {
+		return fmt.Errorf(
+			"session_spawn: runtime recommends %s work, not %s",
+			joinDelegationKinds(meta.SuggestedDelegationKinds),
+			kind,
+		)
 	}
 	return nil
 }
@@ -138,6 +148,14 @@ func containsDelegationKind(values []model.DelegationKind, want model.Delegation
 		}
 	}
 	return false
+}
+
+func joinDelegationKinds(values []model.DelegationKind) string {
+	items := make([]string, 0, len(values))
+	for _, value := range values {
+		items = append(items, string(value))
+	}
+	return strings.Join(items, ", ")
 }
 
 func containsString(values []string, want string) bool {

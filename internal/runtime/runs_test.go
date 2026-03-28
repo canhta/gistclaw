@@ -427,6 +427,101 @@ func TestRunEngine_SessionSpawnToolCreatesChildRun(t *testing.T) {
 	}
 }
 
+func TestRunEngine_SessionSpawnIsDeniedWhenRuntimeRecommendsDirect(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{
+				Content: "I will delegate this.",
+				ToolCalls: []model.ToolCallRequest{
+					{
+						ID:       "call-spawn",
+						ToolName: "session_spawn",
+						InputJSON: []byte(`{
+							"agent_id":"researcher",
+							"prompt":"Research OpenClaw and report back."
+						}`),
+					},
+				},
+				InputTokens:  4,
+				OutputTokens: 6,
+			},
+			{Content: "I handled it directly.", InputTokens: 5, OutputTokens: 8, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+	tools.RegisterCollaborationTools(reg, tools.CollaborationHandlers{
+		Spawn: rt.SpawnTool,
+	})
+
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID: "default",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:                     "assistant",
+				BaseProfile:                 model.BaseProfileOperator,
+				ToolFamilies:                []model.ToolFamily{model.ToolFamilyConnectorCapability, model.ToolFamilyDelegate},
+				DelegationKinds:             []model.DelegationKind{model.DelegationKindResearch},
+				SpecialistSummaryVisibility: model.SpecialistSummaryFull,
+			},
+			"researcher": {
+				AgentID:      "researcher",
+				BaseProfile:  model.BaseProfileResearch,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyWebRead},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	run, err := rt.StartFrontSession(context.Background(), StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "List my Zalo contacts and send hello to Anh on Zalo.",
+		CWD:           t.TempDir(),
+	})
+	if err != nil {
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+	if run.Status != model.RunStatusCompleted {
+		t.Fatalf("expected completed run, got %s", run.Status)
+	}
+
+	var childCount int
+	if err := db.RawDB().QueryRow(
+		"SELECT count(*) FROM runs WHERE parent_run_id = ?",
+		run.ID,
+	).Scan(&childCount); err != nil {
+		t.Fatalf("query child runs: %v", err)
+	}
+	if childCount != 0 {
+		t.Fatalf("expected no child runs when delegation is denied, got %d", childCount)
+	}
+
+	var payload string
+	if err := db.RawDB().QueryRow(
+		`SELECT payload_json
+		 FROM events
+		 WHERE run_id = ?
+		   AND kind = 'tool_call_recorded'
+		   AND json_extract(payload_json, '$.tool_name') = 'session_spawn'
+		 ORDER BY created_at ASC, id ASC
+		 LIMIT 1`,
+		run.ID,
+	).Scan(&payload); err != nil {
+		t.Fatalf("query session_spawn tool event: %v", err)
+	}
+	if !strings.Contains(payload, "runtime recommends direct execution") {
+		t.Fatalf("expected session_spawn denial payload to mention direct execution, got %q", payload)
+	}
+}
+
 func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testing.T) {
 	db, err := store.Open(":memory:")
 	if err != nil {
@@ -512,7 +607,7 @@ func TestRunEngine_SessionSpawnPausesParentUntilApprovedChildCompletes(t *testin
 			ThreadID:    "main",
 		},
 		FrontAgentID:  "assistant",
-		InitialPrompt: "Coordinate the delivery workflow.",
+		InitialPrompt: "Implement the workspace write by delegating the file creation to patcher.",
 		CWD:           workspaceRoot,
 	})
 	if err != nil {
@@ -747,7 +842,7 @@ func TestRunEngine_SessionSpawnInterruptsParentWhenChildInterrupts(t *testing.T)
 			ThreadID:    "main",
 		},
 		FrontAgentID:  "assistant",
-		InitialPrompt: "Coordinate the delivery workflow.",
+		InitialPrompt: "Implement the workspace write by delegating the missing-binary check to patcher.",
 		CWD:           t.TempDir(),
 	})
 	if err != nil {

@@ -136,6 +136,66 @@ func TestSessionSpawnTool_InvokeRejectsUndeclaredTarget(t *testing.T) {
 	}
 }
 
+func TestSessionSpawnTool_InvokeRejectsWhenRuntimeRecommendsDirect(t *testing.T) {
+	tool := &SessionSpawnTool{
+		spawn: func(context.Context, SessionSpawnRequest) (SessionSpawnResult, error) {
+			t.Fatal("spawn handler must not be called")
+			return SessionSpawnResult{}, nil
+		},
+	}
+
+	ctx := WithInvocationContext(context.Background(), InvocationContext{
+		SessionID:      "session-parent",
+		DelegationMode: "direct",
+		Agent: model.AgentProfile{
+			AgentID:         "assistant",
+			DelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
+		},
+		Specialists: map[string]model.AgentProfile{
+			"researcher": {AgentID: "researcher", BaseProfile: model.BaseProfileResearch},
+		},
+	})
+	_, err := tool.Invoke(ctx, model.ToolCall{
+		ID:        "call-1",
+		ToolName:  "session_spawn",
+		InputJSON: []byte(`{"agent_id":"researcher","prompt":"inspect OpenClaw"}`),
+	})
+	if err == nil || err.Error() != "session_spawn: runtime recommends direct execution for this task; use local capabilities first" {
+		t.Fatalf("expected direct-execution guardrail, got %v", err)
+	}
+}
+
+func TestSessionSpawnTool_InvokeRejectsTargetOutsideSuggestedKinds(t *testing.T) {
+	tool := &SessionSpawnTool{
+		spawn: func(context.Context, SessionSpawnRequest) (SessionSpawnResult, error) {
+			t.Fatal("spawn handler must not be called")
+			return SessionSpawnResult{}, nil
+		},
+	}
+
+	ctx := WithInvocationContext(context.Background(), InvocationContext{
+		SessionID:                "session-parent",
+		DelegationMode:           "delegate",
+		SuggestedDelegationKinds: []model.DelegationKind{model.DelegationKindResearch},
+		Agent: model.AgentProfile{
+			AgentID:         "assistant",
+			DelegationKinds: []model.DelegationKind{model.DelegationKindResearch, model.DelegationKindVerify},
+		},
+		Specialists: map[string]model.AgentProfile{
+			"researcher": {AgentID: "researcher", BaseProfile: model.BaseProfileResearch},
+			"verifier":   {AgentID: "verifier", BaseProfile: model.BaseProfileVerify},
+		},
+	})
+	_, err := tool.Invoke(ctx, model.ToolCall{
+		ID:        "call-1",
+		ToolName:  "session_spawn",
+		InputJSON: []byte(`{"agent_id":"verifier","prompt":"verify the docs"}`),
+	})
+	if err == nil || err.Error() != "session_spawn: runtime recommends research work, not verify" {
+		t.Fatalf("expected suggested-kind guardrail, got %v", err)
+	}
+}
+
 func TestApproval_FingerprintChangeCausesExpiry(t *testing.T) {
 	db := setupToolsDB(t)
 	ctx := context.Background()

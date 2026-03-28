@@ -850,11 +850,36 @@ func (r *Runtime) executeToolCalls(
 	if err != nil {
 		return outcome, err
 	}
+	run, err := r.loadRun(ctx, runID)
+	if err != nil {
+		return outcome, fmt.Errorf("load run for tool execution: %w", err)
+	}
+	executionRecommendation := recommendationpkg.Engine{}.Recommend(recommendationpkg.Input{
+		Objective:    run.Objective,
+		Agent:        agent,
+		Specialists:  specialists,
+		VisibleTools: r.visibleToolSpecs(agent),
+	})
 
 	for _, tc := range toolCalls {
 		tool, ok := r.tools.Get(tc.ToolName)
 		if !ok {
-			event, _, err := r.recordToolCall(ctx, conversationID, runID, sessionID, cwd, runAuthority, agent, specialists, tc, nil, model.DecisionDeny, "tool not found", "")
+			event, _, err := r.recordToolCall(
+				ctx,
+				conversationID,
+				runID,
+				sessionID,
+				cwd,
+				runAuthority,
+				agent,
+				specialists,
+				executionRecommendation,
+				tc,
+				nil,
+				model.DecisionDeny,
+				"tool not found",
+				"",
+			)
 			if err != nil {
 				return outcome, err
 			}
@@ -865,7 +890,22 @@ func (r *Runtime) executeToolCalls(
 		toolDecision := policy.DecideCall(agent, runProfile, tool.Spec(), tc.InputJSON)
 		switch toolDecision.Mode {
 		case model.DecisionAllow:
-			event, result, err := r.recordToolCall(ctx, conversationID, runID, sessionID, cwd, runAuthority, agent, specialists, tc, tool, model.DecisionAllow, "", "")
+			event, result, err := r.recordToolCall(
+				ctx,
+				conversationID,
+				runID,
+				sessionID,
+				cwd,
+				runAuthority,
+				agent,
+				specialists,
+				executionRecommendation,
+				tc,
+				tool,
+				model.DecisionAllow,
+				"",
+				"",
+			)
 			if err != nil {
 				return outcome, err
 			}
@@ -897,7 +937,22 @@ func (r *Runtime) executeToolCalls(
 			outcome.paused = true
 			return outcome, nil
 		default:
-			event, _, err := r.recordToolCall(ctx, conversationID, runID, sessionID, cwd, runAuthority, agent, specialists, tc, tool, model.DecisionDeny, toolDecision.Reason, "")
+			event, _, err := r.recordToolCall(
+				ctx,
+				conversationID,
+				runID,
+				sessionID,
+				cwd,
+				runAuthority,
+				agent,
+				specialists,
+				executionRecommendation,
+				tc,
+				tool,
+				model.DecisionDeny,
+				toolDecision.Reason,
+				"",
+			)
 			if err != nil {
 				return outcome, err
 			}
@@ -992,6 +1047,7 @@ func (r *Runtime) recordToolCall(
 	runAuthority authority.Envelope,
 	agent model.AgentProfile,
 	specialists map[string]model.AgentProfile,
+	executionRecommendation recommendationpkg.Decision,
 	tc model.ToolCallRequest,
 	tool tools.Tool,
 	decision model.DecisionMode,
@@ -1004,12 +1060,14 @@ func (r *Runtime) recordToolCall(
 			result.Error = "tool not found"
 		} else {
 			invokeCtx := tools.WithInvocationContext(ctx, tools.InvocationContext{
-				CWD:         cwd,
-				SessionID:   sessionID,
-				Agent:       agent,
-				Specialists: specialists,
-				Authority:   runAuthority,
-				ApprovalID:  approvalID,
+				CWD:                      cwd,
+				SessionID:                sessionID,
+				Agent:                    agent,
+				Specialists:              specialists,
+				DelegationMode:           string(executionRecommendation.Mode),
+				SuggestedDelegationKinds: append([]model.DelegationKind(nil), executionRecommendation.SuggestedKinds...),
+				Authority:                runAuthority,
+				ApprovalID:               approvalID,
 				LogSink: toolInvocationLogSink{
 					convStore:      r.convStore,
 					eventSink:      r.eventSink,
@@ -2197,7 +2255,7 @@ func (r *Runtime) finishApprovalResolution(ctx context.Context, prepared approva
 			return err
 		}
 		tool, _ := r.tools.Get(ticket.ToolName)
-		_, result, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.CWD, runAuthority, agent, specialists, call, tool, model.DecisionAllow, "", ticket.ID)
+		_, result, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.CWD, runAuthority, agent, specialists, recommendationpkg.Decision{}, call, tool, model.DecisionAllow, "", ticket.ID)
 		if err != nil {
 			return err
 		}
@@ -2255,7 +2313,7 @@ func (r *Runtime) finishApprovalResolution(ctx context.Context, prepared approva
 		if err != nil {
 			return err
 		}
-		if _, _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.CWD, runAuthority, agent, specialists, call, nil, model.DecisionDeny, "approval denied", ticket.ID); err != nil {
+		if _, _, err := r.recordToolCall(ctx, run.ConversationID, run.ID, run.SessionID, run.CWD, runAuthority, agent, specialists, recommendationpkg.Decision{}, call, nil, model.DecisionDeny, "approval denied", ticket.ID); err != nil {
 			return err
 		}
 		interrupted, err := r.interruptRun(ctx, run)

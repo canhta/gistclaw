@@ -20,13 +20,15 @@ type ToolLogSink interface {
 }
 
 type InvocationContext struct {
-	CWD         string
-	SessionID   string
-	Agent       model.AgentProfile
-	Specialists map[string]model.AgentProfile
-	Authority   authority.Envelope
-	ApprovalID  string
-	LogSink     ToolLogSink
+	CWD                      string
+	SessionID                string
+	Agent                    model.AgentProfile
+	Specialists              map[string]model.AgentProfile
+	DelegationMode           string
+	SuggestedDelegationKinds []model.DelegationKind
+	Authority                authority.Envelope
+	ApprovalID               string
+	LogSink                  ToolLogSink
 }
 
 type invocationContextKey struct{}

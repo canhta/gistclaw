@@ -23,6 +23,7 @@ This document is the source of truth for what the repository ships today: packag
 - A conversation can have one active root run at a time.
 - Collaboration happens through runtime-managed sessions and session messages.
 - The front assistant is direct-execution by default and receives a runtime execution recommendation (`direct`, `delegate`, or `parallelize`) before each provider turn.
+- Raw specialist spawning is now guarded by that recommendation, so tasks classified as `direct` must use local capabilities instead of spawning by default.
 - Risky tool calls still require explicit approval before mutating writes are applied.
 - Connector-bound front sessions can surface blocked approvals as conversational gates, letting the same chat collect approval or denial and resume the run.
 - Outbound delivery can carry transport-agnostic action buttons so chat connectors may offer deterministic approval controls without leaving the active conversation.
