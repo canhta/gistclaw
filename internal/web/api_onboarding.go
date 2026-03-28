@@ -178,11 +178,7 @@ func (s *Server) loadOnboardingResponse(r *http.Request) (onboardingResponse, er
 	candidates := scanRepoSignals(project.PrimaryPath)
 	resp.SuggestedTasks = make([]onboardingTaskCandidateView, 0, len(candidates))
 	for _, candidate := range candidates {
-		resp.SuggestedTasks = append(resp.SuggestedTasks, onboardingTaskCandidateView{
-			Kind:        candidate.Kind,
-			Description: candidate.Description,
-			Signal:      candidate.Signal,
-		})
+		resp.SuggestedTasks = append(resp.SuggestedTasks, onboardingTaskCandidateView(candidate))
 	}
 	return resp, nil
 }
