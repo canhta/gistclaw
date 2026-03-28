@@ -151,6 +151,19 @@
 	function statusTone(statusClass: string): 'accent' | 'warning' {
 		return statusClass === 'is-error' || statusClass === 'is-approval' ? 'warning' : 'accent';
 	}
+
+	function statusTextClass(statusClass: string): string {
+		if (statusClass.includes('approval')) return 'text-[var(--gc-orange)]';
+		if (
+			statusClass.includes('error') ||
+			statusClass.includes('failed') ||
+			statusClass.includes('interrupted')
+		) {
+			return 'text-[var(--gc-error)]';
+		}
+		if (statusClass.includes('active')) return 'text-[var(--gc-cyan)]';
+		return 'text-[var(--gc-text-secondary)]';
+	}
 </script>
 
 <svelte:head>
@@ -186,6 +199,85 @@
 	</section>
 
 	<section class="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+		<!-- LEFT: schedules list -->
+		<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
+			<div class="flex items-end justify-between gap-4">
+				<div>
+					<p class="gc-stamp">Scheduled tasks</p>
+					<h2 class="gc-section-title mt-3">See which schedules are healthy or drifting</h2>
+				</div>
+				<p class="gc-machine">{data.automate.schedules.length} visible schedules</p>
+			</div>
+
+			<div class="mt-6 grid gap-4">
+				{#if data.automate.schedules.length === 0}
+					<SurfaceEmptyState
+						label="No schedules yet"
+						title="No recurring work is scheduled yet"
+						message="Create the first recurring task to keep work moving automatically."
+					/>
+				{:else}
+					{#each data.automate.schedules as schedule (schedule.id)}
+						<article
+							class={`gc-panel-soft px-4 py-4 ${mutatingID === schedule.id ? 'opacity-60' : ''}`}
+						>
+							<div class="flex items-start justify-between gap-4">
+								<div>
+									<p class="gc-stamp">{schedule.kind_label} · {schedule.enabled_label}</p>
+									<h3 class="gc-panel-title mt-3 text-[1rem]">{schedule.name}</h3>
+								</div>
+								<p class={`gc-machine ${statusTextClass(schedule.status_class)}`}>
+									{schedule.status_label}
+								</p>
+							</div>
+
+							<p class="gc-copy mt-4 text-[var(--gc-text-secondary)]">{schedule.objective}</p>
+							<p class="gc-machine mt-4">{schedule.cadence_label}</p>
+
+							<div class="mt-4 grid gap-2 border-t-2 border-[var(--gc-border)] pt-4 md:grid-cols-2">
+								<div>
+									<p class="gc-stamp">Next wake</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink)]">{schedule.next_run_at_label}</p>
+								</div>
+								<div>
+									<p class="gc-stamp">Last run</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink)]">{schedule.last_run_at_label}</p>
+								</div>
+							</div>
+
+							{#if schedule.last_error}
+								<p class="gc-copy mt-4 text-[var(--gc-orange)]">{schedule.last_error}</p>
+							{/if}
+
+							<div class="mt-5 flex flex-wrap gap-3">
+								<SurfaceActionButton
+									type="button"
+									onclick={() => launchNow(schedule.id)}
+									disabled={mutatingID !== ''}
+									tone={statusTone(schedule.status_class)}
+								>
+									{mutatingID === schedule.id ? 'Saving...' : 'Run now'}
+								</SurfaceActionButton>
+								<SurfaceActionButton
+									type="button"
+									onclick={() => toggleSchedule(schedule.id, schedule.enabled)}
+									disabled={mutatingID !== ''}
+									tone="warning"
+								>
+									{mutatingID === schedule.id
+										? 'Saving...'
+										: schedule.enabled
+											? 'Pause schedule'
+											: 'Resume schedule'}
+								</SurfaceActionButton>
+							</div>
+						</article>
+					{/each}
+				{/if}
+			</div>
+		</div>
+
+		<!-- RIGHT: creation form + occurrences -->
 		<div class="grid gap-6">
 			<form class="gc-panel px-5 py-5 lg:px-6 lg:py-6" onsubmit={createSchedule}>
 				<p class="gc-stamp">New schedule</p>
@@ -241,7 +333,34 @@
 
 						<label class="grid gap-2">
 							<span class="gc-stamp">Timezone</span>
-							<input bind:value={timezone} class="gc-control" />
+							<input
+								bind:value={timezone}
+								list="timezones"
+								class="gc-control"
+								placeholder="UTC"
+								autocomplete="off"
+							/>
+							<datalist id="timezones">
+								<option value="UTC"></option>
+								<option value="America/New_York"></option>
+								<option value="America/Chicago"></option>
+								<option value="America/Denver"></option>
+								<option value="America/Los_Angeles"></option>
+								<option value="America/Sao_Paulo"></option>
+								<option value="Europe/London"></option>
+								<option value="Europe/Paris"></option>
+								<option value="Europe/Berlin"></option>
+								<option value="Europe/Moscow"></option>
+								<option value="Asia/Dubai"></option>
+								<option value="Asia/Kolkata"></option>
+								<option value="Asia/Bangkok"></option>
+								<option value="Asia/Singapore"></option>
+								<option value="Asia/Tokyo"></option>
+								<option value="Asia/Seoul"></option>
+								<option value="Asia/Shanghai"></option>
+								<option value="Australia/Sydney"></option>
+								<option value="Pacific/Auckland"></option>
+							</datalist>
 						</label>
 					</div>
 				{/if}
@@ -251,79 +370,6 @@
 				</SurfaceActionButton>
 			</form>
 
-			<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-				<div class="flex items-end justify-between gap-4">
-					<div>
-						<p class="gc-stamp">Scheduled tasks</p>
-						<h2 class="gc-section-title mt-3">See which schedules are healthy or drifting</h2>
-					</div>
-					<p class="gc-machine">{data.automate.schedules.length} visible schedules</p>
-				</div>
-
-				<div class="mt-6 grid gap-4">
-					{#if data.automate.schedules.length === 0}
-						<SurfaceEmptyState
-							label="No schedules yet"
-							title="No recurring work is scheduled yet"
-							message="Create the first recurring task to keep work moving automatically."
-						/>
-					{:else}
-						{#each data.automate.schedules as schedule (schedule.id)}
-							<article class="gc-panel-soft px-4 py-4">
-								<div class="flex items-start justify-between gap-4">
-									<div>
-										<p class="gc-stamp">{schedule.kind_label} · {schedule.enabled_label}</p>
-										<h3 class="gc-panel-title mt-3 text-[1rem]">{schedule.name}</h3>
-									</div>
-									<p class={`gc-machine ${schedule.status_class}`}>{schedule.status_label}</p>
-								</div>
-
-								<p class="gc-copy mt-4 text-[var(--gc-text-secondary)]">{schedule.objective}</p>
-								<p class="gc-machine mt-4">{schedule.cadence_label}</p>
-
-								<div
-									class="mt-4 grid gap-2 border-t-2 border-[var(--gc-border)] pt-4 md:grid-cols-2"
-								>
-									<div>
-										<p class="gc-stamp">Next wake</p>
-										<p class="gc-copy mt-2 text-[var(--gc-ink)]">{schedule.next_run_at_label}</p>
-									</div>
-									<div>
-										<p class="gc-stamp">Last run</p>
-										<p class="gc-copy mt-2 text-[var(--gc-ink)]">{schedule.last_run_at_label}</p>
-									</div>
-								</div>
-
-								{#if schedule.last_error}
-									<p class="gc-copy mt-4 text-[var(--gc-orange)]">{schedule.last_error}</p>
-								{/if}
-
-								<div class="mt-5 flex flex-wrap gap-3">
-									<SurfaceActionButton
-										type="button"
-										onclick={() => launchNow(schedule.id)}
-										disabled={mutatingID !== '' && mutatingID !== schedule.id}
-										tone={statusTone(schedule.status_class)}
-									>
-										Run now
-									</SurfaceActionButton>
-									<SurfaceActionButton
-										type="button"
-										onclick={() => toggleSchedule(schedule.id, schedule.enabled)}
-										disabled={mutatingID !== '' && mutatingID !== schedule.id}
-										tone="warning"
-									>
-										{schedule.enabled ? 'Pause schedule' : 'Resume schedule'}
-									</SurfaceActionButton>
-								</div>
-							</article>
-						{/each}
-					{/if}
-				</div>
-			</div>
-		</div>
-
-		<div class="grid gap-6">
 			<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
 				<p class="gc-stamp">Running now</p>
 				<h2 class="gc-section-title mt-3">See scheduled work that is already running</h2>

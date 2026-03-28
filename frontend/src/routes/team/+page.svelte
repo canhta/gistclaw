@@ -66,13 +66,12 @@
 
 	function confirmDiscardDraft(): boolean {
 		if (!hasDraft()) return true;
-		// eslint-disable-next-line no-alert
+
 		return confirm('Discard unsaved changes?');
 	}
 
 	beforeNavigate(({ cancel }) => {
 		if (hasDraft()) {
-			// eslint-disable-next-line no-alert
 			if (!confirm('You have unsaved changes. Leave without saving?')) {
 				cancel();
 			}
@@ -347,10 +346,15 @@
 
 <div class="grid gap-6">
 	{#if hasDraft()}
-		<div class="gc-panel-soft flex items-center justify-between gap-4 border-[var(--gc-orange)] px-4 py-4">
+		<div
+			class="gc-panel-soft flex items-center justify-between gap-4 border-[var(--gc-orange)] px-4 py-4"
+		>
 			<p class="gc-stamp text-[var(--gc-orange)]">Unsaved changes</p>
 			<div class="flex gap-3">
-				<SurfaceActionButton tone="solid" onclick={() => document.querySelector('form')?.requestSubmit()}>
+				<SurfaceActionButton
+					tone="solid"
+					onclick={() => document.querySelector('form')?.requestSubmit()}
+				>
 					Save now
 				</SurfaceActionButton>
 				<SurfaceActionButton onclick={resetDraft}>Discard</SurfaceActionButton>
@@ -380,295 +384,303 @@
 	{/if}
 
 	{#if editMode}
-	<section class="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
-		<form class="gc-panel px-5 py-5 lg:px-6 lg:py-6" onsubmit={saveTeam}>
-			<p class="gc-stamp">Active setup</p>
-			<h2 class="gc-section-title mt-3">{teamName()}</h2>
-			<p class="gc-copy mt-4 max-w-3xl text-[var(--gc-text-secondary)]">
-				Choose who leads the work, which specialists help, and what each role is allowed to do.
-			</p>
+		<section class="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
+			<form class="gc-panel px-5 py-5 lg:px-6 lg:py-6" onsubmit={saveTeam}>
+				<p class="gc-stamp">Active setup</p>
+				<h2 class="gc-section-title mt-3">{teamName()}</h2>
+				<p class="gc-copy mt-4 max-w-3xl text-[var(--gc-text-secondary)]">
+					Choose who leads the work, which specialists help, and what each role is allowed to do.
+				</p>
 
-			{#if notice}
-				<SurfaceMessage label="Setup notice" message={notice} className="mt-5" />
-			{/if}
+				{#if notice}
+					<SurfaceMessage label="Setup notice" message={notice} className="mt-5" />
+				{/if}
 
-			{#if errorMessage}
-				<SurfaceMessage label="Setup error" message={errorMessage} tone="error" className="mt-5" />
-			{/if}
-
-			<div class="mt-6 grid gap-4 md:grid-cols-2">
-				<label class="grid gap-2">
-					<span class="gc-stamp">Setup name</span>
-					<input
-						value={teamName()}
-						oninput={(event) => {
-							nameOverride = event.currentTarget.value;
-						}}
-						class="gc-control"
+				{#if errorMessage}
+					<SurfaceMessage
+						label="Setup error"
+						message={errorMessage}
+						tone="error"
+						className="mt-5"
 					/>
-				</label>
+				{/if}
 
-				<label class="grid gap-2">
-					<span class="gc-stamp">Front agent</span>
-					<select
-						value={frontAgentID()}
-						onchange={(event) => {
-							frontAgentOverride = event.currentTarget.value;
-						}}
-						class="gc-control"
-					>
-						{#each teamMembers() as member (member.id)}
-							<option value={member.id}>{member.id}</option>
-						{/each}
-					</select>
-				</label>
-			</div>
-
-			<div class="mt-5 border-t-2 border-[var(--gc-border)] pt-4">
-				<p class="gc-stamp">Save path</p>
-				<p class="gc-machine mt-2 break-all">{data.team.active_profile.save_path}</p>
-			</div>
-
-			<SurfaceActionButton type="submit" tone="solid" className="mt-6" disabled={saving}>
-				{saving ? 'Saving setup' : 'Save setup'}
-			</SurfaceActionButton>
-		</form>
-
-		<div class="grid gap-4">
-			<div class="gc-panel px-4 py-4">
-				<p class="gc-stamp">Available setups</p>
-				<div class="mt-4 grid gap-3">
-					{#each data.team.profiles as profile (profile.id)}
-						<button
-							type="button"
-							class={`flex items-center justify-between border-2 px-4 py-3 text-left transition-colors ${profile.active ? 'border-[var(--gc-orange)] bg-[rgba(255,105,34,0.08)]' : 'border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] hover:border-[var(--gc-cyan)]'}`}
-							onclick={() => useProfile(profile.id)}
-							disabled={busyAction !== '' && busyAction !== `use:${profile.id}`}
-						>
-							<div>
-								<p class="gc-stamp">{profile.active ? 'Active setup' : 'Available setup'}</p>
-								<p class="gc-panel-title mt-2 text-[1rem]">{profile.label}</p>
-							</div>
-							<p class="gc-machine">
-								{busyAction === `use:${profile.id}`
-									? 'Switching'
-									: profile.active
-										? 'Current'
-										: 'Use setup'}
-							</p>
-						</button>
-					{/each}
-				</div>
-			</div>
-
-			<div class="gc-panel px-4 py-4">
-				<p class="gc-stamp">Setup actions</p>
-				<div class="mt-4 grid gap-4">
-					<div class="grid gap-2">
-						<p class="gc-stamp">Create setup</p>
-						<input bind:value={createProfileID} placeholder="review" class="gc-control" />
-						<SurfaceActionButton onclick={createProfile} disabled={busyAction !== ''}>
-							Create setup
-						</SurfaceActionButton>
-					</div>
-
-					<div class="grid gap-2 border-t-2 border-[var(--gc-border)] pt-4">
-						<p class="gc-stamp">Copy setup</p>
-						<select bind:value={cloneSourceProfileID} class="gc-control">
-							<option value="">Use active setup</option>
-							{#each data.team.profiles as profile (profile.id)}
-								<option value={profile.id}>{profile.label}</option>
-							{/each}
-						</select>
-						<input bind:value={cloneProfileID} placeholder="review-copy" class="gc-control" />
-						<SurfaceActionButton onclick={cloneProfile} disabled={busyAction !== ''}>
-							Copy setup
-						</SurfaceActionButton>
-					</div>
-
-					<div class="grid gap-2 border-t-2 border-[var(--gc-border)] pt-4">
-						<p class="gc-stamp">Delete setup</p>
-						<select bind:value={deleteProfileID} class="gc-control">
-							<option value="">Pick an inactive setup</option>
-							{#each data.team.profiles.filter((profile) => !profile.active) as profile (profile.id)}
-								<option value={profile.id}>{profile.label}</option>
-							{/each}
-						</select>
-						<SurfaceActionButton
-							tone="warning"
-							onclick={deleteProfile}
-							disabled={busyAction !== '' || deleteProfileID.trim() === ''}
-						>
-							Delete setup
-						</SurfaceActionButton>
-					</div>
-
-					<div class="grid gap-2 border-t-2 border-[var(--gc-border)] pt-4">
-						<p class="gc-stamp">Import setup file</p>
+				<div class="mt-6 grid gap-4 md:grid-cols-2">
+					<label class="grid gap-2">
+						<span class="gc-stamp">Setup name</span>
 						<input
-							type="file"
-							accept=".yaml,.yml,text/yaml"
-							onchange={(event) => {
-								importFile = event.currentTarget.files?.[0] ?? null;
-							}}
-							class="gc-control"
-						/>
-						<SurfaceActionButton onclick={importSetup} disabled={busyAction !== '' || !importFile}>
-							Import setup file
-						</SurfaceActionButton>
-					</div>
-
-					<div class="flex flex-wrap gap-3 border-t-2 border-[var(--gc-border)] pt-4">
-						<SurfaceActionButton onclick={exportSetup}>Export YAML</SurfaceActionButton>
-					</div>
-				</div>
-			</div>
-
-			<div class="gc-panel-soft px-4 py-4">
-				<p class="gc-stamp">Team summary</p>
-				<div class="mt-4 grid gap-3 sm:grid-cols-2">
-					<div>
-						<p class="gc-stamp">Front agent</p>
-						<p class="gc-value mt-2">{frontAgentID()}</p>
-					</div>
-					<div>
-						<p class="gc-stamp">Members</p>
-						<p class="gc-value mt-2">{teamMembers().length}</p>
-					</div>
-				</div>
-			</div>
-		</div>
-	</section>
-
-	<section class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-		<div class="flex flex-wrap items-end justify-between gap-4">
-			<div>
-				<p class="gc-stamp">Role topology</p>
-				<h2 class="gc-section-title mt-3">See who is carrying the work right now</h2>
-			</div>
-			<div class="flex flex-wrap gap-3">
-				<p class="gc-machine">{teamMembers().length} visible roles</p>
-				<SurfaceActionButton onclick={addMember}>Add another role</SurfaceActionButton>
-			</div>
-		</div>
-
-		<div class="mt-6 grid gap-4 xl:grid-cols-3">
-			{#each teamMembers() as member, index (member.id)}
-				<article
-					class={`gc-panel-soft px-4 py-4 ${frontAgentID() === member.id ? 'border-[var(--gc-orange)]' : ''}`}
-				>
-					<div class="flex items-start justify-between gap-3">
-						<div>
-							<p class="gc-stamp">
-								{frontAgentID() === member.id ? 'Front role' : 'Specialist role'}
-							</p>
-							<h3 class="gc-panel-title mt-3 text-[1rem]">{member.id}</h3>
-						</div>
-						<div class="flex flex-col items-end gap-2">
-							<p class="gc-machine">{memberBaseProfile(member)}</p>
-							{#if teamMembers().length > 1}
-								<SurfaceActionButton
-									tone="warning"
-									className="px-3 py-2 text-[11px]"
-									onclick={() => removeMember(member.id)}
-								>
-									Remove role
-								</SurfaceActionButton>
-							{/if}
-						</div>
-					</div>
-
-					<label class="mt-4 grid gap-2">
-						<span class="gc-stamp">Role</span>
-						<input
-							value={memberRole(member)}
+							value={teamName()}
 							oninput={(event) => {
-								roleOverrides = {
-									...roleOverrides,
-									[member.id]: event.currentTarget.value
-								};
+								nameOverride = event.currentTarget.value;
 							}}
 							class="gc-control"
 						/>
 					</label>
 
-					<label class="mt-4 grid gap-2">
-						<span class="gc-stamp">Base profile</span>
+					<label class="grid gap-2">
+						<span class="gc-stamp">Front agent</span>
 						<select
-							value={memberBaseProfile(member)}
+							value={frontAgentID()}
 							onchange={(event) => {
-								baseProfileOverrides = {
-									...baseProfileOverrides,
-									[member.id]: event.currentTarget.value
-								};
+								frontAgentOverride = event.currentTarget.value;
 							}}
 							class="gc-control"
 						>
-							{#each baseProfiles as baseProfile (baseProfile)}
-								<option value={baseProfile}>{baseProfile}</option>
+							{#each teamMembers() as member (member.id)}
+								<option value={member.id}>{member.id}</option>
 							{/each}
 						</select>
 					</label>
+				</div>
 
-					<div class="mt-4 border-t-2 border-[var(--gc-border)] pt-4">
-						<p class="gc-stamp">Tool authority</p>
-						<div class="mt-3 flex flex-wrap gap-2">
-							{#each toolFamilies as toolFamily (toolFamily)}
-								<button
-									type="button"
-									class={`gc-chip ${memberToolFamilies(member).includes(toolFamily) ? 'gc-chip-accent' : ''}`}
-									onclick={() => {
-										toolFamilyOverrides = {
-											...toolFamilyOverrides,
-											[member.id]: toggleListValue(memberToolFamilies(member), toolFamily)
-										};
-									}}
-								>
-									{toolFamily}
-								</button>
-							{/each}
+				<div class="mt-5 border-t-2 border-[var(--gc-border)] pt-4">
+					<p class="gc-stamp">Save path</p>
+					<p class="gc-machine mt-2 break-all">{data.team.active_profile.save_path}</p>
+				</div>
+
+				<SurfaceActionButton type="submit" tone="solid" className="mt-6" disabled={saving}>
+					{saving ? 'Saving setup' : 'Save setup'}
+				</SurfaceActionButton>
+			</form>
+
+			<div class="grid gap-4">
+				<div class="gc-panel px-4 py-4">
+					<p class="gc-stamp">Available setups</p>
+					<div class="mt-4 grid gap-3">
+						{#each data.team.profiles as profile (profile.id)}
+							<button
+								type="button"
+								class={`flex items-center justify-between border-2 px-4 py-3 text-left transition-colors ${profile.active ? 'border-[var(--gc-orange)] bg-[rgba(255,105,34,0.08)]' : 'border-[var(--gc-border-strong)] bg-[var(--gc-surface-soft)] hover:border-[var(--gc-cyan)]'}`}
+								onclick={() => useProfile(profile.id)}
+								disabled={busyAction !== '' && busyAction !== `use:${profile.id}`}
+							>
+								<div>
+									<p class="gc-stamp">{profile.active ? 'Active setup' : 'Available setup'}</p>
+									<p class="gc-panel-title mt-2 text-[1rem]">{profile.label}</p>
+								</div>
+								<p class="gc-machine">
+									{busyAction === `use:${profile.id}`
+										? 'Switching'
+										: profile.active
+											? 'Current'
+											: 'Use setup'}
+								</p>
+							</button>
+						{/each}
+					</div>
+				</div>
+
+				<div class="gc-panel px-4 py-4">
+					<p class="gc-stamp">Setup actions</p>
+					<div class="mt-4 grid gap-4">
+						<div class="grid gap-2">
+							<p class="gc-stamp">Create setup</p>
+							<input bind:value={createProfileID} placeholder="review" class="gc-control" />
+							<SurfaceActionButton onclick={createProfile} disabled={busyAction !== ''}>
+								Create setup
+							</SurfaceActionButton>
+						</div>
+
+						<div class="grid gap-2 border-t-2 border-[var(--gc-border)] pt-4">
+							<p class="gc-stamp">Copy setup</p>
+							<select bind:value={cloneSourceProfileID} class="gc-control">
+								<option value="">Use active setup</option>
+								{#each data.team.profiles as profile (profile.id)}
+									<option value={profile.id}>{profile.label}</option>
+								{/each}
+							</select>
+							<input bind:value={cloneProfileID} placeholder="review-copy" class="gc-control" />
+							<SurfaceActionButton onclick={cloneProfile} disabled={busyAction !== ''}>
+								Copy setup
+							</SurfaceActionButton>
+						</div>
+
+						<div class="grid gap-2 border-t-2 border-[var(--gc-border)] pt-4">
+							<p class="gc-stamp">Delete setup</p>
+							<select bind:value={deleteProfileID} class="gc-control">
+								<option value="">Pick an inactive setup</option>
+								{#each data.team.profiles.filter((profile) => !profile.active) as profile (profile.id)}
+									<option value={profile.id}>{profile.label}</option>
+								{/each}
+							</select>
+							<SurfaceActionButton
+								tone="warning"
+								onclick={deleteProfile}
+								disabled={busyAction !== '' || deleteProfileID.trim() === ''}
+							>
+								Delete setup
+							</SurfaceActionButton>
+						</div>
+
+						<div class="grid gap-2 border-t-2 border-[var(--gc-border)] pt-4">
+							<p class="gc-stamp">Import setup file</p>
+							<input
+								type="file"
+								accept=".yaml,.yml,text/yaml"
+								onchange={(event) => {
+									importFile = event.currentTarget.files?.[0] ?? null;
+								}}
+								class="gc-control"
+							/>
+							<SurfaceActionButton
+								onclick={importSetup}
+								disabled={busyAction !== '' || !importFile}
+							>
+								Import setup file
+							</SurfaceActionButton>
+						</div>
+
+						<div class="flex flex-wrap gap-3 border-t-2 border-[var(--gc-border)] pt-4">
+							<SurfaceActionButton onclick={exportSetup}>Export YAML</SurfaceActionButton>
 						</div>
 					</div>
+				</div>
 
-					<div class="mt-4 border-t-2 border-[var(--gc-border)] pt-4">
-						<p class="gc-stamp">Delegation posture</p>
-						<div class="mt-3 flex flex-wrap gap-2">
-							{#each delegationKinds as delegationKind (delegationKind)}
-								<button
-									type="button"
-									class={`gc-chip ${memberDelegationKinds(member).includes(delegationKind) ? 'gc-chip-warning' : ''}`}
-									onclick={() => {
-										delegationKindOverrides = {
-											...delegationKindOverrides,
-											[member.id]: toggleListValue(memberDelegationKinds(member), delegationKind)
-										};
-									}}
-								>
-									{delegationKind}
-								</button>
-							{/each}
+				<div class="gc-panel-soft px-4 py-4">
+					<p class="gc-stamp">Team summary</p>
+					<div class="mt-4 grid gap-3 sm:grid-cols-2">
+						<div>
+							<p class="gc-stamp">Front agent</p>
+							<p class="gc-value mt-2">{frontAgentID()}</p>
+						</div>
+						<div>
+							<p class="gc-stamp">Members</p>
+							<p class="gc-value mt-2">{teamMembers().length}</p>
 						</div>
 					</div>
+				</div>
+			</div>
+		</section>
 
-					<div class="mt-4 border-t-2 border-[var(--gc-border)] pt-4">
-						<p class="gc-stamp">Can message</p>
-						<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-							{member.can_message.join(', ') || 'No direct links'}
-						</p>
-						<p class="gc-machine mt-2">{member.soul_file}</p>
-					</div>
+		<section class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
+			<div class="flex flex-wrap items-end justify-between gap-4">
+				<div>
+					<p class="gc-stamp">Role topology</p>
+					<h2 class="gc-section-title mt-3">See who is carrying the work right now</h2>
+				</div>
+				<div class="flex flex-wrap gap-3">
+					<p class="gc-machine">{teamMembers().length} visible roles</p>
+					<SurfaceActionButton onclick={addMember}>Add another role</SurfaceActionButton>
+				</div>
+			</div>
 
-					{#if index === teamMembers().length - 1}
+			<div class="mt-6 grid gap-4 xl:grid-cols-3">
+				{#each teamMembers() as member, index (member.id)}
+					<article
+						class={`gc-panel-soft px-4 py-4 ${frontAgentID() === member.id ? 'border-[var(--gc-orange)]' : ''}`}
+					>
+						<div class="flex items-start justify-between gap-3">
+							<div>
+								<p class="gc-stamp">
+									{frontAgentID() === member.id ? 'Front role' : 'Specialist role'}
+								</p>
+								<h3 class="gc-panel-title mt-3 text-[1rem]">{member.id}</h3>
+							</div>
+							<div class="flex flex-col items-end gap-2">
+								<p class="gc-machine">{memberBaseProfile(member)}</p>
+								{#if teamMembers().length > 1}
+									<SurfaceActionButton
+										tone="warning"
+										className="px-3 py-2 text-[11px]"
+										onclick={() => removeMember(member.id)}
+									>
+										Remove role
+									</SurfaceActionButton>
+								{/if}
+							</div>
+						</div>
+
+						<label class="mt-4 grid gap-2">
+							<span class="gc-stamp">Role</span>
+							<input
+								value={memberRole(member)}
+								oninput={(event) => {
+									roleOverrides = {
+										...roleOverrides,
+										[member.id]: event.currentTarget.value
+									};
+								}}
+								class="gc-control"
+							/>
+						</label>
+
+						<label class="mt-4 grid gap-2">
+							<span class="gc-stamp">Base profile</span>
+							<select
+								value={memberBaseProfile(member)}
+								onchange={(event) => {
+									baseProfileOverrides = {
+										...baseProfileOverrides,
+										[member.id]: event.currentTarget.value
+									};
+								}}
+								class="gc-control"
+							>
+								{#each baseProfiles as baseProfile (baseProfile)}
+									<option value={baseProfile}>{baseProfile}</option>
+								{/each}
+							</select>
+						</label>
+
 						<div class="mt-4 border-t-2 border-[var(--gc-border)] pt-4">
-							<p class="gc-stamp">Active front agent</p>
-							<p class="gc-copy mt-2 text-[var(--gc-text-secondary)]">
-								Choose which role speaks first, then save the setup so handoffs stay clear.
-							</p>
+							<p class="gc-stamp">Tool authority</p>
+							<div class="mt-3 flex flex-wrap gap-2">
+								{#each toolFamilies as toolFamily (toolFamily)}
+									<button
+										type="button"
+										class={`gc-chip ${memberToolFamilies(member).includes(toolFamily) ? 'gc-chip-accent' : ''}`}
+										onclick={() => {
+											toolFamilyOverrides = {
+												...toolFamilyOverrides,
+												[member.id]: toggleListValue(memberToolFamilies(member), toolFamily)
+											};
+										}}
+									>
+										{toolFamily}
+									</button>
+								{/each}
+							</div>
 						</div>
-					{/if}
-				</article>
-			{/each}
-		</div>
-	</section>
+
+						<div class="mt-4 border-t-2 border-[var(--gc-border)] pt-4">
+							<p class="gc-stamp">Delegation posture</p>
+							<div class="mt-3 flex flex-wrap gap-2">
+								{#each delegationKinds as delegationKind (delegationKind)}
+									<button
+										type="button"
+										class={`gc-chip ${memberDelegationKinds(member).includes(delegationKind) ? 'gc-chip-warning' : ''}`}
+										onclick={() => {
+											delegationKindOverrides = {
+												...delegationKindOverrides,
+												[member.id]: toggleListValue(memberDelegationKinds(member), delegationKind)
+											};
+										}}
+									>
+										{delegationKind}
+									</button>
+								{/each}
+							</div>
+						</div>
+
+						<div class="mt-4 border-t-2 border-[var(--gc-border)] pt-4">
+							<p class="gc-stamp">Can message</p>
+							<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+								{member.can_message.join(', ') || 'No direct links'}
+							</p>
+							<p class="gc-machine mt-2">{member.soul_file}</p>
+						</div>
+
+						{#if index === teamMembers().length - 1}
+							<div class="mt-4 border-t-2 border-[var(--gc-border)] pt-4">
+								<p class="gc-stamp">Active front agent</p>
+								<p class="gc-copy mt-2 text-[var(--gc-text-secondary)]">
+									Choose which role speaks first, then save the setup so handoffs stay clear.
+								</p>
+							</div>
+						{/if}
+					</article>
+				{/each}
+			</div>
+		</section>
 	{/if}
 </div>
