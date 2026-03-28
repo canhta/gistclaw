@@ -31,7 +31,7 @@ type workQueueStripResponse struct {
 
 type workClusterResponse struct {
 	Root            workClusterRunResponse   `json:"root"`
-	Children        []workClusterRunResponse `json:"children,omitempty"`
+	Children        []workClusterRunResponse `json:"children"`
 	ChildCount      int                      `json:"child_count"`
 	ChildCountLabel string                   `json:"child_count_label"`
 	BlockerLabel    string                   `json:"blocker_label"`

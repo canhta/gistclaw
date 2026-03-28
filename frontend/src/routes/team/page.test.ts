@@ -89,6 +89,9 @@ describe('Team page', () => {
 
 		expect(body).toContain('Review Crew');
 		expect(body).toContain('Profile review created and selected.');
+		expect(body).toContain(
+			'Choose who leads the work, which specialists help, and what each role is allowed to do.'
+		);
 		expect(body).toContain('review');
 		expect(body).toContain('default');
 		expect(body).toContain('reviewer');

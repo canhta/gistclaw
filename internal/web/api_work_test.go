@@ -199,6 +199,30 @@ func TestWorkIndexUsesActiveProjectOnly(t *testing.T) {
 	}
 }
 
+func TestBuildWorkClusterResponseKeepsEmptyChildrenArray(t *testing.T) {
+	t.Parallel()
+
+	payload, err := json.Marshal(buildWorkClusterResponse(runListClusterView{
+		Root: runListItem{
+			ID:          "run-empty",
+			Objective:   "Inspect the queue",
+			AgentID:     "assistant",
+			Status:      "failed",
+			StatusLabel: "failed",
+		},
+		ChildCount:      0,
+		ChildCountLabel: "0 sub-agents",
+		BlockerLabel:    "Run failed",
+		HasChildren:     false,
+	}))
+	if err != nil {
+		t.Fatalf("marshal work cluster response: %v", err)
+	}
+	if !bytes.Contains(payload, []byte(`"children":[]`)) {
+		t.Fatalf("expected empty children array in payload, got %s", payload)
+	}
+}
+
 func TestWorkDetailReturnsRunSummaryGraphAndInspectorSeed(t *testing.T) {
 	t.Parallel()
 

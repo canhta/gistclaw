@@ -106,6 +106,7 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("GET /_app/{path...}", spaAssets)
 	s.mux.Handle("GET /robots.txt", spaAssets)
 	s.mux.HandleFunc("GET "+pageLogin, s.handleLogin)
+	s.mux.HandleFunc("GET "+pageLogout, s.handleLogout)
 	s.mux.HandleFunc("POST "+pageLogout, s.handleLogout)
 	s.mux.HandleFunc("GET "+pageOnboarding, s.handleSPADocument)
 	s.mux.HandleFunc("GET "+pageWork, s.handleSPADocument)

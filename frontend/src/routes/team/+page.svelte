@@ -322,8 +322,7 @@
 			<p class="gc-stamp">Active setup</p>
 			<h2 class="gc-section-title mt-3">{teamName()}</h2>
 			<p class="gc-copy mt-4 max-w-3xl text-[var(--gc-text-secondary)]">
-				Keep the human relationship anchored in one front agent, then make the specialist shape
-				explicit enough that delegation stops feeling magical.
+				Choose who leads the work, which specialists help, and what each role is allowed to do.
 			</p>
 
 			{#if notice}
@@ -482,7 +481,7 @@
 		<div class="flex flex-wrap items-end justify-between gap-4">
 			<div>
 				<p class="gc-stamp">Role topology</p>
-				<h2 class="gc-section-title mt-3">See who carries the work before the runtime fans out</h2>
+				<h2 class="gc-section-title mt-3">See who is carrying the work right now</h2>
 			</div>
 			<div class="flex flex-wrap gap-3">
 				<p class="gc-machine">{teamMembers().length} visible roles</p>
@@ -600,8 +599,7 @@
 						<div class="mt-4 border-t-2 border-[var(--gc-border)] pt-4">
 							<p class="gc-stamp">Active front agent</p>
 							<p class="gc-copy mt-2 text-[var(--gc-text-secondary)]">
-								Choose which role speaks for the system first, then save the setup so runtime
-								fan-out stays coherent.
+								Choose which role speaks first, then save the setup so handoffs stay clear.
 							</p>
 						</div>
 					{/if}

@@ -4,22 +4,34 @@
 	<rect x="42" y="42" width="1516" height="336" fill="url(#banner-bg)" stroke="#314356" stroke-width="2" />
 	<rect x="42" y="42" width="96" height="18" fill="#FF5C39" />
 	<rect x="1462" y="360" width="96" height="18" fill="#53C7F0" />
-	<rect x="88" y="94" width="212" height="32" fill="#FF5C39" />
-	<text x="102" y="116" fill="#0A0F14" font-family="IBM Plex Mono, monospace" font-size="18" font-weight="700" letter-spacing="2">LOCAL-FIRST</text>
+	<rect x="88" y="94" width="236" height="32" fill="#FF5C39" />
+	<text x="102" y="110" fill="#0A0F14" font-family="IBM Plex Mono, monospace" font-size="18" font-weight="700" letter-spacing="2" dominant-baseline="middle">MULTI-AGENT</text>
 	<text x="88" y="228" fill="#F4F7FB" font-family="Space Grotesk, Arial, sans-serif" font-size="132" font-weight="700" letter-spacing="-4">GistClaw</text>
 	<rect x="90" y="252" width="468" height="18" fill="#FF5C39" />
 	<rect x="574" y="252" width="144" height="18" fill="#53C7F0" />
-	<text x="90" y="312" fill="#97A6B6" font-family="IBM Plex Mono, monospace" font-size="28" font-weight="700" letter-spacing="3">LOCAL-FIRST MULTI-AGENT RUNTIME</text>
-	<rect x="1180" y="102" width="228" height="18" fill="#53C7F0" />
-	<rect x="1240" y="138" width="148" height="18" fill="#314356" />
-	<rect x="1208" y="174" width="188" height="18" fill="#FF5C39" />
-	<rect x="1170" y="220" width="238" height="96" fill="#16212D" stroke="#4C637C" stroke-width="4" />
-	<rect x="1194" y="244" width="92" height="16" fill="#FF5C39" />
-	<rect x="1300" y="244" width="84" height="16" fill="#53C7F0" />
-	<rect x="1194" y="278" width="190" height="16" fill="#314356" />
-	<circle cx="1408" cy="286" r="10" fill="#53C7F0" />
-	<path d="M1144 96 L1188 96 L1216 142 L1188 190 L1144 190 Z" fill="#16212D" stroke="#4C637C" stroke-width="4" />
-	<path d="M1098 214 L1146 214 L1172 258 L1146 302 L1098 302 Z" fill="#16212D" stroke="#4C637C" stroke-width="4" />
+	<text x="90" y="314" fill="#97A6B6" font-family="IBM Plex Mono, monospace" font-size="24" font-weight="700" letter-spacing="2">FULLY AUTOMATED. WORKS LIKE ONE TEAM.</text>
+	<rect x="1016" y="108" width="62" height="8" fill="#314356" />
+	<rect x="1098" y="140" width="96" height="10" fill="#53C7F0" />
+	<rect x="972" y="236" width="108" height="10" fill="#FF5C39" />
+	<g transform="translate(1098 -18) scale(0.9)">
+		<polygon points="148,214 190,150 230,170 256,140 282,170 322,150 364,214 332,254 180,254" fill="#16212D" stroke="#4C637C" stroke-width="6" />
+		<rect x="182" y="168" width="148" height="16" fill="#FF5C39" />
+		<rect x="186" y="190" width="140" height="32" fill="#0A0F14" stroke="#4C637C" stroke-width="4" />
+		<rect x="198" y="199" width="22" height="14" fill="#F4F7FB" />
+		<rect x="228" y="199" width="22" height="14" fill="#F4F7FB" />
+		<rect x="258" y="199" width="22" height="14" fill="#F4F7FB" />
+		<rect x="288" y="199" width="22" height="14" fill="#F4F7FB" />
+		<path d="M88 270 L172 224 L220 240 L204 276 L150 310 L110 336 L88 314 Z" fill="#FF5C39" />
+		<path d="M424 270 L340 224 L292 240 L308 276 L362 310 L402 336 L424 314 Z" fill="#FF5C39" />
+		<path d="M110 286 L156 262 L180 270 L166 294 L126 318 Z" fill="#F4F7FB" />
+		<path d="M402 286 L356 262 L332 270 L346 294 L386 318 Z" fill="#F4F7FB" />
+		<path d="M206 252 L306 252 L324 316 L286 350 L226 350 L188 316 Z" fill="#16212D" stroke="#4C637C" stroke-width="6" />
+		<rect x="220" y="270" width="72" height="14" fill="#FF5C39" />
+		<rect x="236" y="348" width="40" height="38" fill="#F4F7FB" />
+		<rect x="122" y="392" width="268" height="14" fill="#314356" />
+		<rect x="122" y="392" width="96" height="14" fill="#FF5C39" />
+		<circle cx="406" cy="399" r="8" fill="#FF5C39" />
+	</g>
 	<defs>
 		<linearGradient id="banner-bg" x1="42" y1="42" x2="1558" y2="378" gradientUnits="userSpaceOnUse">
 			<stop offset="0" stop-color="#16212D" />

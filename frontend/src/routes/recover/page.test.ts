@@ -116,12 +116,92 @@ describe('Recover page', () => {
 			}
 		});
 
-		expect(body).toContain('Put live operator work ahead of dead history');
+		expect(body).toContain('Fix blocked work before it piles up');
+		expect(body).toContain(
+			'Approve requests, retry failed deliveries, and repair routes from one place.'
+		);
 		expect(body).toContain('/tmp/recover.txt');
 		expect(body).toContain('Approve');
 		expect(body).toContain('Deactivate route');
 		expect(body).toContain('Retry delivery');
 		expect(body).toContain('gc-action-warning');
 		expect(body).toContain('/conversations/session-1');
+	});
+
+	it('wraps long route session identifiers inside the live routes card', () => {
+		const { body } = render(RecoverPage, {
+			props: {
+				data: {
+					auth: {
+						authenticated: true,
+						password_configured: true,
+						setup_required: false
+					},
+					onboarding: {
+						completed: true,
+						entry_href: '/work'
+					},
+					project: {
+						active_id: 'proj-primary',
+						active_name: 'starter-project',
+						active_path: '/tmp/starter-project'
+					},
+					navigation: [{ id: 'recover', label: 'Recover', href: '/recover' }],
+					currentPath: '/recover',
+					currentSearch: '',
+					recover: {
+						summary: {
+							open_approvals: 0,
+							pending_approvals: 0,
+							connector_count: 1,
+							active_routes: 1,
+							terminal_deliveries: 0
+						},
+						approvals: [],
+						approval_paging: {
+							has_next: false,
+							has_prev: false
+						},
+						repair: {
+							connector_count: 1,
+							filters: {
+								query: '',
+								connector_id: '',
+								route_status: 'all',
+								delivery_status: 'all',
+								active_limit: 50,
+								history_limit: 25,
+								delivery_limit: 50
+							},
+							health: [],
+							runtime_connectors: [],
+							active_routes: [
+								{
+									id: 'route-1',
+									connector_id: 'web',
+									external_id: 'default',
+									thread_id: 'thread-1',
+									session_id: '3570db3c46daebab475e21fbd267e850',
+									conversation_id: 'conv-1',
+									agent_id: 'assistant',
+									role_label: 'Lead agent',
+									status_label: 'active'
+								}
+							],
+							active_paging: { has_next: false, has_prev: false },
+							route_history: [],
+							history_paging: { has_next: false, has_prev: false },
+							deliveries: [],
+							delivery_paging: { has_next: false, has_prev: false }
+						}
+					}
+				}
+			}
+		});
+
+		expect(body).toContain(
+			'flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'
+		);
+		expect(body).toContain('gc-machine break-all underline sm:text-right');
 	});
 });

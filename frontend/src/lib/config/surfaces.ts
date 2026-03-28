@@ -39,280 +39,270 @@ const surfaces: Record<SurfaceID, SurfaceMeta> = {
 	work: {
 		id: 'work',
 		title: 'Work',
-		description:
-			'Steer current objectives, orchestration, and live machine signal from one control deck.',
-		workspaceEyebrow: 'Command workspace',
-		workspaceTitle: 'Stage the next objective before it disappears into internals',
+		description: 'Start tasks, watch progress, and step in when a run needs you.',
+		workspaceEyebrow: 'Current work',
+		workspaceTitle: 'Start the next task and keep it moving',
 		workspaceBody:
-			'Work is the front door. The operator should see intake, live orchestration, and intervention signal in one mounted surface instead of jumping between passive lists.',
+			'Write the task once, launch it, and jump straight to the run that needs your attention.',
 		cards: [
 			{
-				label: 'Command intake',
+				label: 'Start task',
 				value: 'Queue now',
-				detail:
-					'Frame the objective, confirm the repo target, and launch the next run with context attached.',
+				detail: 'Describe the outcome you want and launch it with the right repo in view.',
 				tone: 'accent'
 			},
 			{
-				label: 'Run graph',
-				value: 'XYFlow',
-				detail: 'Mount live orchestration as a hard-edged graph instead of a collapsed event feed.'
+				label: 'Live runs',
+				value: 'Follow progress',
+				detail: 'See what is moving, what is blocked, and where you may need to step in.'
 			},
 			{
-				label: 'Lane pressure',
-				value: 'Watch hot paths',
-				detail: 'Show which specialist lanes are busy, blocked, or waiting on the operator.',
+				label: 'Needs input',
+				value: 'Catch blockers',
+				detail: 'Bring approvals and stalled work to the top before they slow everything down.',
 				tone: 'warning'
 			}
 		],
-		inspectorTitle: 'Machine signal',
+		inspectorTitle: 'At a glance',
 		inspectorItems: [
-			{ label: 'Primary surface', value: 'Live control deck', tone: 'accent' },
-			{ label: 'Operator role', value: 'Steer and intervene' },
-			{ label: 'Next milestone', value: 'Graph, SSE, command intake' }
+			{ label: 'Best for', value: 'Start and steer work', tone: 'accent' },
+			{ label: 'Watch for', value: 'Approvals and blocked runs', tone: 'warning' },
+			{ label: 'Next', value: 'Open the run that matters' }
 		]
 	},
 	team: {
 		id: 'team',
 		title: 'Team',
-		description:
-			'Explain who is helping, how delegation is shaped, and where capacity is open right now.',
-		workspaceEyebrow: 'Role topology',
-		workspaceTitle: 'Make collaboration visible before the run fan-out gets opaque',
+		description: 'Choose who leads, who helps, and how work gets handed off.',
+		workspaceEyebrow: 'Team setup',
+		workspaceTitle: 'Make responsibility clear before work fans out',
 		workspaceBody:
-			'Team should describe the working shape of the assistant, not dump implementation files. The operator needs role posture, current assignments, and tool authority in one glance.',
+			'Pick the lead role, shape the specialists, and make handoffs obvious before the next run starts.',
 		cards: [
 			{
-				label: 'Front agent',
-				value: 'Single command face',
-				detail: 'Keep the human relationship anchored in one primary assistant surface.',
+				label: 'Lead role',
+				value: 'One clear voice',
+				detail: 'Choose who speaks first and keeps the working relationship consistent.',
 				tone: 'accent'
 			},
 			{
 				label: 'Specialists',
-				value: 'Bounded roles',
-				detail:
-					'Show who handles review, repair, research, and delivery instead of hiding it in runtime detail.'
+				value: 'Purposeful roles',
+				detail: 'Show who researches, writes, reviews, and verifies.'
 			},
 			{
-				label: 'Delegation posture',
+				label: 'Handoffs',
 				value: 'Visible ownership',
-				detail: 'Tell the operator when work is parallel, blocked, or waiting on a handoff.',
+				detail: 'Make it clear when work is parallel, blocked, or waiting on review.',
 				tone: 'warning'
 			}
 		],
-		inspectorTitle: 'Posture',
+		inspectorTitle: 'Setup',
 		inspectorItems: [
-			{ label: 'Primary question', value: 'Who is helping right now?' },
-			{ label: 'Graph role', value: 'Topology and occupancy', tone: 'accent' },
-			{ label: 'Next milestone', value: 'Role cards and capability rails' }
+			{ label: 'Best for', value: 'Team shape and roles', tone: 'accent' },
+			{ label: 'Watch for', value: 'Unclear ownership', tone: 'warning' },
+			{ label: 'Next', value: 'Save the setup you trust' }
 		]
 	},
 	knowledge: {
 		id: 'knowledge',
 		title: 'Knowledge',
-		description:
-			'Surface durable context, project rules, and the facts that will shape future work.',
-		workspaceEyebrow: 'Durable context',
-		workspaceTitle: 'Turn memory into scoped guidance instead of a hidden table',
+		description: 'Keep the facts and rules future work should follow.',
+		workspaceEyebrow: 'Saved context',
+		workspaceTitle: 'Store the context future work should respect',
 		workspaceBody:
-			'Knowledge should explain why a fact matters, where it applies, and how it changes behavior. It is not an implementation dump of stored rows.',
+			'Capture facts and rules in plain language so future runs follow them without guesswork.',
 		cards: [
 			{
-				label: 'Promoted memory',
-				value: 'Context with intent',
-				detail: 'Highlight the memories the machine should actually respect during future work.',
+				label: 'Key facts',
+				value: 'Keep what matters',
+				detail: 'Save the rules and project facts that change decisions later.',
 				tone: 'accent'
 			},
 			{
-				label: 'Project rules',
-				value: 'Scoped constraints',
-				detail: 'Keep repo-specific guidance distinct from machine-wide operating rules.'
+				label: 'Scope',
+				value: 'Right level',
+				detail: 'Separate project guidance from broader machine defaults.'
 			},
 			{
-				label: 'Why it matters',
-				value: 'Visible impact',
-				detail: 'Every memory item should explain the behavior it changes.'
+				label: 'Impact',
+				value: 'Explain why',
+				detail: 'Each item should tell the reader what it changes.'
 			}
 		],
-		inspectorTitle: 'Retention',
+		inspectorTitle: 'Remember',
 		inspectorItems: [
-			{ label: 'Primary question', value: 'What should the machine remember?' },
-			{ label: 'View style', value: 'Curated, not tabular', tone: 'accent' },
-			{ label: 'Next milestone', value: 'Scoped memory cards and edit actions' }
+			{ label: 'Best for', value: 'Rules and context', tone: 'accent' },
+			{ label: 'Watch for', value: 'Stale guidance', tone: 'warning' },
+			{ label: 'Next', value: 'Review what still matters' }
 		]
 	},
 	recover: {
 		id: 'recover',
 		title: 'Recover',
-		description:
-			'Intervene in blocked work, approvals, retries, and replay evidence without leaving the cockpit.',
-		workspaceEyebrow: 'Intervention bench',
-		workspaceTitle: 'Put pending operator work ahead of historical noise',
+		description: 'Clear approvals, retry failed work, and fix broken routes.',
+		workspaceEyebrow: 'Recovery',
+		workspaceTitle: 'Fix what is blocked before it piles up',
 		workspaceBody:
-			'Recover is where the operator clears approvals, repairs routes, and inspects why work stalled. The page should feel urgent and action-bearing, not archival.',
+			'Start with the items waiting on you, then repair routes or retries without digging through logs.',
 		cards: [
 			{
-				label: 'Approval queue',
-				value: 'Pending first',
-				detail: 'Bring unresolved operator decisions to the top of the bench.',
+				label: 'Approvals',
+				value: 'Decide now',
+				detail: 'Put pending decisions first so work can move again.',
 				tone: 'warning'
 			},
 			{
 				label: 'Blocked runs',
-				value: 'Replay with evidence',
-				detail: 'Pair every blocked state with the context needed to act.'
+				value: 'Open context',
+				detail: 'Pair each stalled run with the detail you need to act.'
 			},
 			{
-				label: 'Route repair',
-				value: 'Retry with intent',
-				detail: 'Turn delivery repair into a clear operator workflow instead of a hidden control.',
+				label: 'Failed delivery',
+				value: 'Retry fast',
+				detail: 'Bring retries and route fixes into one clear workflow.',
 				tone: 'accent'
 			}
 		],
-		inspectorTitle: 'Interventions',
+		inspectorTitle: 'Needs attention',
 		inspectorItems: [
-			{ label: 'Primary question', value: 'What needs my decision now?' },
-			{ label: 'Operator mode', value: 'Intervene, retry, inspect', tone: 'accent' },
-			{ label: 'Next milestone', value: 'Approval queue and replay rail' }
+			{ label: 'Best for', value: 'Approvals and retries', tone: 'accent' },
+			{ label: 'Check first', value: 'Expired approvals', tone: 'warning' },
+			{ label: 'Next', value: 'Clear the queue' }
 		]
 	},
 	conversations: {
 		id: 'conversations',
 		title: 'Conversations',
-		description:
-			'Control sessions, connector health, and route authority from the user’s communication surface.',
-		workspaceEyebrow: 'External surfaces',
-		workspaceTitle: 'Keep route ownership and connector state operator-readable',
+		description: 'See active conversations, channel health, and replies that need help.',
+		workspaceEyebrow: 'Conversations',
+		workspaceTitle: 'Keep incoming and outgoing conversations easy to follow',
 		workspaceBody:
-			'Conversations should explain who is bound, which connector is healthy, and where outbound delivery is failing without forcing the user to think in transport internals first.',
+			'Open the thread that needs context, check channel health, and catch replies that did not land.',
 		cards: [
 			{
-				label: 'Bound sessions',
-				value: 'Who is connected',
-				detail: 'Show active conversations, routing ownership, and recent activity.'
+				label: 'Active threads',
+				value: 'Who is talking',
+				detail: 'Show live conversations and recent activity.'
 			},
 			{
-				label: 'Connector health',
-				value: 'Live signal',
-				detail: 'Surface Telegram and WhatsApp state with last-success and last-failure evidence.',
+				label: 'Channel health',
+				value: 'Sending cleanly',
+				detail: 'See whether Telegram or WhatsApp is healthy enough to trust.',
 				tone: 'accent'
 			},
 			{
-				label: 'Delivery state',
-				value: 'Actionable failures',
-				detail: 'Pair failed deliveries with the retry path instead of burying them in logs.',
+				label: 'Failed replies',
+				value: 'Needs follow-up',
+				detail: 'Put delivery failures next to the action to retry.',
 				tone: 'warning'
 			}
 		],
-		inspectorTitle: 'Routes',
+		inspectorTitle: 'Inbox health',
 		inspectorItems: [
-			{ label: 'Primary question', value: 'Which external surfaces are healthy?' },
-			{ label: 'View style', value: 'Sessions and route authority', tone: 'accent' },
-			{ label: 'Next milestone', value: 'Connector cards and delivery evidence' }
+			{ label: 'Best for', value: 'Sessions and replies', tone: 'accent' },
+			{ label: 'Check first', value: 'Failed deliveries', tone: 'warning' },
+			{ label: 'Next', value: 'Open the right thread' }
 		]
 	},
 	automate: {
 		id: 'automate',
 		title: 'Automate',
-		description:
-			'Show future wakeups, recurring work, and schedule health as operational load, not calendar chrome.',
-		workspaceEyebrow: 'Future work',
-		workspaceTitle: 'Treat schedules like live machine commitments',
+		description: 'Schedule recurring work and catch runs that may slip.',
+		workspaceEyebrow: 'Recurring work',
+		workspaceTitle: 'Keep repeat work moving on time',
 		workspaceBody:
-			'Automate should tell the operator what is queued next, how much load is coming, and whether any scheduled work is drifting out of shape.',
+			'Set recurring tasks, see what runs next, and spot schedules that need attention before they drift.',
 		cards: [
 			{
-				label: 'Next wakeups',
-				value: 'Near-term queue',
-				detail: 'Make upcoming runs visible in operator language.',
+				label: 'Next runs',
+				value: 'Coming soon',
+				detail: 'See the next scheduled work in plain language.',
 				tone: 'accent'
 			},
 			{
-				label: 'Lane occupancy',
-				value: 'Future pressure',
-				detail: 'Show which teams or specialists will be saturated by recurring work.'
+				label: 'Running now',
+				value: 'Current load',
+				detail: 'See which recurring tasks already have an active run.'
 			},
 			{
-				label: 'Schedule health',
-				value: 'Repair before drift',
-				detail: 'Surface disabled, failing, or starved schedules with the action to fix them.',
+				label: 'Needs review',
+				value: 'Fix drift early',
+				detail: 'Call out disabled or unhealthy schedules before they slip.',
 				tone: 'warning'
 			}
 		],
-		inspectorTitle: 'Scheduling',
+		inspectorTitle: 'Schedule health',
 		inspectorItems: [
-			{ label: 'Primary question', value: 'What will the machine do next?' },
-			{ label: 'View style', value: 'Operational, not calendar', tone: 'accent' },
-			{ label: 'Next milestone', value: 'Schedule board and health rail' }
+			{ label: 'Best for', value: 'Recurring tasks', tone: 'accent' },
+			{ label: 'Check first', value: 'Next run and drift', tone: 'warning' },
+			{ label: 'Next', value: 'Review the schedule list' }
 		]
 	},
 	history: {
 		id: 'history',
 		title: 'History',
-		description:
-			'Explain what happened through run evidence, replay, delivery outcomes, and operator interventions.',
-		workspaceEyebrow: 'Evidence surface',
-		workspaceTitle: 'Make past work explainable instead of merely listable',
+		description: 'Review finished work, approvals, and delivery results.',
+		workspaceEyebrow: 'History',
+		workspaceTitle: 'See what happened and why',
 		workspaceBody:
-			'History is where the operator reconstructs why something happened. The surface should privilege evidence and explanation over passive tables.',
+			'Use finished runs, approvals, and delivery results to understand the last outcome before starting the next move.',
 		cards: [
 			{
-				label: 'Run evidence',
-				value: 'Explain outcomes',
-				detail: 'Connect state changes, lane movement, and operator actions into one narrative.',
+				label: 'Finished runs',
+				value: 'Past work',
+				detail: 'Open the run that best explains what happened.',
 				tone: 'accent'
 			},
 			{
-				label: 'Replay',
-				value: 'Reconstruct precisely',
-				detail: 'Treat replay as a first-class inspection tool, not an internal debug page.'
+				label: 'Approvals',
+				value: 'Recorded decisions',
+				detail: 'See where a human decision changed the path.'
 			},
 			{
-				label: 'Delivery outcomes',
-				value: 'Human-visible receipts',
-				detail: 'Show where the machine succeeded, failed, or needed intervention.'
+				label: 'Deliveries',
+				value: 'Outcome receipts',
+				detail: 'Check what reached the user and what failed.'
 			}
 		],
-		inspectorTitle: 'Evidence',
+		inspectorTitle: 'What changed',
 		inspectorItems: [
-			{ label: 'Primary question', value: 'What happened and why?' },
-			{ label: 'View style', value: 'Replay and outcome evidence', tone: 'accent' },
-			{ label: 'Next milestone', value: 'Run ledger and evidence inspector' }
+			{ label: 'Best for', value: 'Finished runs and evidence', tone: 'accent' },
+			{ label: 'Check first', value: 'Approvals and failures', tone: 'warning' },
+			{ label: 'Next', value: 'Open the clearest run' }
 		]
 	},
 	settings: {
 		id: 'settings',
 		title: 'Settings',
-		description:
-			'Keep machine and deployment configuration in one hard-edged service manual surface.',
-		workspaceEyebrow: 'Machine configuration',
-		workspaceTitle: 'Reserve settings for machine facts, not product navigation',
+		description: 'Manage browser access, active project, and daily work limits.',
+		workspaceEyebrow: 'Settings',
+		workspaceTitle: 'Keep access and limits clear',
 		workspaceBody:
-			'Settings should hold password, device access, project activation, and deployment control without drifting into broader product workflow pages.',
+			'Use settings for browser access, project selection, and machine limits that shape everyday work.',
 		cards: [
 			{
 				label: 'Browser access',
 				value: 'Trusted devices',
-				detail: 'Manage who can operate this machine from the browser.',
+				detail: 'See who can open this app and remove access when needed.',
 				tone: 'accent'
 			},
 			{
-				label: 'Project activation',
-				value: 'One active root',
-				detail: 'Keep the current workspace explicit and reversible.'
+				label: 'Active project',
+				value: 'Current repo',
+				detail: 'Keep the working project visible and easy to change.'
 			},
 			{
-				label: 'Machine posture',
-				value: 'Local-first control',
-				detail: 'Keep deployment facts and operator access visible in one place.'
+				label: 'Limits',
+				value: 'Spend and permissions',
+				detail: 'Adjust the machine rules that affect runs and approvals.'
 			}
 		],
-		inspectorTitle: 'Machine facts',
+		inspectorTitle: 'Machine info',
 		inspectorItems: [
-			{ label: 'Primary question', value: 'How is this machine configured?' },
-			{ label: 'View style', value: 'Service manual, not dashboard', tone: 'accent' },
-			{ label: 'Next milestone', value: 'Access board and machine settings' }
+			{ label: 'Best for', value: 'Access and limits', tone: 'accent' },
+			{ label: 'Check first', value: 'Signed-in browsers', tone: 'warning' },
+			{ label: 'Next', value: 'Update the defaults' }
 		]
 	}
 };

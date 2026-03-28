@@ -164,13 +164,11 @@
 <div class="grid gap-6">
 	<section class="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
 		<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-			<p class="gc-stamp">Machine posture</p>
-			<h2 class="gc-section-title mt-3">
-				Operate the machine without forgetting who can still reach it
-			</h2>
+			<p class="gc-stamp">Machine settings</p>
+			<h2 class="gc-section-title mt-3">Manage access, limits, and the active project</h2>
 			<p class="gc-copy mt-4 max-w-3xl text-[var(--gc-text-secondary)]">
-				Keep trusted browsers, password posture, budget limits, and the active project explicit in
-				one service-manual surface instead of hiding them behind system nouns.
+				Control who can open this app, what project is active, and the machine limits that shape
+				daily work.
 			</p>
 
 			{#if notice}
@@ -198,11 +196,11 @@
 					<p class="gc-value mt-3">{settings.access.blocked_devices.length}</p>
 				</div>
 				<div class="gc-panel-soft px-4 py-4">
-					<p class="gc-stamp">Current root</p>
+					<p class="gc-stamp">Active project</p>
 					<p class="gc-value mt-3">{settings.machine.active_project_name}</p>
 				</div>
 				<div class="gc-panel-soft px-4 py-4">
-					<p class="gc-stamp">24h spend</p>
+					<p class="gc-stamp">Last 24h spend</p>
 					<p class="gc-value mt-3">{settings.machine.rolling_cost_label}</p>
 				</div>
 			</div>
@@ -210,7 +208,7 @@
 
 		<div class="grid gap-4">
 			<div class="gc-panel px-4 py-4">
-				<p class="gc-stamp">Active root</p>
+				<p class="gc-stamp">Active project</p>
 				<h3 class="gc-panel-title mt-3 text-[1rem]">{settings.machine.active_project_name}</h3>
 				<p class="gc-machine mt-3 break-all">{settings.machine.active_project_path}</p>
 			</div>
@@ -261,6 +259,9 @@
 								void mutateDevice(settings.access.current_device!.id, 'block');
 							}}
 						/>
+						<form method="POST" action="/logout" class="mt-4">
+							<SurfaceActionButton type="submit">Sign out this browser</SurfaceActionButton>
+						</form>
 					{:else}
 						<SurfaceEmptyState
 							label="This browser"
@@ -326,10 +327,9 @@
 		<div class="grid gap-4">
 			<form class="gc-panel px-5 py-5 lg:px-6 lg:py-6" onsubmit={changePassword}>
 				<p class="gc-stamp">Change password</p>
-				<h2 class="gc-section-title mt-3">Rotate browser access without touching the daemon</h2>
+				<h2 class="gc-section-title mt-3">Change the password and sign out other browsers</h2>
 				<p class="gc-copy mt-4 text-[var(--gc-text-secondary)]">
-					Changing the password signs out every other browser and keeps the current machine
-					relationship explicit.
+					Changing the password signs out other browsers and keeps this one signed in.
 				</p>
 
 				<div class="mt-6 grid gap-4">
@@ -359,9 +359,7 @@
 
 			<form class="gc-panel px-5 py-5 lg:px-6 lg:py-6" onsubmit={saveMachineSettings}>
 				<p class="gc-stamp">Machine posture</p>
-				<h2 class="gc-section-title mt-3">
-					Keep deployment facts editable without turning them into navigation
-				</h2>
+				<h2 class="gc-section-title mt-3">Adjust machine limits and access defaults</h2>
 
 				<div class="mt-6 grid gap-4">
 					<label class="grid gap-2">

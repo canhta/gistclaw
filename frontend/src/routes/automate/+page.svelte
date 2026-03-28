@@ -24,29 +24,29 @@
 
 	const summaryCards = $derived([
 		{
-			label: 'Live wakeups',
+			label: 'Running now',
 			value: String(data.automate.summary.active_occurrences),
-			detail: 'Scheduled jobs that already own a live lane right now.',
+			detail: 'Scheduled work already running right now.',
 			tone: 'accent' as const
 		},
 		{
-			label: 'Enabled wakes',
+			label: 'Active schedules',
 			value: String(data.automate.summary.enabled_schedules),
-			detail: 'Recurring jobs still armed for future work.'
+			detail: 'Recurring tasks still set to run again.'
 		},
 		{
-			label: 'Next wake',
+			label: 'Next run',
 			value: data.automate.summary.next_wake_at_label,
-			detail: 'The next moment the daemon expects to dispatch scheduled work.'
+			detail: 'When the next scheduled task should start.'
 		},
 		{
-			label: 'Repair debt',
+			label: 'Needs review',
 			value: String(
 				data.automate.health.invalid_schedules +
 					data.automate.health.stuck_dispatching +
 					data.automate.health.missing_next_run
 			),
-			detail: 'Schedule records that need operator repair before drift sets in.',
+			detail: 'Schedules that may miss their next run or need a fix.',
 			tone: 'warning' as const
 		}
 	]);
@@ -72,10 +72,10 @@
 				})
 			});
 			resetDraft();
-			noticeMessage = 'Wakeup created.';
+			noticeMessage = 'Schedule created.';
 			await invalidateAll();
 		} catch (error) {
-			errorMessage = error instanceof HTTPError ? error.message : 'Unable to create this wakeup.';
+			errorMessage = error instanceof HTTPError ? error.message : 'Unable to create this schedule.';
 		} finally {
 			saving = false;
 		}
@@ -90,10 +90,10 @@
 			await requestJSON(fetch, `/api/automate/${scheduleID}/${enabled ? 'disable' : 'enable'}`, {
 				method: 'POST'
 			});
-			noticeMessage = enabled ? 'Wakeup paused.' : 'Wakeup re-armed.';
+			noticeMessage = enabled ? 'Schedule paused.' : 'Schedule resumed.';
 			await invalidateAll();
 		} catch (error) {
-			errorMessage = error instanceof HTTPError ? error.message : 'Unable to update this wakeup.';
+			errorMessage = error instanceof HTTPError ? error.message : 'Unable to update this schedule.';
 		} finally {
 			mutatingID = '';
 		}
@@ -118,10 +118,10 @@
 				});
 				return;
 			}
-			noticeMessage = 'Wakeup launched.';
+			noticeMessage = 'Schedule started.';
 			await invalidateAll();
 		} catch (error) {
-			errorMessage = error instanceof HTTPError ? error.message : 'Unable to launch this wakeup.';
+			errorMessage = error instanceof HTTPError ? error.message : 'Unable to start this schedule.';
 		} finally {
 			mutatingID = '';
 		}
@@ -155,19 +155,18 @@
 
 <div class="grid gap-6">
 	<section class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-		<p class="gc-stamp">Future work</p>
-		<h2 class="gc-section-title mt-3">Keep future work alive without babysitting the daemon</h2>
+		<p class="gc-stamp">Recurring work</p>
+		<h2 class="gc-section-title mt-3">Keep recurring work moving without checking in manually</h2>
 		<p class="gc-copy mt-4 max-w-3xl text-[var(--gc-text-secondary)]">
-			Automate turns scheduler state into an operator board: which wakeups are armed, which lanes
-			are already occupied, and where a recurring job is starting to drift out of shape.
+			Set up repeat work, see what runs next, and fix schedules before they slip.
 		</p>
 
 		{#if noticeMessage}
-			<SurfaceMessage label="Wakeup notice" message={noticeMessage} className="mt-5" />
+			<SurfaceMessage label="Schedule notice" message={noticeMessage} className="mt-5" />
 		{/if}
 
 		{#if errorMessage}
-			<SurfaceMessage label="Wakeup error" message={errorMessage} tone="error" className="mt-5" />
+			<SurfaceMessage label="Schedule error" message={errorMessage} tone="error" className="mt-5" />
 		{/if}
 
 		<div class="mt-6 grid gap-4 xl:grid-cols-4">
@@ -185,12 +184,12 @@
 	<section class="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
 		<div class="grid gap-6">
 			<form class="gc-panel px-5 py-5 lg:px-6 lg:py-6" onsubmit={createSchedule}>
-				<p class="gc-stamp">New wakeup</p>
-				<h2 class="gc-section-title mt-3">Define the next recurring operator promise</h2>
+				<p class="gc-stamp">New schedule</p>
+				<h2 class="gc-section-title mt-3">Set the next recurring task</h2>
 
 				<div class="mt-6 grid gap-4 md:grid-cols-2">
 					<label class="grid gap-2">
-						<span class="gc-stamp">Wakeup name</span>
+						<span class="gc-stamp">Schedule name</span>
 						<input bind:value={name} required class="gc-control" placeholder="Nightly repo sweep" />
 					</label>
 
@@ -244,27 +243,25 @@
 				{/if}
 
 				<SurfaceActionButton type="submit" tone="solid" className="mt-6" disabled={saving}>
-					{saving ? 'Creating wakeup' : 'Create wakeup'}
+					{saving ? 'Creating schedule' : 'Create schedule'}
 				</SurfaceActionButton>
 			</form>
 
 			<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
 				<div class="flex items-end justify-between gap-4">
 					<div>
-						<p class="gc-stamp">Armed wakeups</p>
-						<h2 class="gc-section-title mt-3">
-							See which future commitments are healthy or drifting
-						</h2>
+						<p class="gc-stamp">Scheduled tasks</p>
+						<h2 class="gc-section-title mt-3">See which schedules are healthy or drifting</h2>
 					</div>
-					<p class="gc-machine">{data.automate.schedules.length} visible wakes</p>
+					<p class="gc-machine">{data.automate.schedules.length} visible schedules</p>
 				</div>
 
 				<div class="mt-6 grid gap-4">
 					{#if data.automate.schedules.length === 0}
 						<SurfaceEmptyState
-							label="No wakeups yet"
-							title="Nothing is armed for future work"
-							message="Create the first wakeup to turn recurring operator work into a live daemon promise."
+							label="No schedules yet"
+							title="No recurring work is scheduled yet"
+							message="Create the first recurring task to keep work moving automatically."
 						/>
 					{:else}
 						{#each data.automate.schedules as schedule (schedule.id)}
@@ -304,7 +301,7 @@
 										disabled={mutatingID !== '' && mutatingID !== schedule.id}
 										tone={statusTone(schedule.status_class)}
 									>
-										Launch now
+										Run now
 									</SurfaceActionButton>
 									<SurfaceActionButton
 										type="button"
@@ -312,7 +309,7 @@
 										disabled={mutatingID !== '' && mutatingID !== schedule.id}
 										tone="warning"
 									>
-										{schedule.enabled ? 'Pause wakeup' : 'Enable wakeup'}
+										{schedule.enabled ? 'Pause schedule' : 'Resume schedule'}
 									</SurfaceActionButton>
 								</div>
 							</article>
@@ -324,16 +321,14 @@
 
 		<div class="grid gap-6">
 			<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-				<p class="gc-stamp">Live lanes</p>
-				<h2 class="gc-section-title mt-3">
-					Watch scheduled work that already owns runtime attention
-				</h2>
+				<p class="gc-stamp">Running now</p>
+				<h2 class="gc-section-title mt-3">See scheduled work that is already running</h2>
 				<div class="mt-4 grid gap-4">
 					{#if data.automate.open_occurrences.length === 0}
 						<SurfaceEmptyState
-							label="No live wakeups"
-							title="No schedule owns a lane right now"
-							message="Nothing scheduled is occupying a live lane right now."
+							label="Nothing running now"
+							title="No schedule is running right now"
+							message="Recurring work will show up here while it is in progress."
 						/>
 					{:else}
 						{#each data.automate.open_occurrences as occurrence (occurrence.id)}
@@ -368,13 +363,13 @@
 
 			<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
 				<p class="gc-stamp">Recent executions</p>
-				<h2 class="gc-section-title mt-3">Read the last result before you trust the next wake</h2>
+				<h2 class="gc-section-title mt-3">Check the last result before the next run</h2>
 				<div class="mt-4 grid gap-4">
 					{#if data.automate.recent_occurrences.length === 0}
 						<SurfaceEmptyState
-							label="No recent executions"
-							title="Execution evidence is still empty"
-							message="Execution evidence will appear here once the first wakeup runs."
+							label="No recent runs"
+							title="No schedule has finished yet"
+							message="Recent results will show up here after the first schedule runs."
 						/>
 					{:else}
 						{#each data.automate.recent_occurrences as occurrence (occurrence.id)}

@@ -74,6 +74,9 @@ describe('Knowledge page', () => {
 		});
 
 		expect(body).toContain('Knowledge shaping future work in this project.');
+		expect(body).toContain(
+			'Save rules and facts in plain language so future work can follow them.'
+		);
 		expect(body).toContain('captured operator preference');
 		expect(body).toContain('shared repo rule');
 		expect(body).toContain('operator edit');

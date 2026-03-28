@@ -109,5 +109,8 @@ describe('Work page', () => {
 		expect(body).toContain('/work/run-work-root');
 		expect(body).toContain('Open run graph');
 		expect(body).toContain('Describe the work you want GistClaw to handle next');
+		expect(body).toContain('Describe the task in plain language.');
+		expect(body).toContain('GistClaw will start it and open the run so you can keep');
+		expect(body).toContain('it moving.');
 	});
 });

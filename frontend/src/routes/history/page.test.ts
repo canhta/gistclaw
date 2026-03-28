@@ -97,7 +97,10 @@ describe('History page', () => {
 			}
 		});
 
-		expect(body).toContain('Read what happened before you decide what happens next');
+		expect(body).toContain('See what happened before you decide what to do next');
+		expect(body).toContain(
+			'Review finished runs, approvals, and delivery results so the next step starts from evidence.'
+		);
 		expect(body).toContain('Inspect repository health');
 		expect(body).toContain('apply_patch');
 		expect(body).toContain('3 attempts');

@@ -75,11 +75,10 @@
 
 <div class="grid gap-6">
 	<section class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-		<p class="gc-stamp">Intervention bench</p>
-		<h2 class="gc-section-title mt-3">Put live operator work ahead of dead history</h2>
+		<p class="gc-stamp">Recover</p>
+		<h2 class="gc-section-title mt-3">Fix blocked work before it piles up</h2>
 		<p class="gc-copy mt-4 max-w-3xl text-[var(--gc-text-secondary)]">
-			Recover is where you clear approvals, repair routes, and requeue deliveries without hunting
-			through system pages.
+			Approve requests, retry failed deliveries, and repair routes from one place.
 		</p>
 
 		{#if errorMessage}
@@ -118,7 +117,7 @@
 			<div class="flex items-end justify-between gap-4">
 				<div>
 					<p class="gc-stamp">Approval queue</p>
-					<h2 class="gc-section-title mt-3">Clear decisions before they harden into drift</h2>
+					<h2 class="gc-section-title mt-3">Clear pending decisions first</h2>
 				</div>
 				<p class="gc-machine">{data.recover.approvals.length} visible tickets</p>
 			</div>
@@ -128,7 +127,7 @@
 					<SurfaceEmptyState
 						label="No waiting approvals"
 						title="The intervention bench is clear"
-						message="Nothing is blocked on an operator decision right now."
+						message="Nothing is waiting for your approval right now."
 					/>
 				{:else}
 					{#each data.recover.approvals as approval (approval.id)}
@@ -168,8 +167,8 @@
 			<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
 				<div class="flex items-end justify-between gap-4">
 					<div>
-						<p class="gc-stamp">Connector health</p>
-						<h2 class="gc-section-title mt-3">Repair the route before the user feels the break</h2>
+						<p class="gc-stamp">Route and delivery health</p>
+						<h2 class="gc-section-title mt-3">Fix delivery paths before messages stall</h2>
 					</div>
 					<p class="gc-machine">{data.recover.repair.connector_count} connectors</p>
 				</div>
@@ -199,13 +198,15 @@
 				<div class="mt-4 grid gap-4">
 					{#each data.recover.repair.active_routes as route (route.id)}
 						<article class="gc-panel-soft px-4 py-4">
-							<div class="flex items-start justify-between gap-4">
-								<div>
+							<div
+								class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+							>
+								<div class="min-w-0">
 									<p class="gc-stamp">{route.connector_id} · {route.role_label}</p>
 									<h3 class="gc-panel-title mt-3 text-[1rem]">{route.external_id}</h3>
 								</div>
 								<a
-									class="gc-machine underline"
+									class="gc-machine break-all underline sm:text-right"
 									href={resolve('/conversations/[sessionId]', { sessionId: route.session_id })}
 								>
 									{route.session_id}

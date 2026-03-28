@@ -253,30 +253,45 @@ func TestAuthPasswordChangeRotatesBrowserPassword(t *testing.T) {
 }
 
 func TestAuthLogoutClearsCookiesAndRedirectsToLogin(t *testing.T) {
-	h := newServerHarness(t)
-	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Date(2026, time.March, 27, 8, 0, 0, 0, time.UTC)); err != nil {
-		t.Fatalf("SetPassword: %v", err)
+	t.Parallel()
+
+	cases := []struct {
+		name   string
+		method string
+	}{
+		{name: "post", method: http.MethodPost},
+		{name: "get", method: http.MethodGet},
 	}
 
-	sessionCookie, deviceCookie := loginForTest(t, h, "secret-pass")
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			h := newServerHarness(t)
+			if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Date(2026, time.March, 27, 8, 0, 0, 0, time.UTC)); err != nil {
+				t.Fatalf("SetPassword: %v", err)
+			}
 
-	logoutResp := httptest.NewRecorder()
-	logoutReq := httptest.NewRequest(http.MethodPost, "http://localhost/logout", nil)
-	logoutReq.AddCookie(sessionCookie)
-	logoutReq.AddCookie(deviceCookie)
-	h.rawServer.ServeHTTP(logoutResp, logoutReq)
+			sessionCookie, deviceCookie := loginForTest(t, h, "secret-pass")
 
-	if logoutResp.Code != http.StatusSeeOther {
-		t.Fatalf("expected 303, got %d", logoutResp.Code)
-	}
-	if logoutResp.Header().Get("Location") != "/login?reason=logged_out" {
-		t.Fatalf("expected logout redirect, got %q", logoutResp.Header().Get("Location"))
-	}
-	for _, name := range []string{sessionCookieName, deviceCookieName} {
-		cookie := findCookie(logoutResp.Result().Cookies(), name)
-		if cookie == nil || cookie.MaxAge != -1 {
-			t.Fatalf("expected %s to be cleared, got %#v", name, cookie)
-		}
+			logoutResp := httptest.NewRecorder()
+			logoutReq := httptest.NewRequest(tc.method, "http://localhost/logout", nil)
+			logoutReq.AddCookie(sessionCookie)
+			logoutReq.AddCookie(deviceCookie)
+			h.rawServer.ServeHTTP(logoutResp, logoutReq)
+
+			if logoutResp.Code != http.StatusSeeOther {
+				t.Fatalf("expected 303, got %d body=%s", logoutResp.Code, logoutResp.Body.String())
+			}
+			if logoutResp.Header().Get("Location") != "/login?reason=logged_out" {
+				t.Fatalf("expected logout redirect, got %q", logoutResp.Header().Get("Location"))
+			}
+			for _, name := range []string{sessionCookieName, deviceCookieName} {
+				cookie := findCookie(logoutResp.Result().Cookies(), name)
+				if cookie == nil || cookie.MaxAge != -1 {
+					t.Fatalf("expected %s to be cleared, got %#v", name, cookie)
+				}
+			}
+		})
 	}
 }
 

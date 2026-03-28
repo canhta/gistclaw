@@ -42,4 +42,26 @@ describe('AppShell', () => {
 		expect(body).toContain('data-shell-mobile-nav');
 		expect(body).toContain('data-shell-mobile-signal');
 	});
+
+	it('uses neutral shell labels when the repo name matches the product brand', () => {
+		const { body } = render(AppShell, {
+			props: {
+				navigation: [{ id: 'work', label: 'Work', href: '/work' }],
+				project: {
+					active_id: 'proj-gistclaw',
+					active_name: 'gistclaw',
+					active_path: '/Users/canh/Projects/OSS/gistclaw'
+				},
+				currentPath: '/work',
+				title: 'Work',
+				description: 'Steer current objectives, orchestration, and live machine signal.',
+				inspectorTitle: 'Machine signal'
+			}
+		});
+
+		expect(body).toContain('Control deck');
+		expect(body).toContain('Bound repo');
+		expect(body).toContain('Repo workbench');
+		expect(body).not.toContain('>GistClaw</p>');
+	});
 });

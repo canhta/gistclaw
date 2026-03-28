@@ -55,8 +55,8 @@
 			<p class="gc-stamp">Command intake</p>
 			<h2 class="gc-section-title mt-3">Describe the work you want GistClaw to handle next</h2>
 			<p class="gc-copy mt-4 max-w-3xl text-[var(--gc-text-secondary)]">
-				Start from the operator’s job. Frame the task, let the runtime fan it out, then move
-				straight into the live graph when the run is created.
+				Describe the task in plain language. GistClaw will start it and open the run so you can keep
+				it moving.
 			</p>
 
 			<form class="mt-6 grid gap-4" onsubmit={submit}>
@@ -107,7 +107,7 @@
 		<div class="flex flex-wrap items-end justify-between gap-4">
 			<div>
 				<p class="gc-stamp">Live runs</p>
-				<h2 class="gc-section-title mt-3">Open a run where the operator can actually intervene</h2>
+				<h2 class="gc-section-title mt-3">Open the run that needs your attention</h2>
 			</div>
 			<p class="gc-machine">{data.work.clusters.length} visible clusters</p>
 		</div>

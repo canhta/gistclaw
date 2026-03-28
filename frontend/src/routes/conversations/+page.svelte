@@ -18,29 +18,28 @@
 
 <div class="grid gap-6">
 	<section class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-		<p class="gc-stamp">External surfaces</p>
-		<h2 class="gc-section-title mt-3">See who is connected, healthy, and slipping</h2>
+		<p class="gc-stamp">Conversations</p>
+		<h2 class="gc-section-title mt-3">See who is waiting on a reply</h2>
 		<p class="gc-copy mt-4 max-w-3xl text-[var(--gc-text-secondary)]">
-			Conversations keeps session ownership, connector state, and delivery pressure readable from
-			the user point of view instead of a transport-first admin page.
+			Check who is talking to GistClaw, which channels are healthy, and where replies need help.
 		</p>
 
 		<div class="mt-6 grid gap-4 xl:grid-cols-3">
 			<SurfaceMetricCard
-				label="Visible sessions"
+				label="Active conversations"
 				value={String(data.conversations.summary.session_count)}
-				detail="Sessions currently attached to the active project."
+				detail="Conversations currently attached to this project."
 				tone="accent"
 			/>
 			<SurfaceMetricCard
-				label="Connector surfaces"
+				label="Connected channels"
 				value={String(data.conversations.summary.connector_count)}
-				detail="Distinct external surfaces with current delivery or runtime signal."
+				detail="Channels with current delivery or health signal."
 			/>
 			<SurfaceMetricCard
-				label="Terminal deliveries"
+				label="Failed deliveries"
 				value={String(data.conversations.summary.terminal_deliveries)}
-				detail="Outbound attempts that now need recovery attention."
+				detail="Replies that now need recovery attention."
 				tone="warning"
 			/>
 		</div>
@@ -50,8 +49,8 @@
 		<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
 			<div class="flex items-end justify-between gap-4">
 				<div>
-					<p class="gc-stamp">Session mailbox</p>
-					<h2 class="gc-section-title mt-3">Open the conversation that needs operator context</h2>
+					<p class="gc-stamp">Active threads</p>
+					<h2 class="gc-section-title mt-3">Open the conversation that needs attention</h2>
 				</div>
 				<p class="gc-machine">{data.conversations.sessions.length} visible sessions</p>
 			</div>
@@ -59,9 +58,9 @@
 			<div class="mt-6 grid gap-4">
 				{#if data.conversations.sessions.length === 0}
 					<SurfaceEmptyState
-						label="No active conversations"
-						title="No bound sessions are visible yet"
-						message="No bound sessions are visible for this project yet."
+						label="No conversations yet"
+						title="No active conversation is visible yet"
+						message="Start work or connect a chat to see it here."
 						actionHref={resolve('/work')}
 						actionLabel="Open Work"
 					/>
@@ -79,7 +78,7 @@
 								<p class="gc-machine">{session.status_label}</p>
 							</div>
 							<p class="gc-copy mt-4 text-[var(--gc-text-secondary)]">
-								Conversation {session.conversation_id}
+								Thread {session.conversation_id}
 							</p>
 							<p class="gc-machine mt-4">{session.updated_at_label}</p>
 						</a>
@@ -90,7 +89,7 @@
 
 		<div class="grid gap-6">
 			<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-				<p class="gc-stamp">Connector health</p>
+				<p class="gc-stamp">Channel health</p>
 				<div class="mt-4 grid gap-4">
 					{#each data.conversations.runtime_connectors as item (item.connector_id)}
 						<article class="gc-panel-soft px-4 py-4">
@@ -103,7 +102,7 @@
 			</div>
 
 			<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-				<p class="gc-stamp">Delivery pressure</p>
+				<p class="gc-stamp">Delivery issues</p>
 				<div class="mt-4 grid gap-4">
 					{#each data.conversations.health as item (item.connector_id)}
 						<article class="gc-panel-soft px-4 py-4">

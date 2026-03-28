@@ -83,11 +83,18 @@ describe('Settings page', () => {
 			}
 		});
 
-		expect(body).toContain('Operate the machine without forgetting who can still reach it');
+		expect(body).toContain('Manage access, limits, and the active project');
+		expect(body).toContain(
+			'Control who can open this app, what project is active, and the machine'
+		);
+		expect(body).toContain('limits that shape');
+		expect(body).toContain('daily work.');
 		expect(body).toContain('This browser');
 		expect(body).toContain('Chrome on macOS');
 		expect(body).toContain('Other signed-in browsers');
 		expect(body).toContain('Change password');
+		expect(body).toContain('Sign out this browser');
+		expect(body).toContain('action="/logout"');
 		expect(body).toContain('Machine posture');
 		expect(body).toContain('starter-project');
 		expect(body).toContain('87654321***************');

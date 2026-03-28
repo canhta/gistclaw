@@ -114,11 +114,10 @@
 <div class="grid gap-6">
 	<section class="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
 		<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-			<p class="gc-stamp">Durable context</p>
+			<p class="gc-stamp">Saved context</p>
 			<h2 class="gc-section-title mt-3">{data.knowledge.headline}</h2>
 			<p class="gc-copy mt-4 max-w-3xl text-[var(--gc-text-secondary)]">
-				Keep facts in operator language. What matters here is what future work will do differently,
-				not how the row happens to be stored.
+				Save rules and facts in plain language so future work can follow them.
 			</p>
 
 			<form class="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4" onsubmit={applyFilters}>
@@ -206,10 +205,10 @@
 			</div>
 
 			<div class="gc-panel-soft px-4 py-4">
-				<p class="gc-stamp">Operator posture</p>
+				<p class="gc-stamp">What to remember</p>
 				<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-					Edit facts in the language you want the machine to respect later, then forget anything
-					that no longer deserves influence.
+					Edit facts in the language you want future work to follow, then remove anything that no
+					longer matters.
 				</p>
 			</div>
 		</div>
@@ -219,9 +218,7 @@
 		<div class="flex flex-wrap items-end justify-between gap-4">
 			<div>
 				<p class="gc-stamp">Visible knowledge</p>
-				<h2 class="gc-section-title mt-3">
-					Curate memory by impact instead of scanning a hidden table
-				</h2>
+				<h2 class="gc-section-title mt-3">Review the saved context that shapes later work</h2>
 			</div>
 			<p class="gc-machine">{data.knowledge.items.length} visible items</p>
 		</div>

@@ -95,11 +95,14 @@ describe('Automate page', () => {
 			}
 		});
 
-		expect(body).toContain('Keep future work alive without babysitting the daemon');
+		expect(body).toContain('Keep recurring work moving without checking in manually');
+		expect(body).toContain(
+			'Set up repeat work, see what runs next, and fix schedules before they slip.'
+		);
 		expect(body).toContain('Repo review');
 		expect(body).toContain('Every 2h from 08:00 UTC');
-		expect(body).toContain('Launch now');
-		expect(body).toContain('Create wakeup');
+		expect(body).toContain('Run now');
+		expect(body).toContain('Create schedule');
 		expect(body).toContain('/work/run-open');
 	});
 });

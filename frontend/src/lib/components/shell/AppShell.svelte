@@ -74,7 +74,7 @@
 							class="h-12 w-12 border-2 border-[var(--gc-border-strong)] bg-[var(--gc-canvas)] p-1"
 						/>
 						<div class="min-w-0">
-							<p class="gc-stamp">GistClaw</p>
+							<p class="gc-stamp">Bound repo</p>
 							<h1 class="gc-panel-title mt-3 text-[1.15rem] break-words">
 								{project.active_name}
 							</h1>
@@ -150,8 +150,8 @@
 						class="h-12 w-12 border-2 border-[var(--gc-border-strong)] bg-[var(--gc-canvas)] p-1"
 					/>
 					<div>
-						<p class="gc-stamp">GistClaw</p>
-						<p class="gc-machine mt-2">local-first control deck</p>
+						<p class="gc-stamp">Control deck</p>
+						<p class="gc-machine mt-2">Repo workbench</p>
 					</div>
 				</div>
 				<h1 class="gc-panel-title mt-3 text-[1.45rem]">{project.active_name}</h1>

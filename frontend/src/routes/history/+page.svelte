@@ -39,11 +39,10 @@
 
 <div class="grid gap-6">
 	<section class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-		<p class="gc-stamp">Evidence surface</p>
-		<h2 class="gc-section-title mt-3">Read what happened before you decide what happens next</h2>
+		<p class="gc-stamp">History</p>
+		<h2 class="gc-section-title mt-3">See what happened before you decide what to do next</h2>
 		<p class="gc-copy mt-4 max-w-3xl text-[var(--gc-text-secondary)]">
-			History keeps durable machine facts in one place: run outcomes, operator interventions, and
-			delivery receipts that explain what users actually felt on the edge.
+			Review finished runs, approvals, and delivery results so the next step starts from evidence.
 		</p>
 
 		<div class="mt-6 grid gap-4 xl:grid-cols-4">
@@ -63,9 +62,7 @@
 			<div class="flex items-end justify-between gap-4">
 				<div>
 					<p class="gc-stamp">Run history</p>
-					<h2 class="gc-section-title mt-3">
-						Open the run that still contains the best explanation
-					</h2>
+					<h2 class="gc-section-title mt-3">Open the run that best explains what happened</h2>
 				</div>
 				<p class="gc-machine">{data.history.runs.length} visible roots</p>
 			</div>
@@ -75,7 +72,7 @@
 					<SurfaceEmptyState
 						label="No run evidence yet"
 						title="History is still empty"
-						message="Completed and recovery runs will collect here once the first session executes."
+						message="Finished and interrupted runs will show up here after the first task."
 						actionHref={resolve('/work')}
 						actionLabel="Launch first run"
 					/>
@@ -89,7 +86,7 @@
 
 		<div class="grid gap-6">
 			<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-				<p class="gc-stamp">Operator interventions</p>
+				<p class="gc-stamp">Decisions</p>
 				<div class="mt-4 grid gap-4">
 					{#if data.history.approvals.length === 0}
 						<SurfaceEmptyState
@@ -123,7 +120,7 @@
 			</div>
 
 			<div class="gc-panel px-5 py-5 lg:px-6 lg:py-6">
-				<p class="gc-stamp">Delivery outcomes</p>
+				<p class="gc-stamp">Delivery results</p>
 				<div class="mt-4 grid gap-4">
 					{#if data.history.deliveries.length === 0}
 						<SurfaceEmptyState

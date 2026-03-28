@@ -76,7 +76,10 @@ describe('Conversations page', () => {
 			}
 		});
 
-		expect(body).toContain('See who is connected, healthy, and slipping');
+		expect(body).toContain('See who is waiting on a reply');
+		expect(body).toContain(
+			'Check who is talking to GistClaw, which channels are healthy, and where replies need help.'
+		);
 		expect(body).toContain('/conversations/session-1');
 		expect(body).toContain('webhook activity recent');
 		expect(body).toContain('1 terminal');
