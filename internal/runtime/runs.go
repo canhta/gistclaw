@@ -1867,11 +1867,6 @@ func (r *Runtime) visibleToolSpecs(agent model.AgentProfile) []model.ToolSpec {
 	return visible
 }
 
-func agentProfileFromSnapshot(snapshotJSON []byte, agentID string) (model.AgentProfile, error) {
-	profile, _, err := agentContextFromSnapshot(snapshotJSON, agentID)
-	return profile, err
-}
-
 func agentContextFromSnapshot(snapshotJSON []byte, agentID string) (model.AgentProfile, map[string]model.AgentProfile, error) {
 	fallback := model.AgentProfile{AgentID: agentID}
 	if len(snapshotJSON) == 0 {
