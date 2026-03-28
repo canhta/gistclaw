@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
-	import { invalidateAll } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
 	import SurfaceEmptyState from '$lib/components/common/SurfaceEmptyState.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
@@ -18,6 +18,7 @@
 	let editsOverride = $state<Record<string, string>>({});
 	let savingID = $state('');
 	let forgettingID = $state('');
+	let confirmingForgetID = $state('');
 
 	async function applyFilters(event: SubmitEvent): Promise<void> {
 		event.preventDefault();
@@ -36,9 +37,8 @@
 			search.set('limit', filterLimitValue().trim());
 		}
 
-		window.location.assign(
-			`${resolve('/knowledge')}${search.toString() === '' ? '' : `?${search.toString()}`}`
-		);
+		const qs = search.toString();
+		await goto(resolve('/knowledge') + (qs ? `?${qs}` : ''));
 	}
 
 	async function saveEdit(itemID: string): Promise<void> {
@@ -63,6 +63,7 @@
 
 	async function forgetItem(itemID: string): Promise<void> {
 		forgettingID = itemID;
+		confirmingForgetID = '';
 		errorMessage = '';
 
 		try {
@@ -95,6 +96,10 @@
 
 	function filterLimitValue(): string {
 		return filterLimitOverride ?? String(data.knowledge.filters.limit);
+	}
+
+	function cursorHref(cursor: string): string {
+		return resolve('/knowledge') + '?cursor=' + encodeURIComponent(cursor);
 	}
 
 	function knowledgeContent(itemID: string): string {
@@ -279,17 +284,51 @@
 								{savingID === item.id ? 'Saving edit' : 'Save edit'}
 							</SurfaceActionButton>
 
-							<SurfaceActionButton
-								type="button"
-								tone="warning"
-								onclick={() => forgetItem(item.id)}
-								disabled={forgettingID !== '' && forgettingID !== item.id}
-							>
-								{forgettingID === item.id ? 'Forgetting item' : 'Forget item'}
-							</SurfaceActionButton>
+							{#if confirmingForgetID === item.id}
+								<SurfaceActionButton
+									type="button"
+									tone="warning"
+									onclick={() => forgetItem(item.id)}
+									disabled={forgettingID === item.id}
+								>
+									{forgettingID === item.id ? 'Forgetting' : 'Confirm — forget it'}
+								</SurfaceActionButton>
+								<SurfaceActionButton type="button" onclick={() => (confirmingForgetID = '')}>
+									Cancel
+								</SurfaceActionButton>
+							{:else}
+								<SurfaceActionButton
+									type="button"
+									onclick={() => (confirmingForgetID = item.id)}
+									disabled={forgettingID !== '' && forgettingID !== item.id}
+								>
+									Forget item
+								</SurfaceActionButton>
+							{/if}
 						</div>
 					</article>
 				{/each}
+			</div>
+		{/if}
+
+		{#if data.knowledge.paging.has_prev || data.knowledge.paging.has_next}
+			<div class="mt-6 flex gap-3 border-t-2 border-[var(--gc-border)] pt-4">
+				{#if data.knowledge.paging.has_prev && data.knowledge.paging.prev_cursor}
+					<a
+						href={cursorHref(data.knowledge.paging.prev_cursor)}
+						class="gc-action gc-action-accent px-5 py-3"
+					>
+						Previous page
+					</a>
+				{/if}
+				{#if data.knowledge.paging.has_next && data.knowledge.paging.next_cursor}
+					<a
+						href={cursorHref(data.knowledge.paging.next_cursor)}
+						class="gc-action gc-action-accent px-5 py-3"
+					>
+						Next page
+					</a>
+				{/if}
 			</div>
 		{/if}
 	</section>
