@@ -62,6 +62,36 @@ func TestAuthenticatedGETWorkServesSPAIndex(t *testing.T) {
 	}
 }
 
+func TestAuthenticatedGETNestedSPARoutesServeIndex(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Now().UTC()); err != nil {
+		t.Fatalf("set password: %v", err)
+	}
+	sessionCookie, deviceCookie := loginForTest(t, h, "secret-pass")
+
+	wantBody, err := readSPAAsset("index.html")
+	if err != nil {
+		t.Fatalf("read spa index: %v", err)
+	}
+
+	for _, path := range []string{"/work/run-work-root", "/conversations/session-1"} {
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		req.AddCookie(sessionCookie)
+		req.AddCookie(deviceCookie)
+		h.rawServer.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200 for %s, got %d body=%s", path, rr.Code, rr.Body.String())
+		}
+		if rr.Body.String() != string(wantBody) {
+			t.Fatalf("expected %s to serve spa index", path)
+		}
+	}
+}
+
 func TestAuthSessionAPIReportsSetupAndDeviceState(t *testing.T) {
 	t.Parallel()
 

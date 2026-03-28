@@ -226,3 +226,183 @@ export interface KnowledgeResponse {
 		has_prev: boolean;
 	};
 }
+
+export interface PageLinksResponse {
+	next_url?: string;
+	prev_url?: string;
+	has_next: boolean;
+	has_prev: boolean;
+}
+
+export interface RecoverApprovalResponse {
+	id: string;
+	run_id: string;
+	tool_name: string;
+	binding_summary: string;
+	status: string;
+	status_label: string;
+	status_class: string;
+	resolved_by?: string;
+	resolved_at_label?: string;
+}
+
+export interface RecoverRepairFiltersResponse {
+	query: string;
+	connector_id: string;
+	route_status: string;
+	delivery_status: string;
+	active_limit: number;
+	history_limit: number;
+	delivery_limit: number;
+}
+
+export interface RecoverDeliveryHealthResponse {
+	connector_id: string;
+	pending_count: number;
+	retrying_count: number;
+	terminal_count: number;
+	state_class: string;
+}
+
+export interface RecoverRuntimeHealthResponse {
+	connector_id: string;
+	state: string;
+	state_label: string;
+	state_class: string;
+	summary: string;
+	checked_at_label?: string;
+	restart_suggested: boolean;
+}
+
+export interface RecoverRouteResponse {
+	id: string;
+	connector_id: string;
+	external_id: string;
+	thread_id: string;
+	session_id: string;
+	conversation_id: string;
+	agent_id: string;
+	role_label: string;
+	status_label: string;
+	deactivated_label?: string;
+	deactivation_note?: string;
+	replaced_by_route_id?: string;
+}
+
+export interface RecoverDeliveryResponse {
+	id: string;
+	run_id: string;
+	session_id: string;
+	connector_id: string;
+	chat_id: string;
+	message: {
+		plain_text: string;
+		html: string;
+	};
+	status: string;
+	status_label: string;
+	attempts_label: string;
+}
+
+export interface RecoverResponse {
+	summary: {
+		open_approvals: number;
+		pending_approvals: number;
+		connector_count: number;
+		active_routes: number;
+		terminal_deliveries: number;
+	};
+	approvals: RecoverApprovalResponse[];
+	approval_paging: PageLinksResponse;
+	repair: {
+		connector_count: number;
+		filters: RecoverRepairFiltersResponse;
+		health: RecoverDeliveryHealthResponse[];
+		runtime_connectors: RecoverRuntimeHealthResponse[];
+		active_routes: RecoverRouteResponse[];
+		active_paging: PageLinksResponse;
+		route_history: RecoverRouteResponse[];
+		history_paging: PageLinksResponse;
+		deliveries: RecoverDeliveryResponse[];
+		delivery_paging: PageLinksResponse;
+	};
+}
+
+export interface ConversationIndexItemResponse {
+	id: string;
+	conversation_id: string;
+	agent_id: string;
+	role_label: string;
+	status_label: string;
+	updated_at_label: string;
+}
+
+export interface ConversationsResponse {
+	summary: {
+		session_count: number;
+		connector_count: number;
+		terminal_deliveries: number;
+	};
+	filters: {
+		query: string;
+		agent_id: string;
+		role: string;
+		status: string;
+		connector_id: string;
+		binding: string;
+	};
+	sessions: ConversationIndexItemResponse[];
+	paging: PageLinksResponse;
+	health: RecoverDeliveryHealthResponse[];
+	runtime_connectors: RecoverRuntimeHealthResponse[];
+}
+
+export interface ConversationDetailResponse {
+	session: {
+		id: string;
+		agent_id: string;
+		role_label: string;
+		status_label: string;
+	};
+	messages: Array<{
+		kind: string;
+		kind_label: string;
+		body: {
+			plain_text: string;
+			html: string;
+		};
+		sender_label: string;
+		sender_is_mono: boolean;
+		source_run_id?: string;
+	}>;
+	route?: {
+		id: string;
+		connector_id: string;
+		external_id: string;
+		thread_id: string;
+		status_label: string;
+		created_at_label: string;
+		deactivated_label?: string;
+	};
+	active_run_id?: string;
+	deliveries: Array<{
+		id: string;
+		connector_id: string;
+		chat_id: string;
+		message: {
+			plain_text: string;
+			html: string;
+		};
+		status: string;
+		status_label: string;
+		attempts_label: string;
+	}>;
+	delivery_failures: Array<{
+		id: string;
+		connector_id: string;
+		chat_id: string;
+		event_kind_label: string;
+		error: string;
+		created_at_label: string;
+	}>;
+}

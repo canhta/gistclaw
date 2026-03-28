@@ -36,21 +36,27 @@ type approvalsPageData struct {
 }
 
 func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
+	data, err := s.loadApprovalsPageData(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.renderTemplate(w, r, "Approvals", "approvals_body", data)
+}
+
+func (s *Server) loadApprovalsPageData(r *http.Request) (approvalsPageData, error) {
 	filter := approvalListFilterFromRequest(r)
 	activeProject, err := runtime.ActiveProject(r.Context(), s.db)
 	if err != nil {
-		http.Error(w, "failed to load active project", http.StatusInternalServerError)
-		return
+		return approvalsPageData{}, fmt.Errorf("failed to load active project")
 	}
 	querySQL, args, err := buildApprovalListQuery(filter, activeProject)
 	if err != nil {
-		http.Error(w, "failed to build approvals query", http.StatusInternalServerError)
-		return
+		return approvalsPageData{}, fmt.Errorf("failed to build approvals query")
 	}
 	rows, err := s.db.RawDB().QueryContext(r.Context(), querySQL, args...)
 	if err != nil {
-		http.Error(w, "failed to load approvals", http.StatusInternalServerError)
-		return
+		return approvalsPageData{}, fmt.Errorf("failed to load approvals")
 	}
 	defer rows.Close()
 
@@ -61,8 +67,7 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 		var createdAt string
 		var resolvedAt sql.NullTime
 		if err := rows.Scan(&item.ID, &item.RunID, &item.ToolName, &bindingJSON, &item.Status, &item.ResolvedBy, &item.CreatedAt, &resolvedAt, &createdAt); err != nil {
-			http.Error(w, "failed to load approvals", http.StatusInternalServerError)
-			return
+			return approvalsPageData{}, fmt.Errorf("failed to load approvals")
 		}
 		item.BindingSummary = approvalBindingSummary(bindingJSON)
 		item.StatusLabel = humanizeWebLabel(item.Status)
@@ -74,12 +79,11 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 		approvalRows = append(approvalRows, approvalListRow{Item: item, CreatedAt: createdAt})
 	}
 	if err := rows.Err(); err != nil {
-		http.Error(w, "failed to load approvals", http.StatusInternalServerError)
-		return
+		return approvalsPageData{}, fmt.Errorf("failed to load approvals")
 	}
 
 	items, paging := finalizeApprovalListPage(r.URL.Query(), filter, approvalRows)
-	s.renderTemplate(w, r, "Approvals", "approvals_body", approvalsPageData{
+	return approvalsPageData{
 		Approvals: items,
 		Filters: approvalListFilters{
 			Query:  filter.Query,
@@ -87,7 +91,7 @@ func (s *Server) handleApprovals(w http.ResponseWriter, r *http.Request) {
 			Limit:  filter.Limit,
 		},
 		Paging: paging,
-	})
+	}, nil
 }
 
 func (s *Server) handleApprovalResolve(w http.ResponseWriter, r *http.Request) {
