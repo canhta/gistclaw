@@ -6,7 +6,7 @@ import (
 	"io/fs"
 )
 
-//go:embed appdist
+//go:embed all:appdist
 var spaAssets embed.FS
 
 func spaAssetsFS() fs.FS {
