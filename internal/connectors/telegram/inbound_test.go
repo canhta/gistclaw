@@ -106,45 +106,6 @@ func TestInbound_SlashCommandsArePreserved(t *testing.T) {
 	}
 }
 
-func TestInbound_LegacyTaskAliasesArePreservedAsPlainText(t *testing.T) {
-	tests := []struct {
-		name string
-		text string
-		want string
-	}{
-		{
-			name: "run alias",
-			text: "/run review the repo",
-			want: "/run review the repo",
-		},
-		{
-			name: "task alias",
-			text: "/task review the repo",
-			want: "/task review the repo",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			upd := Update{
-				UpdateID: 201,
-				Message: &Message{
-					MessageID: 201,
-					Chat:      Chat{ID: 1, Type: "private"},
-					Text:      tt.text,
-				},
-			}
-
-			env, err := NormalizeUpdate(upd)
-			if err != nil {
-				t.Fatalf("NormalizeUpdate: %v", err)
-			}
-			if env.Text != tt.want {
-				t.Fatalf("expected preserved text %q, got %q", tt.want, env.Text)
-			}
-		})
-	}
-}
 
 func TestInbound_CallbackQueryNormalizesAsDeterministicReply(t *testing.T) {
 	upd := Update{

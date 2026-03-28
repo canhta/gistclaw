@@ -1,8 +1,6 @@
 package web
 
 import (
-	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/model"
@@ -135,29 +133,4 @@ func findGraphEdge(t *testing.T, edges []runGraphEdgeView, from, to, kind string
 	}
 	t.Fatalf("edge %q -> %q (%s) not found", from, to, kind)
 	return runGraphEdgeView{}
-}
-
-func TestBuildRunGraphViewDoesNotExposeLegacyDepthColumns(t *testing.T) {
-	t.Parallel()
-
-	snapshot := replay.RunGraphSnapshot{
-		RootRunID: "root",
-		Nodes: []replay.GraphNode{
-			{ID: "root", AgentID: "assistant", BaseProfile: model.BaseProfileOperator, Status: model.RunStatusActive},
-			{ID: "child", ParentRunID: "root", AgentID: "researcher", BaseProfile: model.BaseProfileResearch, Status: model.RunStatusCompleted},
-		},
-	}
-
-	view := buildRunGraphView(snapshot)
-	if len(view.Lanes) == 0 {
-		t.Fatal("expected lane-based graph")
-	}
-
-	payload, err := json.Marshal(view)
-	if err != nil {
-		t.Fatalf("marshal graph view: %v", err)
-	}
-	if strings.Contains(string(payload), `"columns"`) {
-		t.Fatalf("expected old columns payload to be removed, got %s", payload)
-	}
 }

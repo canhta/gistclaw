@@ -131,8 +131,6 @@ func isPublicPath(path string) bool {
 	switch {
 	case path == pageLogin, path == pageLogout:
 		return true
-	case strings.HasPrefix(path, "/assets/"):
-		return true
 	case path == "/robots.txt":
 		return true
 	case path == "/api/auth/session", path == "/api/auth/login":
@@ -163,10 +161,6 @@ func requiresAuthentication(path string) bool {
 	case path == pageHistory, strings.HasPrefix(path, pageHistory+"/"):
 		return true
 	case path == pageSettings, strings.HasPrefix(path, pageSettings+"/"):
-		return true
-	case path == "/operate", strings.HasPrefix(path, "/operate/"):
-		return true
-	case path == "/configure", strings.HasPrefix(path, "/configure/"):
 		return true
 	case path == "/recover", strings.HasPrefix(path, "/recover/"):
 		return true

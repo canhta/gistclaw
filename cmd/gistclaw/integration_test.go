@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -111,50 +110,6 @@ func TestMain_ServeStartsAndStopsOnInterrupt(t *testing.T) {
 
 	if err := cmd.Wait(); err != nil && !strings.Contains(err.Error(), "signal: interrupt") {
 		t.Fatalf("serve command exited with error: %v\n%s", err, output.String())
-	}
-}
-
-func TestMain_TrimpathServeUsesSelfContainedWebAssets(t *testing.T) {
-	if goRuntime.GOOS == "windows" {
-		t.Skip("interrupt signaling is platform-specific")
-	}
-
-	startMockAnthropicServer(t)
-	bin := buildBinaryTrimpath(t)
-	listenAddr := reserveListenAddr(t)
-	cfgPath, _ := writeCLIConfigWithListenAddr(t, listenAddr)
-
-	cmd := exec.Command(bin, "serve", "--config", cfgPath)
-	cmd.Dir = t.TempDir()
-	var output lockedBuffer
-	cmd.Stdout = &output
-	cmd.Stderr = &output
-
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("starting trimpath serve command: %v", err)
-	}
-	defer func() {
-		_ = cmd.Process.Signal(os.Interrupt)
-		_ = cmd.Wait()
-	}()
-
-	waitForServeReady(t, listenAddr, &output)
-
-	resp, err := http.Get("http://" + listenAddr + "/assets/vendor/cytoscape.min.js")
-	if err != nil {
-		t.Fatalf("fetch embedded asset: %v\n%s", err, output.String())
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("expected asset 200, got %d\n%s\n%s", resp.StatusCode, string(body), output.String())
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("read asset body: %v", err)
-	}
-	if !bytes.Contains(body, []byte("cytoscape")) {
-		t.Fatalf("expected cytoscape asset body, got:\n%s", body)
 	}
 }
 

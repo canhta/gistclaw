@@ -202,13 +202,13 @@ func TestLifecycle_StartServesWebUI(t *testing.T) {
 			return http.ErrUseLastResponse
 		},
 	}
-	resp, err := client.Get("http://" + addr + "/operate/runs")
+	resp, err := client.Get("http://" + addr + "/work")
 	if err != nil {
-		t.Fatalf("GET /operate/runs failed: %v", err)
+		t.Fatalf("GET /work failed: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusSeeOther {
-		t.Fatalf("expected 303 from /operate/runs while onboarding is pending, got %d", resp.StatusCode)
+		t.Fatalf("expected 303 from /work while onboarding is pending, got %d", resp.StatusCode)
 	}
 
 	cancel()

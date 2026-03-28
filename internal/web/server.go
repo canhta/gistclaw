@@ -103,7 +103,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) registerRoutes() {
 	spaAssets := serveSPAAssets()
 	s.mux.HandleFunc("GET /{$}", s.handleSPADocument)
-	s.mux.Handle("GET /assets/{path...}", http.StripPrefix("/assets/", http.FileServer(http.FS(staticAssetFS()))))
 	s.mux.Handle("GET /_app/{path...}", spaAssets)
 	s.mux.Handle("GET /robots.txt", spaAssets)
 	s.mux.HandleFunc("GET "+pageLogin, s.handleLogin)

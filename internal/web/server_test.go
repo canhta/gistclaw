@@ -28,27 +28,6 @@ import (
 )
 
 func TestRuns(t *testing.T) {
-	t.Run("legacy work pages are unavailable", func(t *testing.T) {
-		h := newServerHarness(t)
-		h.insertRunAt(t, "run-known", "conv-1", "review the repo", "active", "2026-03-25 10:00:00")
-
-		for _, path := range []string{
-			"/operate/runs",
-			"/operate/runs/run-known",
-		} {
-			t.Run(path, func(t *testing.T) {
-				rr := httptest.NewRecorder()
-				req := httptest.NewRequest(http.MethodGet, path, nil)
-
-				h.server.ServeHTTP(rr, req)
-
-				if rr.Code != http.StatusNotFound {
-					t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
-				}
-			})
-		}
-	})
-
 	t.Run("detail browser api hides non-active project run", func(t *testing.T) {
 		h := newServerHarness(t)
 		otherRoot := t.TempDir()
@@ -710,32 +689,6 @@ func TestPageRouteMap(t *testing.T) {
 		}
 	})
 
-	t.Run("legacy grouped aliases are no longer served", func(t *testing.T) {
-		h := newServerHarness(t)
-		reqAuth := "Bearer " + h.adminToken
-
-		cases := []struct {
-			path string
-		}{
-			{path: "/operate"},
-			{path: "/configure"},
-		}
-
-		for _, tc := range cases {
-			t.Run(tc.path, func(t *testing.T) {
-				rr := httptest.NewRecorder()
-				req := httptest.NewRequest(http.MethodGet, tc.path, nil)
-				req.Header.Set("Authorization", reqAuth)
-
-				h.server.ServeHTTP(rr, req)
-
-				if rr.Code != http.StatusNotFound {
-					t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
-				}
-			})
-		}
-	})
-
 	t.Run("user first spa routes render the app shell", func(t *testing.T) {
 		h := newServerHarness(t)
 		wantBody, err := readSPAAsset("index.html")
@@ -769,31 +722,6 @@ func TestPageRouteMap(t *testing.T) {
 		}
 	})
 
-	t.Run("removed page routes stay unavailable", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		for _, path := range []string{
-			"/runs",
-			"/sessions",
-			"/control",
-			"/approvals",
-			"/memory",
-			"/run",
-			"/operate/runs",
-			"/operate/start-task",
-		} {
-			t.Run(path, func(t *testing.T) {
-				rr := httptest.NewRecorder()
-				req := httptest.NewRequest(http.MethodGet, path, nil)
-
-				h.server.ServeHTTP(rr, req)
-
-				if rr.Code != http.StatusNotFound {
-					t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
-				}
-			})
-		}
-	})
 }
 
 func TestApprovalsResolve(t *testing.T) {
@@ -993,7 +921,7 @@ func TestProjectSwitcher(t *testing.T) {
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/projects/activate",
-			strings.NewReader("project_id="+url.QueryEscape(otherProjectID)+"&redirect_to=%2Foperate%2Fruns"))
+			strings.NewReader("project_id="+url.QueryEscape(otherProjectID)+"&redirect_to=%2Fwork"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -1014,7 +942,7 @@ func TestProjectSwitcher(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/projects/activate", strings.NewReader("redirect_to=%2Foperate%2Fruns"))
+		req := httptest.NewRequest(http.MethodPost, "/projects/activate", strings.NewReader("redirect_to=%2Fwork"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -1052,13 +980,13 @@ func TestRequestPathWithQuery(t *testing.T) {
 		t.Fatalf("expected nil request fallback %q, got %q", "/work", got)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/operate/runs?scope=all&q=fix", nil)
-	if got := requestPathWithQuery(req); got != "/operate/runs?scope=all&q=fix" {
+	req := httptest.NewRequest(http.MethodGet, "/work?scope=all&q=fix", nil)
+	if got := requestPathWithQuery(req); got != "/work?scope=all&q=fix" {
 		t.Fatalf("expected request path with query, got %q", got)
 	}
 
-	req = &http.Request{URL: &url.URL{Path: "/operate/runs"}}
-	if got := requestPathWithQuery(req); got != "/operate/runs" {
+	req = &http.Request{URL: &url.URL{Path: "/work"}}
+	if got := requestPathWithQuery(req); got != "/work" {
 		t.Fatalf("expected request path fallback without request URI, got %q", got)
 	}
 }
@@ -1077,7 +1005,7 @@ func TestRequestBool(t *testing.T) {
 		{name: "empty", raw: "", want: false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, "/operate/runs?flag="+url.QueryEscape(tt.raw), nil)
+			req := httptest.NewRequest(http.MethodGet, "/work?flag="+url.QueryEscape(tt.raw), nil)
 			if got := requestBool(req, "flag"); got != tt.want {
 				t.Fatalf("expected %v, got %v", tt.want, got)
 			}
@@ -1129,8 +1057,8 @@ func TestSameOriginRequest(t *testing.T) {
 		want    bool
 	}{
 		{name: "matching origin", origin: "http://localhost:8080", host: "localhost:8080", want: true},
-		{name: "matching referer fallback", referer: "http://localhost:8080/operate/runs", host: "localhost:8080", want: true},
-		{name: "origin wins over referer", origin: "http://evil.example", referer: "http://localhost:8080/operate/runs", host: "localhost:8080", want: false},
+		{name: "matching referer fallback", referer: "http://localhost:8080/work", host: "localhost:8080", want: true},
+		{name: "origin wins over referer", origin: "http://evil.example", referer: "http://localhost:8080/work", host: "localhost:8080", want: false},
 		{name: "invalid referer", referer: "://bad url", host: "localhost:8080", want: false},
 		{name: "missing origin and referer", host: "localhost:8080", want: false},
 	}
@@ -1140,7 +1068,7 @@ func TestSameOriginRequest(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			req := httptest.NewRequest(http.MethodPost, "http://"+tc.host+"/operate/runs", nil)
+			req := httptest.NewRequest(http.MethodPost, "http://"+tc.host+"/work", nil)
 			req.Host = tc.host
 			if tc.origin != "" {
 				req.Header.Set("Origin", tc.origin)

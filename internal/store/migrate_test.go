@@ -191,13 +191,6 @@ func TestMigrateCreatesSessionRuntimeTables(t *testing.T) {
 		}
 	}
 
-	var name string
-	err = db.db.QueryRow(
-		"SELECT name FROM sqlite_master WHERE type='table' AND name='delegations'",
-	).Scan(&name)
-	if err == nil {
-		t.Fatal("expected delegations table to be absent")
-	}
 }
 
 func TestMigrate_UsesHostExecutionSchema(t *testing.T) {
@@ -215,11 +208,6 @@ func TestMigrate_UsesHostExecutionSchema(t *testing.T) {
 	assertTableHasColumns(t, db, "runs", "cwd", "authority_json")
 	assertTableHasColumns(t, db, "approvals", "binding_json")
 	assertTableHasColumns(t, db, "schedules", "project_id", "cwd", "authority_json")
-
-	assertTableOmitsColumns(t, db, "projects", "workspace_root")
-	assertTableOmitsColumns(t, db, "runs", "workspace_root")
-	assertTableOmitsColumns(t, db, "approvals", "target_path")
-	assertTableOmitsColumns(t, db, "schedules", "workspace_root")
 
 	for _, key := range []string{"storage_root", "approval_mode", "host_access_mode"} {
 		if hasSettingKey(t, db, key) {

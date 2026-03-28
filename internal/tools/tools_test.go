@@ -59,9 +59,6 @@ func TestRegisterCollaborationTools_RegistersDelegationTools(t *testing.T) {
 	if _, ok := reg.Get("delegate_task"); !ok {
 		t.Fatal("expected delegate_task to be registered")
 	}
-	if _, ok := reg.Get("session_spawn"); ok {
-		t.Fatal("expected raw session_spawn tool to be removed")
-	}
 }
 
 func TestDelegateTaskTool_InvokeUsesRuntimeSelectedSpecialist(t *testing.T) {

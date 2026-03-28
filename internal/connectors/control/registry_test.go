@@ -55,11 +55,6 @@ func TestRegistryParse(t *testing.T) {
 			text: "/Users/canh/Projects/OSS/gistclaw",
 			ok:   false,
 		},
-		{
-			name: "removed run alias not recognized",
-			text: "/run review the repo",
-			ok:   false,
-		},
 	}
 
 	for _, tt := range tests {

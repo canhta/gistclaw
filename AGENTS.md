@@ -36,6 +36,7 @@ cd frontend && bun run test:unit -- --run
 ## Testing Policy
 
 **TDD always.** Write tests before implementation. Every change must maintain ≥70% coverage (`go test -cover ./...`). Do not merge code that drops below this threshold.
+**When deleting legacy code, delete the legacy tests too.** Do not add or keep tests whose only purpose is asserting removed routes, removed templates, removed assets, or other dead compatibility paths still stay gone.
 
 ## Migration Policy
 

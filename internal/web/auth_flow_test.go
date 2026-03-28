@@ -205,22 +205,6 @@ func TestAuthLoginRouteServesSPAForReasonQuery(t *testing.T) {
 	}
 }
 
-func TestLegacyFormLoginRouteIsMethodNotAllowed(t *testing.T) {
-	h := newServerHarness(t)
-	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Date(2026, time.March, 27, 7, 45, 0, 0, time.UTC)); err != nil {
-		t.Fatalf("SetPassword: %v", err)
-	}
-
-	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "http://localhost/login", strings.NewReader(url.Values{"password": {"wrong-pass"}}.Encode()))
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	h.rawServer.ServeHTTP(rr, req)
-
-	if rr.Code != http.StatusMethodNotAllowed {
-		t.Fatalf("expected 405 for legacy form login route, got %d body=%s", rr.Code, rr.Body.String())
-	}
-}
-
 func TestAuthPasswordChangeRotatesBrowserPassword(t *testing.T) {
 	h := newServerHarness(t)
 	if err := authpkg.SetPassword(context.Background(), h.db, "secret-pass", time.Date(2026, time.March, 27, 7, 50, 0, 0, time.UTC)); err != nil {

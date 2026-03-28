@@ -299,22 +299,3 @@ agents:
 		t.Fatalf("expected soul extra tone to round-trip, got %#v", got)
 	}
 }
-
-func TestLoadEditableYAML_RejectsRemovedTeamFields(t *testing.T) {
-	raw := []byte(`
-name: Repo Task Team
-front_agent: assistant
-agents:
-  - id: assistant
-    soul_file: assistant.soul.yaml
-    role: front assistant
-    base_profile: operator
-    tool_families: [repo_read]
-    tool_posture: operator_facing
-    can_spawn: [patcher]
-	`)
-
-	if _, err := LoadEditableYAML(raw); err == nil {
-		t.Fatal("expected removed team fields to be rejected")
-	}
-}
