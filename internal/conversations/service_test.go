@@ -400,16 +400,16 @@ func TestConversationStore_AppendEventProjectsConversationGateLifecycle(t *testi
 	}
 
 	openPayload, err := json.Marshal(map[string]any{
-		"gate_id":        "gate-1",
-		"session_id":     "sess-front",
-		"kind":           "approval",
-		"status":         "pending",
-		"approval_id":    "ticket-1",
-		"title":          "Approval required",
-		"body":           "Approve the shell command",
-		"options":        []string{"approve", "deny"},
-		"metadata":       map[string]any{"tool_name": "shell_exec"},
-		"language_hint":  "vi",
+		"gate_id":       "gate-1",
+		"session_id":    "sess-front",
+		"kind":          "approval",
+		"status":        "pending",
+		"approval_id":   "ticket-1",
+		"title":         "Approval required",
+		"body":          "Approve the shell command",
+		"options":       []string{"approve", "deny"},
+		"metadata":      map[string]any{"tool_name": "shell_exec"},
+		"language_hint": "vi",
 	})
 	if err != nil {
 		t.Fatalf("marshal gate open payload: %v", err)
@@ -456,9 +456,9 @@ func TestConversationStore_AppendEventProjectsConversationGateLifecycle(t *testi
 	}
 
 	resolvePayload, err := json.Marshal(map[string]any{
-		"gate_id":   "gate-1",
-		"status":    "resolved",
-		"decision":  "approved",
+		"gate_id":  "gate-1",
+		"status":   "resolved",
+		"decision": "approved",
 	})
 	if err != nil {
 		t.Fatalf("marshal gate resolve payload: %v", err)
@@ -995,6 +995,47 @@ func TestConversationStore_DBAccessor(t *testing.T) {
 
 	if cs.DB() != db {
 		t.Fatal("expected DB accessor to return underlying db")
+	}
+}
+
+func TestConversationStore_ResolvePersistsStructuredKeyFields(t *testing.T) {
+	db := setupTestStore(t)
+	cs := NewConversationStore(db)
+	ctx := context.Background()
+
+	key := ConversationKey{
+		ConnectorID: "telegram",
+		AccountID:   "acct-1",
+		ExternalID:  "chat-1",
+		ThreadID:    "main",
+		ProjectID:   "proj-1",
+	}
+
+	conv, err := cs.Resolve(ctx, key)
+	if err != nil {
+		t.Fatalf("Resolve failed: %v", err)
+	}
+
+	var connectorID, accountID, externalID, threadID, projectID string
+	err = db.RawDB().QueryRowContext(ctx,
+		`SELECT connector_id, account_id, external_id, thread_id, project_id
+		 FROM conversations
+		 WHERE id = ?`,
+		conv.ID,
+	).Scan(&connectorID, &accountID, &externalID, &threadID, &projectID)
+	if err != nil {
+		t.Fatalf("query conversation fields: %v", err)
+	}
+
+	if connectorID != key.ConnectorID || accountID != key.AccountID || externalID != key.ExternalID || threadID != key.ThreadID || projectID != key.ProjectID {
+		t.Fatalf(
+			"unexpected structured conversation fields connector=%q account=%q external=%q thread=%q project=%q",
+			connectorID,
+			accountID,
+			externalID,
+			threadID,
+			projectID,
+		)
 	}
 }
 

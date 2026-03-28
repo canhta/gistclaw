@@ -11,10 +11,7 @@ type ConversationKey struct {
 }
 
 func (k ConversationKey) Normalize() string {
-	thread := k.ThreadID
-	if thread == "" {
-		thread = "main"
-	}
+	thread := normalizeThreadID(k.ThreadID)
 
 	escape := func(s string) string {
 		return strings.ReplaceAll(s, ":", "%3A")
@@ -31,4 +28,11 @@ func (k ConversationKey) Normalize() string {
 	}
 
 	return strings.Join(parts, ":")
+}
+
+func normalizeThreadID(threadID string) string {
+	if threadID == "" {
+		return LocalDefaultThreadID
+	}
+	return threadID
 }

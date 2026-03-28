@@ -1,6 +1,11 @@
 CREATE TABLE IF NOT EXISTS conversations (
     id TEXT PRIMARY KEY,
     key TEXT NOT NULL UNIQUE,
+    connector_id TEXT NOT NULL DEFAULT '',
+    account_id TEXT NOT NULL DEFAULT '',
+    external_id TEXT NOT NULL DEFAULT '',
+    thread_id TEXT NOT NULL DEFAULT '',
+    project_id TEXT NOT NULL DEFAULT '',
     created_at DATETIME NOT NULL DEFAULT (datetime('now'))
 );
 

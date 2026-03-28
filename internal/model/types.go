@@ -506,9 +506,14 @@ type SummaryRef struct {
 }
 
 type Conversation struct {
-	ID        string
-	Key       string
-	CreatedAt time.Time
+	ID          string
+	Key         string
+	ConnectorID string
+	AccountID   string
+	ExternalID  string
+	ThreadID    string
+	ProjectID   string
+	CreatedAt   time.Time
 }
 
 type RunReceipt struct {

@@ -106,3 +106,47 @@ func TestStartRejectsRemoteSourceConnectorAuthorityWithoutPersistedConversation(
 		t.Fatalf("expected ErrRemoteConnectorUnsafeAuthority, got %v", err)
 	}
 }
+
+func TestStartRejectsStoredRemoteConversationAuthorityWithoutParsingKey(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	rt := New(db, cs, reg, mem, NewMockProvider(nil, nil), &model.NoopEventSink{})
+
+	rawAuthority, err := json.Marshal(authority.Envelope{
+		ApprovalMode:   authority.ApprovalModeAutoApprove,
+		HostAccessMode: authority.HostAccessModeElevated,
+	})
+	if err != nil {
+		t.Fatalf("marshal authority: %v", err)
+	}
+
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO conversations (id, key, connector_id, account_id, external_id, thread_id, project_id, created_at)
+		 VALUES ('conv-stored-remote', 'web:local:default:main', 'remote_bridge', 'acct-1', 'chat-1', 'main', '', datetime('now'))`,
+	); err != nil {
+		t.Fatalf("insert conversation: %v", err)
+	}
+
+	_, err = rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-stored-remote",
+		AgentID:        "assistant",
+		Objective:      "Inspect the repo.",
+		CWD:            t.TempDir(),
+		AuthorityJSON:  rawAuthority,
+		ExecutionSnapshotJSON: mustSnapshotJSON(t, model.ExecutionSnapshot{
+			TeamID: "default",
+			Agents: map[string]model.AgentProfile{
+				"assistant": {
+					AgentID:      "assistant",
+					BaseProfile:  model.BaseProfileOperator,
+					ToolFamilies: []model.ToolFamily{model.ToolFamilyRuntimeCapability},
+				},
+			},
+		}),
+	})
+	if err == nil {
+		t.Fatal("expected stored remote conversation authority to be rejected")
+	}
+	if !errors.Is(err, ErrRemoteConnectorUnsafeAuthority) {
+		t.Fatalf("expected ErrRemoteConnectorUnsafeAuthority, got %v", err)
+	}
+}

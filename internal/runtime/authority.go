@@ -106,21 +106,13 @@ func (r *Runtime) conversationConnectorID(ctx context.Context, conversationID st
 	if strings.TrimSpace(conversationID) == "" {
 		return "", nil
 	}
-	var normalizedKey string
-	err := r.store.RawDB().QueryRowContext(ctx, "SELECT key FROM conversations WHERE id = ?", conversationID).Scan(&normalizedKey)
+	var connectorID string
+	err := r.store.RawDB().QueryRowContext(ctx, "SELECT connector_id FROM conversations WHERE id = ?", conversationID).Scan(&connectorID)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
 	if err != nil {
 		return "", fmt.Errorf("load conversation connector: %w", err)
 	}
-	return parseConversationConnectorID(normalizedKey), nil
-}
-
-func parseConversationConnectorID(normalizedKey string) string {
-	part := normalizedKey
-	if idx := strings.IndexByte(part, ':'); idx >= 0 {
-		part = part[:idx]
-	}
-	return strings.ReplaceAll(part, "%3A", ":")
+	return strings.TrimSpace(connectorID), nil
 }

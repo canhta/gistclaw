@@ -20,6 +20,7 @@ This document is the source of truth for what the repository ships today: packag
 - The daemon owns mutable state in `runtime.db`.
 - The append-only conversation journal is still the canonical write path.
 - Current-state tables project that journal into runs, approvals, conversational gates, tool calls, receipts, sessions, bindings, deliveries, and memory items.
+- Conversations persist both the normalized key and structured connector/account/external/thread/project fields, so runtime policy does not need to recover connector identity by reparsing storage keys.
 - A conversation can have one active root run at a time.
 - Collaboration happens through runtime-managed sessions and session messages.
 - The front assistant is direct-execution by default and receives a runtime execution recommendation (`direct`, `delegate`, or `parallelize`) before each provider turn.

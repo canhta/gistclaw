@@ -28,11 +28,7 @@ func NewConversationStore(db *store.DB) *ConversationStore {
 func (s *ConversationStore) Resolve(ctx context.Context, key ConversationKey) (model.Conversation, error) {
 	normalized := key.Normalize()
 
-	var conv model.Conversation
-	err := s.db.RawDB().QueryRowContext(ctx,
-		"SELECT id, key, created_at FROM conversations WHERE key = ?",
-		normalized,
-	).Scan(&conv.ID, &conv.Key, &conv.CreatedAt)
+	conv, err := s.loadConversationByKey(ctx, normalized)
 	if err == nil {
 		return conv, nil
 	}
@@ -43,17 +39,24 @@ func (s *ConversationStore) Resolve(ctx context.Context, key ConversationKey) (m
 	id := generateID()
 	now := time.Now().UTC()
 	_, err = s.db.RawDB().ExecContext(ctx,
-		"INSERT INTO conversations (id, key, created_at) VALUES (?, ?, ?) ON CONFLICT(key) DO NOTHING",
-		id, normalized, now,
+		`INSERT INTO conversations
+		 (id, key, connector_id, account_id, external_id, thread_id, project_id, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		 ON CONFLICT(key) DO NOTHING`,
+		id,
+		normalized,
+		key.ConnectorID,
+		key.AccountID,
+		key.ExternalID,
+		normalizeThreadID(key.ThreadID),
+		key.ProjectID,
+		now,
 	)
 	if err != nil {
 		return model.Conversation{}, fmt.Errorf("create conversation: %w", err)
 	}
 
-	err = s.db.RawDB().QueryRowContext(ctx,
-		"SELECT id, key, created_at FROM conversations WHERE key = ?",
-		normalized,
-	).Scan(&conv.ID, &conv.Key, &conv.CreatedAt)
+	conv, err = s.loadConversationByKey(ctx, normalized)
 	if err != nil {
 		return model.Conversation{}, fmt.Errorf("re-read conversation: %w", err)
 	}
@@ -64,11 +67,7 @@ func (s *ConversationStore) Resolve(ctx context.Context, key ConversationKey) (m
 func (s *ConversationStore) Find(ctx context.Context, key ConversationKey) (model.Conversation, bool, error) {
 	normalized := key.Normalize()
 
-	var conv model.Conversation
-	err := s.db.RawDB().QueryRowContext(ctx,
-		"SELECT id, key, created_at FROM conversations WHERE key = ?",
-		normalized,
-	).Scan(&conv.ID, &conv.Key, &conv.CreatedAt)
+	conv, err := s.loadConversationByKey(ctx, normalized)
 	if err == sql.ErrNoRows {
 		return model.Conversation{}, false, nil
 	}
@@ -76,6 +75,29 @@ func (s *ConversationStore) Find(ctx context.Context, key ConversationKey) (mode
 		return model.Conversation{}, false, fmt.Errorf("find conversation: %w", err)
 	}
 	return conv, true, nil
+}
+
+func (s *ConversationStore) loadConversationByKey(ctx context.Context, normalized string) (model.Conversation, error) {
+	var conv model.Conversation
+	err := s.db.RawDB().QueryRowContext(ctx,
+		`SELECT id, key, connector_id, account_id, external_id, thread_id, project_id, created_at
+		 FROM conversations
+		 WHERE key = ?`,
+		normalized,
+	).Scan(
+		&conv.ID,
+		&conv.Key,
+		&conv.ConnectorID,
+		&conv.AccountID,
+		&conv.ExternalID,
+		&conv.ThreadID,
+		&conv.ProjectID,
+		&conv.CreatedAt,
+	)
+	if err != nil {
+		return model.Conversation{}, err
+	}
+	return conv, nil
 }
 
 func (s *ConversationStore) AppendEvent(ctx context.Context, evt model.Event) error {
@@ -108,14 +130,14 @@ func (s *ConversationStore) AppendEvents(ctx context.Context, events []model.Eve
 }
 
 type runStartedPayload struct {
-	AgentID               string `json:"agent_id"`
-	SessionID             string `json:"session_id"`
-	TeamID                string `json:"team_id"`
-	ProjectID             string `json:"project_id"`
-	Objective             string `json:"objective"`
-	CWD                   string `json:"cwd"`
+	AgentID               string          `json:"agent_id"`
+	SessionID             string          `json:"session_id"`
+	TeamID                string          `json:"team_id"`
+	ProjectID             string          `json:"project_id"`
+	Objective             string          `json:"objective"`
+	CWD                   string          `json:"cwd"`
 	AuthorityJSON         json.RawMessage `json:"authority_json"`
-	ExecutionSnapshotJSON []byte `json:"execution_snapshot_json"`
+	ExecutionSnapshotJSON []byte          `json:"execution_snapshot_json"`
 }
 
 type turnCompletedPayload struct {
