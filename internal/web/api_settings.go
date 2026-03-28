@@ -378,29 +378,16 @@ func settingsDeviceRowPointerResponse(row *settingsDeviceRow) *settingsDeviceRes
 	if row == nil {
 		return nil
 	}
-	resp := settingsDeviceRowResponse(*row)
+	resp := settingsDeviceResponse(*row)
 	return &resp
 }
 
 func settingsDeviceRowsResponse(rows []settingsDeviceRow) []settingsDeviceResponse {
 	resp := make([]settingsDeviceResponse, 0, len(rows))
 	for _, row := range rows {
-		resp = append(resp, settingsDeviceRowResponse(row))
+		resp = append(resp, settingsDeviceResponse(row))
 	}
 	return resp
-}
-
-func settingsDeviceRowResponse(row settingsDeviceRow) settingsDeviceResponse {
-	return settingsDeviceResponse{
-		ID:               row.ID,
-		PrimaryLabel:     row.PrimaryLabel,
-		SecondaryLine:    row.SecondaryLine,
-		Current:          row.Current,
-		Blocked:          row.Blocked,
-		ActiveSessions:   row.ActiveSessions,
-		DetailsIP:        row.DetailsIP,
-		DetailsUserAgent: row.DetailsUserAgent,
-	}
 }
 
 func approvalModeLabel(value string) string {

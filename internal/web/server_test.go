@@ -2816,38 +2816,6 @@ agents:
 	return dir
 }
 
-func teamFormValues(cfg teams.Config) url.Values {
-	form := url.Values{
-		"name":        {cfg.Name},
-		"front_agent": {cfg.FrontAgent},
-		"agent_count": {strconv.Itoa(len(cfg.Agents))},
-	}
-	for idx, agent := range cfg.Agents {
-		prefix := "agent_" + strconv.Itoa(idx) + "_"
-		form.Set(prefix+"id", agent.ID)
-		form.Set(prefix+"soul_file", agent.SoulFile)
-		form.Set(prefix+"role", agent.Role)
-		form.Set(prefix+"base_profile", string(agent.BaseProfile))
-		form.Set(prefix+"specialist_summary_visibility", string(agent.SpecialistSummaryVisibility))
-		rawExtra, err := json.Marshal(agent.Soul.Extra)
-		if err == nil {
-			form.Set(prefix+"soul_extra_json", string(rawExtra))
-		} else {
-			form.Set(prefix+"soul_extra_json", "{}")
-		}
-		for _, value := range agent.ToolFamilies {
-			form.Add(prefix+"tool_families", string(value))
-		}
-		for _, value := range agent.DelegationKinds {
-			form.Add(prefix+"delegation_kinds", string(value))
-		}
-		for _, value := range agent.CanMessage {
-			form.Add(prefix+"can_message", value)
-		}
-	}
-	return form
-}
-
 func writeTestFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
