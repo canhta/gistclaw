@@ -4622,11 +4622,6 @@ func (h *serverHarness) insertEventAt(t *testing.T, eventID, conversationID, run
 	h.insertEventAtWithPayload(t, eventID, conversationID, runID, kind, nil, createdAt)
 }
 
-func (h *serverHarness) insertEventWithPayload(t *testing.T, eventID, conversationID, runID, kind string, payload []byte) {
-	t.Helper()
-	h.insertEventAtWithPayload(t, eventID, conversationID, runID, kind, payload, "2026-03-25 00:00:00")
-}
-
 func (h *serverHarness) insertEventAtWithPayload(t *testing.T, eventID, conversationID, runID, kind string, payload []byte, createdAt string) {
 	t.Helper()
 	if len(payload) == 0 {
