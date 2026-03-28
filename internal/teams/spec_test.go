@@ -15,7 +15,7 @@ func TestLoadSpec_RequiresFrontAgent(t *testing.T) {
 	}
 }
 
-func TestLoadSpec_RejectsLegacySpawnField(t *testing.T) {
+func TestLoadSpec_RejectsUnsupportedSpawnField(t *testing.T) {
 	data := []byte(`
 name: default
 front_agent: assistant
@@ -30,7 +30,7 @@ agents:
 
 	_, err := LoadSpec(data)
 	if err == nil {
-		t.Fatal("expected legacy can_spawn error, got nil")
+		t.Fatal("expected can_spawn error, got nil")
 	}
 	if !strings.Contains(err.Error(), "can_spawn") {
 		t.Fatalf("expected error to mention can_spawn, got %v", err)

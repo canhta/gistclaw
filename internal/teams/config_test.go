@@ -180,17 +180,17 @@ agents:
 	cfg.FrontAgent = "assistant"
 	cfg.Agents = []AgentConfig{
 		{
-			ID:                         cfg.Agents[0].ID,
-			SoulFile:                   cfg.Agents[0].SoulFile,
-			Role:                       cfg.Agents[0].Role,
-			BaseProfile:                cfg.Agents[0].BaseProfile,
-			ToolFamilies:               cfg.Agents[0].ToolFamilies,
-			AllowTools:                 append([]string(nil), cfg.Agents[0].AllowTools...),
-			DenyTools:                  append([]string(nil), cfg.Agents[0].DenyTools...),
-			DelegationKinds:            []model.DelegationKind{model.DelegationKindResearch},
-			CanMessage:                 []string{"researcher"},
+			ID:                          cfg.Agents[0].ID,
+			SoulFile:                    cfg.Agents[0].SoulFile,
+			Role:                        cfg.Agents[0].Role,
+			BaseProfile:                 cfg.Agents[0].BaseProfile,
+			ToolFamilies:                cfg.Agents[0].ToolFamilies,
+			AllowTools:                  append([]string(nil), cfg.Agents[0].AllowTools...),
+			DenyTools:                   append([]string(nil), cfg.Agents[0].DenyTools...),
+			DelegationKinds:             []model.DelegationKind{model.DelegationKindResearch},
+			CanMessage:                  []string{"researcher"},
 			SpecialistSummaryVisibility: model.SpecialistSummaryBasic,
-			Soul:                       cfg.Agents[0].Soul,
+			Soul:                        cfg.Agents[0].Soul,
 		},
 		{
 			ID:          "researcher",
@@ -201,7 +201,7 @@ agents:
 				model.ToolFamilyRepoRead,
 				model.ToolFamilyWebRead,
 			},
-			CanMessage:                 []string{"assistant"},
+			CanMessage:                  []string{"assistant"},
 			SpecialistSummaryVisibility: model.SpecialistSummaryBasic,
 			Soul: SoulSpec{
 				Role: "research specialist",
@@ -289,7 +289,7 @@ agents:
 	}
 }
 
-func TestLoadEditableYAML_RejectsLegacyCoordinatorFields(t *testing.T) {
+func TestLoadEditableYAML_RejectsUnsupportedCoordinatorFields(t *testing.T) {
 	raw := []byte(`
 name: Repo Task Team
 front_agent: assistant
@@ -304,7 +304,6 @@ agents:
 `)
 
 	if _, err := LoadEditableYAML(raw); err == nil {
-		t.Fatal("expected legacy coordinator fields to be rejected")
+		t.Fatal("expected unsupported coordinator fields to be rejected")
 	}
 }
-

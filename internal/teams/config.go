@@ -1,6 +1,7 @@
 package teams
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,9 +32,8 @@ type AgentConfig struct {
 }
 
 type SoulSpec struct {
-	Role              string         `yaml:"role,omitempty"`
-	LegacyToolPosture string         `yaml:"tool_posture,omitempty"`
-	Extra             map[string]any `yaml:",inline"`
+	Role  string         `yaml:"role,omitempty"`
+	Extra map[string]any `yaml:",inline"`
 }
 
 type editableFile struct {
@@ -53,8 +53,6 @@ type editableFileAgent struct {
 	DelegationKinds             []model.DelegationKind            `yaml:"delegation_kinds,omitempty"`
 	CanMessage                  []string                          `yaml:"can_message"`
 	SpecialistSummaryVisibility model.SpecialistSummaryVisibility `yaml:"specialist_summary_visibility,omitempty"`
-	LegacyToolPosture           string                            `yaml:"tool_posture,omitempty"`
-	LegacyCanSpawn              []string                          `yaml:"can_spawn,omitempty"`
 	SoulExtra                   map[string]any                    `yaml:"soul_extra,omitempty"`
 }
 
@@ -200,7 +198,7 @@ func ExportEditableYAML(cfg Config) ([]byte, error) {
 
 func LoadEditableYAML(data []byte) (Config, error) {
 	var file editableFile
-	if err := yaml.Unmarshal(data, &file); err != nil {
+	if err := decodeKnownFieldsYAML(data, &file); err != nil {
 		return Config{}, fmt.Errorf("team: parse editable yaml: %w", err)
 	}
 
@@ -212,12 +210,6 @@ func LoadEditableYAML(data []byte) (Config, error) {
 	for _, agent := range file.Agents {
 		if agent.ID == "" {
 			return Config{}, fmt.Errorf("team: agent id is required")
-		}
-		if agent.LegacyToolPosture != "" {
-			return Config{}, fmt.Errorf("team: agent %q: legacy field %q is not supported", agent.ID, "tool_posture")
-		}
-		if len(agent.LegacyCanSpawn) > 0 {
-			return Config{}, fmt.Errorf("team: agent %q: legacy field %q is not supported", agent.ID, "can_spawn")
 		}
 		soulFile := agent.SoulFile
 		if soulFile == "" {
@@ -289,13 +281,12 @@ func loadSoulSpec(path string) (SoulSpec, error) {
 	if err != nil {
 		return SoulSpec{}, fmt.Errorf("read soul %q: %w", filepath.Base(path), err)
 	}
-
+	if err := rejectUnsupportedSoulFields(data); err != nil {
+		return SoulSpec{}, fmt.Errorf("parse soul yaml: %w", err)
+	}
 	var soul SoulSpec
 	if err := yaml.Unmarshal(data, &soul); err != nil {
 		return SoulSpec{}, fmt.Errorf("parse soul yaml: %w", err)
-	}
-	if soul.LegacyToolPosture != "" {
-		return SoulSpec{}, fmt.Errorf("parse soul yaml: legacy field %q is not supported", "tool_posture")
 	}
 	if soul.Extra == nil {
 		soul.Extra = map[string]any{}
@@ -304,7 +295,6 @@ func loadSoulSpec(path string) (SoulSpec, error) {
 }
 
 func writeSoulSpec(path string, soul SoulSpec) error {
-	soul.LegacyToolPosture = ""
 	raw, err := yaml.Marshal(&soul)
 	if err != nil {
 		return fmt.Errorf("marshal soul yaml: %w", err)
@@ -384,4 +374,30 @@ func cloneSoulExtra(extra map[string]any) map[string]any {
 		cloned[key] = value
 	}
 	return cloned
+}
+
+func decodeKnownFieldsYAML(data []byte, out any) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	return dec.Decode(out)
+}
+
+func rejectUnsupportedSoulFields(data []byte) error {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return err
+	}
+	if len(doc.Content) == 0 {
+		return nil
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		if root.Content[i].Value == "tool_posture" {
+			return fmt.Errorf("field %q is not supported", "tool_posture")
+		}
+	}
+	return nil
 }

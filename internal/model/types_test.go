@@ -135,8 +135,8 @@ func TestAdaptivePolicyValidators(t *testing.T) {
 		if !IsValidToolFamily("connector_capability") {
 			t.Fatal("expected connector_capability to be a valid tool family")
 		}
-		if IsValidToolFamily("legacy_tooling") {
-			t.Fatal("expected legacy_tooling tool family to be rejected")
+		if IsValidToolFamily("unexpected_tooling") {
+			t.Fatal("expected unexpected_tooling tool family to be rejected")
 		}
 	})
 

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/canhta/gistclaw/internal/model"
-	"go.yaml.in/yaml/v4"
 )
 
 // Spec is the in-memory representation of a validated team.yaml file.
@@ -26,14 +25,12 @@ type AgentSpec struct {
 	DelegationKinds             []model.DelegationKind            `yaml:"delegation_kinds,omitempty"`
 	CanMessage                  []string                          `yaml:"can_message"`
 	SpecialistSummaryVisibility model.SpecialistSummaryVisibility `yaml:"specialist_summary_visibility,omitempty"`
-	LegacyToolPosture           string                            `yaml:"tool_posture,omitempty"`
-	LegacyCanSpawn              []string                          `yaml:"can_spawn,omitempty"`
 }
 
 // LoadSpec parses and validates a YAML-encoded team specification.
 func LoadSpec(data []byte) (*Spec, error) {
 	var spec Spec
-	if err := yaml.Unmarshal(data, &spec); err != nil {
+	if err := decodeKnownFieldsYAML(data, &spec); err != nil {
 		return nil, fmt.Errorf("team: parse yaml: %w", err)
 	}
 	if err := validateSpec(&spec); err != nil {
@@ -57,12 +54,6 @@ func validateSpec(spec *Spec) error {
 		}
 		if agent.SoulFile == "" {
 			return fmt.Errorf("team: agent %q is missing %q", agent.ID, "soul_file")
-		}
-		if agent.LegacyToolPosture != "" {
-			return fmt.Errorf("team: agent %q uses legacy field %q", agent.ID, "tool_posture")
-		}
-		if len(agent.LegacyCanSpawn) > 0 {
-			return fmt.Errorf("team: agent %q uses legacy field %q", agent.ID, "can_spawn")
 		}
 		if agent.BaseProfile == "" {
 			return fmt.Errorf("team: agent %q is missing %q", agent.ID, "base_profile")
