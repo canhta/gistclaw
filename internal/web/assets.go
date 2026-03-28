@@ -9,8 +9,7 @@ import (
 
 var templateFiles = []string{
 	"templates/layout.html",
-	"templates/runs.html",
-	"templates/run_detail.html",
+	"templates/structured_text.html",
 	"templates/approvals.html",
 	"templates/settings.html",
 	"templates/team.html",

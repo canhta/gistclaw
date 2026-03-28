@@ -17,6 +17,7 @@ type workIndexResponse struct {
 	ActiveProjectName string                 `json:"active_project_name"`
 	ActiveProjectPath string                 `json:"active_project_path"`
 	QueueStrip        workQueueStripResponse `json:"queue_strip"`
+	Paging            pageLinksResponse      `json:"paging"`
 	Clusters          []workClusterResponse  `json:"clusters"`
 }
 
@@ -137,7 +138,13 @@ func (s *Server) handleWorkIndex(w http.ResponseWriter, r *http.Request) {
 		ActiveProjectName: pageData.ActiveProjectName,
 		ActiveProjectPath: pageData.ActiveProjectPath,
 		QueueStrip:        buildWorkQueueStrip(pageData.Clusters),
-		Clusters:          make([]workClusterResponse, 0, len(pageData.Clusters)),
+		Paging: pageLinksResponse{
+			NextURL: pageData.Paging.NextURL,
+			PrevURL: pageData.Paging.PrevURL,
+			HasNext: pageData.Paging.HasNext,
+			HasPrev: pageData.Paging.HasPrev,
+		},
+		Clusters: make([]workClusterResponse, 0, len(pageData.Clusters)),
 	}
 	for _, cluster := range pageData.Clusters {
 		resp.Clusters = append(resp.Clusters, buildWorkClusterResponse(cluster))

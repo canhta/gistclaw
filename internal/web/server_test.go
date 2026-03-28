@@ -32,317 +32,28 @@ import (
 )
 
 func TestRuns(t *testing.T) {
-	t.Run("list renders root run clusters with child metadata", func(t *testing.T) {
+	t.Run("legacy work pages are unavailable", func(t *testing.T) {
 		h := newServerHarness(t)
 		h.insertRunAt(t, "run-known", "conv-1", "review the repo", "active", "2026-03-25 10:00:00")
-		if _, err := h.db.RawDB().Exec(
-			`UPDATE runs
-			 SET agent_id = 'assistant', model_lane = 'coord', model_id = 'gpt-5.4', input_tokens = 10, output_tokens = 20, updated_at = '2026-03-25 10:15:00'
-			 WHERE id = 'run-known'`,
-		); err != nil {
-			t.Fatalf("update root run metadata: %v", err)
-		}
-		if _, err := h.db.RawDB().Exec(
-			`INSERT INTO runs
-			 (id, conversation_id, agent_id, project_id, parent_run_id, team_id, objective, cwd, status, model_lane, model_id, input_tokens, output_tokens, created_at, updated_at)
-			 VALUES
-			 ('run-worker-review', 'conv-1', 'reviewer', ?, 'run-known', 'repo-task-team', 'review the change', ?, 'completed', 'review', 'gpt-5.4-mini', 4, 6, '2026-03-25 10:05:00', '2026-03-25 10:08:00'),
-			 ('run-worker-approval', 'conv-1', 'patcher', ?, 'run-known', 'repo-task-team', 'apply the fix', ?, 'needs_approval', 'build', 'gpt-5.4', 8, 12, '2026-03-25 10:10:00', '2026-03-25 10:14:00')`,
-			h.activeProjectID,
-			h.workspaceRoot,
-			h.activeProjectID,
-			h.workspaceRoot,
-		); err != nil {
-			t.Fatalf("insert worker runs: %v", err)
-		}
 
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-
-		body := rr.Body.String()
-		for _, want := range []string{
-			"Runs",
-			"Live Task Board",
-			`data-run-level="root" data-run-id="run-known"`,
-			`data-run-level="child" data-run-id="run-worker-review"`,
-			`data-run-level="child" data-run-id="run-worker-approval"`,
-			`<details class="run-cluster">`,
-			"review the repo",
-			"run-known",
-			"run-worker-review",
-			"run-worker-approval",
-			"2 sub-agents",
-			"gpt-5.4",
-			"10 in / 20 out",
-			"4 in / 6 out",
-			"2026-03-25 10:00 UTC",
-			"2026-03-25 10:15 UTC",
-			"Needs approval",
+		for _, path := range []string{
+			"/operate/runs",
+			"/operate/runs/run-known",
 		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected body to contain %q:\n%s", want, body)
-			}
-		}
-		for _, want := range []string{
-			"2026-03-25 10:00:00 UTC",
-			"2026-03-25 10:15:00 UTC",
-			"ago",
-		} {
-			if strings.Contains(body, want) {
-				t.Fatalf("expected runs list to avoid duplicate visible timestamps %q:\n%s", want, body)
-			}
-		}
-		for _, want := range []string{
-			`href="/operate/runs/run-known"`,
-			`href="/operate/runs/run-worker-review"`,
-			`href="/operate/runs/run-worker-approval"`,
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected runs list to link to run detail %q:\n%s", want, body)
-			}
-		}
-		if strings.Contains(body, "front session with 1 worker run") {
-			t.Fatalf("expected flat front-session summary to be removed, got:\n%s", body)
+			t.Run(path, func(t *testing.T) {
+				rr := httptest.NewRecorder()
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+
+				h.server.ServeHTTP(rr, req)
+
+				if rr.Code != http.StatusNotFound {
+					t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
+				}
+			})
 		}
 	})
 
-	t.Run("list renders empty state", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-		for _, want := range []string{"Live Task Board", "No runs yet.", `href="/configure/team"`} {
-			if !strings.Contains(rr.Body.String(), want) {
-				t.Fatalf("expected empty state to contain %q, got:\n%s", want, rr.Body.String())
-			}
-		}
-		if strings.Contains(rr.Body.String(), `href="/operate/start-task"`) {
-			t.Fatalf("expected runs empty state to omit start-task CTA, got:\n%s", rr.Body.String())
-		}
-	})
-
-	t.Run("list filters and paginates runs", func(t *testing.T) {
-		h := newServerHarness(t)
-		h.insertRunAt(t, "run-newest", "conv-runs-1", "fix graph cards", "active", "2026-03-25 10:00:00")
-		h.insertRunAt(t, "run-middle", "conv-runs-2", "review docs", "completed", "2026-03-25 09:00:00")
-		h.insertRunAt(t, "run-oldest", "conv-runs-3", "fix pagination", "active", "2026-03-25 08:00:00")
-		if _, err := h.db.RawDB().Exec(
-			`INSERT INTO runs
-			 (id, conversation_id, agent_id, project_id, parent_run_id, team_id, objective, cwd, status, created_at, updated_at)
-			 VALUES ('run-newest-child', 'conv-runs-1', 'researcher', ?, 'run-newest', 'repo-task-team', 'inspect the graph', ?, 'completed', '2026-03-25 10:30:00', '2026-03-25 10:31:00')`,
-			h.activeProjectID,
-			h.workspaceRoot,
-		); err != nil {
-			t.Fatalf("insert paginated child run: %v", err)
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs?q=fix&status=active&limit=1", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-		body := rr.Body.String()
-		if !strings.Contains(body, "run-newest") {
-			t.Fatalf("expected first filtered page to contain newest run, got:\n%s", body)
-		}
-		if strings.Contains(body, `data-run-level="root" data-run-id="run-newest-child"`) {
-			t.Fatalf("expected child run to stay nested instead of paginating as a root row, got:\n%s", body)
-		}
-		if strings.Contains(body, "run-middle") || strings.Contains(body, "run-oldest") {
-			t.Fatalf("expected first filtered page to contain only newest filtered run, got:\n%s", body)
-		}
-		if !strings.Contains(body, "direction=next") || !strings.Contains(body, "limit=1") {
-			t.Fatalf("expected next-page controls in first page, got:\n%s", body)
-		}
-
-		rr = httptest.NewRecorder()
-		req = httptest.NewRequest(http.MethodGet, "/operate/runs?q=fix&status=active&limit=1&cursor=2026-03-25+10%3A00%3A00%7Crun-newest&direction=next", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected second page 200, got %d", rr.Code)
-		}
-		body = rr.Body.String()
-		if !strings.Contains(body, `data-run-level="root" data-run-id="run-oldest"`) {
-			t.Fatalf("expected second filtered page to contain oldest run, got:\n%s", body)
-		}
-		if strings.Contains(body, `data-run-level="root" data-run-id="run-newest"`) || strings.Contains(body, `data-run-level="root" data-run-id="run-middle"`) {
-			t.Fatalf("expected second filtered page to contain only oldest filtered run, got:\n%s", body)
-		}
-	})
-
-	t.Run("list defaults to active project", func(t *testing.T) {
-		h := newServerHarness(t)
-		otherRoot := t.TempDir()
-		h.insertProject(t, "seo-test", otherRoot)
-		h.insertRun(t, "run-active-project", "conv-active-project", "review main project", "active")
-		h.insertRunInWorkspace(t, "run-other-project", "conv-other-project", "review seo project", "active", otherRoot)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-		body := rr.Body.String()
-		if !strings.Contains(body, "run-active-project") {
-			t.Fatalf("expected active project run to be visible, got:\n%s", body)
-		}
-		if strings.Contains(body, "run-other-project") {
-			t.Fatalf("expected non-active project runs to be hidden, got:\n%s", body)
-		}
-	})
-
-	t.Run("detail renders known run", func(t *testing.T) {
-		h := newServerHarness(t)
-		snapshot, err := teams.LoadExecutionSnapshot(h.teamDir)
-		if err != nil {
-			t.Fatalf("load execution snapshot: %v", err)
-		}
-		h.insertRunWithSnapshotAt(
-			t,
-			"082b1c314823744cc779ece2f90e80e7",
-			"conv-1",
-			"review the repo",
-			"completed",
-			"2026-03-25 08:00:00",
-			"2026-03-25 08:06:00",
-			snapshot,
-		)
-		h.insertEventAt(t, "evt-1", "conv-1", "082b1c314823744cc779ece2f90e80e7", "run_started", "2026-03-25 08:00:00")
-		h.insertEventWithPayload(
-			t,
-			"evt-2",
-			"conv-1",
-			"082b1c314823744cc779ece2f90e80e7",
-			"turn_completed",
-			[]byte(`{"content":"Draft the rollout plan.","input_tokens":12,"output_tokens":8}`),
-		)
-		if _, err := h.db.RawDB().Exec(
-			`UPDATE events SET created_at = ? WHERE id = ?`,
-			"2026-03-25 08:06:00",
-			"evt-2",
-		); err != nil {
-			t.Fatalf("set event timestamp: %v", err)
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs/082b1c314823744cc779ece2f90e80e7", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-
-		body := rr.Body.String()
-		for _, want := range []string{
-			"082b1c314823744cc779ece2f90e80e7",
-			"Assigned Team",
-			"Repo Task Team",
-			"assistant",
-			"write",
-			"repo_write",
-			"Source",
-			"GistClaw",
-			"Attention",
-			"Started",
-			"Last Update",
-			"Model",
-			"Tokens",
-			"Output",
-			"Timeline",
-			"2026-03-25 08:00:00 UTC",
-			"2026-03-25 08:06:00 UTC",
-			"Run started",
-			"082b1c31…80e7",
-			"Draft the rollout plan.",
-			`data-run-command-strip`,
-			`data-run-primary-board`,
-			`data-run-branch-rail`,
-			`data-run-map-hero`,
-			`<details class="panel run-disclosure run-outcome-panel" data-run-outcome>`,
-			`<details class="panel run-disclosure run-timeline-panel" data-run-timeline>`,
-			`<details class="panel run-disclosure run-contract" data-run-contract>`,
-			`id="run-node-modal"`,
-			`class="run-node-modal-sticky"`,
-			`class="run-node-modal-body"`,
-			`id="run-node-modal-footer"`,
-			`id="run-node-modal-footer-copy"`,
-			`id="run-node-modal-actions"`,
-			`id="run-node-modal-task"`,
-			`id="run-node-modal-output"`,
-			`id="run-node-modal-chain"`,
-			`id="run-node-modal-logs"`,
-			`.run-node-modal-panel[hidden]`,
-			`role="tab"`,
-			`aria-selected="true"`,
-			`aria-controls="run-node-modal-overview"`,
-			`data-log-collapsed`,
-			`data-node-detail-url-template="/operate/runs/082b1c314823744cc779ece2f90e80e7/nodes/__RUN_ID__"`,
-			`data-open-node-detail`,
-			"Details",
-			`id="run-live-output"`,
-			`id="run-started-at"`,
-			`id="run-last-activity"`,
-			`id="run-model-display"`,
-			`id="run-token-summary"`,
-			`id="run-graph-diagram"`,
-			`id="run-graph-board"`,
-			`data-graph-url="/operate/runs/082b1c314823744cc779ece2f90e80e7/graph"`,
-			`/operate/runs/082b1c314823744cc779ece2f90e80e7/events?after=2026-03-25T08%3A06%3A00Z%7Cevt-2`,
-			`/operate/runs/082b1c314823744cc779ece2f90e80e7/nodes/`,
-			`window.cytoscape`,
-			`fetch(graphURL`,
-			`openNodeDetail`,
-			`resolveNodeApproval`,
-			`connectNodeStream`,
-			`let activeNodeTab = "overview"`,
-			`activeNodeTab = tab`,
-			`const nextTab = nodeModal.open ? activeNodeTab : "overview"`,
-			`new EventSource(url)`,
-			`new EventSource(streamURL)`,
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected body to contain %q:\n%s", want, body)
-			}
-		}
-		for _, unwanted := range []string{
-			"Live Status",
-			"Recorded events",
-			"Assistant Output",
-			">Events<",
-			"Execution Snapshot",
-			`class="run-meta-grid"`,
-		} {
-			if strings.Contains(body, unwanted) {
-				t.Fatalf("expected body to drop %q:\n%s", unwanted, body)
-			}
-		}
-		if strings.Contains(body, `<pre class="run-output-text">`) {
-			t.Fatalf("expected assistant output to render as structured content instead of raw preformatted text:\n%s", body)
-		}
-	})
-
-	t.Run("detail hides non-active project run", func(t *testing.T) {
+	t.Run("detail browser api hides non-active project run", func(t *testing.T) {
 		h := newServerHarness(t)
 		otherRoot := t.TempDir()
 		h.insertProject(t, "seo-test", otherRoot)
@@ -350,166 +61,12 @@ func TestRuns(t *testing.T) {
 		h.insertEventAt(t, "evt-other-project-detail", "conv-other-project-detail", "run-other-project-detail", "run_started", "2026-03-25 08:00:00")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-other-project-detail", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/work/run-other-project-detail", nil)
 
 		h.server.ServeHTTP(rr, req)
 
 		if rr.Code != http.StatusNotFound {
 			t.Fatalf("expected 404 for non-active project run detail, got %d body=%s", rr.Code, rr.Body.String())
-		}
-	})
-
-	t.Run("detail renders orchestration map structure", func(t *testing.T) {
-		h := newServerHarness(t)
-		sessionSvc := sessions.NewService(h.db, conversations.NewConversationStore(h.db))
-		front, err := sessionSvc.OpenFrontSession(context.Background(), sessions.OpenFrontSession{
-			ConversationID: "conv-map",
-			AgentID:        "assistant",
-		})
-		if err != nil {
-			t.Fatalf("OpenFrontSession failed: %v", err)
-		}
-		if err := sessionSvc.BindFollowUp(context.Background(), sessions.BindFollowUp{
-			ConversationID: "conv-map",
-			ThreadID:       "main",
-			SessionID:      front.ID,
-			ConnectorID:    "telegram",
-			AccountID:      "acct-map",
-			ExternalID:     "chat-map",
-		}); err != nil {
-			t.Fatalf("BindFollowUp failed: %v", err)
-		}
-		h.insertRunAt(t, "run-map-root", "conv-map", "Coordinate the launch", "active", "2026-03-25 08:00:00")
-		if _, err := h.db.RawDB().Exec(`UPDATE runs SET session_id = ? WHERE id = 'run-map-root'`, front.ID); err != nil {
-			t.Fatalf("bind root session: %v", err)
-		}
-		if _, err := h.db.RawDB().Exec(
-			`INSERT INTO runs
-			 (id, conversation_id, agent_id, session_id, project_id, team_id, parent_run_id, objective, cwd, status, created_at, updated_at)
-			 VALUES
-			 ('run-map-child', 'conv-map', 'patcher', 'sess-map-child', ?, 'repo-task-team', 'run-map-root', 'Create the landing page', ?, 'active', '2026-03-25 08:03:00', '2026-03-25 08:04:00')`,
-			h.activeProjectID,
-			h.workspaceRoot,
-		); err != nil {
-			t.Fatalf("insert child run: %v", err)
-		}
-		if _, err := h.db.RawDB().Exec(
-			`INSERT INTO tool_calls
-			 (id, run_id, tool_name, input_json, output_json, decision, approval_id, created_at)
-			 VALUES
-			 ('tool-map-child', 'run-map-child', 'coder_exec', ?, x'', 'allow', '', '2026-03-25 08:03:30')`,
-			[]byte(`{"backend":"codex","prompt":"Create the landing page"}`),
-		); err != nil {
-			t.Fatalf("insert child coder_exec call: %v", err)
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-map-root", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-
-		body := rr.Body.String()
-		for _, want := range []string{
-			"Work Map",
-			"Open Branches",
-			"Map",
-			"Telegram",
-			"Codex CLI",
-			`data-branch-root-id=`,
-			`data-lane-id=`,
-			`data-run-primary-board`,
-			`data-run-map-hero`,
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected body to contain %q:\n%s", want, body)
-			}
-		}
-		for _, unwanted := range []string{
-			"Lineage map",
-			"Front Session",
-			"Delegated Workers",
-		} {
-			if strings.Contains(body, unwanted) {
-				t.Fatalf("expected body to drop %q:\n%s", unwanted, body)
-			}
-		}
-	})
-
-	t.Run("detail renders top-down topology map script", func(t *testing.T) {
-		h := newServerHarness(t)
-		h.insertRunAt(t, "run-topology-root", "conv-topology", "Coordinate the launch", "active", "2026-03-25 08:00:00")
-		if _, err := h.db.RawDB().Exec(
-			`INSERT INTO runs
-			 (id, conversation_id, agent_id, session_id, project_id, team_id, parent_run_id, objective, cwd, status, created_at, updated_at)
-			 VALUES
-			 ('run-topology-review', 'conv-topology', 'reviewer', 'sess-topology-review', ?, 'repo-task-team', 'run-topology-root', 'Review the landing page', ?, 'completed', '2026-03-25 08:05:00', '2026-03-25 08:06:00')`,
-			h.activeProjectID,
-			h.workspaceRoot,
-		); err != nil {
-			t.Fatalf("insert reviewer run: %v", err)
-		}
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-topology-root", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-
-		body := rr.Body.String()
-		for _, want := range []string{
-			`rankDir: "TB"`,
-			`selector: "edge[kind = 'delegates']"`,
-			`selector: "edge[kind = 'reports']"`,
-			`selector: "edge[kind = 'blocked']"`,
-			`"curve-style": "taxi"`,
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected body to contain %q:\n%s", want, body)
-			}
-		}
-		for _, unwanted := range []string{
-			`rankDir: "LR"`,
-			`"curve-style": "bezier"`,
-		} {
-			if strings.Contains(body, unwanted) {
-				t.Fatalf("expected body to drop %q:\n%s", unwanted, body)
-			}
-		}
-	})
-
-	t.Run("detail preserves branch state and active path controls", func(t *testing.T) {
-		h := newServerHarness(t)
-		h.insertRunAt(t, "run-state-root", "conv-state", "Coordinate the launch", "active", "2026-03-25 08:00:00")
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-state-root", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
-		}
-
-		body := rr.Body.String()
-		for _, want := range []string{
-			`const branchState = new Map();`,
-			`rememberBranchState()`,
-			`restoreBranchState(`,
-			`applyGraphSelection(`,
-			"Focus Active",
-			"Expand Active",
-			"Collapse Finished",
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected body to contain %q:\n%s", want, body)
-			}
 		}
 	})
 
@@ -549,7 +106,7 @@ func TestRuns(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs/082b1c314823744cc779ece2f90e80e7/graph", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/work/082b1c314823744cc779ece2f90e80e7/graph", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -673,7 +230,7 @@ func TestRuns(t *testing.T) {
 		}
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-root-node/nodes/run-child-node", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/work/run-root-node/nodes/run-child-node", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -791,7 +348,7 @@ func TestRuns(t *testing.T) {
 		)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs/run-root-approval-node/nodes/run-child-approval-node", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/work/run-root-approval-node/nodes/run-child-approval-node", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -850,7 +407,7 @@ func TestRuns(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs/missing", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/work/missing", nil)
 
 		h.server.ServeHTTP(rr, req)
 
@@ -1210,6 +767,7 @@ func TestPageRouteMap(t *testing.T) {
 			"/approvals",
 			"/memory",
 			"/run",
+			"/operate/runs",
 			"/operate/start-task",
 		} {
 			t.Run(path, func(t *testing.T) {
@@ -1290,7 +848,7 @@ func TestApprovals(t *testing.T) {
 		if rr.Code != http.StatusOK {
 			t.Fatalf("expected 200, got %d", rr.Code)
 		}
-		for _, want := range []string{"Nothing is waiting on your approval.", `href="/operate/runs"`} {
+		for _, want := range []string{"Nothing is waiting on your approval.", `href="/work"`} {
 			if !strings.Contains(rr.Body.String(), want) {
 				t.Fatalf("expected empty approvals state to contain %q, got:\n%s", want, rr.Body.String())
 			}
@@ -2217,62 +1775,6 @@ func TestSettingsUpdate(t *testing.T) {
 }
 
 func TestProjectSwitcher(t *testing.T) {
-	t.Run("runs page renders shell project switcher", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-		body := rr.Body.String()
-		for _, want := range []string{`name="project_id"`, "starter-project"} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected runs page to contain %q, got:\n%s", want, body)
-			}
-		}
-	})
-
-	t.Run("runs page uses compact shell controls without visible project label", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-		body := rr.Body.String()
-		for _, want := range []string{
-			`--shell-control-height: 36px;`,
-			`.shell-project-select.shell-toolbar-control {`,
-			`class="shell-project-select shell-toolbar-control"`,
-			`onchange="this.form.requestSubmit()"`,
-			`aria-label="Active project"`,
-		} {
-			if !strings.Contains(body, want) {
-				t.Fatalf("expected runs page to contain %q, got:\n%s", want, body)
-			}
-		}
-		if strings.Contains(body, `class="shell-project-label"`) {
-			t.Fatalf("expected no visible shell project label, got:\n%s", body)
-		}
-		if strings.Contains(body, ">Switch<") {
-			t.Fatalf("expected no shell switch button, got:\n%s", body)
-		}
-		if strings.Contains(body, `class="btn btn-primary shell-start-task`) {
-			t.Fatalf("expected no shell start task button, got:\n%s", body)
-		}
-		if strings.Contains(body, `href="/operate/start-task"`) {
-			t.Fatalf("expected no runs-page start task CTA, got:\n%s", body)
-		}
-	})
-
 	t.Run("switching project updates the active project", func(t *testing.T) {
 		h := newServerHarness(t)
 		otherRoot := t.TempDir()
@@ -2380,6 +1882,10 @@ func TestActionPaths(t *testing.T) {
 		got  string
 		want string
 	}{
+		{name: "run detail", got: runDetailPath("run 1"), want: "/work/run%201"},
+		{name: "run graph", got: runGraphPath("run 1"), want: "/api/work/run%201/graph"},
+		{name: "run events", got: runEventsPath("run 1"), want: "/api/work/run%201/events"},
+		{name: "run node detail template", got: runNodeDetailTemplatePath("run 1"), want: "/api/work/run%201/nodes/__RUN_ID__"},
 		{name: "work dismiss", got: workDismissPath("run 1", "interrupted"), want: "/api/work/run%201/dismiss"},
 		{name: "session message", got: sessionMessagePath("session 1"), want: "/operate/sessions/session%201/messages"},
 		{name: "session retry delivery", got: sessionRetryDeliveryPath("session 1", "delivery/1"), want: "/operate/sessions/session%201/deliveries/delivery%2F1/retry"},
@@ -2447,7 +1953,7 @@ func TestProjectLayoutData_UsesActiveProjectOnly(t *testing.T) {
 		t.Fatalf("delete active_project_id: %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/operate/runs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/work", nil)
 	layout, err := h.server.projectLayoutData(req)
 	if err != nil {
 		t.Fatalf("projectLayoutData: %v", err)
@@ -2650,8 +2156,8 @@ func TestSSE(t *testing.T) {
 	ts := httptest.NewServer(h.server)
 	defer ts.Close()
 
-	respOne, readerOne := subscribeSSE(t, ts.URL+"/operate/runs/run-sse/events")
-	respTwo, readerTwo := subscribeSSE(t, ts.URL+"/operate/runs/run-sse/events")
+	respOne, readerOne := subscribeSSE(t, ts.URL+"/api/work/run-sse/events")
+	respTwo, readerTwo := subscribeSSE(t, ts.URL+"/api/work/run-sse/events")
 
 	first := model.ReplayDelta{
 		RunID:      "run-sse",
@@ -2712,7 +2218,7 @@ func TestSSE(t *testing.T) {
 		ts := httptest.NewServer(h.server)
 		defer ts.Close()
 
-		resp, reader := subscribeSSE(t, ts.URL+"/operate/runs/run-sse-backfill/events?after=2026-03-25T08%3A00%3A00Z%7Cevt-start")
+		resp, reader := subscribeSSE(t, ts.URL+"/api/work/run-sse-backfill/events?after=2026-03-25T08%3A00%3A00Z%7Cevt-start")
 		defer resp.Body.Close()
 
 		first := readSSEEventWithin(t, resp, reader, time.Second)
@@ -2747,7 +2253,7 @@ func TestSSEPayloadsAreStructuredJSON(t *testing.T) {
 	ts := httptest.NewServer(h.server)
 	defer ts.Close()
 
-	resp, reader := subscribeSSE(t, ts.URL+"/operate/runs/run-sse-json/events")
+	resp, reader := subscribeSSE(t, ts.URL+"/api/work/run-sse-json/events")
 	defer resp.Body.Close()
 
 	payload := []byte(`{"text":"Hel"}`)
@@ -2789,7 +2295,7 @@ func TestSSEToolLogPayloadsCarryAggregatedHTML(t *testing.T) {
 	ts := httptest.NewServer(h.server)
 	defer ts.Close()
 
-	resp, reader := subscribeSSE(t, ts.URL+"/operate/runs/run-sse-log/events")
+	resp, reader := subscribeSSE(t, ts.URL+"/api/work/run-sse-log/events")
 	defer resp.Body.Close()
 
 	if err := h.broadcaster.Emit(context.Background(), "run-sse-log", model.ReplayDelta{
@@ -3962,8 +3468,8 @@ func TestRoutesDeliveriesPage(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if !strings.HasPrefix(rr.Header().Get("Location"), "/operate/runs/") {
-			t.Fatalf("expected redirect to /operate/runs/{id}, got %q", rr.Header().Get("Location"))
+		if !strings.HasPrefix(rr.Header().Get("Location"), "/work/") {
+			t.Fatalf("expected redirect to /work/{id}, got %q", rr.Header().Get("Location"))
 		}
 
 		runs, err := h.db.RawDB().Query(
@@ -4348,7 +3854,7 @@ func TestSessionPages(t *testing.T) {
 			`id="session-live-root"`,
 			`data-active-run-id="run-session-active"`,
 			`/api/sessions/` + run.SessionID + `/messages`,
-			"`/operate/runs/${encodeURIComponent(runID)}/events`",
+			"`/api/work/${encodeURIComponent(runID)}/events`",
 			`new EventSource(streamURL)`,
 			`data-source-run-id="` + run.ID + `"`,
 		} {
@@ -4378,8 +3884,8 @@ func TestSessionPages(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if !strings.HasPrefix(rr.Header().Get("Location"), "/operate/runs/") {
-			t.Fatalf("expected redirect to /operate/runs/{id}, got %q", rr.Header().Get("Location"))
+		if !strings.HasPrefix(rr.Header().Get("Location"), "/work/") {
+			t.Fatalf("expected redirect to /work/{id}, got %q", rr.Header().Get("Location"))
 		}
 	})
 

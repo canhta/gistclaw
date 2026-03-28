@@ -413,15 +413,6 @@ func (s *Server) loadRunsPageData(ctx context.Context, query url.Values) (runsPa
 	}, nil
 }
 
-func (s *Server) handleRunsIndex(w http.ResponseWriter, r *http.Request) {
-	pageData, err := s.loadRunsPageData(r.Context(), r.URL.Query())
-	if err != nil {
-		http.Error(w, "failed to load runs", http.StatusInternalServerError)
-		return
-	}
-	s.renderTemplate(w, r, "Runs", "runs_body", pageData)
-}
-
 func formatWorkerCount(count int) string {
 	if count == 1 {
 		return "1 sub-agent"
@@ -565,19 +556,6 @@ func (s *Server) loadRunDetailPageData(ctx context.Context, runID string) (runDe
 		Graph:                 graphView,
 		ExecutionSnapshot:     buildExecutionSnapshotView(replayRun.TeamID, replayRun.ExecutionSnapshotJSON),
 	}, nil
-}
-
-func (s *Server) handleRunDetail(w http.ResponseWriter, r *http.Request) {
-	pageData, err := s.loadRunDetailPageData(r.Context(), r.PathValue("id"))
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			http.NotFound(w, r)
-			return
-		}
-		http.Error(w, "failed to load run", http.StatusInternalServerError)
-		return
-	}
-	s.renderTemplate(w, r, "Run Detail", "run_detail_body", pageData)
 }
 
 func (s *Server) handleRunGraph(w http.ResponseWriter, r *http.Request) {
@@ -1561,7 +1539,7 @@ func finalizeRunListPage(query url.Values, filter runListRequest, rows []runList
 		hasNext = hasExtra
 	}
 
-	return rows, buildPageLinks(pageOperateRuns, cloneQuery(query), "cursor", "direction", nextCursor, prevCursor, hasNext, hasPrev)
+	return rows, buildPageLinks("/api/work", cloneQuery(query), "cursor", "direction", nextCursor, prevCursor, hasNext, hasPrev)
 }
 
 func runQueueStatusExpression(rootAlias, queueAlias string) string {
@@ -1669,7 +1647,7 @@ func buildRunListItem(id, objective, agentID, status, modelLane, modelID string,
 	modelDisplay := formatRunModelDisplay(modelID, modelLane)
 	return runListItem{
 		ID:                id,
-		DetailURL:         pageOperateRuns + "/" + id,
+		DetailURL:         workPagePath(id),
 		Objective:         objective,
 		AgentID:           agentID,
 		Status:            status,

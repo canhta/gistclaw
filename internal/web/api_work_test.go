@@ -92,6 +92,113 @@ func TestWorkIndexReturnsQueueAndProjectSummary(t *testing.T) {
 	}
 }
 
+func TestWorkIndexFiltersAndPaginatesClusters(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+	h.insertRunAt(t, "run-newest", "conv-runs-1", "fix graph cards", "active", "2026-03-25 10:00:00")
+	h.insertRunAt(t, "run-middle", "conv-runs-2", "review docs", "completed", "2026-03-25 09:00:00")
+	h.insertRunAt(t, "run-oldest", "conv-runs-3", "fix pagination", "active", "2026-03-25 08:00:00")
+	if _, err := h.db.RawDB().Exec(
+		`INSERT INTO runs
+		 (id, conversation_id, agent_id, project_id, parent_run_id, team_id, objective, cwd, status, created_at, updated_at)
+		 VALUES ('run-newest-child', 'conv-runs-1', 'researcher', ?, 'run-newest', 'repo-task-team', 'inspect the graph', ?, 'completed', '2026-03-25 10:30:00', '2026-03-25 10:31:00')`,
+		h.activeProjectID,
+		h.workspaceRoot,
+	); err != nil {
+		t.Fatalf("insert paginated child run: %v", err)
+	}
+
+	firstRR := httptest.NewRecorder()
+	firstReq := httptest.NewRequest(http.MethodGet, "/api/work?q=fix&status=active&limit=1", nil)
+	h.server.ServeHTTP(firstRR, firstReq)
+
+	if firstRR.Code != http.StatusOK {
+		t.Fatalf("expected first page 200, got %d body=%s", firstRR.Code, firstRR.Body.String())
+	}
+
+	var firstResp struct {
+		Clusters []struct {
+			Root struct {
+				ID string `json:"id"`
+			} `json:"root"`
+			Children []struct {
+				ID string `json:"id"`
+			} `json:"children"`
+		} `json:"clusters"`
+		Paging struct {
+			HasNext bool   `json:"has_next"`
+			NextURL string `json:"next_url"`
+		} `json:"paging"`
+	}
+	if err := json.Unmarshal(firstRR.Body.Bytes(), &firstResp); err != nil {
+		t.Fatalf("decode first page: %v", err)
+	}
+	if len(firstResp.Clusters) != 1 || firstResp.Clusters[0].Root.ID != "run-newest" {
+		t.Fatalf("expected first page to contain newest run, got %+v", firstResp.Clusters)
+	}
+	if len(firstResp.Clusters[0].Children) != 1 || firstResp.Clusters[0].Children[0].ID != "run-newest-child" {
+		t.Fatalf("expected child run to stay nested, got %+v", firstResp.Clusters[0].Children)
+	}
+	if !firstResp.Paging.HasNext || !strings.Contains(firstResp.Paging.NextURL, "direction=next") || !strings.Contains(firstResp.Paging.NextURL, "limit=1") {
+		t.Fatalf("expected next page controls, got %+v", firstResp.Paging)
+	}
+
+	secondRR := httptest.NewRecorder()
+	secondReq := httptest.NewRequest(http.MethodGet, "/api/work?q=fix&status=active&limit=1&cursor=2026-03-25+10%3A00%3A00%7Crun-newest&direction=next", nil)
+	h.server.ServeHTTP(secondRR, secondReq)
+
+	if secondRR.Code != http.StatusOK {
+		t.Fatalf("expected second page 200, got %d body=%s", secondRR.Code, secondRR.Body.String())
+	}
+
+	var secondResp struct {
+		Clusters []struct {
+			Root struct {
+				ID string `json:"id"`
+			} `json:"root"`
+		} `json:"clusters"`
+	}
+	if err := json.Unmarshal(secondRR.Body.Bytes(), &secondResp); err != nil {
+		t.Fatalf("decode second page: %v", err)
+	}
+	if len(secondResp.Clusters) != 1 || secondResp.Clusters[0].Root.ID != "run-oldest" {
+		t.Fatalf("expected second page to contain oldest filtered run, got %+v", secondResp.Clusters)
+	}
+}
+
+func TestWorkIndexUsesActiveProjectOnly(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+	otherRoot := t.TempDir()
+	h.insertProject(t, "seo-test", otherRoot)
+	h.insertRun(t, "run-active-project", "conv-active-project", "review main project", "active")
+	h.insertRunInWorkspace(t, "run-other-project", "conv-other-project", "review seo project", "active", otherRoot)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/work", nil)
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Clusters []struct {
+			Root struct {
+				ID string `json:"id"`
+			} `json:"root"`
+		} `json:"clusters"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode work index: %v", err)
+	}
+	if len(resp.Clusters) != 1 || resp.Clusters[0].Root.ID != "run-active-project" {
+		t.Fatalf("expected only active project run, got %+v", resp.Clusters)
+	}
+}
+
 func TestWorkDetailReturnsRunSummaryGraphAndInspectorSeed(t *testing.T) {
 	t.Parallel()
 

@@ -46,6 +46,12 @@ describe('Work page', () => {
 								root_status: 'needs_approval'
 							}
 						},
+						paging: {
+							next_url: '',
+							prev_url: '',
+							has_next: false,
+							has_prev: false
+						},
 						clusters: [
 							{
 								root: {

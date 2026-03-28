@@ -17,7 +17,6 @@ const (
 	pageAutomate                  = "/automate"
 	pageHistory                   = "/history"
 	pageSettings                  = "/settings"
-	pageOperateRuns               = "/operate/runs"
 	pageOperateSessions           = "/operate/sessions"
 	pageConfigureTeam             = "/configure/team"
 	pageConfigureTeamExport       = "/configure/team/export"
@@ -41,15 +40,15 @@ type shellNavigation struct {
 }
 
 func runDetailPath(runID string) string {
-	return pageOperateRuns + "/" + url.PathEscape(runID)
+	return workPagePath(runID)
 }
 
 func runGraphPath(runID string) string {
-	return runDetailPath(runID) + "/graph"
+	return workGraphPath(runID)
 }
 
 func runEventsPath(runID string) string {
-	return runDetailPath(runID) + "/events"
+	return workEventsPath(runID)
 }
 
 func runEventsPathAfter(runID, after string) string {
@@ -63,7 +62,7 @@ func runEventsPathAfter(runID, after string) string {
 }
 
 func runNodeDetailTemplatePath(runID string) string {
-	return runDetailPath(runID) + "/nodes/__RUN_ID__"
+	return workNodeDetailTemplatePath(runID)
 }
 
 func workAPIPath(runID string) string {
@@ -135,7 +134,7 @@ func settingsDeviceUnblockPath(deviceID string) string {
 
 func navigationForPath(path string) shellNavigation {
 	groups := []navLink{
-		{Label: "Operate", Href: pageOperateRuns},
+		{Label: "Operate", Href: pageWork},
 		{Label: "Configure", Href: pageConfigureTeam},
 		{Label: "Recover", Href: pageRecoverApprovals},
 	}
@@ -169,7 +168,7 @@ func childNavigation(group, currentPath string) []navLink {
 	switch group {
 	case "Operate":
 		links = []navLink{
-			{Label: "Runs", Href: pageOperateRuns},
+			{Label: "Runs", Href: pageWork},
 			{Label: "Sessions", Href: pageOperateSessions},
 		}
 	case "Configure":

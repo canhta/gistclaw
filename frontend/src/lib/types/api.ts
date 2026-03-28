@@ -101,6 +101,7 @@ export interface WorkIndexResponse {
 		recovery_runs: number;
 		summary: RunGraphSummaryResponse;
 	};
+	paging: PageLinksResponse;
 	clusters: WorkClusterResponse[];
 }
 

@@ -271,7 +271,7 @@
     }
     closeStream();
     currentRunID = runID;
-    const streamURL = `/operate/runs/${encodeURIComponent(runID)}/events`;
+    const streamURL = `/api/work/${encodeURIComponent(runID)}/events`;
     const source = new EventSource(streamURL);
     currentSource = source;
 

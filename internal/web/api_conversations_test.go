@@ -62,8 +62,21 @@ func TestConversationsAPIListsSessionsAndSessionDetail(t *testing.T) {
 	if len(indexResp.Sessions) != 2 {
 		t.Fatalf("expected 2 sessions, got %d", len(indexResp.Sessions))
 	}
-	if indexResp.Sessions[0].ID != worker.SessionID || indexResp.Sessions[1].ID != front.SessionID {
-		t.Fatalf("unexpected sessions order %+v", indexResp.Sessions)
+	gotSessions := map[string]string{
+		indexResp.Sessions[0].ID: indexResp.Sessions[0].AgentID,
+		indexResp.Sessions[1].ID: indexResp.Sessions[1].AgentID,
+	}
+	wantSessions := map[string]string{
+		front.SessionID:  "assistant",
+		worker.SessionID: "researcher",
+	}
+	if len(gotSessions) != len(wantSessions) {
+		t.Fatalf("unexpected sessions payload %+v", indexResp.Sessions)
+	}
+	for sessionID, wantAgentID := range wantSessions {
+		if gotSessions[sessionID] != wantAgentID {
+			t.Fatalf("unexpected sessions payload %+v", indexResp.Sessions)
+		}
 	}
 	if len(indexResp.Health) != 1 || indexResp.Health[0].ConnectorID != "telegram" {
 		t.Fatalf("unexpected health %+v", indexResp.Health)

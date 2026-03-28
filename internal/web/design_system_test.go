@@ -281,26 +281,6 @@ func TestTemplatesUseTaskFramedCopy(t *testing.T) {
 	}
 
 	cases := map[string]copyExpectations{
-		"runs.html": {
-			wants: []string{
-				"Recent work, blockers, and finished tasks for this project.",
-				"See what is running, waiting on you, or done.",
-			},
-			unwanted: []string{
-				"The operational queue for recent runs.",
-			},
-		},
-		"run_detail.html": {
-			wants: []string{
-				"Source",
-				"Attention",
-				"Assigned Team",
-			},
-			unwanted: []string{
-				"Current state",
-				"Run Contract",
-			},
-		},
 		"sessions.html": {
 			wants: []string{
 				"Active agent conversations for this project.",
