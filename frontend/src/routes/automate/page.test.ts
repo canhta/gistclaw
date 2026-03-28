@@ -105,4 +105,50 @@ describe('Automate page', () => {
 		expect(body).toContain('Create schedule');
 		expect(body).toContain('/work/run-open');
 	});
+
+	it('normalizes empty next-run copy into user-facing language', () => {
+		const { body } = render(AutomatePage, {
+			props: {
+				data: {
+					auth: {
+						authenticated: true,
+						password_configured: true,
+						setup_required: false
+					},
+					onboarding: {
+						completed: true,
+						entry_href: '/work'
+					},
+					project: {
+						active_id: 'proj-primary',
+						active_name: 'starter-project',
+						active_path: '/tmp/starter-project'
+					},
+					navigation: [{ id: 'automate', label: 'Automate', href: '/automate' }],
+					currentPath: '/automate',
+					currentSearch: '',
+					automate: {
+						summary: {
+							total_schedules: 0,
+							enabled_schedules: 0,
+							due_schedules: 0,
+							active_occurrences: 0,
+							next_wake_at_label: 'No wake scheduled'
+						},
+						health: {
+							invalid_schedules: 0,
+							stuck_dispatching: 0,
+							missing_next_run: 0
+						},
+						schedules: [],
+						open_occurrences: [],
+						recent_occurrences: []
+					}
+				}
+			}
+		});
+
+		expect(body).toContain('No schedule yet');
+		expect(body).not.toContain('No wake scheduled');
+	});
 });

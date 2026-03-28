@@ -22,6 +22,10 @@
 	let cronExpr = $state('0 9 * * *');
 	let timezone = $state('UTC');
 
+	function nextRunLabel(label: string): string {
+		return label === 'No wake scheduled' ? 'No schedule yet' : label;
+	}
+
 	const summaryCards = $derived([
 		{
 			label: 'Running now',
@@ -36,7 +40,7 @@
 		},
 		{
 			label: 'Next run',
-			value: data.automate.summary.next_wake_at_label,
+			value: nextRunLabel(data.automate.summary.next_wake_at_label),
 			detail: 'When the next scheduled task should start.'
 		},
 		{

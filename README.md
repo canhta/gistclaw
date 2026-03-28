@@ -1,5 +1,3 @@
-# GistClaw
-
 <p>
   <img src="docs/assets/readme-banner.svg" alt="GistClaw banner" width="100%" />
 </p>
