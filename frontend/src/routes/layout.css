@@ -21,6 +21,47 @@
 	--gc-font-body: 'Instrument Sans', sans-serif;
 	--gc-font-mono: 'IBM Plex Mono', monospace;
 	--gc-font-code: 'JetBrains Mono', monospace;
+	/* surface overlay tokens — differ between dark and light */
+	--gc-panel-overlay: rgba(255, 255, 255, 0.03);
+	--gc-panel-soft-overlay: rgba(255, 255, 255, 0.02);
+	--gc-chip-bg: rgba(10, 15, 20, 0.55);
+	--gc-shadow-panel: inset 0 0 0 1px rgba(255, 255, 255, 0.03), 0 0 0 1px rgba(0, 0, 0, 0.28);
+}
+
+/* Light theme — respects OS preference unless a manual override is applied */
+@media (prefers-color-scheme: light) {
+	:root:not([data-theme='dark']) {
+		--gc-canvas: #edf0f4;
+		--gc-surface: #e2e8f0;
+		--gc-surface-raised: #d8e0eb;
+		--gc-surface-soft: #cdd8e5;
+		--gc-ink: #0c1720;
+		--gc-text-secondary: #436180;
+		--gc-text-tertiary: #6b8499;
+		--gc-border: #8aacca;
+		--gc-border-strong: #5e88a8;
+		--gc-panel-overlay: rgba(0, 0, 0, 0.025);
+		--gc-panel-soft-overlay: rgba(0, 0, 0, 0.018);
+		--gc-chip-bg: rgba(12, 23, 32, 0.06);
+		--gc-shadow-panel: inset 0 0 0 1px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.1);
+	}
+}
+
+/* Manual light override — takes precedence over OS preference */
+:root[data-theme='light'] {
+	--gc-canvas: #edf0f4;
+	--gc-surface: #e2e8f0;
+	--gc-surface-raised: #d8e0eb;
+	--gc-surface-soft: #cdd8e5;
+	--gc-ink: #0c1720;
+	--gc-text-secondary: #436180;
+	--gc-text-tertiary: #6b8499;
+	--gc-border: #8aacca;
+	--gc-border-strong: #5e88a8;
+	--gc-panel-overlay: rgba(0, 0, 0, 0.025);
+	--gc-panel-soft-overlay: rgba(0, 0, 0, 0.018);
+	--gc-chip-bg: rgba(12, 23, 32, 0.06);
+	--gc-shadow-panel: inset 0 0 0 1px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.1);
 }
 
 html,
@@ -53,6 +94,51 @@ body {
 	text-rendering: optimizeLegibility;
 }
 
+/* Reduce grid intensity in light mode */
+@media (prefers-color-scheme: light) {
+	:root:not([data-theme='dark']) body {
+		background:
+			repeating-linear-gradient(
+				90deg,
+				rgba(255, 92, 57, 0.05) 0,
+				rgba(255, 92, 57, 0.05) 2px,
+				transparent 2px,
+				transparent 160px
+			),
+			repeating-linear-gradient(
+				180deg,
+				rgba(83, 199, 240, 0.04) 0,
+				rgba(83, 199, 240, 0.04) 1px,
+				transparent 1px,
+				transparent 96px
+			),
+			radial-gradient(circle at top left, rgba(255, 92, 57, 0.07), transparent 30%),
+			radial-gradient(circle at bottom right, rgba(83, 199, 240, 0.06), transparent 28%),
+			var(--gc-canvas);
+	}
+}
+
+:root[data-theme='light'] body {
+	background:
+		repeating-linear-gradient(
+			90deg,
+			rgba(255, 92, 57, 0.05) 0,
+			rgba(255, 92, 57, 0.05) 2px,
+			transparent 2px,
+			transparent 160px
+		),
+		repeating-linear-gradient(
+			180deg,
+			rgba(83, 199, 240, 0.04) 0,
+			rgba(83, 199, 240, 0.04) 1px,
+			transparent 1px,
+			transparent 96px
+		),
+		radial-gradient(circle at top left, rgba(255, 92, 57, 0.07), transparent 30%),
+		radial-gradient(circle at bottom right, rgba(83, 199, 240, 0.06), transparent 28%),
+		var(--gc-canvas);
+}
+
 a {
 	color: inherit;
 	text-decoration: none;
@@ -72,17 +158,14 @@ select {
 
 .gc-panel {
 	border: 2px solid var(--gc-border-strong);
-	background:
-		linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 28%), var(--gc-surface);
-	box-shadow:
-		inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-		0 0 0 1px rgba(0, 0, 0, 0.28);
+	background: linear-gradient(180deg, var(--gc-panel-overlay), transparent 28%), var(--gc-surface);
+	box-shadow: var(--gc-shadow-panel);
 }
 
 .gc-panel-soft {
 	border: 2px solid var(--gc-border);
 	background:
-		linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 24%), var(--gc-surface-soft);
+		linear-gradient(180deg, var(--gc-panel-soft-overlay), transparent 24%), var(--gc-surface-soft);
 }
 
 .gc-panel-title {
@@ -237,13 +320,13 @@ textarea.gc-control {
 .gc-action-solid {
 	border-color: var(--gc-orange);
 	background: var(--gc-orange);
-	color: var(--gc-canvas);
+	color: #0a0f14;
 }
 
 .gc-action-solid:hover {
 	border-color: var(--gc-orange-hover);
 	background: var(--gc-orange-hover);
-	color: var(--gc-canvas);
+	color: #0a0f14;
 }
 
 .gc-chip {
@@ -251,7 +334,7 @@ textarea.gc-control {
 	align-items: center;
 	gap: 0.5rem;
 	border: 2px solid var(--gc-border);
-	background: rgba(10, 15, 20, 0.55);
+	background: var(--gc-chip-bg);
 	padding: 0.5rem 0.75rem;
 	font-family: var(--gc-font-mono);
 	font-size: 0.72rem;

@@ -1,8 +1,10 @@
 <!-- eslint-disable svelte/no-navigation-without-resolve -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { browser } from '$app/environment';
 	import type { BootstrapNavItem, BootstrapProjectResponse } from '$lib/types/api';
 	import SurfaceIcon from '$lib/components/shell/SurfaceIcon.svelte';
+	import { IconMoon, IconSun } from '@tabler/icons-svelte-runes';
 	import logo from '$lib/assets/logo.svg';
 
 	type InspectorItem = {
@@ -10,6 +12,8 @@
 		value: string;
 		tone?: 'default' | 'accent' | 'warning';
 	};
+
+	type Theme = 'dark' | 'light';
 
 	let {
 		navigation,
@@ -28,6 +32,23 @@
 	} = $props();
 
 	let infoOpen = $state(false);
+
+	// Initialize from DOM — app.html inline script may have already set data-theme
+	let theme = $state<Theme>(
+		typeof document !== 'undefined'
+			? ((document.documentElement.getAttribute('data-theme') as Theme | null) ?? 'dark')
+			: 'dark'
+	);
+
+	$effect(() => {
+		if (!browser) return;
+		document.documentElement.setAttribute('data-theme', theme);
+	});
+
+	function toggleTheme(): void {
+		theme = theme === 'dark' ? 'light' : 'dark';
+		localStorage.setItem('gc-theme', theme);
+	}
 
 	function isActive(href: string): boolean {
 		return currentPath === href || currentPath.startsWith(`${href}/`);
@@ -68,14 +89,27 @@
 				/>
 				<p class="gc-panel-title text-[1rem]">{project.active_name}</p>
 			</div>
-			<button
-				onclick={() => (infoOpen = !infoOpen)}
-				aria-expanded={infoOpen}
-				aria-label="System info"
-				class="gc-action px-3 py-2 text-[var(--gc-text-secondary)]"
-			>
-				<span class="gc-stamp">{infoOpen ? 'Close' : 'Info'}</span>
-			</button>
+			<div class="flex items-center gap-2">
+				<button
+					onclick={toggleTheme}
+					aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+					class="gc-action px-3 py-2 text-[var(--gc-text-secondary)]"
+				>
+					{#if theme === 'dark'}
+						<IconSun aria-hidden="true" size={16} stroke={1.8} />
+					{:else}
+						<IconMoon aria-hidden="true" size={16} stroke={1.8} />
+					{/if}
+				</button>
+				<button
+					onclick={() => (infoOpen = !infoOpen)}
+					aria-expanded={infoOpen}
+					aria-label="System info"
+					class="gc-action px-3 py-2 text-[var(--gc-text-secondary)]"
+				>
+					<span class="gc-stamp">{infoOpen ? 'Close' : 'Info'}</span>
+				</button>
+			</div>
 		</div>
 
 		{#if infoOpen}
@@ -152,6 +186,22 @@
 					</a>
 				{/each}
 			</nav>
+
+			<div class="border-t-2 border-[var(--gc-border)] px-3 py-3">
+				<button
+					onclick={toggleTheme}
+					aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+					class="gc-action w-full justify-start gap-3 px-4 py-3 text-[var(--gc-text-secondary)]"
+				>
+					{#if theme === 'dark'}
+						<IconSun aria-hidden="true" size={18} stroke={1.8} />
+						<span class="gc-stamp">Light mode</span>
+					{:else}
+						<IconMoon aria-hidden="true" size={18} stroke={1.8} />
+						<span class="gc-stamp">Dark mode</span>
+					{/if}
+				</button>
+			</div>
 		</aside>
 
 		<!-- Main content -->
