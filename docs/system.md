@@ -22,6 +22,7 @@ This document is the source of truth for what the repository ships today: packag
 - Current-state tables project that journal into runs, approvals, conversational gates, tool calls, receipts, sessions, bindings, deliveries, and memory items.
 - A conversation can have one active root run at a time.
 - Collaboration happens through runtime-managed sessions and session messages.
+- The front assistant is direct-execution by default and receives a runtime execution recommendation (`direct`, `delegate`, or `parallelize`) before each provider turn.
 - Risky tool calls still require explicit approval before mutating writes are applied.
 - Connector-bound front sessions can surface blocked approvals as conversational gates, letting the same chat collect approval or denial and resume the run.
 - Outbound delivery can carry transport-agnostic action buttons so chat connectors may offer deterministic approval controls without leaving the active conversation.
@@ -51,7 +52,7 @@ This document is the source of truth for what the repository ships today: packag
 - `/operate/runs` and `/operate/runs/{id}` show run state and live replay, with the orchestration graph kept on runs and run detail. The runs queue defaults to the active project with an explicit all-projects filter.
 - `/operate/sessions` and `/operate/sessions/{id}` expose session mailbox history, route state, and delivery failures.
 - `/operate/start-task` starts a new operator task from the web surface.
-- `/configure/team` selects, creates, clones, deletes, edits, imports, and exports named team profiles for the active project, stored under the operator storage root instead of the repo path.
+- `/configure/team` selects, creates, clones, deletes, edits, imports, and exports named team profiles for the active project, including base profile, tool family, delegation, and specialist-visibility controls, stored under the operator storage root instead of the repo path.
 - `/configure/memory` lists, edits, and forgets stored facts.
 - `/configure/settings` updates machine-level operator settings, rotates the operator password, and manages current, active, and blocked browser devices.
 - `/recover/approvals` resolves risky tool actions.
@@ -93,6 +94,7 @@ internal/providers/openai/        OpenAI-compatible provider adapter
 internal/providers/providerutil/  shared provider helpers and error translation
 internal/replay/                  replay loading and receipt/preview projections
 internal/runtime/                 run loop, collaboration, approvals, routing, delivery recovery
+internal/runtime/recommendation/  execution recommendation engine for direct, delegated, and parallel work
 internal/scheduler/               schedule definitions, claiming, repair, reconciliation, CLI-facing service
 internal/sessions/                session directory, routes, pagination, delivery listings
 internal/store/                   SQLite open/migrate helpers and schema

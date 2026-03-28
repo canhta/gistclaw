@@ -18,6 +18,7 @@ import (
 	"github.com/canhta/gistclaw/internal/i18n"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
+	recommendationpkg "github.com/canhta/gistclaw/internal/runtime/recommendation"
 	"github.com/canhta/gistclaw/internal/sessions"
 	"github.com/canhta/gistclaw/internal/store"
 	"github.com/canhta/gistclaw/internal/tools"
@@ -615,17 +616,26 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 			return model.Run{}, fmt.Errorf("journal memory read: %w", err)
 		}
 
-		agentProfile, err := r.agentProfileForRun(ctx, runID, agentID)
+		agentProfile, specialists, err := r.agentContextForRun(ctx, runID, agentID)
 		if err != nil {
 			return model.Run{}, err
 		}
+		visibleTools := r.visibleToolSpecs(agentProfile)
+		executionRecommendation := recommendationpkg.Engine{}.Recommend(recommendationpkg.Input{
+			Objective:    objective,
+			Agent:        agentProfile,
+			Specialists:  specialists,
+			VisibleTools: visibleTools,
+		})
 		providerReq, err := r.contexts.Assemble(ctx, ContextAssemblyInput{
-			SessionID:  sessionID,
-			AgentID:    agentID,
-			Agent:      agentProfile,
-			Objective:  objective,
-			CWD:        cwd,
-			MemoryView: contextView,
+			SessionID:               sessionID,
+			AgentID:                 agentID,
+			Agent:                   agentProfile,
+			Specialists:             specialists,
+			Objective:               objective,
+			CWD:                     cwd,
+			MemoryView:              contextView,
+			ExecutionRecommendation: executionRecommendation,
 		})
 		if err != nil {
 			return model.Run{}, err
@@ -639,7 +649,7 @@ func (r *Runtime) executeRunLoop(ctx context.Context, opts runLoopOpts) (model.R
 		result, err := r.provider.Generate(generateCtx, GenerateRequest{
 			Instructions:    providerReq.Instructions,
 			ConversationCtx: conversationCtx,
-			ToolSpecs:       r.visibleToolSpecs(agentProfile),
+			ToolSpecs:       visibleTools,
 		}, newReplayStreamSink(r.eventSink, runID))
 		cancel()
 		if err != nil {
@@ -1835,11 +1845,6 @@ func (r *Runtime) loadRun(ctx context.Context, runID string) (model.Run, error) 
 
 	run.Status = model.RunStatus(status)
 	return run, nil
-}
-
-func (r *Runtime) agentProfileForRun(ctx context.Context, runID, agentID string) (model.AgentProfile, error) {
-	agent, _, err := r.agentContextForRun(ctx, runID, agentID)
-	return agent, err
 }
 
 func (r *Runtime) agentContextForRun(ctx context.Context, runID, agentID string) (model.AgentProfile, map[string]model.AgentProfile, error) {

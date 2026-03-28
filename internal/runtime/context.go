@@ -3,11 +3,13 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
+	recommendationpkg "github.com/canhta/gistclaw/internal/runtime/recommendation"
 	"github.com/canhta/gistclaw/internal/sessions"
 	"github.com/canhta/gistclaw/internal/store"
 )
@@ -17,12 +19,14 @@ type ContextAssembler interface {
 }
 
 type ContextAssemblyInput struct {
-	SessionID  string
-	AgentID    string
-	Agent      model.AgentProfile
-	Objective  string
-	CWD        string
-	MemoryView memory.ContextView
+	SessionID               string
+	AgentID                 string
+	Agent                   model.AgentProfile
+	Specialists             map[string]model.AgentProfile
+	Objective               string
+	CWD                     string
+	MemoryView              memory.ContextView
+	ExecutionRecommendation recommendationpkg.Decision
 }
 
 type defaultContextAssembler struct {
@@ -53,7 +57,14 @@ func (a *defaultContextAssembler) Assemble(ctx context.Context, input ContextAss
 	}
 
 	req := GenerateRequest{
-		Instructions: composeInstructions(input.Objective, input.Agent, input.MemoryView, directory),
+		Instructions: composeInstructions(
+			input.Objective,
+			input.Agent,
+			input.Specialists,
+			input.ExecutionRecommendation,
+			input.MemoryView,
+			directory,
+		),
 	}
 	if input.SessionID == "" {
 		return req, nil
@@ -70,7 +81,14 @@ func (a *defaultContextAssembler) Assemble(ctx context.Context, input ContextAss
 	return req, nil
 }
 
-func composeInstructions(objective string, agent model.AgentProfile, contextView memory.ContextView, directory DirectoryContext) string {
+func composeInstructions(
+	objective string,
+	agent model.AgentProfile,
+	specialists map[string]model.AgentProfile,
+	executionRecommendation recommendationpkg.Decision,
+	contextView memory.ContextView,
+	directory DirectoryContext,
+) string {
 	parts := []string{"Objective:\n" + objective}
 
 	agentParts := make([]string, 0, 6)
@@ -100,6 +118,12 @@ func composeInstructions(objective string, agent model.AgentProfile, contextView
 	}
 	if len(agentParts) > 0 {
 		parts = append(parts, "Agent contract:\n"+strings.Join(agentParts, "\n"))
+	}
+	if recommendationBlock := renderExecutionRecommendation(executionRecommendation); recommendationBlock != "" {
+		parts = append(parts, recommendationBlock)
+	}
+	if specialistsBlock := renderSpecialistRoster(agent.SpecialistSummaryVisibility, specialists); specialistsBlock != "" {
+		parts = append(parts, specialistsBlock)
 	}
 
 	if directory.Root != "" {
@@ -134,6 +158,63 @@ func composeInstructions(objective string, agent model.AgentProfile, contextView
 	}
 
 	return strings.Join(parts, "\n\n")
+}
+
+func renderExecutionRecommendation(decision recommendationpkg.Decision) string {
+	if decision.Mode == "" {
+		return ""
+	}
+	lines := []string{
+		"Execution recommendation:",
+		"Mode: " + string(decision.Mode),
+	}
+	if decision.Rationale != "" {
+		lines = append(lines, "Rationale: "+decision.Rationale)
+	}
+	if decision.Confidence > 0 {
+		lines = append(lines, fmt.Sprintf("Confidence: %.2f", decision.Confidence))
+	}
+	if len(decision.SuggestedKinds) > 0 {
+		lines = append(lines, "Suggested delegation kinds: "+joinDelegationKinds(decision.SuggestedKinds))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func renderSpecialistRoster(
+	visibility model.SpecialistSummaryVisibility,
+	specialists map[string]model.AgentProfile,
+) string {
+	if visibility == model.SpecialistSummaryNone || len(specialists) == 0 {
+		return ""
+	}
+	ids := make([]string, 0, len(specialists))
+	for id := range specialists {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	lines := make([]string, 0, len(ids)+1)
+	lines = append(lines, "Specialists available:")
+	for _, id := range ids {
+		specialist := specialists[id]
+		switch visibility {
+		case model.SpecialistSummaryFull:
+			line := fmt.Sprintf("- %s (%s)", id, specialist.BaseProfile)
+			if specialist.Role != "" {
+				line += ": " + specialist.Role
+			}
+			if len(specialist.ToolFamilies) > 0 {
+				line += " [tools: " + joinToolFamilies(specialist.ToolFamilies) + "]"
+			}
+			if len(specialist.DelegationKinds) > 0 {
+				line += " [delegation: " + joinDelegationKinds(specialist.DelegationKinds) + "]"
+			}
+			lines = append(lines, line)
+		default:
+			lines = append(lines, fmt.Sprintf("- %s (%s)", id, specialist.BaseProfile))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func joinToolFamilies(values []model.ToolFamily) string {

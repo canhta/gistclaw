@@ -893,6 +893,74 @@ func TestRunEngine_IncludesSoulInstructionsInProviderRequests(t *testing.T) {
 	}
 }
 
+func TestRunEngine_IncludesExecutionRecommendationAndSpecialistRosterInProviderRequests(t *testing.T) {
+	db, cs, mem, reg := setupRunTestDeps(t)
+	prov := NewMockProvider(
+		[]GenerateResult{
+			{Content: "done", InputTokens: 4, OutputTokens: 6, StopReason: "end_turn"},
+		},
+		nil,
+	)
+	rt := New(db, cs, reg, mem, prov, &model.NoopEventSink{})
+
+	if err := rt.SetDefaultExecutionSnapshot(model.ExecutionSnapshot{
+		TeamID: "default",
+		Agents: map[string]model.AgentProfile{
+			"assistant": {
+				AgentID:                     "assistant",
+				Role:                        "front assistant",
+				Instructions:                "prefer direct execution before delegation",
+				BaseProfile:                 model.BaseProfileOperator,
+				ToolFamilies:                []model.ToolFamily{model.ToolFamilyConnectorCapability, model.ToolFamilyDelegate},
+				DelegationKinds:             []model.DelegationKind{model.DelegationKindResearch, model.DelegationKindWrite},
+				SpecialistSummaryVisibility: model.SpecialistSummaryFull,
+			},
+			"patcher": {
+				AgentID:      "patcher",
+				Role:         "scoped write specialist",
+				BaseProfile:  model.BaseProfileWrite,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyRepoWrite},
+			},
+			"researcher": {
+				AgentID:      "researcher",
+				Role:         "research specialist",
+				BaseProfile:  model.BaseProfileResearch,
+				ToolFamilies: []model.ToolFamily{model.ToolFamilyRepoRead, model.ToolFamilyWebRead},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("SetDefaultExecutionSnapshot failed: %v", err)
+	}
+
+	if _, err := rt.Start(context.Background(), StartRun{
+		ConversationID: "conv-recommendation",
+		AgentID:        "assistant",
+		Objective:      "List my Zalo contacts and send hello to Anh on Zalo.",
+		CWD:            t.TempDir(),
+	}); err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+
+	if len(prov.Requests) != 1 {
+		t.Fatalf("expected 1 provider request, got %d", len(prov.Requests))
+	}
+
+	instructions := prov.Requests[0].Instructions
+	for _, want := range []string{
+		"Execution recommendation:",
+		"Mode: direct",
+		"Rationale:",
+		"Specialists available:",
+		"patcher",
+		"researcher",
+		"front assistant",
+	} {
+		if !strings.Contains(instructions, want) {
+			t.Fatalf("expected provider instructions to include %q, got:\n%s", want, instructions)
+		}
+	}
+}
+
 func TestRunEngine_ApprovalRequestedEmitsReplayDelta(t *testing.T) {
 	db, err := store.Open(":memory:")
 	if err != nil {
