@@ -11,12 +11,14 @@ import (
 type stubConnector struct {
 	id              string
 	aliases         []string
+	presenceCalls   []PresenceEmitRequest
 	inboxCalls      []InboxListRequest
 	inboxUpdates    []InboxUpdateRequest
 	directoryCalls  []DirectoryListRequest
 	resolveCalls    []TargetResolveRequest
 	sendCalls       []SendRequest
 	statusCalls     []StatusRequest
+	presencePolicy  PresencePolicy
 	inboxResult     InboxListResult
 	inboxUpdate     InboxUpdateResult
 	directoryResult DirectoryListResult
@@ -24,6 +26,7 @@ type stubConnector struct {
 	sendResult      SendResult
 	statusResult    ConnectorStatus
 	snapshot        model.ConnectorHealthSnapshot
+	presenceErr     error
 	inboxErr        error
 	inboxUpdateErr  error
 	directoryErr    error
@@ -45,6 +48,15 @@ func (c *stubConnector) Drain(context.Context) error { return nil }
 func (c *stubConnector) CapabilityListDirectory(_ context.Context, req DirectoryListRequest) (DirectoryListResult, error) {
 	c.directoryCalls = append(c.directoryCalls, req)
 	return c.directoryResult, c.directoryErr
+}
+
+func (c *stubConnector) CapabilityPresencePolicy(context.Context) PresencePolicy {
+	return c.presencePolicy
+}
+
+func (c *stubConnector) CapabilityEmitPresence(_ context.Context, req PresenceEmitRequest) error {
+	c.presenceCalls = append(c.presenceCalls, req)
+	return c.presenceErr
 }
 
 func (c *stubConnector) CapabilityListInbox(_ context.Context, req InboxListRequest) (InboxListResult, error) {
@@ -112,6 +124,13 @@ func TestCapabilityRegistry_InvokesRegisteredConnectorAdapters(t *testing.T) {
 	reg := NewRegistry()
 	connector := &stubConnector{
 		id: "zalo_personal",
+		presencePolicy: PresencePolicy{
+			StartupDelay:           800 * time.Millisecond,
+			KeepaliveInterval:      8 * time.Second,
+			MaxDuration:            60 * time.Second,
+			MaxConsecutiveFailures: 2,
+			SupportsStop:           false,
+		},
 		inboxResult: InboxListResult{
 			ConnectorID: "zalo_personal",
 			Entries: []InboxEntry{
@@ -155,6 +174,27 @@ func TestCapabilityRegistry_InvokesRegisteredConnectorAdapters(t *testing.T) {
 		},
 	}
 	reg.RegisterConnector(connector)
+
+	presencePolicy, err := reg.PresencePolicy(context.Background(), "zalo_personal")
+	if err != nil {
+		t.Fatalf("PresencePolicy: %v", err)
+	}
+	if presencePolicy.StartupDelay != 800*time.Millisecond || presencePolicy.KeepaliveInterval != 8*time.Second {
+		t.Fatalf("unexpected presence policy: %+v", presencePolicy)
+	}
+
+	if err := reg.EmitPresence(context.Background(), PresenceEmitRequest{
+		ConnectorID:    "zalo_personal",
+		ConversationID: "conv-1",
+		ThreadID:       "user-1",
+		ThreadType:     "contact",
+		Mode:           PresenceModeTyping,
+	}); err != nil {
+		t.Fatalf("EmitPresence: %v", err)
+	}
+	if len(connector.presenceCalls) != 1 || connector.presenceCalls[0].Mode != PresenceModeTyping {
+		t.Fatalf("unexpected presence calls: %+v", connector.presenceCalls)
+	}
 
 	inboxResult, err := reg.InboxList(context.Background(), InboxListRequest{
 		ConnectorID: "zalo_personal",

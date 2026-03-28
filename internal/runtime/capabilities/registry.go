@@ -18,6 +18,26 @@ type DirectoryListRequest struct {
 	Limit       int    `json:"limit,omitempty"`
 }
 
+type PresenceMode string
+
+const PresenceModeTyping PresenceMode = "typing"
+
+type PresenceEmitRequest struct {
+	ConnectorID    string       `json:"connector_id"`
+	ConversationID string       `json:"conversation_id,omitempty"`
+	ThreadID       string       `json:"thread_id"`
+	ThreadType     string       `json:"thread_type,omitempty"`
+	Mode           PresenceMode `json:"mode"`
+}
+
+type PresencePolicy struct {
+	StartupDelay           time.Duration `json:"startup_delay,omitempty"`
+	KeepaliveInterval      time.Duration `json:"keepalive_interval,omitempty"`
+	MaxDuration            time.Duration `json:"max_duration,omitempty"`
+	MaxConsecutiveFailures int           `json:"max_consecutive_failures,omitempty"`
+	SupportsStop           bool          `json:"supports_stop,omitempty"`
+}
+
 type InboxListRequest struct {
 	ConnectorID string `json:"connector_id"`
 	Scope       string `json:"scope,omitempty"`
@@ -143,6 +163,11 @@ type DirectoryAdapter interface {
 	CapabilityListDirectory(context.Context, DirectoryListRequest) (DirectoryListResult, error)
 }
 
+type PresenceAdapter interface {
+	CapabilityPresencePolicy(context.Context) PresencePolicy
+	CapabilityEmitPresence(context.Context, PresenceEmitRequest) error
+}
+
 type InboxAdapter interface {
 	CapabilityListInbox(context.Context, InboxListRequest) (InboxListResult, error)
 }
@@ -172,6 +197,7 @@ type healthSnapshotProvider interface {
 }
 
 type connectorAdapters struct {
+	presence    PresenceAdapter
 	inbox       InboxAdapter
 	inboxUpdate InboxUpdater
 	directory   DirectoryAdapter
@@ -205,6 +231,9 @@ func (r *Registry) RegisterConnector(conn model.Connector) {
 	}
 
 	adapters := connectorAdapters{}
+	if adapter, ok := conn.(PresenceAdapter); ok {
+		adapters.presence = adapter
+	}
 	if adapter, ok := conn.(InboxAdapter); ok {
 		adapters.inbox = adapter
 	}
@@ -251,6 +280,37 @@ func (r *Registry) RegisterAppAction(name string, handler AppActionHandler) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.appActions[actionName] = handler
+}
+
+func (r *Registry) PresencePolicy(ctx context.Context, connectorID string) (PresencePolicy, error) {
+	adapter, normalizedID, err := r.lookupConnector(connectorID)
+	if err != nil {
+		return PresencePolicy{}, err
+	}
+	if adapter.presence == nil {
+		return PresencePolicy{}, fmt.Errorf("capabilities: connector %q does not support presence", normalizedID)
+	}
+	return adapter.presence.CapabilityPresencePolicy(ctx), nil
+}
+
+func (r *Registry) EmitPresence(ctx context.Context, req PresenceEmitRequest) error {
+	adapter, connectorID, err := r.lookupConnector(req.ConnectorID)
+	if err != nil {
+		return err
+	}
+	if adapter.presence == nil {
+		return fmt.Errorf("capabilities: connector %q does not support presence", connectorID)
+	}
+	req.ConnectorID = connectorID
+	req.ThreadID = strings.TrimSpace(req.ThreadID)
+	req.ThreadType = strings.TrimSpace(req.ThreadType)
+	if req.ThreadID == "" {
+		return fmt.Errorf("capabilities: thread_id is required")
+	}
+	if req.Mode == "" {
+		req.Mode = PresenceModeTyping
+	}
+	return adapter.presence.CapabilityEmitPresence(ctx, req)
 }
 
 func (r *Registry) DirectoryList(ctx context.Context, req DirectoryListRequest) (DirectoryListResult, error) {
