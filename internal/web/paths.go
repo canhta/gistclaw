@@ -19,7 +19,6 @@ const (
 	pageSettings                  = "/settings"
 	pageOperateRuns               = "/operate/runs"
 	pageOperateSessions           = "/operate/sessions"
-	pageOperateStartTask          = "/operate/start-task"
 	pageConfigureTeam             = "/configure/team"
 	pageConfigureTeamExport       = "/configure/team/export"
 	pageConfigureMemory           = "/configure/memory"

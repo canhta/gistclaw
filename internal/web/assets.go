@@ -11,7 +11,6 @@ var templateFiles = []string{
 	"templates/layout.html",
 	"templates/runs.html",
 	"templates/run_detail.html",
-	"templates/run_submit.html",
 	"templates/approvals.html",
 	"templates/settings.html",
 	"templates/team.html",

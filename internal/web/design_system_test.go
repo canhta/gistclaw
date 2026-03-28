@@ -232,9 +232,6 @@ func TestCriticalTemplatesDefineConfirmationMessages(t *testing.T) {
 			`data-confirm="Forget this memory?"`,
 			`data-confirm="Save this edit?"`,
 		},
-		"run_submit.html": {
-			`data-confirm="Start this task?"`,
-		},
 		"session_detail.html": {
 			`data-confirm="Send this follow-up?"`,
 			`data-confirm="Retry this delivery?"`,
@@ -302,15 +299,6 @@ func TestTemplatesUseTaskFramedCopy(t *testing.T) {
 			unwanted: []string{
 				"Current state",
 				"Run Contract",
-			},
-		},
-		"run_submit.html": {
-			wants: []string{
-				"Describe the task you want to start.",
-				"Start Task",
-			},
-			unwanted: []string{
-				"Open a new run from the operator surface.",
 			},
 		},
 		"sessions.html": {

@@ -67,10 +67,10 @@
 		actionError = '';
 
 		try {
-			const result = await requestJSON<WorkDismissResponse>(fetch, detail.run.dismiss_url, {
+			await requestJSON<WorkDismissResponse>(fetch, detail.run.dismiss_url, {
 				method: 'POST'
 			});
-			await goto(result.next_href, { invalidateAll: true });
+			await goto(resolve('/work'), { invalidateAll: true });
 		} catch (error) {
 			actionError =
 				error instanceof HTTPError ? error.message : 'Unable to dismiss this run right now.';

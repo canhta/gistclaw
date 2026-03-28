@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/canhta/gistclaw/internal/model"
 )
@@ -232,6 +233,71 @@ func TestCreateWorkTaskStartsRunAndReturnsRunID(t *testing.T) {
 	if storedObjective != "review the repo" {
 		t.Fatalf("stored objective = %q, want %q", storedObjective, "review the repo")
 	}
+}
+
+func TestCreateWorkTaskReturnsBeforeProviderCompletes(t *testing.T) {
+	t.Parallel()
+
+	prov := &blockingProvider{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	h := newServerHarnessWithProvider(t, prov)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/work", bytes.NewBufferString(`{"task":"review the repo"}`))
+	req.Header.Set("Content-Type", "application/json")
+
+	done := make(chan struct{})
+	go func() {
+		h.server.ServeHTTP(rr, req)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(200 * time.Millisecond):
+		close(prov.release)
+		<-done
+		t.Fatal("expected /api/work to return before the provider completes")
+	}
+
+	if rr.Code != http.StatusAccepted {
+		close(prov.release)
+		t.Fatalf("expected 202, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		close(prov.release)
+		t.Fatalf("decode response: %v", err)
+	}
+	if strings.TrimSpace(resp.RunID) == "" {
+		close(prov.release)
+		t.Fatal("expected run_id in response")
+	}
+
+	select {
+	case <-prov.started:
+	case <-time.After(time.Second):
+		close(prov.release)
+		t.Fatal("expected provider work to continue in the background")
+	}
+
+	var status string
+	if err := h.db.RawDB().QueryRow("SELECT status FROM runs WHERE id = ?", resp.RunID).Scan(&status); err != nil {
+		close(prov.release)
+		t.Fatalf("query run status: %v", err)
+	}
+	if status != "active" {
+		close(prov.release)
+		t.Fatalf("expected background run to stay active while provider is blocked, got %q", status)
+	}
+
+	close(prov.release)
+	waitForRunStatus(t, h.db, resp.RunID, "completed")
 }
 
 func TestWorkDetailReturnsNotFoundForUnknownRun(t *testing.T) {

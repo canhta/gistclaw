@@ -225,8 +225,6 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("POST "+pageConfigureSettingsDevices+"/{id}/revoke", s.adminAuth(http.HandlerFunc(s.handleDeviceRevoke)))
 	s.mux.Handle("POST "+pageConfigureSettingsDevices+"/{id}/block", s.adminAuth(http.HandlerFunc(s.handleDeviceBlock)))
 	s.mux.Handle("POST "+pageConfigureSettingsDevices+"/{id}/unblock", s.adminAuth(http.HandlerFunc(s.handleDeviceUnblock)))
-	s.mux.HandleFunc("GET "+pageOperateStartTask, s.handleRunForm)
-	s.mux.Handle("POST "+pageOperateStartTask, s.adminAuth(http.HandlerFunc(s.handleRunSubmit)))
 	s.mux.Handle("POST /projects/activate", s.adminAuth(http.HandlerFunc(s.handleProjectActivate)))
 	s.mux.HandleFunc("GET "+pageConfigureMemory, s.handleMemoryList)
 	s.mux.Handle("POST "+pageConfigureMemory+"/{id}/forget", s.adminAuth(http.HandlerFunc(s.handleMemoryForget)))

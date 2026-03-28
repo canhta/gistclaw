@@ -1210,6 +1210,7 @@ func TestPageRouteMap(t *testing.T) {
 			"/approvals",
 			"/memory",
 			"/run",
+			"/operate/start-task",
 		} {
 			t.Run(path, func(t *testing.T) {
 				rr := httptest.NewRecorder()
@@ -1938,23 +1939,21 @@ func TestWebhooks(t *testing.T) {
 }
 
 func TestRunSubmit(t *testing.T) {
-	t.Run("form renders on GET", func(t *testing.T) {
+	t.Run("legacy start-task route is unavailable on GET", func(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/operate/start-task", nil)
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 
 		h.server.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
-		}
-		if !strings.Contains(rr.Body.String(), "Start Task") {
-			t.Fatalf("expected submit form, got:\n%s", rr.Body.String())
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
 		}
 	})
 
-	t.Run("empty task shows inline error", func(t *testing.T) {
+	t.Run("legacy start-task route is unavailable on POST", func(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
@@ -1964,91 +1963,9 @@ func TestRunSubmit(t *testing.T) {
 
 		h.server.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusOK {
-			t.Fatalf("expected 200, got %d", rr.Code)
+		if rr.Code != http.StatusNotFound {
+			t.Fatalf("expected 404, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if !strings.Contains(rr.Body.String(), "Task is required.") {
-			t.Fatalf("expected error message, got:\n%s", rr.Body.String())
-		}
-	})
-
-	t.Run("valid task redirects to run detail", func(t *testing.T) {
-		h := newServerHarness(t)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review+the+repo"))
-		req.Header.Set("Authorization", "Bearer "+h.adminToken)
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-		h.server.ServeHTTP(rr, req)
-
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
-		}
-		loc := rr.Header().Get("Location")
-		if !strings.HasPrefix(loc, "/operate/runs/") {
-			t.Fatalf("expected redirect to /operate/runs/{id}, got %q", loc)
-		}
-	})
-
-	t.Run("valid task redirects before provider completes", func(t *testing.T) {
-		prov := &blockingProvider{
-			started: make(chan struct{}),
-			release: make(chan struct{}),
-		}
-		h := newServerHarnessWithProvider(t, prov)
-
-		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review+the+repo"))
-		req.Header.Set("Authorization", "Bearer "+h.adminToken)
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-
-		done := make(chan struct{})
-		go func() {
-			h.server.ServeHTTP(rr, req)
-			close(done)
-		}()
-
-		select {
-		case <-done:
-		case <-time.After(200 * time.Millisecond):
-			close(prov.release)
-			<-done
-			t.Fatal("expected start-task request to redirect before the provider completes")
-		}
-
-		if rr.Code != http.StatusSeeOther {
-			close(prov.release)
-			<-done
-			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
-		}
-		loc := rr.Header().Get("Location")
-		if !strings.HasPrefix(loc, "/operate/runs/") {
-			close(prov.release)
-			<-done
-			t.Fatalf("expected redirect to /operate/runs/{id}, got %q", loc)
-		}
-
-		select {
-		case <-prov.started:
-		case <-time.After(time.Second):
-			close(prov.release)
-			t.Fatal("expected provider work to continue in the background")
-		}
-
-		runID := strings.TrimPrefix(loc, "/operate/runs/")
-		var status string
-		if err := h.db.RawDB().QueryRow("SELECT status FROM runs WHERE id = ?", runID).Scan(&status); err != nil {
-			close(prov.release)
-			t.Fatalf("query run status: %v", err)
-		}
-		if status != "active" {
-			close(prov.release)
-			t.Fatalf("expected background run to stay active while provider is blocked, got %q", status)
-		}
-
-		close(prov.release)
-		waitForRunStatus(t, h.db, runID, "completed")
 	})
 }
 
@@ -2575,21 +2492,21 @@ func TestSettingsBudget(t *testing.T) {
 }
 
 func TestAdminToken(t *testing.T) {
-	t.Run("authorized run submit starts a run and redirects", func(t *testing.T) {
+	t.Run("authorized work create starts a run and returns accepted", func(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review"))
+		req := httptest.NewRequest(http.MethodPost, "/api/work", strings.NewReader(`{"task":"review"}`))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Content-Type", "application/json")
 
 		h.server.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
+		if rr.Code != http.StatusAccepted {
+			t.Fatalf("expected 202, got %d\nbody: %s", rr.Code, rr.Body.String())
 		}
-		if !strings.HasPrefix(rr.Header().Get("Location"), "/operate/runs/") {
-			t.Fatalf("expected redirect to /operate/runs/{id}, got %q", rr.Header().Get("Location"))
+		if !strings.Contains(rr.Body.String(), `"run_id"`) {
+			t.Fatalf("expected create response to include run_id, got %s", rr.Body.String())
 		}
 	})
 
@@ -2597,8 +2514,8 @@ func TestAdminToken(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review"))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req := httptest.NewRequest(http.MethodPost, "/api/work", strings.NewReader(`{"task":"review"}`))
+		req.Header.Set("Content-Type", "application/json")
 
 		h.rawServer.ServeHTTP(rr, req)
 
@@ -2614,9 +2531,9 @@ func TestAdminToken(t *testing.T) {
 		h := newServerHarness(t)
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review"))
+		req := httptest.NewRequest(http.MethodPost, "/api/work", strings.NewReader(`{"task":"review"}`))
 		req.Header.Set("Authorization", "Bearer wrong-token")
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("Content-Type", "application/json")
 
 		h.rawServer.ServeHTTP(rr, req)
 
@@ -2633,9 +2550,9 @@ func TestAdminToken(t *testing.T) {
 		h.setAdminToken(t, "rotated-admin-token")
 
 		oldTokenResp := httptest.NewRecorder()
-		oldTokenReq := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review"))
+		oldTokenReq := httptest.NewRequest(http.MethodPost, "/api/work", strings.NewReader(`{"task":"review"}`))
 		oldTokenReq.Header.Set("Authorization", "Bearer "+h.adminToken)
-		oldTokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		oldTokenReq.Header.Set("Content-Type", "application/json")
 
 		h.rawServer.ServeHTTP(oldTokenResp, oldTokenReq)
 
@@ -2644,13 +2561,12 @@ func TestAdminToken(t *testing.T) {
 		}
 
 		newTokenResp := httptest.NewRecorder()
-		newTokenReq := httptest.NewRequest(http.MethodPost, "/operate/start-task", strings.NewReader("task=review"))
+		newTokenReq := httptest.NewRequest(http.MethodPost, "/api/work", strings.NewReader(`{"task":"review"}`))
 		newTokenReq.Header.Set("Authorization", "Bearer rotated-admin-token")
-		newTokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		newTokenReq.Header.Set("Content-Type", "application/json")
 
 		h.rawServer.ServeHTTP(newTokenResp, newTokenReq)
 
-		// The handler succeeds (redirect to /operate/runs/{id}) — not 401
 		if newTokenResp.Code == http.StatusUnauthorized {
 			t.Fatalf("expected current token to be accepted, got 401")
 		}
@@ -2689,33 +2605,30 @@ func TestAdminToken(t *testing.T) {
 		}
 	})
 
-	t.Run("same-origin browser session can submit run form", func(t *testing.T) {
+	t.Run("same-origin browser session can create work", func(t *testing.T) {
 		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/operate/start-task")
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/work")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "http://localhost/operate/start-task", strings.NewReader("task=review"))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/api/work", strings.NewReader(`{"task":"review"}`))
+		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", "http://localhost")
 		req.AddCookie(cookie)
 
 		h.server.ServeHTTP(rr, req)
 
-		if rr.Code != http.StatusSeeOther {
-			t.Fatalf("expected 303 redirect, got %d\nbody: %s", rr.Code, rr.Body.String())
-		}
-		if !strings.HasPrefix(rr.Header().Get("Location"), "/operate/runs/") {
-			t.Fatalf("expected redirect to /operate/runs/{id}, got %q", rr.Header().Get("Location"))
+		if rr.Code != http.StatusAccepted {
+			t.Fatalf("expected 202, got %d\nbody: %s", rr.Code, rr.Body.String())
 		}
 	})
 
-	t.Run("cross-origin browser session is rejected", func(t *testing.T) {
+	t.Run("cross-origin browser session create is rejected", func(t *testing.T) {
 		h := newServerHarness(t)
-		cookie := hostAdminSessionCookie(t, h, "http://localhost/operate/start-task")
+		cookie := hostAdminSessionCookie(t, h, "http://localhost/work")
 
 		rr := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodPost, "http://localhost/operate/start-task", strings.NewReader("task=review"))
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req := httptest.NewRequest(http.MethodPost, "http://localhost/api/work", strings.NewReader(`{"task":"review"}`))
+		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", "http://evil.test")
 		req.AddCookie(cookie)
 

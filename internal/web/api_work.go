@@ -1,11 +1,16 @@
 package web
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
+
+	"github.com/canhta/gistclaw/internal/conversations"
+	"github.com/canhta/gistclaw/internal/runtime"
 )
 
 type workIndexResponse struct {
@@ -98,6 +103,27 @@ type workDismissResponse struct {
 	RunID     string `json:"run_id"`
 	Status    string `json:"status"`
 	NextHref  string `json:"next_href"`
+}
+
+func (s *Server) startWorkRun(ctx context.Context, task string) (string, error) {
+	if s.rt == nil {
+		return "", fmt.Errorf("runtime not configured")
+	}
+
+	activeProject, err := runtime.ActiveProject(ctx, s.db)
+	if err != nil {
+		return "", err
+	}
+	run, err := s.rt.ReceiveInboundMessageAsync(ctx, runtime.InboundMessageCommand{
+		ConversationKey: conversations.LocalWebConversationKey("", ""),
+		Body:            task,
+		ProjectID:       activeProject.ID,
+		CWD:             activeProject.PrimaryPath,
+	})
+	if err != nil {
+		return "", err
+	}
+	return run.ID, nil
 }
 
 func (s *Server) handleWorkIndex(w http.ResponseWriter, r *http.Request) {
