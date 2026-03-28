@@ -56,7 +56,7 @@ func TestRegistryParse(t *testing.T) {
 			ok:   false,
 		},
 		{
-			name: "legacy run alias not recognized",
+			name: "removed run alias not recognized",
 			text: "/run review the repo",
 			ok:   false,
 		},

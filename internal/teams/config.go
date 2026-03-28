@@ -282,7 +282,7 @@ func loadSoulSpec(path string) (SoulSpec, error) {
 	if err != nil {
 		return SoulSpec{}, fmt.Errorf("read soul %q: %w", filepath.Base(path), err)
 	}
-	if err := rejectUnsupportedSoulFields(data); err != nil {
+	if err := rejectRemovedSoulFields(data); err != nil {
 		return SoulSpec{}, fmt.Errorf("parse soul yaml: %w", err)
 	}
 	var soul SoulSpec
@@ -383,7 +383,7 @@ func decodeKnownFieldsYAML(data []byte, out any) error {
 	return dec.Decode(out)
 }
 
-func rejectUnsupportedSoulFields(data []byte) error {
+func rejectRemovedSoulFields(data []byte) error {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return err

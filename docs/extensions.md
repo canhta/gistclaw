@@ -19,7 +19,7 @@ The following are still intentionally deferred until the session-first runtime i
 - broad connector expansion
 - official Zalo OA support
 - marketplace or installation UX
-- compatibility layers for legacy extension shapes
+- extension-shape compatibility layers
 - large plugin/runtime breadth
 
 ## Rule

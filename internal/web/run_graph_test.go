@@ -158,6 +158,6 @@ func TestBuildRunGraphViewDoesNotExposeLegacyDepthColumns(t *testing.T) {
 		t.Fatalf("marshal graph view: %v", err)
 	}
 	if strings.Contains(string(payload), `"columns"`) {
-		t.Fatalf("expected legacy columns payload to be removed, got %s", payload)
+		t.Fatalf("expected old columns payload to be removed, got %s", payload)
 	}
 }

@@ -1137,7 +1137,7 @@ func TestPageRouteMap(t *testing.T) {
 		}
 	})
 
-	t.Run("new grouped page routes render without legacy aliases", func(t *testing.T) {
+	t.Run("grouped page routes render without removed aliases", func(t *testing.T) {
 		h := newServerHarness(t)
 
 		cases := []struct {
@@ -1170,7 +1170,7 @@ func TestPageRouteMap(t *testing.T) {
 		}
 	})
 
-	t.Run("legacy page routes are gone", func(t *testing.T) {
+	t.Run("removed page routes stay unavailable", func(t *testing.T) {
 		h := newServerHarness(t)
 
 		for _, path := range []string{
@@ -4165,7 +4165,7 @@ func TestSessionPages(t *testing.T) {
 			}
 		}
 		if strings.Contains(body, "Bound only") {
-			t.Fatalf("expected segmented binding filter instead of legacy checkbox:\n%s", body)
+			t.Fatalf("expected segmented binding filter instead of removed checkbox:\n%s", body)
 		}
 	})
 

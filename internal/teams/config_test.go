@@ -289,7 +289,7 @@ agents:
 	}
 }
 
-func TestLoadEditableYAML_RejectsUnsupportedCoordinatorFields(t *testing.T) {
+func TestLoadEditableYAML_RejectsRemovedTeamFields(t *testing.T) {
 	raw := []byte(`
 name: Repo Task Team
 front_agent: assistant
@@ -301,9 +301,9 @@ agents:
     tool_families: [repo_read]
     tool_posture: operator_facing
     can_spawn: [patcher]
-`)
+	`)
 
 	if _, err := LoadEditableYAML(raw); err == nil {
-		t.Fatal("expected unsupported legacy team fields to be rejected")
+		t.Fatal("expected removed team fields to be rejected")
 	}
 }
