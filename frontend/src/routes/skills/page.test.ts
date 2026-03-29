@@ -24,8 +24,37 @@ describe('Skills page', () => {
 		expect(body).toContain('Credentials');
 	});
 
-	it('renders COMING SOON state', () => {
+	it('renders extension summary cards and project context', () => {
 		const { body } = render(SkillsPage, { props: { data: baseData } });
-		expect(body).toContain('COMING SOON');
+		expect(body).toContain('Extension Seams');
+		expect(body).toContain('3');
+		expect(body).toContain('Workflow');
+		expect(body).toContain('Project');
+		expect(body).toContain('my-project');
+		expect(body).toContain('/home/user/my-project');
+	});
+
+	it('renders installed-skill guidance by default', () => {
+		const { body } = render(SkillsPage, { props: { data: baseData } });
+		expect(body).toContain('Installed skills are managed in the repo today.');
+		expect(body).toContain('Tools');
+		expect(body).toContain('Providers');
+		expect(body).toContain('Connectors');
+	});
+
+	it('renders availability guidance when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=available' };
+		const { body } = render(SkillsPage, { props: { data } });
+		expect(body).toContain('Available skills');
+		expect(body).toContain('No marketplace or install workflow is wired yet.');
+		expect(body).toContain('Workspace-owned packs');
+	});
+
+	it('renders credentials guidance when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=credentials' };
+		const { body } = render(SkillsPage, { props: { data } });
+		expect(body).toContain('Keep secrets explicit');
+		expect(body).toContain('Provider keys and connector secrets still live in config.');
+		expect(body).toContain('Credentials UI is deferred');
 	});
 });
