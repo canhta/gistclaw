@@ -4,6 +4,7 @@
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
 	import Composer from '$lib/components/chat/Composer.svelte';
 	import TranscriptRow from '$lib/components/chat/TranscriptRow.svelte';
+	import RunGraph from '$lib/components/graph/RunGraph.svelte';
 	import { applyEvent, makeTranscriptState } from '$lib/chat/transcript.svelte';
 	import { connectEventStream } from '$lib/http/events';
 	import { requestJSON } from '$lib/http/client';
@@ -16,12 +17,13 @@
 	} from '$lib/types/api';
 	import type { PageData } from './$types';
 
-	type TabID = 'transcript' | 'run-events' | 'usage';
+	type TabID = 'transcript' | 'graph' | 'run-events' | 'usage';
 
 	let { data }: { data: PageData } = $props();
 
 	const tabs: Array<{ id: TabID; label: string }> = [
 		{ id: 'transcript', label: 'Transcript' },
+		{ id: 'graph', label: 'Graph' },
 		{ id: 'run-events', label: 'Run Events' },
 		{ id: 'usage', label: 'Usage' }
 	];
@@ -50,7 +52,9 @@
 	let streamError = $state('');
 
 	function isTabID(value: string | null): value is TabID {
-		return value === 'transcript' || value === 'run-events' || value === 'usage';
+		return (
+			value === 'transcript' || value === 'graph' || value === 'run-events' || value === 'usage'
+		);
 	}
 
 	function setActiveTab(id: string): void {
@@ -299,6 +303,21 @@
 
 					<Composer runStatus={transcript.runStatus} onSend={handleSend} onStop={handleStop} />
 				</div>
+			{:else if activeTab === 'graph'}
+				{#if activeDetail?.graph}
+					<RunGraph graph={activeDetail.graph} inspectorSeedID={activeDetail.inspector_seed?.id} />
+				{:else}
+					<div class="flex flex-1 items-center justify-center p-10">
+						<div class="text-center">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">GRAPH</p>
+							<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">No run graph selected</p>
+							<p class="gc-copy mt-3 max-w-sm text-[var(--gc-ink-2)]">
+								Choose a run from the active queue to inspect its orchestration graph and active
+								path.
+							</p>
+						</div>
+					</div>
+				{/if}
 			{:else if activeTab === 'run-events'}
 				<div class="gc-panel flex-1 overflow-y-auto border-[var(--gc-border)] px-5 py-4">
 					{#if runs.length === 0}

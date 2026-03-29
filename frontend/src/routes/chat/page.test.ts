@@ -46,9 +46,10 @@ describe('Chat page', () => {
 		expect(body).toContain('Chat');
 	});
 
-	it('renders tabs: Transcript, Run Events, Usage', () => {
+	it('renders tabs: Transcript, Graph, Run Events, Usage', () => {
 		const { body } = render(ChatPage, { props: { data: baseData } });
 		expect(body).toContain('Transcript');
+		expect(body).toContain('Graph');
 		expect(body).toContain('Run Events');
 		expect(body).toContain('Usage');
 	});
@@ -211,5 +212,147 @@ describe('Chat page', () => {
 		const { body } = render(ChatPage, { props: { data } });
 		expect(body).toContain('Waiting for events');
 		expect(body).toContain('run-ab');
+	});
+
+	it('renders the graph workspace when selected through search', () => {
+		const data = {
+			...baseData,
+			currentSearch: 'tab=graph',
+			chat: {
+				...baseData.chat,
+				runs: [
+					{
+						root: {
+							id: 'run-abc123',
+							objective: 'Fix the authentication bug',
+							agent_id: 'agent-1',
+							status: 'active',
+							status_label: 'Active',
+							status_class: 'is-active',
+							model_display: 'claude-3-5',
+							token_summary: '1.2K tokens',
+							started_at_short: '10:00',
+							started_at_exact: '2026-03-29 10:00:00',
+							started_at_iso: '2026-03-29T10:00:00Z',
+							last_activity_short: '10:05',
+							last_activity_exact: '2026-03-29 10:05:00',
+							last_activity_iso: '2026-03-29T10:05:00Z',
+							depth: 0
+						},
+						children: [],
+						child_count: 1,
+						child_count_label: '1 worker',
+						blocker_label: 'Needs approval',
+						has_children: true
+					}
+				],
+				selectedRunID: 'run-abc123',
+				detail: {
+					run: {
+						id: 'run-abc123',
+						short_id: 'run-abc123',
+						objective_text: 'Fix the authentication bug',
+						trigger_label: 'Chat',
+						status: 'active',
+						status_label: 'Active',
+						status_class: 'is-active',
+						state_label: 'Running',
+						started_at_label: 'Started 10:00',
+						last_activity_label: 'Last activity 10:05',
+						model_display: 'claude-3-5',
+						token_summary: '1.2K tokens',
+						event_count: 8,
+						turn_count: 2,
+						stream_url: '/api/work/run-abc123/events',
+						graph_url: '/api/work/run-abc123/graph',
+						node_detail_url_template: '/api/work/run-abc123/nodes/{node_id}',
+						dismissible: false
+					},
+					graph: {
+						root_run_id: 'run-abc123',
+						headline: '1 task waiting on you.',
+						summary: {
+							total: 2,
+							pending: 0,
+							active: 1,
+							needs_approval: 1,
+							completed: 0,
+							failed: 0,
+							interrupted: 0,
+							root_status: 'active'
+						},
+						active_path: ['run-abc123', 'run-worker-1'],
+						nodes: [
+							{
+								id: 'run-abc123',
+								short_id: 'abc123',
+								short_label: 'abc123',
+								parent_run_id: '',
+								agent_id: 'assistant',
+								objective: 'Fix the authentication bug',
+								objective_preview: 'Fix the authentication bug',
+								status: 'active',
+								status_label: 'active',
+								status_class: 'is-active',
+								kind: 'root',
+								lane_id: 'lead',
+								model_display: 'claude-3-5',
+								token_summary: '1.2K tokens',
+								time_label: '5m ago',
+								started_at_label: '5m ago',
+								updated_at_label: '1m ago',
+								depth: 0,
+								is_root: true,
+								is_active_path: true,
+								child_count: 1
+							},
+							{
+								id: 'run-worker-1',
+								short_id: 'worker1',
+								short_label: 'worker1',
+								parent_run_id: 'run-abc123',
+								agent_id: 'researcher',
+								objective: 'Inspect auth logs',
+								objective_preview: 'Inspect auth logs',
+								status: 'needs_approval',
+								status_label: 'needs approval',
+								status_class: 'is-approval',
+								kind: 'worker',
+								lane_id: 'researcher',
+								model_display: 'claude-3-5-haiku',
+								token_summary: '400 tokens',
+								time_label: '3m ago',
+								started_at_label: '3m ago',
+								updated_at_label: '1m ago',
+								depth: 1,
+								is_root: false,
+								is_active_path: true,
+								child_count: 0
+							}
+						],
+						edges: [
+							{
+								id: 'run-abc123->run-worker-1:delegates',
+								from: 'run-abc123',
+								to: 'run-worker-1',
+								kind: 'delegates',
+								label: 'delegates'
+							}
+						]
+					},
+					inspector_seed: {
+						id: 'run-worker-1',
+						agent_id: 'researcher',
+						status: 'needs_approval'
+					}
+				}
+			}
+		};
+		const { body } = render(ChatPage, { props: { data } });
+		expect(body).toContain('Graph surface');
+		expect(body).toContain('1 task waiting on you.');
+		expect(body).toContain('Active path');
+		expect(body).toContain('Inspect auth logs');
+		expect(body).toContain('run-worker-1');
 	});
 });
