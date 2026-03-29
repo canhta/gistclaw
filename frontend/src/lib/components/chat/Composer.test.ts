@@ -33,5 +33,7 @@ describe('Composer', () => {
 			props: { runStatus: 'idle', onSend: vi.fn(), onStop: vi.fn() }
 		});
 		expect(body).toContain('Type a message');
+		expect(body).toContain('INJECT');
+		expect(body).toMatch(/Inject notes coming soon/);
 	});
 });

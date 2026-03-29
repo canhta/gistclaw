@@ -1,8 +1,12 @@
 import { requestJSON } from '$lib/http/client';
 import type { WorkDetailResponse, WorkGraphResponse, WorkIndexResponse } from '$lib/types/api';
 
-export async function loadWorkIndex(fetcher: typeof fetch): Promise<WorkIndexResponse> {
-	return requestJSON<WorkIndexResponse>(fetcher, '/api/work');
+export async function loadWorkIndex(
+	fetcher: typeof fetch,
+	search = ''
+): Promise<WorkIndexResponse> {
+	const suffix = search.trim() === '' ? '' : `?${search}`;
+	return requestJSON<WorkIndexResponse>(fetcher, `/api/work${suffix}`);
 }
 
 export async function loadWorkDetail(

@@ -57,6 +57,16 @@
 			style="field-sizing: content; max-height: 7.5rem;"
 		></textarea>
 
+		<button
+			type="button"
+			disabled
+			aria-disabled="true"
+			title="Inject notes coming soon"
+			class="gc-action shrink-0 px-4 text-[var(--gc-ink-3)] opacity-40"
+		>
+			INJECT
+		</button>
+
 		{#if isActive}
 			<button
 				type="submit"
