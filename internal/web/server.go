@@ -202,6 +202,7 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("POST /api/automate/{id}/run", s.adminAuth(http.HandlerFunc(s.handleAutomateRun)))
 	s.mux.HandleFunc("GET /api/history", s.handleHistoryIndex)
 	s.mux.HandleFunc("GET /api/nodes", s.handleNodesStatus)
+	s.mux.HandleFunc("GET /api/approvals/policy", s.handleApprovalPolicyStatus)
 	s.mux.HandleFunc("GET /api/debug/rpc", s.handleDebugRPCStatus)
 	s.mux.HandleFunc("GET /api/debug/events", s.handleDebugEventsIndex)
 	s.mux.HandleFunc("GET /api/update", s.handleUpdateStatus)

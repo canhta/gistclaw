@@ -19,6 +19,90 @@ const baseData = {
 			pendingCount: 0,
 			connectorCount: 2,
 			activeRoutes: 0
+		},
+		policy: {
+			summary: {
+				node_count: 2,
+				allowlist_count: 3,
+				pending_agents: 1,
+				override_agents: 1
+			},
+			gateway: {
+				approval_mode: 'prompt',
+				approval_mode_label: 'Prompt',
+				host_access_mode: 'standard',
+				host_access_mode_label: 'Standard',
+				team_name: 'Repo Task Team',
+				front_agent_id: 'assistant'
+			},
+			nodes: [
+				{
+					agent_id: 'assistant',
+					role: 'front assistant',
+					base_profile: 'operator',
+					is_front: true,
+					tool_families: ['repo_read', 'delegate'],
+					delegation_kinds: ['write', 'review'],
+					can_message: ['patcher'],
+					allow_tools: ['shell_exec', 'connector_send'],
+					deny_tools: ['app_action'],
+					pending_approvals: 0,
+					recent_runs: 2,
+					override_runs: 0,
+					observed_approval_mode: 'prompt',
+					observed_approval_mode_label: 'Prompt',
+					observed_host_access_mode: 'standard',
+					observed_host_access_mode_label: 'Standard'
+				},
+				{
+					agent_id: 'patcher',
+					role: 'scoped write specialist',
+					base_profile: 'write',
+					is_front: false,
+					tool_families: ['repo_read', 'repo_write'],
+					delegation_kinds: [],
+					can_message: ['assistant'],
+					allow_tools: [],
+					deny_tools: ['repo_exec'],
+					pending_approvals: 1,
+					recent_runs: 1,
+					override_runs: 1,
+					observed_approval_mode: 'auto_approve',
+					observed_approval_mode_label: 'Auto approve',
+					observed_host_access_mode: 'elevated',
+					observed_host_access_mode_label: 'Elevated'
+				}
+			],
+			allowlists: [
+				{
+					agent_id: 'assistant',
+					role: 'front assistant',
+					tool_name: 'connector_send',
+					direction: 'allow',
+					direction_label: 'Allow'
+				},
+				{
+					agent_id: 'assistant',
+					role: 'front assistant',
+					tool_name: 'shell_exec',
+					direction: 'allow',
+					direction_label: 'Allow'
+				},
+				{
+					agent_id: 'assistant',
+					role: 'front assistant',
+					tool_name: 'app_action',
+					direction: 'deny',
+					direction_label: 'Deny'
+				},
+				{
+					agent_id: 'patcher',
+					role: 'scoped write specialist',
+					tool_name: 'repo_exec',
+					direction: 'deny',
+					direction_label: 'Deny'
+				}
+			]
 		}
 	}
 };
@@ -67,6 +151,7 @@ describe('Exec Approvals page', () => {
 		const data = {
 			...baseData,
 			approvals: {
+				...baseData.approvals,
 				items: [
 					{
 						id: 'appr-1',
@@ -98,6 +183,7 @@ describe('Exec Approvals page', () => {
 		const data = {
 			...baseData,
 			approvals: {
+				...baseData.approvals,
 				items: [
 					{
 						id: 'appr-1',
@@ -132,21 +218,24 @@ describe('Exec Approvals page', () => {
 		expect(body).not.toContain('read_file');
 	});
 
-	it('renders node policy guidance when selected through search', () => {
+	it('renders node policy board when selected through search', () => {
 		const data = { ...baseData, currentSearch: 'tab=nodes' };
 		const { body } = render(ApprovalsPage, { props: { data } });
-		expect(body).toContain('Node approval policy remains centralized at the gateway.');
-		expect(body).toContain('worker sessions');
-		expect(body).toContain('Debug');
-		expect(body).toContain('Sessions');
+		expect(body).toContain('Observed node approval posture');
+		expect(body).toContain('assistant');
+		expect(body).toContain('patcher');
+		expect(body).toContain('Auto approve');
+		expect(body).toContain('repo_write');
+		expect(body).toContain('repo_exec');
 	});
 
-	it('renders allowlist guidance when selected through search', () => {
+	it('renders allowlist board when selected through search', () => {
 		const data = { ...baseData, currentSearch: 'tab=allowlists' };
 		const { body } = render(ApprovalsPage, { props: { data } });
-		expect(body).toContain('Allowlists are still managed outside the browser.');
-		expect(body).toContain('Config');
-		expect(body).toContain('Gateway queue');
-		expect(body).toContain('Chat');
+		expect(body).toContain('Explicit tool allowlists');
+		expect(body).toContain('connector_send');
+		expect(body).toContain('shell_exec');
+		expect(body).toContain('app_action');
+		expect(body).toContain('repo_exec');
 	});
 });

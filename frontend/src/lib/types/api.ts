@@ -502,6 +502,52 @@ export interface RecoverApprovalResponse {
 	resolved_at_label?: string;
 }
 
+export interface ApprovalPolicyNodeResponse {
+	agent_id: string;
+	role: string;
+	base_profile: string;
+	is_front: boolean;
+	tool_families: string[];
+	delegation_kinds: string[];
+	can_message: string[];
+	allow_tools: string[];
+	deny_tools: string[];
+	pending_approvals: number;
+	recent_runs: number;
+	override_runs: number;
+	observed_approval_mode: string;
+	observed_approval_mode_label: string;
+	observed_host_access_mode: string;
+	observed_host_access_mode_label: string;
+}
+
+export interface ApprovalPolicyAllowlistResponse {
+	agent_id: string;
+	role: string;
+	tool_name: string;
+	direction: string;
+	direction_label: string;
+}
+
+export interface ApprovalPolicyResponse {
+	summary: {
+		node_count: number;
+		allowlist_count: number;
+		pending_agents: number;
+		override_agents: number;
+	};
+	gateway: {
+		approval_mode: string;
+		approval_mode_label: string;
+		host_access_mode: string;
+		host_access_mode_label: string;
+		team_name: string;
+		front_agent_id: string;
+	};
+	nodes: ApprovalPolicyNodeResponse[];
+	allowlists: ApprovalPolicyAllowlistResponse[];
+}
+
 export interface RecoverRepairFiltersResponse {
 	query: string;
 	connector_id: string;

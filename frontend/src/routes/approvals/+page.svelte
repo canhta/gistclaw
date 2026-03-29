@@ -42,6 +42,25 @@
 			activeRoutes: 0
 		}
 	);
+	const policy = $derived(data.approvals?.policy ?? null);
+	const policySummary = $derived(
+		policy?.summary ?? {
+			node_count: 0,
+			allowlist_count: 0,
+			pending_agents: 0,
+			override_agents: 0
+		}
+	);
+	const gatewayPolicy = $derived(
+		policy?.gateway ?? {
+			approval_mode_label: 'Prompt',
+			host_access_mode_label: 'Standard',
+			team_name: 'No team loaded',
+			front_agent_id: ''
+		}
+	);
+	const policyNodes = $derived(policy?.nodes ?? []);
+	const allowlistEntries = $derived(policy?.allowlists ?? []);
 	const confirmApproval = $derived(approvals.find((item) => item.id === confirmApprovalID) ?? null);
 
 	function isTabID(value: string | null): value is TabID {
@@ -62,6 +81,10 @@
 
 	function cancelApprove(): void {
 		confirmApprovalID = null;
+	}
+
+	function listOrNone(values: string[]): string {
+		return values.length === 0 ? 'None' : values.join(', ');
 	}
 
 	async function resolveApproval(id: string, action: 'approve' | 'deny'): Promise<void> {
@@ -256,44 +279,113 @@
 				<div class="grid flex-1 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)]">
 					<div class="gc-panel px-5 py-5">
 						<p class="gc-stamp text-[var(--gc-warning)]">NODE POLICY</p>
-						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
-							Node approval policy remains centralized at the gateway.
-						</h2>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Observed node approval posture</h2>
 						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-							GistClaw already runs worker sessions under the same runtime approval wall, but the
-							web API does not expose per-node policy editing yet. Keep worker sessions on the
-							shared gateway defaults until runtime policy moves into a dedicated node control
-							surface.
+							Each node row combines the active team policy with authority observed on recent
+							active-project runs. Use it to spot which agents are inheriting the gateway default
+							and which ones have already run with broader authority.
 						</p>
-						<div class="mt-5">
-							<SurfaceMessage
-								label="DEFERRED CONTROL"
-								message="Use the gateway queue for live decisions today; per-node policy still belongs to runtime and config seams."
-								tone="error"
-							/>
-						</div>
+
+						{#if policyNodes.length === 0}
+							<div class="mt-5">
+								<SurfaceMessage
+									label="NO NODES"
+									message="No team node policy is available for the active project."
+								/>
+							</div>
+						{:else}
+							<div class="mt-5 grid gap-4">
+								{#each policyNodes as node (node.agent_id)}
+									<div class="border border-[var(--gc-border)] px-4 py-4">
+										<div class="flex flex-wrap items-center gap-3">
+											<p class="gc-panel-title text-[var(--gc-ink)]">{node.agent_id}</p>
+											{#if node.is_front}
+												<span class="gc-badge border-[var(--gc-primary)] text-[var(--gc-primary)]">
+													FRONT
+												</span>
+											{/if}
+											<span class="gc-badge border-[var(--gc-border)] text-[var(--gc-ink-2)]">
+												{node.base_profile}
+											</span>
+											{#if node.pending_approvals > 0}
+												<span class="gc-badge border-[var(--gc-warning)] text-[var(--gc-warning)]">
+													{node.pending_approvals}
+													pending
+												</span>
+											{/if}
+										</div>
+										<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">{node.role}</p>
+										<div class="mt-4 grid gap-3 sm:grid-cols-2">
+											<div>
+												<p class="gc-stamp text-[var(--gc-ink-3)]">Observed authority</p>
+												<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+													{node.observed_approval_mode_label} · {node.observed_host_access_mode_label}
+												</p>
+											</div>
+											<div>
+												<p class="gc-stamp text-[var(--gc-ink-3)]">Recent runs</p>
+												<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+													{node.recent_runs} runs · {node.override_runs} overrides
+												</p>
+											</div>
+											<div>
+												<p class="gc-stamp text-[var(--gc-ink-3)]">Tool families</p>
+												<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+													{listOrNone(node.tool_families)}
+												</p>
+											</div>
+											<div>
+												<p class="gc-stamp text-[var(--gc-ink-3)]">Delegation</p>
+												<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+													{listOrNone(node.delegation_kinds)}
+												</p>
+											</div>
+											<div>
+												<p class="gc-stamp text-[var(--gc-ink-3)]">Allow tools</p>
+												<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+													{listOrNone(node.allow_tools)}
+												</p>
+											</div>
+											<div>
+												<p class="gc-stamp text-[var(--gc-ink-3)]">Deny tools</p>
+												<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+													{listOrNone(node.deny_tools)}
+												</p>
+											</div>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
 					</div>
 
 					<div class="gc-panel-soft px-5 py-5">
-						<p class="gc-stamp text-[var(--gc-ink-3)]">Current operator path</p>
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Gateway defaults</p>
 						<div class="mt-4 space-y-4">
 							<div>
-								<p class="gc-panel-title text-[var(--gc-ink)]">Sessions</p>
+								<p class="gc-panel-title text-[var(--gc-ink)]">{gatewayPolicy.team_name}</p>
 								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-									Worker sessions show which agent asked for host access and where the request came
-									from.
+									Front agent {gatewayPolicy.front_agent_id || 'not configured'}.
 								</p>
 							</div>
 							<div>
-								<p class="gc-panel-title text-[var(--gc-ink)]">Debug</p>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Approval mode</p>
 								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-									Check runtime state and connector health before widening policy for a noisy node.
+									{gatewayPolicy.approval_mode_label}
 								</p>
 							</div>
 							<div>
-								<p class="gc-panel-title text-[var(--gc-ink)]">Gateway queue</p>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Host access</p>
 								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-									Review each pending command directly until node-scoped approval controls exist.
+									{gatewayPolicy.host_access_mode_label}
+								</p>
+							</div>
+							<div>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Coverage</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									{policySummary.node_count} nodes · {policySummary.pending_agents} with pending approvals
+									·
+									{` ${policySummary.override_agents}`} with observed overrides
 								</p>
 							</div>
 						</div>
@@ -303,43 +395,62 @@
 				<div class="grid flex-1 gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
 					<div class="gc-panel px-5 py-5">
 						<p class="gc-stamp text-[var(--gc-warning)]">ALLOWLISTS</p>
-						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
-							Allowlists are still managed outside the browser.
-						</h2>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Explicit tool allowlists</h2>
 						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-							Path and command allowlists have not been promoted into a browser editor yet. Treat
-							the Gateway queue as the active safety boundary and only broaden long-lived exceptions
-							after you confirm the command pattern in project config and live run evidence.
+							The active team already carries explicit allow and deny lists for individual tools.
+							This board shows those durable exceptions directly instead of forcing operators to
+							infer them from team files.
 						</p>
-						<div class="mt-5">
-							<SurfaceMessage
-								label="MANUAL SEAM"
-								message="Keep broad exec exceptions in Config or runtime-managed policy until the recover API exposes editable allowlists."
-							/>
-						</div>
+
+						{#if allowlistEntries.length === 0}
+							<div class="mt-5">
+								<SurfaceMessage
+									label="NO EXPLICIT ENTRIES"
+									message="The active team is relying entirely on the gateway default tool policy."
+								/>
+							</div>
+						{:else}
+							<div class="mt-5 grid gap-3">
+								{#each allowlistEntries as entry (`${entry.agent_id}:${entry.direction}:${entry.tool_name}`)}
+									<div class="border border-[var(--gc-border)] px-4 py-4">
+										<div class="flex flex-wrap items-center gap-3">
+											<p class="gc-machine text-[var(--gc-ink)]">{entry.tool_name}</p>
+											<span
+												class={`gc-badge ${entry.direction === 'allow' ? 'border-[var(--gc-success)] text-[var(--gc-success)]' : 'border-[var(--gc-error)] text-[var(--gc-error)]'}`}
+											>
+												{entry.direction_label}
+											</span>
+										</div>
+										<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+											{entry.agent_id} · {entry.role}
+										</p>
+									</div>
+								{/each}
+							</div>
+						{/if}
 					</div>
 
 					<div class="gc-panel-soft px-5 py-5">
-						<p class="gc-stamp text-[var(--gc-ink-3)]">Verification trail</p>
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Current boundary</p>
 						<div class="mt-4 space-y-4">
 							<div>
-								<p class="gc-panel-title text-[var(--gc-ink)]">Config</p>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Gateway default</p>
 								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-									Confirm the project and runtime settings before adding any durable exception.
+									{gatewayPolicy.approval_mode_label} approvals with {gatewayPolicy.host_access_mode_label}
+									host access.
 								</p>
 							</div>
 							<div>
-								<p class="gc-panel-title text-[var(--gc-ink)]">Gateway queue</p>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Team scope</p>
 								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-									Use one-off approvals while you decide whether a repeat command deserves an
-									allowlist entry.
+									{gatewayPolicy.team_name} · front agent {gatewayPolicy.front_agent_id ||
+										'not configured'}.
 								</p>
 							</div>
 							<div>
-								<p class="gc-panel-title text-[var(--gc-ink)]">Chat</p>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Explicit entries</p>
 								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-									Check run context and tool intent in Chat before converting a repeated request
-									into a durable exception.
+									{policySummary.allowlist_count} durable tool exceptions are active in the current team.
 								</p>
 							</div>
 						</div>
