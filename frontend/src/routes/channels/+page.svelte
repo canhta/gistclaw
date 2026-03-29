@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import ConnectorRow from '$lib/components/channels/ConnectorRow.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
@@ -25,6 +26,50 @@
 	const summary = $derived(data.channels?.summary);
 	const connectors = $derived(data.channels?.items ?? []);
 	const routes = $derived(data.channels?.routes);
+	const access = $derived(
+		data.channels?.access ?? {
+			notice: '',
+			settings: null,
+			surfaces: []
+		}
+	);
+	const accessNotice = $derived(access.notice ?? '');
+	const accessSettings = $derived(access.settings ?? null);
+	const accessSurfaces = $derived(access.surfaces ?? []);
+	const telegramSurface = $derived(
+		accessSurfaces.find((surface) => surface.id === 'telegram') ?? null
+	);
+	const whatsappSurface = $derived(
+		accessSurfaces.find((surface) => surface.id === 'whatsapp') ?? null
+	);
+	const telegramConnector = $derived(
+		connectors.find((connector) => connector.connector_id === 'telegram') ?? null
+	);
+	const whatsappConnector = $derived(
+		connectors.find((connector) => connector.connector_id === 'whatsapp') ?? null
+	);
+	const configuredChannelCount = $derived(
+		accessSurfaces.filter((surface) => surface.configured).length
+	);
+	const readyChannelCount = $derived(
+		accessSurfaces.filter((surface) => surface.credential_state === 'ready').length
+	);
+	const visibleRouteCount = $derived(routes?.items?.length ?? 0);
+	const telegramToken = $derived(accessSettings?.machine?.telegram_token ?? '');
+	const maskedTelegramToken = $derived(telegramToken.trim() !== '' ? telegramToken : 'Missing');
+	const whatsAppWebhookPath = '/webhooks/whatsapp';
+
+	const credentialToneByState: Record<string, string> = {
+		ready: 'var(--gc-success)',
+		missing: 'var(--gc-warning)',
+		unused: 'var(--gc-ink-3)'
+	};
+	const runtimeToneByClass: Record<string, string> = {
+		'is-success': 'var(--gc-success)',
+		'is-error': 'var(--gc-error)',
+		'is-active': 'var(--gc-primary)',
+		'is-muted': 'var(--gc-ink-3)'
+	};
 
 	function isTabID(value: string | null): value is TabID {
 		return value === 'status' || value === 'login' || value === 'settings';
@@ -34,6 +79,14 @@
 		if (isTabID(id)) {
 			activeTabOverride = id;
 		}
+	}
+
+	function credentialTone(value: string | undefined): string {
+		return credentialToneByState[value ?? 'unused'] ?? 'var(--gc-ink-3)';
+	}
+
+	function runtimeTone(value: string | undefined): string {
+		return runtimeToneByClass[value ?? 'is-muted'] ?? 'var(--gc-ink-3)';
 	}
 </script>
 
@@ -97,46 +150,212 @@
 				</div>
 			{/if}
 		{:else if activeTab === 'login'}
-			<div class="mx-auto w-full max-w-5xl">
+			<div class="mx-auto w-full max-w-6xl">
+				{#if accessNotice !== ''}
+					<SurfaceMessage label="ACCESS" message={accessNotice} className="mb-4" />
+				{/if}
+
 				<p class="gc-stamp text-[var(--gc-ink-3)]">LOGIN</p>
-				<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Bring a channel online</h2>
+				<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Channel access board</h2>
 				<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-					OpenClaw treats channel login as an operator task, not a hidden setup note. In GistClaw,
-					credentials live in machine config and the live connection state returns to the Status
-					tab.
+					This board reports the shipped Telegram and WhatsApp lanes using the daemon’s actual
+					settings and runtime status. It shows whether each channel is configured,
+					credential-ready, and actively reporting health right now.
 				</p>
+
+				<div class="mt-6 grid gap-4 xl:grid-cols-4">
+					<SurfaceMetricCard
+						label="Configured Channels"
+						value={String(configuredChannelCount)}
+						detail={`${readyChannelCount} credential-ready in this daemon.`}
+						tone="accent"
+					/>
+					<SurfaceMetricCard
+						label="Live Channels"
+						value={String(summary?.active_count ?? 0)}
+						detail="Connectors currently reporting an active runtime state."
+					/>
+					<SurfaceMetricCard
+						label="Restart Flags"
+						value={String(summary?.restart_suggested_count ?? 0)}
+						detail="Channels asking for operator attention before they run cleanly again."
+						tone="warning"
+					/>
+					<SurfaceMetricCard
+						label="Pending Deliveries"
+						value={String(summary?.pending_count ?? 0)}
+						detail="Outbound messages waiting behind channel access or connector pressure."
+					/>
+				</div>
 
 				<div class="mt-6 grid gap-4 lg:grid-cols-2">
 					<section class="gc-panel-soft px-5 py-5">
-						<p class="gc-stamp text-[var(--gc-ink-3)]">Telegram bot</p>
+						<div class="flex flex-wrap items-center gap-3">
+							<p class="gc-panel-title text-[var(--gc-ink)]">Telegram</p>
+							<span
+								class="gc-badge"
+								style={`border-color: ${credentialTone(telegramSurface?.credential_state)}; color: ${credentialTone(telegramSurface?.credential_state)};`}
+							>
+								{telegramSurface?.credential_state_label ?? 'unavailable'}
+							</span>
+							{#if telegramConnector}
+								<span
+									class="gc-badge"
+									style={`border-color: ${runtimeTone(telegramConnector.state_class)}; color: ${runtimeTone(telegramConnector.state_class)};`}
+								>
+									{telegramConnector.state_label}
+								</span>
+							{/if}
+						</div>
 						<p class="gc-copy mt-3 text-[var(--gc-ink)]">
-							Set the bot token in Config &gt; Channels, then restart the runtime so the gateway can
-							reconnect and report health here.
+							{telegramSurface?.summary ?? 'Telegram access details are unavailable.'}
 						</p>
+						<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+							{telegramSurface?.detail ??
+								'Manage the bot token through the current machine settings flow.'}
+						</p>
+
+						<div class="mt-5 grid gap-4">
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Masked Telegram token</p>
+								<p class="gc-copy mt-3 text-[var(--gc-ink)]">{maskedTelegramToken}</p>
+							</div>
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Runtime lane</p>
+								<p class="gc-copy mt-3 text-[var(--gc-ink)]">
+									{telegramConnector?.summary ?? 'No runtime snapshot yet.'}
+								</p>
+								{#if telegramConnector?.checked_at_label}
+									<p class="gc-machine mt-2">{telegramConnector.checked_at_label}</p>
+								{/if}
+							</div>
+						</div>
 					</section>
 
 					<section class="gc-panel-soft px-5 py-5">
-						<p class="gc-stamp text-[var(--gc-ink-3)]">WhatsApp Web</p>
+						<div class="flex flex-wrap items-center gap-3">
+							<p class="gc-panel-title text-[var(--gc-ink)]">WhatsApp</p>
+							<span
+								class="gc-badge"
+								style={`border-color: ${credentialTone(whatsappSurface?.credential_state)}; color: ${credentialTone(whatsappSurface?.credential_state)};`}
+							>
+								{whatsappSurface?.credential_state_label ?? 'unavailable'}
+							</span>
+							{#if whatsappConnector}
+								<span
+									class="gc-badge"
+									style={`border-color: ${runtimeTone(whatsappConnector.state_class)}; color: ${runtimeTone(whatsappConnector.state_class)};`}
+								>
+									{whatsappConnector.state_label}
+								</span>
+							{/if}
+						</div>
 						<p class="gc-copy mt-3 text-[var(--gc-ink)]">
-							Use the host-side login flow for the WhatsApp connector, then return to Status to
-							confirm the lane is running cleanly.
+							{whatsappSurface?.summary ?? 'WhatsApp access details are unavailable.'}
 						</p>
+						<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+							{whatsappSurface?.detail ??
+								'WhatsApp access stays operator-managed through runtime config.'}
+						</p>
+
+						<div class="mt-5 grid gap-4">
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Webhook surface</p>
+								<p class="gc-machine mt-3 break-all">{whatsAppWebhookPath}</p>
+							</div>
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Delivery queue</p>
+								<p class="gc-copy mt-3 text-[var(--gc-ink)]">
+									{whatsappConnector?.pending_count ?? 0} pending ·
+									{` ${whatsappConnector?.retrying_count ?? 0}`} retrying ·
+									{` ${whatsappConnector?.terminal_count ?? 0}`} terminal
+								</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									{whatsappConnector?.summary ?? 'No runtime snapshot yet.'}
+								</p>
+							</div>
+						</div>
 					</section>
 				</div>
 			</div>
 		{:else}
 			<div class="mx-auto w-full max-w-6xl">
+				{#if accessNotice !== ''}
+					<SurfaceMessage label="SETTINGS" message={accessNotice} className="mb-4" />
+				{/if}
+
 				<section class="gc-panel-soft px-5 py-5">
 					<p class="gc-stamp text-[var(--gc-ink-3)]">SETTINGS</p>
-					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Channel settings moved</h2>
+					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Connector settings snapshot</h2>
 					<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-						Deep connector configuration belongs in Config &gt; Channels. Use this page to supervise
-						live channel state, delivery pressure, and restart flags without digging through config
-						fields.
+						Read-only connector config posture for the current daemon. This keeps the masked
+						Telegram token, WhatsApp webhook surface, and live restart pressure next to route
+						inventory so the operator can verify channel wiring without guessing from prose.
 					</p>
-					<p class="gc-copy mt-4 text-[var(--gc-ink)]">
-						Restart suggestions currently raised: {summary?.restart_suggested_count ?? 0}
-					</p>
+
+					<div class="mt-6 grid gap-4 xl:grid-cols-4">
+						<SurfaceMetricCard
+							label="Configured Surfaces"
+							value={String(configuredChannelCount)}
+							detail={`${readyChannelCount} credential-ready connectors.`}
+							tone="accent"
+						/>
+						<SurfaceMetricCard
+							label="Restart Flags"
+							value={String(summary?.restart_suggested_count ?? 0)}
+							detail="Connectors currently asking for a restart or credential repair."
+							tone="warning"
+						/>
+						<SurfaceMetricCard
+							label="Visible Routes"
+							value={String(visibleRouteCount)}
+							detail="Route directory rows visible under the current filters."
+						/>
+						<SurfaceMetricCard
+							label="Pending Deliveries"
+							value={String(summary?.pending_count ?? 0)}
+							detail="Messages still waiting behind current connector pressure."
+						/>
+					</div>
+
+					<div class="mt-6 grid gap-4 lg:grid-cols-2">
+						<section class="border border-[var(--gc-border)] px-4 py-4">
+							<div class="flex flex-wrap items-center gap-3">
+								<p class="gc-panel-title text-[var(--gc-ink)]">Telegram config</p>
+								<span
+									class="gc-badge"
+									style={`border-color: ${credentialTone(telegramSurface?.credential_state)}; color: ${credentialTone(telegramSurface?.credential_state)};`}
+								>
+									{telegramSurface?.credential_state_label ?? 'unavailable'}
+								</span>
+							</div>
+							<p class="gc-stamp mt-3 text-[var(--gc-ink-3)]">Masked Telegram token</p>
+							<p class="gc-copy mt-3 text-[var(--gc-ink)]">{maskedTelegramToken}</p>
+							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+								{telegramConnector?.summary ??
+									telegramSurface?.summary ??
+									'No runtime snapshot yet.'}
+							</p>
+						</section>
+
+						<section class="border border-[var(--gc-border)] px-4 py-4">
+							<div class="flex flex-wrap items-center gap-3">
+								<p class="gc-panel-title text-[var(--gc-ink)]">WhatsApp webhook</p>
+								<span
+									class="gc-badge"
+									style={`border-color: ${credentialTone(whatsappSurface?.credential_state)}; color: ${credentialTone(whatsappSurface?.credential_state)};`}
+								>
+									{whatsappSurface?.credential_state_label ?? 'unavailable'}
+								</span>
+							</div>
+							<p class="gc-machine mt-3 break-all">{whatsAppWebhookPath}</p>
+							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+								{whatsappConnector?.summary ??
+									whatsappSurface?.summary ??
+									'No runtime snapshot yet.'}
+							</p>
+						</section>
+					</div>
 				</section>
 
 				<section class="gc-panel-soft mt-6 px-5 py-5">

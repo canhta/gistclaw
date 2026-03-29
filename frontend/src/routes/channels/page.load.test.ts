@@ -105,6 +105,11 @@ describe('channels load', () => {
 					restart_suggested_count: 0
 				},
 				items: [],
+				access: {
+					notice: '',
+					settings: null,
+					surfaces: []
+				},
 				routes: {
 					filters: {
 						connector_id: '',
@@ -121,6 +126,208 @@ describe('channels load', () => {
 					}
 				}
 			}
+		});
+	});
+
+	it('loads channel access data when the login tab is requested', async () => {
+		const fetcher = vi.fn<typeof fetch>(async (input) => {
+			if (input === '/api/conversations') {
+				return new Response(
+					JSON.stringify({
+						summary: {
+							session_count: 1,
+							connector_count: 2,
+							terminal_deliveries: 0
+						},
+						filters: {
+							query: '',
+							agent_id: '',
+							role: '',
+							status: '',
+							connector_id: '',
+							binding: ''
+						},
+						sessions: [],
+						paging: { has_next: false, has_prev: false },
+						health: [],
+						runtime_connectors: [
+							{
+								connector_id: 'telegram',
+								state: 'active',
+								state_label: 'Active',
+								state_class: 'is-success',
+								summary: 'Bot is connected',
+								checked_at_label: '1 min ago',
+								restart_suggested: false
+							},
+							{
+								connector_id: 'whatsapp',
+								state: 'degraded',
+								state_label: 'Degraded',
+								state_class: 'is-error',
+								summary: 'Webhook token needs review',
+								checked_at_label: '2 min ago',
+								restart_suggested: true
+							}
+						]
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
+			if (input === '/api/settings') {
+				return new Response(
+					JSON.stringify({
+						machine: {
+							storage_root: '/srv/gistclaw',
+							approval_mode: 'prompt',
+							approval_mode_label: 'Prompt',
+							host_access_mode: 'standard',
+							host_access_mode_label: 'Standard',
+							admin_token: 'abcd1234****',
+							per_run_token_budget: '50000',
+							daily_cost_cap_usd: '5.00',
+							rolling_cost_usd: 0.25,
+							rolling_cost_label: '$0.25 in the last 24h',
+							telegram_token: '12345678********',
+							active_project_name: 'my-project',
+							active_project_path: '/home/user/my-project',
+							active_project_summary: 'my-project at /home/user/my-project'
+						},
+						access: {
+							password_configured: true,
+							other_active_devices: [],
+							blocked_devices: []
+						}
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
+			if (input === '/api/skills') {
+				return new Response(
+					JSON.stringify({
+						summary: {
+							shipped_surfaces: 2,
+							configured_surfaces: 2,
+							installed_tools: 1,
+							ready_credentials: 1,
+							missing_credentials: 1
+						},
+						surfaces: [
+							{
+								id: 'telegram',
+								name: 'Telegram',
+								kind: 'connector',
+								configured: true,
+								active: true,
+								credential_state: 'ready',
+								credential_state_label: 'ready',
+								summary: 'Bot token configured.',
+								detail: 'Front agent assistant'
+							},
+							{
+								id: 'whatsapp',
+								name: 'WhatsApp',
+								kind: 'connector',
+								configured: true,
+								active: true,
+								credential_state: 'missing',
+								credential_state_label: 'missing',
+								summary: 'Connector is configured.',
+								detail: 'Front agent assistant'
+							}
+						],
+						tools: []
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
+			throw new Error(`unexpected request: ${String(input)}`);
+		});
+
+		const result = await load(makeLoadEvent(fetcher, '?tab=login'));
+
+		if (!result) {
+			throw new Error('expected channels load to return login access data');
+		}
+
+		expect(fetcher).toHaveBeenCalledWith('/api/conversations', expect.any(Object));
+		expect(fetcher).toHaveBeenCalledWith('/api/settings', expect.any(Object));
+		expect(fetcher).toHaveBeenCalledWith('/api/skills', expect.any(Object));
+		expect(result.channels.access).toEqual({
+			notice: '',
+			settings: expect.objectContaining({
+				machine: expect.objectContaining({
+					telegram_token: '12345678********'
+				})
+			}),
+			surfaces: [
+				expect.objectContaining({
+					id: 'telegram',
+					credential_state_label: 'ready'
+				}),
+				expect.objectContaining({
+					id: 'whatsapp',
+					credential_state_label: 'missing'
+				})
+			]
+		});
+	});
+
+	it('returns an access notice when channel access reads fail', async () => {
+		const fetcher = vi.fn<typeof fetch>(async (input) => {
+			if (input === '/api/conversations') {
+				return new Response(
+					JSON.stringify({
+						summary: {
+							session_count: 1,
+							connector_count: 0,
+							terminal_deliveries: 0
+						},
+						filters: {
+							query: '',
+							agent_id: '',
+							role: '',
+							status: '',
+							connector_id: '',
+							binding: ''
+						},
+						sessions: [],
+						paging: { has_next: false, has_prev: false },
+						health: [],
+						runtime_connectors: []
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
+			throw new Error('boom');
+		});
+
+		const result = await load(makeLoadEvent(fetcher, '?tab=login'));
+
+		if (!result) {
+			throw new Error('expected channels load to return fallback access data');
+		}
+
+		expect(result.channels.access).toEqual({
+			notice: 'Channel access details could not be loaded. Reload to retry.',
+			settings: null,
+			surfaces: []
 		});
 	});
 
@@ -186,6 +393,81 @@ describe('channels load', () => {
 				);
 			}
 
+			if (input === '/api/settings') {
+				return new Response(
+					JSON.stringify({
+						machine: {
+							storage_root: '/srv/gistclaw',
+							approval_mode: 'prompt',
+							approval_mode_label: 'Prompt',
+							host_access_mode: 'standard',
+							host_access_mode_label: 'Standard',
+							admin_token: 'abcd1234****',
+							per_run_token_budget: '50000',
+							daily_cost_cap_usd: '5.00',
+							rolling_cost_usd: 0.25,
+							rolling_cost_label: '$0.25 in the last 24h',
+							telegram_token: '12345678********',
+							active_project_name: 'my-project',
+							active_project_path: '/home/user/my-project',
+							active_project_summary: 'my-project at /home/user/my-project'
+						},
+						access: {
+							password_configured: true,
+							other_active_devices: [],
+							blocked_devices: []
+						}
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
+			if (input === '/api/skills') {
+				return new Response(
+					JSON.stringify({
+						summary: {
+							shipped_surfaces: 2,
+							configured_surfaces: 2,
+							installed_tools: 1,
+							ready_credentials: 2,
+							missing_credentials: 0
+						},
+						surfaces: [
+							{
+								id: 'telegram',
+								name: 'Telegram',
+								kind: 'connector',
+								configured: true,
+								active: true,
+								credential_state: 'ready',
+								credential_state_label: 'ready',
+								summary: 'Bot token configured.',
+								detail: 'Front agent assistant'
+							},
+							{
+								id: 'whatsapp',
+								name: 'WhatsApp',
+								kind: 'connector',
+								configured: true,
+								active: true,
+								credential_state: 'ready',
+								credential_state_label: 'ready',
+								summary: 'Webhook is configured.',
+								detail: 'Front agent assistant'
+							}
+						],
+						tools: []
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
 			throw new Error(`unexpected request: ${String(input)}`);
 		});
 
@@ -217,5 +499,10 @@ describe('channels load', () => {
 		expect(result.channels.routes.paging.nextHref).toBe(
 			'/channels?tab=settings&route_connector_id=telegram&route_status=all&route_limit=10&route_cursor=cursor-next&route_direction=next'
 		);
+		expect(result.channels.access.settings?.machine.telegram_token).toBe('12345678********');
+		expect(result.channels.access.surfaces).toEqual([
+			expect.objectContaining({ id: 'telegram' }),
+			expect.objectContaining({ id: 'whatsapp' })
+		]);
 	});
 });

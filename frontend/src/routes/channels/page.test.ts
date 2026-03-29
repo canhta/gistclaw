@@ -20,6 +20,56 @@ const baseData = {
 			terminal_count: 0,
 			restart_suggested_count: 0
 		},
+		access: {
+			notice: '',
+			settings: {
+				machine: {
+					storage_root: '/srv/gistclaw',
+					approval_mode: 'prompt',
+					approval_mode_label: 'Prompt',
+					host_access_mode: 'standard',
+					host_access_mode_label: 'Standard',
+					admin_token: 'abcd1234****',
+					per_run_token_budget: '50000',
+					daily_cost_cap_usd: '5.00',
+					rolling_cost_usd: 0.25,
+					rolling_cost_label: '$0.25 in the last 24h',
+					telegram_token: '12345678********',
+					active_project_name: 'my-project',
+					active_project_path: '/home/user/my-project',
+					active_project_summary: 'my-project at /home/user/my-project'
+				},
+				access: {
+					password_configured: true,
+					other_active_devices: [],
+					blocked_devices: []
+				}
+			},
+			surfaces: [
+				{
+					id: 'telegram',
+					name: 'Telegram',
+					kind: 'connector',
+					configured: true,
+					active: true,
+					credential_state: 'ready',
+					credential_state_label: 'ready',
+					summary: 'Bot token configured.',
+					detail: 'Front agent assistant'
+				},
+				{
+					id: 'whatsapp',
+					name: 'WhatsApp',
+					kind: 'connector',
+					configured: true,
+					active: true,
+					credential_state: 'missing',
+					credential_state_label: 'missing',
+					summary: 'Connector is configured.',
+					detail: 'Front agent assistant'
+				}
+			]
+		},
 		items: [],
 		routes: {
 			filters: {
@@ -89,6 +139,7 @@ describe('Channels page', () => {
 		const data = {
 			...baseData,
 			channels: {
+				access: baseData.channels.access,
 				routes: baseData.channels.routes,
 				summary: {
 					connector_count: 1,
@@ -121,18 +172,63 @@ describe('Channels page', () => {
 	});
 
 	it('renders login guidance when selected through search', () => {
-		const data = { ...baseData, currentSearch: 'tab=login' };
+		const data = {
+			...baseData,
+			currentSearch: 'tab=login',
+			channels: {
+				...baseData.channels,
+				summary: {
+					connector_count: 2,
+					active_count: 1,
+					pending_count: 1,
+					retrying_count: 0,
+					terminal_count: 0,
+					restart_suggested_count: 1
+				},
+				items: [
+					{
+						connector_id: 'telegram',
+						state: 'active',
+						state_label: 'Active',
+						state_class: 'is-success',
+						summary: 'Bot is connected',
+						checked_at_label: '1 min ago',
+						restart_suggested: false,
+						pending_count: 1,
+						retrying_count: 0,
+						terminal_count: 0
+					},
+					{
+						connector_id: 'whatsapp',
+						state: 'degraded',
+						state_label: 'Degraded',
+						state_class: 'is-error',
+						summary: 'Webhook token needs review',
+						checked_at_label: '2 min ago',
+						restart_suggested: true,
+						pending_count: 0,
+						retrying_count: 0,
+						terminal_count: 0
+					}
+				]
+			}
+		};
 		const { body } = render(ChannelsPage, { props: { data } });
-		expect(body).toContain('Bring a channel online');
-		expect(body).toContain('Telegram bot');
-		expect(body).toContain('WhatsApp Web');
+		expect(body).toContain('Channel access board');
+		expect(body).toContain('Telegram');
+		expect(body).toContain('12345678********');
+		expect(body).toContain('ready');
+		expect(body).toContain('WhatsApp');
+		expect(body).toContain('/webhooks/whatsapp');
+		expect(body).not.toContain('Bring a channel online');
 	});
 
 	it('renders settings guidance when selected through search', () => {
 		const data = { ...baseData, currentSearch: 'tab=settings' };
 		const { body } = render(ChannelsPage, { props: { data } });
-		expect(body).toContain('Channel settings moved');
-		expect(body).toContain('Config');
+		expect(body).toContain('Connector settings snapshot');
+		expect(body).toContain('Masked Telegram token');
+		expect(body).toContain('/webhooks/whatsapp');
 		expect(body).toContain('Route directory');
 		expect(body).toContain('Search routes');
 		expect(body).toContain('Route status');
@@ -140,5 +236,24 @@ describe('Channels page', () => {
 		expect(body).toContain('chat-1');
 		expect(body).toContain('Inactive');
 		expect(body).toContain('Next route page');
+		expect(body).not.toContain('Channel settings moved');
+	});
+
+	it('renders an access notice without hiding the channels boards', () => {
+		const data = {
+			...baseData,
+			currentSearch: 'tab=login',
+			channels: {
+				...baseData.channels,
+				access: {
+					notice: 'Channel access details could not be loaded. Reload to retry.',
+					settings: null,
+					surfaces: []
+				}
+			}
+		};
+		const { body } = render(ChannelsPage, { props: { data } });
+		expect(body).toContain('Channel access details could not be loaded. Reload to retry.');
+		expect(body).toContain('Channel access board');
 	});
 });

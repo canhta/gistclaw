@@ -1,6 +1,9 @@
 import { buildChannelRoutesSearch, loadChannelRoutes } from '$lib/channels/routes';
 import { buildChannelStatusData } from '$lib/channels/status';
 import { loadConversations } from '$lib/conversations/load';
+import { loadExtensionStatus } from '$lib/skills/load';
+import { loadSettings } from '$lib/settings/load';
+import type { ExtensionSurfaceResponse, SettingsResponse } from '$lib/types/api';
 import type { PageLoad } from './$types';
 
 const emptyRoutes = {
@@ -19,23 +22,59 @@ const emptyRoutes = {
 	}
 };
 
+const emptyAccess = {
+	notice: '',
+	settings: null as SettingsResponse | null,
+	surfaces: [] as ExtensionSurfaceResponse[]
+};
+
 export const load: PageLoad = async ({ fetch, url }) => {
 	try {
-		const settingsRequested = url.searchParams.get('tab') === 'settings';
+		const requestedTab = url.searchParams.get('tab');
+		const settingsRequested = requestedTab === 'settings';
+		const accessRequested = requestedTab === 'login' || requestedTab === 'settings';
 		const currentSearch = url.searchParams.toString();
-		const [data, routes] = await Promise.all([
+		const [data, routes, settings, skills] = await Promise.allSettled([
 			loadConversations(fetch),
 			settingsRequested
 				? loadChannelRoutes(fetch, buildChannelRoutesSearch(url.searchParams), currentSearch).catch(
 						() => emptyRoutes
 					)
-				: Promise.resolve(emptyRoutes)
+				: Promise.resolve(emptyRoutes),
+			accessRequested ? loadSettings(fetch) : Promise.resolve(null),
+			accessRequested ? loadExtensionStatus(fetch) : Promise.resolve(null)
 		]);
-		const channels = buildChannelStatusData(data.runtime_connectors ?? [], data.health ?? []);
+		if (data.status !== 'fulfilled') {
+			throw data.reason;
+		}
+
+		const channels = buildChannelStatusData(
+			data.value.runtime_connectors ?? [],
+			data.value.health ?? []
+		);
+		const access = !accessRequested
+			? emptyAccess
+			: {
+					notice:
+						settings.status === 'fulfilled' && skills.status === 'fulfilled'
+							? ''
+							: 'Channel access details could not be loaded. Reload to retry.',
+					settings: settings.status === 'fulfilled' ? settings.value : null,
+					surfaces:
+						skills.status === 'fulfilled'
+							? (skills.value?.surfaces ?? []).filter(
+									(surface) =>
+										surface.kind === 'connector' &&
+										(surface.id === 'telegram' || surface.id === 'whatsapp')
+								)
+							: []
+				};
+
 		return {
 			channels: {
 				...channels,
-				routes
+				access,
+				routes: routes.status === 'fulfilled' ? routes.value : emptyRoutes
 			}
 		};
 	} catch {
@@ -50,6 +89,7 @@ export const load: PageLoad = async ({ fetch, url }) => {
 					restart_suggested_count: 0
 				},
 				items: [],
+				access: emptyAccess,
 				routes: emptyRoutes
 			}
 		};
