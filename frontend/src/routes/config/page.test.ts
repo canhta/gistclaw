@@ -281,6 +281,8 @@ describe('Config page', () => {
 		expect(body).toContain('Knowledge scope');
 		expect(body).toContain('Agent');
 		expect(body).toContain('Knowledge limit');
+		expect(body).toContain('Edit knowledge');
+		expect(body).toContain('Forget knowledge');
 		expect(body).toContain('Next knowledge page');
 	});
 

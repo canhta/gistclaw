@@ -5,6 +5,7 @@
 	import DeviceAccessCard from '$lib/components/common/DeviceAccessCard.svelte';
 	import SettingsField from '$lib/components/config/SettingsField.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
+	import { editKnowledgeItem, forgetKnowledgeItem } from '$lib/knowledge/actions';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
 	import { requestJSON } from '$lib/http/client';
 	import {
@@ -16,6 +17,9 @@
 		selectTeamProfile
 	} from '$lib/team/actions';
 	import type {
+		KnowledgeFilterResponse,
+		KnowledgeItemResponse,
+		KnowledgeResponse,
 		SettingsActionResponse,
 		SettingsDeviceResponse,
 		SettingsResponse,
@@ -56,6 +60,7 @@
 	let activeTabOverride = $state<TabID | null>(null);
 	let savedSettings = $state<SettingsResponse | null>(null);
 	let savedTeam = $state<TeamResponse | null>(null);
+	let savedKnowledge = $state<KnowledgeResponse | null>(null);
 	let approvalMode = $state('');
 	let hostAccessMode = $state('');
 	let perRunTokenBudget = $state('');
@@ -79,6 +84,9 @@
 	let cloneProfileID = $state('');
 	let deleteProfileID = $state('');
 	let importYAML = $state('');
+	let editingKnowledgeID = $state<string | null>(null);
+	let editingKnowledgeContent = $state('');
+	let knowledgeMutationID = $state<string | null>(null);
 
 	function isTabID(value: string | null): value is TabID {
 		return (
@@ -118,6 +126,22 @@
 		return `${Math.round(normalized * 100)}% confidence`;
 	}
 
+	function buildKnowledgeHeadline(itemCount: number, filters: KnowledgeFilterResponse): string {
+		if (itemCount === 0) {
+			return 'No saved knowledge is shaping work yet.';
+		}
+
+		if (
+			filters.scope.trim() !== '' ||
+			filters.agent_id.trim() !== '' ||
+			filters.query.trim() !== ''
+		) {
+			return 'Filtered knowledge for the current project.';
+		}
+
+		return 'Knowledge shaping future work in this project.';
+	}
+
 	const requestedTab = $derived.by<TabID>(() => {
 		const tab = new URLSearchParams(data.currentSearch).get('tab');
 		return isTabID(tab) ? tab : 'general';
@@ -134,7 +158,7 @@
 	const inactiveProfiles = $derived(profiles.filter((profile) => !profile.active));
 	const members = $derived(team?.members ?? []);
 	const work = $derived(data.config?.work ?? null);
-	const knowledge = $derived(data.config?.knowledge ?? null);
+	const knowledge = $derived(savedKnowledge ?? data.config?.knowledge ?? null);
 	const modelUsage = $derived(summarizeModelUsage(work?.clusters));
 	const currentDevice = $derived(access?.current_device ?? null);
 	const otherActiveDevices = $derived(access?.other_active_devices ?? []);
@@ -452,6 +476,95 @@
 			saveError = mutationErrorMessage('save team', err);
 		} finally {
 			teamSaving = false;
+		}
+	}
+
+	function startKnowledgeEdit(itemID: string, content: string): void {
+		saveMessage = '';
+		saveError = '';
+		editingKnowledgeID = itemID;
+		editingKnowledgeContent = content;
+	}
+
+	function cancelKnowledgeEdit(): void {
+		editingKnowledgeID = null;
+		editingKnowledgeContent = '';
+	}
+
+	function replaceKnowledgeItem(nextItem: KnowledgeItemResponse): void {
+		if (!knowledge) {
+			return;
+		}
+
+		savedKnowledge = {
+			...knowledge,
+			headline: buildKnowledgeHeadline(knowledge.items.length, knowledge.filters),
+			items: knowledge.items.map((item) => (item.id === nextItem.id ? nextItem : item))
+		};
+	}
+
+	function removeKnowledgeItem(itemID: string): void {
+		if (!knowledge) {
+			return;
+		}
+
+		const nextItems = knowledge.items.filter((item) => item.id !== itemID);
+		savedKnowledge = {
+			...knowledge,
+			headline: buildKnowledgeHeadline(nextItems.length, knowledge.filters),
+			summary: {
+				visible_count: nextItems.length
+			},
+			items: nextItems
+		};
+
+		if (editingKnowledgeID === itemID) {
+			cancelKnowledgeEdit();
+		}
+	}
+
+	async function handleKnowledgeEdit(itemID: string): Promise<void> {
+		const content = editingKnowledgeContent.trim();
+		if (content === '') {
+			saveError = 'Knowledge content is required.';
+			return;
+		}
+
+		saveMessage = '';
+		saveError = '';
+		knowledgeMutationID = itemID;
+
+		try {
+			const item = await editKnowledgeItem(globalThis.fetch.bind(globalThis), itemID, content);
+			replaceKnowledgeItem(item);
+			saveMessage = 'Knowledge updated.';
+			cancelKnowledgeEdit();
+		} catch (err) {
+			saveError =
+				err instanceof Error && err.message.trim() !== ''
+					? err.message
+					: 'Failed to update knowledge.';
+		} finally {
+			knowledgeMutationID = null;
+		}
+	}
+
+	async function handleKnowledgeForget(itemID: string): Promise<void> {
+		saveMessage = '';
+		saveError = '';
+		knowledgeMutationID = itemID;
+
+		try {
+			await forgetKnowledgeItem(globalThis.fetch.bind(globalThis), itemID);
+			removeKnowledgeItem(itemID);
+			saveMessage = 'Knowledge forgotten.';
+		} catch (err) {
+			saveError =
+				err instanceof Error && err.message.trim() !== ''
+					? err.message
+					: 'Failed to forget knowledge.';
+		} finally {
+			knowledgeMutationID = null;
 		}
 	}
 </script>
@@ -776,10 +889,25 @@
 											<article class="border border-[var(--gc-border)] px-4 py-4">
 												<div class="flex flex-wrap items-start justify-between gap-3">
 													<div>
-														<p class="gc-copy text-[var(--gc-ink)]">{item.content}</p>
-														<p class="gc-copy mt-2 text-sm text-[var(--gc-ink-3)]">
-															{item.provenance}
-														</p>
+														{#if editingKnowledgeID === item.id}
+															<label
+																for={`knowledge-edit-${item.id}`}
+																class="gc-stamp text-[var(--gc-ink-3)]"
+															>
+																Edit knowledge
+															</label>
+															<textarea
+																id={`knowledge-edit-${item.id}`}
+																bind:value={editingKnowledgeContent}
+																rows="4"
+																class="gc-control mt-2 min-h-[7rem] w-full"
+															></textarea>
+														{:else}
+															<p class="gc-copy text-[var(--gc-ink)]">{item.content}</p>
+															<p class="gc-copy mt-2 text-sm text-[var(--gc-ink-3)]">
+																{item.provenance}
+															</p>
+														{/if}
 													</div>
 													<div class="flex flex-wrap gap-2 text-xs text-[var(--gc-ink-3)]">
 														<span class="gc-chip">{formatKnowledgeScope(item.scope)}</span>
@@ -798,6 +926,52 @@
 													<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
 														Updated {item.updated_at_label}
 													</p>
+												</div>
+
+												<div class="mt-4 flex flex-wrap justify-end gap-3">
+													{#if editingKnowledgeID === item.id}
+														<button
+															type="button"
+															disabled={knowledgeMutationID === item.id}
+															class="gc-action gc-action-accent px-4 py-2 disabled:opacity-50"
+															onclick={() => {
+																cancelKnowledgeEdit();
+															}}
+														>
+															Cancel edit
+														</button>
+														<button
+															type="button"
+															disabled={knowledgeMutationID === item.id}
+															class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
+															onclick={() => {
+																void handleKnowledgeEdit(item.id);
+															}}
+														>
+															{knowledgeMutationID === item.id ? 'Saving…' : 'Save knowledge'}
+														</button>
+													{:else}
+														<button
+															type="button"
+															disabled={knowledgeMutationID === item.id}
+															class="gc-action gc-action-accent px-4 py-2 disabled:opacity-50"
+															onclick={() => {
+																startKnowledgeEdit(item.id, item.content);
+															}}
+														>
+															Edit knowledge
+														</button>
+														<button
+															type="button"
+															disabled={knowledgeMutationID === item.id}
+															class="gc-action gc-action-warning px-4 py-2 disabled:opacity-50"
+															onclick={() => {
+																void handleKnowledgeForget(item.id);
+															}}
+														>
+															{knowledgeMutationID === item.id ? 'Forgetting…' : 'Forget knowledge'}
+														</button>
+													{/if}
 												</div>
 											</article>
 										{/each}
