@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1053,11 +1054,13 @@ func TestSameOriginRequest(t *testing.T) {
 		name    string
 		origin  string
 		referer string
+		forward string
 		host    string
 		want    bool
 	}{
 		{name: "matching origin", origin: "http://localhost:8080", host: "localhost:8080", want: true},
 		{name: "matching referer fallback", referer: "http://localhost:8080/work", host: "localhost:8080", want: true},
+		{name: "forwarded host overrides backend host", origin: "http://localhost:5173", forward: "localhost:5173", host: "localhost:8080", want: true},
 		{name: "origin wins over referer", origin: "http://evil.example", referer: "http://localhost:8080/work", host: "localhost:8080", want: false},
 		{name: "invalid referer", referer: "://bad url", host: "localhost:8080", want: false},
 		{name: "missing origin and referer", host: "localhost:8080", want: false},
@@ -1075,6 +1078,9 @@ func TestSameOriginRequest(t *testing.T) {
 			}
 			if tc.referer != "" {
 				req.Header.Set("Referer", tc.referer)
+			}
+			if tc.forward != "" {
+				req.Header.Set("X-Forwarded-Host", tc.forward)
 			}
 
 			if got := sameOriginRequest(req); got != tc.want {
@@ -1228,6 +1234,26 @@ func TestAdminToken(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "http://localhost/api/work", strings.NewReader(`{"task":"review"}`))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", "http://localhost")
+		req.AddCookie(cookie)
+
+		h.server.ServeHTTP(rr, req)
+
+		if rr.Code != http.StatusAccepted {
+			t.Fatalf("expected 202, got %d\nbody: %s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("proxied same-origin browser session can create work", func(t *testing.T) {
+		h := newServerHarness(t)
+		cookie := hostAdminSessionCookie(t, h, "http://127.0.0.1:5173/work")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:8080/api/work", strings.NewReader(`{"task":"review"}`))
+		req.Host = "127.0.0.1:8080"
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Origin", "http://127.0.0.1:5173")
+		req.Header.Set("X-Forwarded-Host", "127.0.0.1:5173")
+		req.Header.Set("X-Forwarded-Proto", "http")
 		req.AddCookie(cookie)
 
 		h.server.ServeHTTP(rr, req)
@@ -1852,13 +1878,13 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		var sendResp struct {
-			Run model.Run `json:"run"`
+			RunID string `json:"run_id"`
 		}
 		if err := json.Unmarshal(sendRR.Body.Bytes(), &sendResp); err != nil {
 			t.Fatalf("decode send response: %v", err)
 		}
-		if sendResp.Run.SessionID != run.SessionID || sendResp.Run.ID == run.ID {
-			t.Fatalf("unexpected route send run: %+v", sendResp.Run)
+		if sendResp.RunID == "" || sendResp.RunID == run.ID {
+			t.Fatalf("unexpected route send run_id: %+v", sendResp)
 		}
 	})
 
@@ -2225,17 +2251,16 @@ func TestSessionAPI(t *testing.T) {
 		}
 
 		var resp struct {
-			Run model.Run `json:"run"`
+			RunID string `json:"run_id"`
 		}
 		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 			t.Fatalf("decode response: %v", err)
 		}
-		if resp.Run.SessionID != front.SessionID {
-			t.Fatalf("expected run to reuse session %q, got %q", front.SessionID, resp.Run.SessionID)
+		if resp.RunID == "" || resp.RunID == front.ID {
+			t.Fatalf("expected a new follow-up run_id, got %+v", resp)
 		}
-		if resp.Run.ID == front.ID {
-			t.Fatalf("expected a new follow-up run, got original %q", resp.Run.ID)
-		}
+
+		h.rt.WaitAsync()
 
 		detail := httptest.NewRecorder()
 		detailReq := httptest.NewRequest(http.MethodGet, "/api/conversations/"+front.SessionID, nil)
@@ -2257,6 +2282,60 @@ func TestSessionAPI(t *testing.T) {
 		}
 		if mailbox.Messages[2].Body.PlainText != "What changed?" || mailbox.Messages[3].Body.PlainText != "mock response" {
 			t.Fatalf("unexpected follow-up mailbox bodies: %q / %q", mailbox.Messages[2].Body.PlainText, mailbox.Messages[3].Body.PlainText)
+		}
+	})
+
+	t.Run("send returns before the follow-up run finishes", func(t *testing.T) {
+		prov := &stagedBlockingProvider{
+			release: make(chan struct{}),
+			first: runtime.GenerateResult{
+				Content:      "Front ready.",
+				InputTokens:  10,
+				OutputTokens: 12,
+				StopReason:   "end_turn",
+			},
+			followup: runtime.GenerateResult{
+				Content:      "Follow-up reply.",
+				InputTokens:  11,
+				OutputTokens: 13,
+				StopReason:   "end_turn",
+			},
+		}
+		h := newServerHarnessWithProvider(t, prov)
+		t.Cleanup(func() { close(prov.release) })
+
+		front := h.startFrontSession(t, "Inspect the repo.")
+
+		rr := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/conversations/"+front.SessionID+"/messages",
+			strings.NewReader(`{"body":"What changed?"}`))
+		req.Header.Set("Authorization", "Bearer "+h.adminToken)
+		req.Header.Set("Content-Type", "application/json")
+
+		done := make(chan struct{})
+		go func() {
+			h.server.ServeHTTP(rr, req)
+			close(done)
+		}()
+
+		select {
+		case <-done:
+		case <-time.After(200 * time.Millisecond):
+			t.Fatal("expected send request to return before the follow-up run completed")
+		}
+
+		if rr.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+
+		var resp struct {
+			RunID string `json:"run_id"`
+		}
+		if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if resp.RunID == "" || resp.RunID == front.ID {
+			t.Fatalf("expected a new follow-up run_id, got %+v", resp)
 		}
 	})
 
@@ -2465,6 +2544,36 @@ func (p *blockingProvider) Generate(ctx context.Context, _ runtime.GenerateReque
 			OutputTokens: 20,
 			StopReason:   "end_turn",
 		}, nil
+	case <-ctx.Done():
+		return runtime.GenerateResult{}, ctx.Err()
+	}
+}
+
+type stagedBlockingProvider struct {
+	mu       sync.Mutex
+	calls    int
+	release  chan struct{}
+	first    runtime.GenerateResult
+	followup runtime.GenerateResult
+}
+
+func (p *stagedBlockingProvider) ID() string {
+	return "staged-blocking"
+}
+
+func (p *stagedBlockingProvider) Generate(ctx context.Context, _ runtime.GenerateRequest, _ runtime.StreamSink) (runtime.GenerateResult, error) {
+	p.mu.Lock()
+	p.calls++
+	call := p.calls
+	p.mu.Unlock()
+
+	if call == 1 {
+		return p.first, nil
+	}
+
+	select {
+	case <-p.release:
+		return p.followup, nil
 	case <-ctx.Done():
 		return runtime.GenerateResult{}, ctx.Err()
 	}

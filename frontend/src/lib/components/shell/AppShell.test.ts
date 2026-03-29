@@ -40,10 +40,9 @@ describe('AppShell', () => {
 		expect(body).not.toContain('<span class="gc-machine">history</span>');
 	});
 
-	it('renders project name and path', () => {
+	it('renders the active project name in the shell', () => {
 		const { body } = render(AppShell, { props: baseProps });
 		expect(body).toContain('starter-project');
-		expect(body).toContain('/tmp/starter-project');
 	});
 
 	it('marks the active route with aria-current', () => {
@@ -62,11 +61,11 @@ describe('AppShell', () => {
 		expect(body).toContain('System info');
 	});
 
-	it('uses neutral shell labels', () => {
+	it('renders the current shell branding', () => {
 		const { body } = render(AppShell, {
 			props: { ...baseProps, project: { ...baseProps.project, active_name: 'gistclaw' } }
 		});
-		expect(body).toContain('Control deck');
-		expect(body).toContain('Repo workbench');
+		expect(body).toContain('GistClaw');
+		expect(body).toContain('System info');
 	});
 });

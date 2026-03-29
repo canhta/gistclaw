@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/canhta/gistclaw/internal/authority"
@@ -94,6 +95,34 @@ func startParentAndChildRuns(t *testing.T, rt *Runtime) (model.Run, model.Run) {
 		t.Fatalf("Spawn failed: %v", err)
 	}
 	return parent, child
+}
+
+type stagedBlockingProvider struct {
+	mu       sync.Mutex
+	calls    int
+	release  chan struct{}
+	first    GenerateResult
+	followup GenerateResult
+}
+
+func (p *stagedBlockingProvider) ID() string { return "staged-blocking" }
+
+func (p *stagedBlockingProvider) Generate(ctx context.Context, _ GenerateRequest, _ StreamSink) (GenerateResult, error) {
+	p.mu.Lock()
+	p.calls++
+	call := p.calls
+	p.mu.Unlock()
+
+	if call == 1 {
+		return p.first, nil
+	}
+
+	select {
+	case <-p.release:
+		return p.followup, nil
+	case <-ctx.Done():
+		return GenerateResult{}, ctx.Err()
+	}
 }
 
 func assertRunEvent(t *testing.T, db *store.DB, runID, kind string) {
@@ -794,6 +823,161 @@ func TestRuntime_SendSessionWakesWorkerSessionWithSiblingChildRun(t *testing.T) 
 	}
 	if history[3].Kind != model.MessageAssistant || history[3].Body != "Worker follow-up complete." {
 		t.Fatalf("expected worker follow-up reply, got kind=%q body=%q", history[3].Kind, history[3].Body)
+	}
+}
+
+func TestRuntime_SendSessionAsyncReturnsBeforeFollowUpRunCompletes(t *testing.T) {
+	prov := &stagedBlockingProvider{
+		release: make(chan struct{}),
+		first: GenerateResult{
+			Content:      "Front ready.",
+			InputTokens:  10,
+			OutputTokens: 12,
+			StopReason:   "end_turn",
+		},
+		followup: GenerateResult{
+			Content:      "Follow-up reply.",
+			InputTokens:  11,
+			OutputTokens: 13,
+			StopReason:   "end_turn",
+		},
+	}
+	db, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	cs := conversations.NewConversationStore(db)
+	mem := memory.NewStore(db, cs)
+	reg := tools.NewRegistry()
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
+	t.Cleanup(func() { rt.WaitAsync() })
+
+	front := startFrontRun(t, rt, "Inspect the repo.")
+
+	run, err := rt.SendSessionAsync(context.Background(), SendSessionCommand{
+		ToSessionID: front.SessionID,
+		Body:        "What changed?",
+	})
+	if err != nil {
+		t.Fatalf("SendSessionAsync failed: %v", err)
+	}
+	if run.SessionID != front.SessionID {
+		t.Fatalf("expected follow-up run to reuse front session %q, got %q", front.SessionID, run.SessionID)
+	}
+	if run.ID == front.ID {
+		t.Fatalf("expected follow-up run to create a new run, got original %q", run.ID)
+	}
+
+	svc := sessions.NewService(db, conversations.NewConversationStore(db))
+	_, history, err := svc.LoadSessionMailbox(context.Background(), front.SessionID, 10)
+	if err != nil {
+		t.Fatalf("LoadSessionMailbox failed: %v", err)
+	}
+	if len(history) != 3 {
+		t.Fatalf("expected 3 front-session messages before release, got %d", len(history))
+	}
+	if history[2].Kind != model.MessageUser || history[2].Body != "What changed?" {
+		t.Fatalf("expected in-flight user follow-up message, got kind=%q body=%q", history[2].Kind, history[2].Body)
+	}
+
+	close(prov.release)
+	rt.WaitAsync()
+
+	_, history, err = svc.LoadSessionMailbox(context.Background(), front.SessionID, 10)
+	if err != nil {
+		t.Fatalf("LoadSessionMailbox after release failed: %v", err)
+	}
+	if len(history) != 4 {
+		t.Fatalf("expected 4 front-session messages after release, got %d", len(history))
+	}
+	if history[3].Kind != model.MessageAssistant || history[3].Body != "Follow-up reply." {
+		t.Fatalf("expected assistant follow-up reply, got kind=%q body=%q", history[3].Kind, history[3].Body)
+	}
+}
+
+func TestRuntime_SendRouteAsyncReturnsBeforeFollowUpRunCompletes(t *testing.T) {
+	prov := &stagedBlockingProvider{
+		release: make(chan struct{}),
+		first: GenerateResult{
+			Content:      "Front ready.",
+			InputTokens:  10,
+			OutputTokens: 12,
+			StopReason:   "end_turn",
+		},
+		followup: GenerateResult{
+			Content:      "Follow-up reply.",
+			InputTokens:  11,
+			OutputTokens: 13,
+			StopReason:   "end_turn",
+		},
+	}
+	db, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	cs := conversations.NewConversationStore(db)
+	mem := memory.NewStore(db, cs)
+	reg := tools.NewRegistry()
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
+	t.Cleanup(func() { rt.WaitAsync() })
+
+	front := startFrontRun(t, rt, "Inspect the repo.")
+	route, err := rt.BindRoute(context.Background(), BindRouteCommand{
+		SessionID:   front.SessionID,
+		ThreadID:    "thread-1",
+		ConnectorID: "telegram",
+		AccountID:   "acct-1",
+		ExternalID:  "chat-1",
+	})
+	if err != nil {
+		t.Fatalf("BindRoute failed: %v", err)
+	}
+
+	run, err := rt.SendRouteAsync(context.Background(), route.ID, "", "What changed?")
+	if err != nil {
+		t.Fatalf("SendRouteAsync failed: %v", err)
+	}
+	if run.SessionID != front.SessionID {
+		t.Fatalf("expected route follow-up run to reuse front session %q, got %q", front.SessionID, run.SessionID)
+	}
+	if run.ID == front.ID {
+		t.Fatalf("expected route follow-up run to create a new run, got original %q", run.ID)
+	}
+
+	svc := sessions.NewService(db, conversations.NewConversationStore(db))
+	_, history, err := svc.LoadSessionMailbox(context.Background(), front.SessionID, 10)
+	if err != nil {
+		t.Fatalf("LoadSessionMailbox failed: %v", err)
+	}
+	if len(history) != 3 {
+		t.Fatalf("expected 3 front-session messages before release, got %d", len(history))
+	}
+	if history[2].Kind != model.MessageUser || history[2].Body != "What changed?" {
+		t.Fatalf("expected in-flight route message, got kind=%q body=%q", history[2].Kind, history[2].Body)
+	}
+
+	close(prov.release)
+	rt.WaitAsync()
+
+	_, history, err = svc.LoadSessionMailbox(context.Background(), front.SessionID, 10)
+	if err != nil {
+		t.Fatalf("LoadSessionMailbox after release failed: %v", err)
+	}
+	if len(history) != 4 {
+		t.Fatalf("expected 4 front-session messages after release, got %d", len(history))
+	}
+	if history[3].Kind != model.MessageAssistant || history[3].Body != "Follow-up reply." {
+		t.Fatalf("expected assistant follow-up reply, got kind=%q body=%q", history[3].Kind, history[3].Body)
 	}
 }
 

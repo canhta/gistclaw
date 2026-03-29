@@ -132,4 +132,22 @@ func TestConversationsAPIListsSessionsAndSessionDetail(t *testing.T) {
 	if detailResp.ActiveRunID != "run-conversation-active" {
 		t.Fatalf("active_run_id = %q, want %q", detailResp.ActiveRunID, "run-conversation-active")
 	}
+
+	workerDetailRR := httptest.NewRecorder()
+	workerDetailReq := httptest.NewRequest(http.MethodGet, "/api/conversations/"+worker.SessionID, nil)
+	h.server.ServeHTTP(workerDetailRR, workerDetailReq)
+
+	if workerDetailRR.Code != http.StatusOK {
+		t.Fatalf("expected 200 for worker detail, got %d body=%s", workerDetailRR.Code, workerDetailRR.Body.String())
+	}
+
+	var workerDetailResp struct {
+		ActiveRunID string `json:"active_run_id"`
+	}
+	if err := json.Unmarshal(workerDetailRR.Body.Bytes(), &workerDetailResp); err != nil {
+		t.Fatalf("decode worker detail response: %v", err)
+	}
+	if workerDetailResp.ActiveRunID != "run-conversation-active" {
+		t.Fatalf("worker active_run_id = %q, want %q", workerDetailResp.ActiveRunID, "run-conversation-active")
+	}
 }

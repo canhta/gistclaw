@@ -13,7 +13,8 @@ export default defineConfig({
 		proxy: {
 			'/api': {
 				target: apiOrigin,
-				changeOrigin: true
+				changeOrigin: true,
+				xfwd: true
 			}
 		}
 	},

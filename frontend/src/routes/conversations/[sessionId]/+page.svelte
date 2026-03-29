@@ -13,6 +13,11 @@
 	let sending = $state(false);
 	let retryingID = $state('');
 	let draft = $state('');
+	const activeRunID = $derived(data.conversation.active_run_id ?? '');
+	const isBusy = $derived(activeRunID !== '');
+	const busyRunHref = $derived(
+		activeRunID === '' ? '' : resolve('/work/[runId]', { runId: activeRunID })
+	);
 
 	async function sendMessage(event: SubmitEvent): Promise<void> {
 		event.preventDefault();
@@ -20,7 +25,7 @@
 		errorMessage = '';
 
 		try {
-			const response = await requestJSON<{ run: { id: string } }>(
+			const response = await requestJSON<{ run_id: string }>(
 				fetch,
 				`/api/conversations/${data.conversation.session.id}/messages`,
 				{
@@ -29,7 +34,7 @@
 					body: JSON.stringify({ body: draft })
 				}
 			);
-			await goto(resolve('/work/[runId]', { runId: response.run.id }), {
+			await goto(resolve('/work/[runId]', { runId: response.run_id }), {
 				invalidateAll: true
 			});
 		} catch (error) {
@@ -83,6 +88,16 @@
 				/>
 			{/if}
 
+			{#if isBusy}
+				<div class="gc-panel-soft gc-card-warning mt-5 px-4 py-4">
+					<p class="gc-stamp text-[var(--gc-orange)]">Conversation busy</p>
+					<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
+						Active run {activeRunID} is still open. Wait for it to finish before sending.
+					</p>
+					<a class="gc-machine mt-3 inline-flex underline" href={busyRunHref}>Open active run</a>
+				</div>
+			{/if}
+
 			<form class="mt-6 grid gap-3" onsubmit={sendMessage}>
 				<label class="grid gap-2">
 					<span class="gc-stamp">Send operator message</span>
@@ -93,7 +108,7 @@
 						placeholder="Ask the session what changed, request a retry, or steer the next reply."
 					></textarea>
 				</label>
-				<SurfaceActionButton type="submit" disabled={sending || draft.trim() === ''}>
+				<SurfaceActionButton type="submit" disabled={sending || draft.trim() === '' || isBusy}>
 					{sending ? 'Sending message' : 'Send message'}
 				</SurfaceActionButton>
 			</form>

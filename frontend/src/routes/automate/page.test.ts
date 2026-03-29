@@ -101,6 +101,8 @@ describe('Automate page', () => {
 		);
 		expect(body).toContain('Repo review');
 		expect(body).toContain('Every 2h from 08:00 UTC');
+		expect(body).toContain('Start time');
+		expect(body).toContain('Defaults to now.');
 		expect(body).toContain('Run now');
 		expect(body).toContain('Create schedule');
 		expect(body).toContain('/work/run-open');

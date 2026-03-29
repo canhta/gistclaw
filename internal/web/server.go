@@ -249,10 +249,10 @@ func (s *Server) authorizedByBearer(r *http.Request, adminToken string) bool {
 
 func sameOriginRequest(r *http.Request) bool {
 	if origin := r.Header.Get("Origin"); origin != "" {
-		return sameRequestHost(origin, r.Host)
+		return sameRequestHost(origin, requestOriginHost(r))
 	}
 	if referer := r.Header.Get("Referer"); referer != "" {
-		return sameRequestHost(referer, r.Host)
+		return sameRequestHost(referer, requestOriginHost(r))
 	}
 	return false
 }

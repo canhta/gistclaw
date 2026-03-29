@@ -7,6 +7,7 @@
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
 	import { setInspectorItems } from '$lib/shell/inspector.svelte';
+	import { defaultAnchorAt, serializeAnchorAt } from './automate-form';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -44,6 +45,12 @@
 	let everyHours = $state('2');
 	let cronExpr = $state('0 9 * * *');
 	let timezone = $state('UTC');
+
+	$effect(() => {
+		if ((kind === 'every' || kind === 'at') && anchorAt.trim() === '') {
+			anchorAt = defaultAnchorAt();
+		}
+	});
 
 	function nextRunLabel(label: string): string {
 		return label === 'No wake scheduled' ? 'No schedule yet' : label;
@@ -158,17 +165,10 @@
 		name = '';
 		objective = '';
 		kind = 'every';
-		anchorAt = '';
+		anchorAt = defaultAnchorAt();
 		everyHours = '2';
 		cronExpr = '0 9 * * *';
 		timezone = 'UTC';
-	}
-
-	function serializeAnchorAt(raw: string): string {
-		if (raw.trim() === '') {
-			return '';
-		}
-		return new Date(raw).toISOString();
 	}
 
 	function statusTone(statusClass: string): 'accent' | 'warning' {
@@ -335,8 +335,9 @@
 
 				{#if kind === 'every' || kind === 'at'}
 					<label class="mt-4 grid gap-2">
-						<span class="gc-stamp">Anchor time</span>
+						<span class="gc-stamp">Start time</span>
 						<input bind:value={anchorAt} type="datetime-local" class="gc-control" />
+						<p class="gc-machine">Defaults to now.</p>
 					</label>
 				{/if}
 

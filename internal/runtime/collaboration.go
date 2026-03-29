@@ -316,7 +316,23 @@ func (r *Runtime) SendSession(ctx context.Context, cmd SendSessionCommand) (mode
 			SourceConnectorID: conversations.LocalWebConnectorID,
 		}
 	}
-	return r.sendSession(ctx, opts)
+	return r.sendSession(ctx, opts, false)
+}
+
+func (r *Runtime) SendSessionAsync(ctx context.Context, cmd SendSessionCommand) (model.Run, error) {
+	opts := sendSessionOptions{
+		fromSessionID: cmd.FromSessionID,
+		toSessionID:   cmd.ToSessionID,
+		body:          cmd.Body,
+	}
+	if cmd.FromSessionID == "" {
+		opts.kind = model.MessageUser
+		opts.provenance = model.SessionMessageProvenance{
+			Kind:              model.MessageProvenanceInbound,
+			SourceConnectorID: conversations.LocalWebConnectorID,
+		}
+	}
+	return r.sendSession(ctx, opts, true)
 }
 
 type sendSessionOptions struct {
@@ -327,7 +343,7 @@ type sendSessionOptions struct {
 	provenance    model.SessionMessageProvenance
 }
 
-func (r *Runtime) sendSession(ctx context.Context, opts sendSessionOptions) (model.Run, error) {
+func (r *Runtime) sendSession(ctx context.Context, opts sendSessionOptions, detached bool) (model.Run, error) {
 	if strings.TrimSpace(opts.body) == "" {
 		return model.Run{}, fmt.Errorf("runtime: session message body is required")
 	}
@@ -398,14 +414,23 @@ func (r *Runtime) sendSession(ctx context.Context, opts sendSessionOptions) (mod
 		return model.Run{}, err
 	}
 
-	return r.executeRunLoop(ctx, runLoopOpts{
+	loopOpts := runLoopOpts{
 		runID:          runID,
 		conversationID: targetSession.ConversationID,
 		agentID:        targetSession.AgentID,
 		sessionID:      targetSession.ID,
 		objective:      opts.body,
 		cwd:            targetRun.CWD,
-	})
+	}
+	if detached {
+		r.executeRunLoopAsync(loopOpts)
+		run, err := r.loadRun(ctx, runID)
+		if err != nil {
+			return model.Run{}, err
+		}
+		return run, nil
+	}
+	return r.executeRunLoop(ctx, loopOpts)
 }
 
 func (r *Runtime) directSessionMessage(

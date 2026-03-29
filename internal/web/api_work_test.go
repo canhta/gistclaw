@@ -431,6 +431,57 @@ func TestCreateWorkTaskReturnsBeforeProviderCompletes(t *testing.T) {
 	waitForRunStatus(t, h.db, resp.RunID, "completed")
 }
 
+func TestCreateWorkTaskReturnsConflictWhenConversationAlreadyBusy(t *testing.T) {
+	t.Parallel()
+
+	prov := &blockingProvider{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	h := newServerHarnessWithProvider(t, prov)
+
+	firstRR := httptest.NewRecorder()
+	firstReq := httptest.NewRequest(http.MethodPost, "/api/work", bytes.NewBufferString(`{"task":"review the repo"}`))
+	firstReq.Header.Set("Content-Type", "application/json")
+	h.server.ServeHTTP(firstRR, firstReq)
+
+	if firstRR.Code != http.StatusAccepted {
+		close(prov.release)
+		t.Fatalf("expected first request 202, got %d body=%s", firstRR.Code, firstRR.Body.String())
+	}
+
+	select {
+	case <-prov.started:
+	case <-time.After(time.Second):
+		close(prov.release)
+		t.Fatal("expected first run to start provider work")
+	}
+
+	conflictRR := httptest.NewRecorder()
+	conflictReq := httptest.NewRequest(http.MethodPost, "/api/work", bytes.NewBufferString(`{"task":"second task"}`))
+	conflictReq.Header.Set("Content-Type", "application/json")
+	h.server.ServeHTTP(conflictRR, conflictReq)
+
+	if conflictRR.Code != http.StatusConflict {
+		close(prov.release)
+		t.Fatalf("expected 409, got %d body=%s", conflictRR.Code, conflictRR.Body.String())
+	}
+
+	var conflictResp struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(conflictRR.Body.Bytes(), &conflictResp); err != nil {
+		close(prov.release)
+		t.Fatalf("decode conflict response: %v", err)
+	}
+	if conflictResp.Message != "An active run is already open. Wait for it to finish before starting more work." {
+		close(prov.release)
+		t.Fatalf("message = %q", conflictResp.Message)
+	}
+
+	close(prov.release)
+}
+
 func TestWorkDetailReturnsNotFoundForUnknownRun(t *testing.T) {
 	t.Parallel()
 

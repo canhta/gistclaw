@@ -77,9 +77,13 @@ describe('Conversation detail page', () => {
 		});
 
 		expect(body).toContain('Send operator message');
+		expect(body).toContain('Conversation busy');
+		expect(body).toContain('Wait for it to finish before sending.');
+		expect(body).toContain('Open active run');
 		expect(body).toContain('/work/run-1');
 		expect(body).toContain('Retry delivery');
 		expect(body).toContain('connector timed out');
 		expect(body).toContain('Latest reply');
+		expect(body).toContain('disabled');
 	});
 });

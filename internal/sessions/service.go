@@ -210,22 +210,28 @@ func (s *Service) LoadSession(ctx context.Context, sessionID string) (model.Sess
 }
 
 func (s *Service) LoadActiveRunRef(ctx context.Context, sessionID string) (model.RunRef, error) {
+	conversationID, err := s.conversationIDForSession(ctx, sessionID)
+	if err != nil {
+		return model.RunRef{}, err
+	}
+
 	var ref model.RunRef
 	var status string
-	err := s.db.RawDB().QueryRowContext(ctx,
+	queryErr := s.db.RawDB().QueryRowContext(ctx,
 		`SELECT id, status
 		 FROM runs
-		 WHERE session_id = ?
+		 WHERE conversation_id = ?
+		   AND parent_run_id IS NULL
 		   AND status IN ('pending', 'active', 'needs_approval')
-		 ORDER BY updated_at DESC, created_at DESC, id DESC
+		 ORDER BY created_at ASC, id ASC
 		 LIMIT 1`,
-		sessionID,
+		conversationID,
 	).Scan(&ref.ID, &status)
-	if err == sql.ErrNoRows {
+	if queryErr == sql.ErrNoRows {
 		return model.RunRef{}, nil
 	}
-	if err != nil {
-		return model.RunRef{}, fmt.Errorf("load active session run: %w", err)
+	if queryErr != nil {
+		return model.RunRef{}, fmt.Errorf("load active conversation run: %w", queryErr)
 	}
 	ref.Status = model.RunStatus(status)
 	return ref, nil

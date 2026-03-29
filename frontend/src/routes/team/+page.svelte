@@ -4,6 +4,7 @@
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
 	import type { TeamConfigResponse, TeamMemberResponse, TeamResponse } from '$lib/types/api';
+	import { teamConfigMatches, teamDraftFromConfig } from './team-state';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -53,15 +54,20 @@
 		errorMessage = '';
 	}
 
+	function loadDraft(team: TeamConfigResponse): void {
+		const draft = teamDraftFromConfig(team);
+		nameOverride = draft.name;
+		frontAgentOverride = draft.front_agent_id;
+		memberDrafts = draft.members;
+		roleOverrides = {};
+		baseProfileOverrides = {};
+		toolFamilyOverrides = {};
+		delegationKindOverrides = {};
+		errorMessage = '';
+	}
+
 	function hasDraft(): boolean {
-		if (nameOverride !== null) return true;
-		if (frontAgentOverride !== null) return true;
-		if (Object.keys(roleOverrides).length > 0) return true;
-		if (Object.keys(baseProfileOverrides).length > 0) return true;
-		if (Object.keys(toolFamilyOverrides).length > 0) return true;
-		if (Object.keys(delegationKindOverrides).length > 0) return true;
-		if (memberDrafts !== null) return true;
-		return false;
+		return !teamConfigMatches(buildTeamConfig(), data.team.team);
 	}
 
 	function confirmDiscardDraft(): boolean {
@@ -84,6 +90,10 @@
 
 	function teamName(): string {
 		return nameOverride ?? data.team.team.name;
+	}
+
+	function activeProfileLabel(): string {
+		return data.team.active_profile.label;
 	}
 
 	function frontAgentID(): string {
@@ -324,9 +334,8 @@
 				body: JSON.stringify({ yaml })
 			});
 			importFile = null;
-			resetDraft();
+			loadDraft(response.team);
 			noticeOverride = response.notice ?? null;
-			await invalidateAll();
 		} catch (error) {
 			errorMessage =
 				error instanceof HTTPError ? error.message : 'Unable to import this setup file.';
@@ -367,7 +376,8 @@
 			<div class="flex items-start justify-between gap-4">
 				<div>
 					<p class="gc-stamp">Current setup</p>
-					<h2 class="gc-section-title mt-3">{data.team.team.name}</h2>
+					<h2 class="gc-section-title mt-3">{activeProfileLabel()}</h2>
+					<p class="gc-machine mt-2">Team name: {data.team.team.name}</p>
 				</div>
 				<SurfaceActionButton onclick={() => (editMode = true)}>Edit setup</SurfaceActionButton>
 			</div>
@@ -386,10 +396,11 @@
 	{#if editMode}
 		<section class="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
 			<form class="gc-panel px-5 py-5 lg:px-6 lg:py-6" onsubmit={saveTeam}>
-				<p class="gc-stamp">Active setup</p>
-				<h2 class="gc-section-title mt-3">{teamName()}</h2>
+				<p class="gc-stamp">Active profile</p>
+				<h2 class="gc-section-title mt-3">{activeProfileLabel()}</h2>
+				<p class="gc-machine mt-2">Team name: {teamName()}</p>
 				<p class="gc-copy mt-4 max-w-3xl text-[var(--gc-text-secondary)]">
-					Choose who leads the work, which specialists help, and what each role is allowed to do.
+					Change the team name, who leads the work, and what each role is allowed to do.
 				</p>
 
 				{#if notice}
@@ -407,7 +418,7 @@
 
 				<div class="mt-6 grid gap-4 md:grid-cols-2">
 					<label class="grid gap-2">
-						<span class="gc-stamp">Setup name</span>
+						<span class="gc-stamp">Team name</span>
 						<input
 							value={teamName()}
 							oninput={(event) => {

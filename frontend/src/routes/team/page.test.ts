@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import TeamPage from './+page.svelte';
 
 describe('Team page', () => {
-	it('renders the active setup, profiles, and member topology', () => {
+	it('renders the active profile, team name, and member topology', () => {
 		const { body } = render(TeamPage, {
 			props: {
 				data: {
@@ -88,7 +88,8 @@ describe('Team page', () => {
 		});
 
 		// Overview panel is shown by default (editMode = false)
-		expect(body).toContain('Review Crew');
+		expect(body).toContain('<h2 class="gc-section-title mt-3">review</h2>');
+		expect(body).toContain('Team name: Review Crew');
 		expect(body).toContain('Current setup');
 		expect(body).toContain('Edit setup');
 		// Member cards visible in overview

@@ -127,6 +127,13 @@ func requestSessionFromContext(ctx context.Context) (authpkg.SessionState, bool)
 	return auth.Session, true
 }
 
+func requestOriginHost(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-Host")); forwarded != "" {
+		return forwarded
+	}
+	return r.Host
+}
+
 func isPublicPath(path string) bool {
 	switch {
 	case path == pageLogin, path == pageLogout:

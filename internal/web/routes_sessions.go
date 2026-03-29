@@ -56,7 +56,7 @@ type sessionSendRequest struct {
 }
 
 type sessionSendResponse struct {
-	Run model.Run `json:"run"`
+	RunID string `json:"run_id"`
 }
 
 type sessionRetryDeliveryResponse struct {
@@ -240,7 +240,7 @@ func (s *Server) handleRouteSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := s.rt.SendRoute(r.Context(), r.PathValue("id"), req.FromSessionID, req.Body)
+	run, err := s.rt.SendRouteAsync(r.Context(), r.PathValue("id"), req.FromSessionID, req.Body)
 	if err != nil {
 		switch {
 		case errors.Is(err, runtime.ErrRouteNotFound):
@@ -262,7 +262,7 @@ func (s *Server) handleRouteSend(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, sessionSendResponse{Run: run})
+	writeJSON(w, http.StatusOK, sessionSendResponse{RunID: run.ID})
 }
 
 func (s *Server) handleSessionSend(w http.ResponseWriter, r *http.Request) {
@@ -290,7 +290,7 @@ func (s *Server) handleSessionSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	run, err := s.rt.SendSession(r.Context(), runtime.SendSessionCommand{
+	run, err := s.rt.SendSessionAsync(r.Context(), runtime.SendSessionCommand{
 		FromSessionID: req.FromSessionID,
 		ToSessionID:   r.PathValue("id"),
 		Body:          req.Body,
@@ -311,7 +311,7 @@ func (s *Server) handleSessionSend(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, sessionSendResponse{Run: run})
+	writeJSON(w, http.StatusOK, sessionSendResponse{RunID: run.ID})
 }
 
 func (s *Server) handleSessionRetryDelivery(w http.ResponseWriter, r *http.Request) {

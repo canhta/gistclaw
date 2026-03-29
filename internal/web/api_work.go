@@ -206,6 +206,12 @@ func (s *Server) handleWorkCreate(w http.ResponseWriter, r *http.Request) {
 
 	runID, err := s.startWorkRun(r.Context(), task)
 	if err != nil {
+		if errors.Is(err, conversations.ErrConversationBusy) {
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"message": "An active run is already open. Wait for it to finish before starting more work.",
+			})
+			return
+		}
 		http.Error(w, "failed to start run: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
