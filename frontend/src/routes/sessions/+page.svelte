@@ -34,6 +34,7 @@
 	const sessions = $derived(data.sessions.items ?? []);
 	const paging = $derived(data.sessions.paging);
 	const runtimeConnectors = $derived(data.sessions.runtimeConnectors ?? []);
+	const history = $derived(data.sessions.history);
 
 	function isTabID(value: string | null): value is TabID {
 		return value === 'list' || value === 'overrides' || value === 'history';
@@ -271,24 +272,168 @@
 					</div>
 				{/if}
 			{:else if activeTab === 'overrides'}
-				<div class="flex flex-1 items-center justify-center p-10">
-					<div class="text-center">
-						<p class="gc-stamp text-[var(--gc-ink-3)]">COMING SOON</p>
-						<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">Session overrides</p>
-						<p class="gc-copy mt-3 max-w-xs text-[var(--gc-ink-2)]">
-							Session override controls are not connected to a backend yet.
+				<div class="grid flex-1 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)]">
+					<section class="gc-panel px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-warning)]">OVERRIDES</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
+							Session overrides still depend on runtime-owned state.
+						</h2>
+						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+							GistClaw can inspect a session and jump straight into Chat, but it does not expose a
+							browser write path for route or delivery overrides yet. Treat this panel as the
+							handoff point into the existing operator surfaces rather than a dead end.
 						</p>
-					</div>
+						<div class="mt-5 border border-[var(--gc-border)] px-4 py-4">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Current seam</p>
+							<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+								The shipped conversations API is read-only. Routing and delivery policy still live
+								in runtime-managed state and connector configuration.
+							</p>
+						</div>
+					</section>
+
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Use these surfaces</p>
+						<div class="mt-4 space-y-4">
+							<div>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Chat</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									Jump into the active run to inspect intent and current operator context before
+									changing policy.
+								</p>
+							</div>
+							<div>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Channels</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									Check connector health and delivery pressure before treating a session issue as a
+									per-session override problem.
+								</p>
+							</div>
+							<div>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Config</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									Keep durable routing or host-access policy in Config until a dedicated
+									`sessions.patch` path exists.
+								</p>
+							</div>
+						</div>
+					</section>
 				</div>
 			{:else}
-				<div class="flex flex-1 items-center justify-center p-10">
-					<div class="text-center">
-						<p class="gc-stamp text-[var(--gc-ink-3)]">COMING SOON</p>
-						<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">Session history</p>
-						<p class="gc-copy mt-3 max-w-xs text-[var(--gc-ink-2)]">
-							Session history is not connected to a backend yet.
+				<div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">PROJECT HISTORY</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Project history</h2>
+						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+							The current history API is project-wide evidence rather than a session-scoped event
+							log. It is still useful here: runs, approvals, and delivery outcomes show what
+							happened around the conversations you are inspecting.
 						</p>
+					</section>
+
+					<div class="mt-5 grid gap-4 xl:grid-cols-4">
+						<SurfaceMetricCard
+							label="Runs"
+							value={String(history.summary.run_count ?? 0)}
+							detail="Run evidence loaded from the shared history feed."
+						/>
+						<SurfaceMetricCard
+							label="Completed"
+							value={String(history.summary.completed_runs ?? 0)}
+							detail="Runs that finished without operator recovery."
+							tone="accent"
+						/>
+						<SurfaceMetricCard
+							label="Recovery"
+							value={String(history.summary.recovery_runs ?? 0)}
+							detail="Runs that failed, were interrupted, or needed approval."
+							tone="warning"
+						/>
+						<SurfaceMetricCard
+							label="Approvals"
+							value={String(history.summary.approval_events ?? 0)}
+							detail="Resolved approval events captured by the evidence feed."
+						/>
 					</div>
+
+					<div class="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)]">
+						<section class="gc-panel px-5 py-5">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Recent runs</p>
+							{#if history.runs.length === 0}
+								<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">No run evidence yet.</p>
+							{:else}
+								<div class="mt-4 flex flex-col gap-4">
+									{#each history.runs as run (run.root.id)}
+										<div class="border-b border-[var(--gc-border)] pb-4 last:border-b-0 last:pb-0">
+											<div class="flex items-start justify-between gap-4">
+												<div class="min-w-0">
+													<p class="gc-panel-title text-[var(--gc-ink)]">{run.root.objective}</p>
+													<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+														{run.root.id} · {run.root.agent_id}
+													</p>
+												</div>
+												<span class="gc-badge border-[var(--gc-warning)] text-[var(--gc-warning)]">
+													{run.root.status_label}
+												</span>
+											</div>
+											<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+												{run.blocker_label || run.child_count_label || 'No blockers'}
+											</p>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</section>
+
+						<section class="gc-panel-soft px-5 py-5">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Approval evidence</p>
+							{#if history.approvals.length === 0}
+								<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">No resolved approvals yet.</p>
+							{:else}
+								<div class="mt-4 flex flex-col gap-4">
+									{#each history.approvals as approval (approval.id)}
+										<div class="border-b border-[var(--gc-border)] pb-4 last:border-b-0 last:pb-0">
+											<p class="gc-panel-title text-[var(--gc-ink)]">{approval.tool_name}</p>
+											<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+												{approval.status_label} by {approval.resolved_by || 'operator'}
+											</p>
+											<p class="gc-machine mt-2 text-[var(--gc-ink-4)]">
+												run {approval.run_id} · {approval.resolved_at_label}
+											</p>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</section>
+					</div>
+
+					<section class="gc-panel-soft mt-5 px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Delivery outcomes</p>
+						{#if history.deliveries.length === 0}
+							<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">No delivery evidence yet.</p>
+						{:else}
+							<div class="mt-4 flex flex-col gap-4">
+								{#each history.deliveries as delivery (delivery.id)}
+									<div class="border-b border-[var(--gc-border)] pb-4 last:border-b-0 last:pb-0">
+										<div class="flex items-start justify-between gap-4">
+											<div>
+												<p class="gc-panel-title text-[var(--gc-ink)]">{delivery.connector_id}</p>
+												<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+													{delivery.message_preview}
+												</p>
+											</div>
+											<span class="gc-badge border-[var(--gc-border)] text-[var(--gc-ink-2)]">
+												{delivery.status_label}
+											</span>
+										</div>
+										<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+											{delivery.attempts_label} · {delivery.last_attempt_at_label}
+										</p>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</section>
 				</div>
 			{/if}
 		</div>

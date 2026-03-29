@@ -1,12 +1,42 @@
 import { buildConversationListSearch, buildSessionsPageHref } from '$lib/conversations/query';
 import { loadConversations } from '$lib/conversations/load';
+import { loadHistory } from '$lib/history/load';
 import type { PageLoad } from './$types';
+
+const emptyHistory = {
+	summary: {
+		run_count: 0,
+		completed_runs: 0,
+		recovery_runs: 0,
+		approval_events: 0,
+		delivery_outcomes: 0
+	},
+	filters: {
+		query: '',
+		status: '',
+		scope: 'all',
+		limit: 0
+	},
+	paging: {
+		has_next: false,
+		has_prev: false
+	},
+	runs: [],
+	approvals: [],
+	deliveries: []
+};
 
 export const load: PageLoad = async ({ fetch, url }) => {
 	const search = buildConversationListSearch(url.searchParams);
+	const historyRequested = url.searchParams.get('tab') === 'history';
 
 	try {
-		const data = await loadConversations(fetch, search);
+		const [data, history] = await Promise.all([
+			loadConversations(fetch, search),
+			historyRequested
+				? loadHistory(fetch).catch(() => emptyHistory)
+				: Promise.resolve(emptyHistory)
+		]);
 		return {
 			sessions: {
 				summary: data.summary ?? {
@@ -29,7 +59,8 @@ export const load: PageLoad = async ({ fetch, url }) => {
 					nextHref: buildSessionsPageHref(data.paging?.next_url, url.searchParams.toString()),
 					prevHref: buildSessionsPageHref(data.paging?.prev_url, url.searchParams.toString())
 				},
-				runtimeConnectors: data.runtime_connectors ?? []
+				runtimeConnectors: data.runtime_connectors ?? [],
+				history: history ?? emptyHistory
 			}
 		};
 	} catch {
@@ -55,7 +86,8 @@ export const load: PageLoad = async ({ fetch, url }) => {
 					nextHref: undefined,
 					prevHref: undefined
 				},
-				runtimeConnectors: []
+				runtimeConnectors: [],
+				history: emptyHistory
 			}
 		};
 	}

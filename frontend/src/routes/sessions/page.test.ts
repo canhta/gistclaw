@@ -27,7 +27,26 @@ const baseData = {
 		},
 		items: [],
 		paging: { has_next: false, has_prev: false, nextHref: undefined, prevHref: undefined },
-		runtimeConnectors: []
+		runtimeConnectors: [],
+		history: {
+			summary: {
+				run_count: 0,
+				completed_runs: 0,
+				recovery_runs: 0,
+				approval_events: 0,
+				delivery_outcomes: 0
+			},
+			filters: {
+				query: '',
+				status: '',
+				scope: 'all',
+				limit: 0
+			},
+			paging: { has_next: false, has_prev: false },
+			runs: [],
+			approvals: [],
+			deliveries: []
+		}
 	}
 };
 
@@ -114,10 +133,101 @@ describe('Sessions page', () => {
 		expect(body).toContain('/sessions?cursor=next');
 	});
 
-	it('renders the history placeholder when selected through search', () => {
+	it('renders override guidance when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=overrides' };
+		const { body } = render(SessionsPage, { props: { data } });
+		expect(body).toContain('Session overrides still depend on runtime-owned state.');
+		expect(body).toContain('Chat');
+		expect(body).toContain('Channels');
+		expect(body).toContain('Config');
+	});
+
+	it('renders session history evidence when selected through search', () => {
+		const data = {
+			...baseData,
+			currentSearch: 'tab=history',
+			sessions: {
+				...baseData.sessions,
+				history: {
+					summary: {
+						run_count: 2,
+						completed_runs: 1,
+						recovery_runs: 1,
+						approval_events: 1,
+						delivery_outcomes: 1
+					},
+					filters: {
+						query: '',
+						status: '',
+						scope: 'all',
+						limit: 25
+					},
+					paging: { has_next: false, has_prev: false },
+					runs: [
+						{
+							root: {
+								id: 'run-123',
+								objective: 'Repair connector backlog',
+								agent_id: 'front',
+								status: 'failed',
+								status_label: 'Failed',
+								status_class: 'is-error',
+								model_display: 'gpt-5.4',
+								token_summary: '1.2K tokens',
+								started_at_short: '10:00',
+								started_at_exact: '2026-03-29 10:00',
+								started_at_iso: '2026-03-29T10:00:00Z',
+								last_activity_short: '10:05',
+								last_activity_exact: '2026-03-29 10:05',
+								last_activity_iso: '2026-03-29T10:05:00Z',
+								depth: 0
+							},
+							children: [],
+							child_count: 0,
+							child_count_label: 'No child runs',
+							blocker_label: 'Needs operator review',
+							has_children: false
+						}
+					],
+					approvals: [
+						{
+							id: 'approval-1',
+							run_id: 'run-123',
+							tool_name: 'apply_patch',
+							status: 'approved',
+							status_label: 'Approved',
+							resolved_by: 'operator',
+							resolved_at_label: '1 min ago'
+						}
+					],
+					deliveries: [
+						{
+							id: 'delivery-1',
+							run_id: 'run-123',
+							connector_id: 'telegram',
+							chat_id: 'chat-1',
+							status: 'terminal',
+							status_label: 'Terminal',
+							attempts_label: '2 attempts',
+							last_attempt_at_label: 'just now',
+							message_preview: 'Retry exhausted'
+						}
+					]
+				}
+			}
+		};
+		const { body } = render(SessionsPage, { props: { data } });
+		expect(body).toContain('Project history');
+		expect(body).toContain('Repair connector backlog');
+		expect(body).toContain('apply_patch');
+		expect(body).toContain('telegram');
+		expect(body).toContain('2 attempts');
+	});
+
+	it('renders empty session history state when no evidence is available', () => {
 		const data = { ...baseData, currentSearch: 'tab=history' };
 		const { body } = render(SessionsPage, { props: { data } });
-		expect(body).toContain('Session history');
-		expect(body).toContain('not connected to a backend yet');
+		expect(body).toContain('Project history');
+		expect(body).toContain('No run evidence yet');
 	});
 });
