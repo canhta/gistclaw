@@ -150,10 +150,14 @@
 						<p class="gc-stamp">Updated</p>
 						<p class="gc-machine">{nodeDetail.last_activity_label}</p>
 					</div>
-					{#if nodeDetail.session_url && nodeDetail.session_short_id}
+					{#if nodeDetail.session_id && nodeDetail.session_short_id}
 						<div class="flex items-center justify-between gap-3">
 							<p class="gc-stamp">Session</p>
-							<a href={resolve(nodeDetail.session_url)} class="gc-machine text-[var(--gc-cyan)]">
+							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+							<a
+								href={`${resolve('/sessions')}?selected=${encodeURIComponent(nodeDetail.session_id)}`}
+								class="gc-machine text-[var(--gc-cyan)]"
+							>
 								{nodeDetail.session_short_id}
 							</a>
 						</div>
