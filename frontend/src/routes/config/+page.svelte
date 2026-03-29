@@ -1,11 +1,16 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
+	import DeviceAccessCard from '$lib/components/common/DeviceAccessCard.svelte';
 	import SettingsField from '$lib/components/config/SettingsField.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
 	import { requestJSON } from '$lib/http/client';
-	import type { SettingsActionResponse, SettingsResponse } from '$lib/types/api';
+	import type {
+		SettingsActionResponse,
+		SettingsDeviceResponse,
+		SettingsResponse
+	} from '$lib/types/api';
 	import { summarizeModelUsage } from '$lib/work/models';
 	import type { PageData } from './$types';
 
@@ -41,9 +46,14 @@
 	let telegramBotToken = $state('');
 	let lastMachineSignature = $state('');
 	let saving = $state(false);
+	let passwordSaving = $state(false);
+	let deviceMutationID = $state<string | null>(null);
 	let saveMessage = $state('');
 	let saveError = $state('');
 	let rawEditorEl = $state<HTMLDivElement | null>(null);
+	let currentPassword = $state('');
+	let newPassword = $state('');
+	let confirmPassword = $state('');
 
 	function isTabID(value: string | null): value is TabID {
 		return (
@@ -73,6 +83,7 @@
 	const activeTab = $derived(activeTabOverride ?? requestedTab);
 	const settings = $derived(savedSettings ?? data.config?.settings ?? null);
 	const machine = $derived(settings?.machine ?? null);
+	const access = $derived(settings?.access ?? null);
 	const rawDocument = $derived(JSON.stringify(settings ?? {}, null, 2));
 	const teamConfig = $derived(data.config?.team ?? null);
 	const team = $derived(teamConfig?.team ?? null);
@@ -81,6 +92,9 @@
 	const members = $derived(team?.members ?? []);
 	const work = $derived(data.config?.work ?? null);
 	const modelUsage = $derived(summarizeModelUsage(work?.clusters));
+	const currentDevice = $derived(access?.current_device ?? null);
+	const otherActiveDevices = $derived(access?.other_active_devices ?? []);
+	const blockedDevices = $derived(access?.blocked_devices ?? []);
 	const frontAgent = $derived.by(() => {
 		if (!team) {
 			return null;
@@ -182,6 +196,80 @@
 			saving = false;
 		}
 	}
+
+	async function handlePasswordChange(event: SubmitEvent): Promise<void> {
+		event.preventDefault();
+		saveMessage = '';
+		saveError = '';
+		passwordSaving = true;
+
+		try {
+			const response = await requestJSON<SettingsActionResponse>(
+				globalThis.fetch.bind(globalThis),
+				'/api/settings/password',
+				{
+					method: 'POST',
+					headers: {
+						'content-type': 'application/json'
+					},
+					body: JSON.stringify({
+						current_password: currentPassword,
+						new_password: newPassword,
+						confirm_password: confirmPassword
+					})
+				}
+			);
+
+			savedSettings = response.settings ?? settings;
+			saveMessage = response.notice ?? 'Password updated.';
+			currentPassword = '';
+			newPassword = '';
+			confirmPassword = '';
+
+			if (browser && response.logged_out && response.next) {
+				globalThis.location.assign(response.next);
+			}
+		} catch {
+			saveError = 'Failed to update password.';
+		} finally {
+			passwordSaving = false;
+		}
+	}
+
+	async function mutateDevice(
+		device: SettingsDeviceResponse,
+		action: 'revoke' | 'block' | 'unblock'
+	): Promise<void> {
+		saveMessage = '';
+		saveError = '';
+		deviceMutationID = device.id;
+
+		try {
+			const response = await requestJSON<SettingsActionResponse>(
+				globalThis.fetch.bind(globalThis),
+				`/api/settings/devices/${encodeURIComponent(device.id)}/${action}`,
+				{
+					method: 'POST'
+				}
+			);
+
+			savedSettings = response.settings ?? settings;
+			saveMessage = response.notice ?? 'Browser access updated.';
+
+			if (browser && response.logged_out && response.next) {
+				globalThis.location.assign(response.next);
+			}
+		} catch {
+			saveError =
+				action === 'revoke'
+					? 'Failed to revoke device.'
+					: action === 'block'
+						? 'Failed to block device.'
+						: 'Failed to unblock device.';
+		} finally {
+			deviceMutationID = null;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -222,103 +310,192 @@
 		{/if}
 
 		{#if activeTab === 'general'}
-			<div class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-6 lg:flex-row">
-				<div class="flex-1">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">GENERAL</p>
-					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Machine settings</h2>
-					<p class="gc-copy mt-3 max-w-xl text-[var(--gc-ink-2)]">
-						Core approval, host access, and budget settings. This mirrors the gateway settings
-						surface in OpenClaw, but scoped to the backend fields GistClaw exposes today.
-					</p>
+			<div class="mx-auto w-full max-w-6xl px-6 py-6">
+				<div class="flex flex-col gap-6 lg:flex-row">
+					<div class="flex-1">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">GENERAL</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Machine settings</h2>
+						<p class="gc-copy mt-3 max-w-xl text-[var(--gc-ink-2)]">
+							Core approval, host access, and budget settings. This mirrors the gateway settings
+							surface in OpenClaw, but scoped to the backend fields GistClaw exposes today.
+						</p>
 
-					{#if machine}
-						<form class="mt-6 flex max-w-xl flex-col gap-5" onsubmit={handleSaveGeneral}>
+						{#if machine}
+							<form class="mt-6 flex max-w-xl flex-col gap-5" onsubmit={handleSaveGeneral}>
+								<SettingsField
+									id="approval-mode"
+									label="Approval Mode"
+									type="select"
+									bind:value={approvalMode}
+									options={approvalModeOptions}
+									hint="Choose whether exec requests stop for approval or auto-approve."
+								/>
+								<SettingsField
+									id="host-access-mode"
+									label="Host Access Mode"
+									type="select"
+									bind:value={hostAccessMode}
+									options={hostAccessModeOptions}
+									hint="Standard keeps tool execution constrained. Elevated unlocks wider host access."
+								/>
+								<SettingsField
+									id="token-budget"
+									label="Per-Run Token Budget"
+									bind:value={perRunTokenBudget}
+									placeholder="50000"
+									hint="Maximum tokens allowed for a single run."
+								/>
+								<SettingsField
+									id="daily-cost-cap"
+									label="Daily Cost Cap (USD)"
+									bind:value={dailyCostCapUSD}
+									placeholder="5.00"
+									hint="Stop new work when the gateway hits this daily cost ceiling."
+								/>
+								<SettingsField
+									id="telegram-token"
+									label="Telegram Bot Token"
+									type="password"
+									bind:value={telegramBotToken}
+									placeholder="Leave blank to keep the current token"
+									hint="This writes the masked telegram bot token field exposed by /api/settings."
+								/>
+								<div class="flex justify-end">
+									<button
+										type="submit"
+										disabled={saving}
+										class="gc-action gc-action-warning px-4 py-2 disabled:opacity-50"
+									>
+										{saving ? 'SAVING…' : 'SAVE'}
+									</button>
+								</div>
+							</form>
+						{/if}
+					</div>
+
+					<div class="w-full shrink-0 lg:max-w-sm">
+						<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+							<section class="gc-panel-soft px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Rolling Cost</p>
+								<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">
+									{machine?.rolling_cost_label ?? '—'}
+								</p>
+								<p class="gc-copy mt-3 text-[var(--gc-ink-3)]">
+									Current tracked spend for the active billing window.
+								</p>
+							</section>
+
+							<section class="gc-panel-soft px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Active Project</p>
+								<p class="gc-copy mt-3 text-[var(--gc-ink)]">
+									{machine?.active_project_name ?? '—'}
+								</p>
+								<p class="gc-copy mt-2 font-mono text-sm text-[var(--gc-ink-3)]">
+									{machine?.active_project_path ?? '—'}
+								</p>
+								<p class="gc-copy mt-3 text-[var(--gc-ink-3)]">
+									{machine?.active_project_summary ?? 'No project summary'}
+								</p>
+							</section>
+
+							<section class="gc-panel-soft px-4 py-4 sm:col-span-2 lg:col-span-1">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Admin Token</p>
+								<p class="gc-copy mt-3 font-mono text-sm text-[var(--gc-ink-2)]">
+									{machine?.admin_token ?? '—'}
+								</p>
+								<p class="gc-copy mt-3 text-[var(--gc-ink-3)]">
+									Masked in the API response. Use the login flow to rotate it if needed.
+								</p>
+							</section>
+						</div>
+					</div>
+				</div>
+
+				<div class="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">BROWSER ACCESS</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Browser access</h2>
+						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+							The current runtime already exposes the full browser access board through
+							`/api/settings`. Use it to see which browsers are signed in, revoke stale sessions,
+							and unblock a device after review.
+						</p>
+
+						<div class="mt-5 grid gap-4 xl:grid-cols-2">
+							{#if currentDevice}
+								<DeviceAccessCard label="Current Browser" device={currentDevice} />
+							{/if}
+
+							{#each otherActiveDevices as device (device.id)}
+								<DeviceAccessCard
+									label="Signed In Browser"
+									{device}
+									busy={deviceMutationID === device.id}
+									onrevoke={() => {
+										void mutateDevice(device, 'revoke');
+									}}
+									onblock={() => {
+										void mutateDevice(device, 'block');
+									}}
+								/>
+							{/each}
+
+							{#each blockedDevices as device (device.id)}
+								<DeviceAccessCard
+									label="Blocked Browser"
+									{device}
+									busy={deviceMutationID === device.id}
+									onunblock={() => {
+										void mutateDevice(device, 'unblock');
+									}}
+								/>
+							{/each}
+						</div>
+					</section>
+
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">PASSWORD</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
+							{access?.password_configured ? 'Password set' : 'Password required'}
+						</h2>
+						<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+							Changing the browser password signs out other active browsers. Keep the current
+							password handy if you are rotating it from this session.
+						</p>
+
+						<form class="mt-5 flex flex-col gap-4" onsubmit={handlePasswordChange}>
 							<SettingsField
-								id="approval-mode"
-								label="Approval Mode"
-								type="select"
-								bind:value={approvalMode}
-								options={approvalModeOptions}
-								hint="Choose whether exec requests stop for approval or auto-approve."
-							/>
-							<SettingsField
-								id="host-access-mode"
-								label="Host Access Mode"
-								type="select"
-								bind:value={hostAccessMode}
-								options={hostAccessModeOptions}
-								hint="Standard keeps tool execution constrained. Elevated unlocks wider host access."
-							/>
-							<SettingsField
-								id="token-budget"
-								label="Per-Run Token Budget"
-								bind:value={perRunTokenBudget}
-								placeholder="50000"
-								hint="Maximum tokens allowed for a single run."
-							/>
-							<SettingsField
-								id="daily-cost-cap"
-								label="Daily Cost Cap (USD)"
-								bind:value={dailyCostCapUSD}
-								placeholder="5.00"
-								hint="Stop new work when the gateway hits this daily cost ceiling."
-							/>
-							<SettingsField
-								id="telegram-token"
-								label="Telegram Bot Token"
+								id="current-password"
+								label="Current Password"
 								type="password"
-								bind:value={telegramBotToken}
-								placeholder="Leave blank to keep the current token"
-								hint="This writes the masked telegram bot token field exposed by /api/settings."
+								bind:value={currentPassword}
+								placeholder="Current browser password"
+							/>
+							<SettingsField
+								id="new-password"
+								label="New Password"
+								type="password"
+								bind:value={newPassword}
+								placeholder="New browser password"
+							/>
+							<SettingsField
+								id="confirm-password"
+								label="Confirm Password"
+								type="password"
+								bind:value={confirmPassword}
+								placeholder="Repeat the new password"
 							/>
 							<div class="flex justify-end">
 								<button
 									type="submit"
-									disabled={saving}
-									class="gc-action gc-action-warning px-4 py-2 disabled:opacity-50"
+									disabled={passwordSaving}
+									class="gc-action px-4 py-2 disabled:opacity-50"
 								>
-									{saving ? 'SAVING…' : 'SAVE'}
+									{passwordSaving ? 'UPDATING…' : 'UPDATE PASSWORD'}
 								</button>
 							</div>
 						</form>
-					{/if}
-				</div>
-
-				<div class="w-full shrink-0 lg:max-w-sm">
-					<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
-						<section class="gc-panel-soft px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Rolling Cost</p>
-							<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">
-								{machine?.rolling_cost_label ?? '—'}
-							</p>
-							<p class="gc-copy mt-3 text-[var(--gc-ink-3)]">
-								Current tracked spend for the active billing window.
-							</p>
-						</section>
-
-						<section class="gc-panel-soft px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Active Project</p>
-							<p class="gc-copy mt-3 text-[var(--gc-ink)]">
-								{machine?.active_project_name ?? '—'}
-							</p>
-							<p class="gc-copy mt-2 font-mono text-sm text-[var(--gc-ink-3)]">
-								{machine?.active_project_path ?? '—'}
-							</p>
-							<p class="gc-copy mt-3 text-[var(--gc-ink-3)]">
-								{machine?.active_project_summary ?? 'No project summary'}
-							</p>
-						</section>
-
-						<section class="gc-panel-soft px-4 py-4 sm:col-span-2 lg:col-span-1">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Admin Token</p>
-							<p class="gc-copy mt-3 font-mono text-sm text-[var(--gc-ink-2)]">
-								{machine?.admin_token ?? '—'}
-							</p>
-							<p class="gc-copy mt-3 text-[var(--gc-ink-3)]">
-								Masked in the API response. Use the login flow to rotate it if needed.
-							</p>
-						</section>
-					</div>
+					</section>
 				</div>
 			</div>
 		{:else if activeTab === 'agents'}

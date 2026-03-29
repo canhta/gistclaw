@@ -166,8 +166,40 @@ const baseData = {
 			machine: machineSettings,
 			access: {
 				password_configured: true,
-				other_active_devices: [],
-				blocked_devices: []
+				current_device: {
+					id: 'device-current',
+					primary_label: 'MacBook Pro',
+					secondary_line: 'Current browser',
+					current: true,
+					blocked: false,
+					active_sessions: 1,
+					details_ip: '127.0.0.1',
+					details_user_agent: 'Safari 17'
+				},
+				other_active_devices: [
+					{
+						id: 'device-other',
+						primary_label: 'Windows Chrome',
+						secondary_line: 'Signed in 5 minutes ago',
+						current: false,
+						blocked: false,
+						active_sessions: 2,
+						details_ip: '10.0.0.5',
+						details_user_agent: 'Chrome 123'
+					}
+				],
+				blocked_devices: [
+					{
+						id: 'device-blocked',
+						primary_label: 'Linux Firefox',
+						secondary_line: 'Blocked yesterday',
+						current: false,
+						blocked: true,
+						active_sessions: 0,
+						details_ip: '10.0.0.8',
+						details_user_agent: 'Firefox 124'
+					}
+				]
 			}
 		}
 	}
@@ -197,6 +229,18 @@ describe('Config page', () => {
 	it('renders rolling cost label', () => {
 		const { body } = render(ConfigPage, { props: { data: baseData } });
 		expect(body).toContain('$0.42');
+	});
+
+	it('renders browser access and password state on the General tab', () => {
+		const { body } = render(ConfigPage, { props: { data: baseData } });
+		expect(body).toContain('Browser access');
+		expect(body).toContain('Password set');
+		expect(body).toContain('MacBook Pro');
+		expect(body).toContain('Windows Chrome');
+		expect(body).toContain('Linux Firefox');
+		expect(body).toContain('Revoke');
+		expect(body).toContain('Block');
+		expect(body).toContain('Unblock');
 	});
 
 	it('renders team-backed agents and routing details when selected through search', () => {
