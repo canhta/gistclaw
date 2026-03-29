@@ -1,9 +1,25 @@
 package extensionstatus
 
 type Status struct {
+	Notice   string    `json:"notice,omitempty"`
 	Summary  Summary   `json:"summary"`
 	Surfaces []Surface `json:"surfaces"`
 	Tools    []Tool    `json:"tools"`
+}
+
+func FallbackStatus(notice string) Status {
+	return Status{
+		Notice: notice,
+		Summary: Summary{
+			ShippedSurfaces:    0,
+			ConfiguredSurfaces: 0,
+			InstalledTools:     0,
+			ReadyCredentials:   0,
+			MissingCredentials: 0,
+		},
+		Surfaces: []Surface{},
+		Tools:    []Tool{},
+	}
 }
 
 type Summary struct {

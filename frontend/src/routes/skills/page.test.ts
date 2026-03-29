@@ -153,4 +153,17 @@ describe('Skills page', () => {
 		expect(body).toContain('OpenAI-compatible');
 		expect(body).toContain('missing');
 	});
+
+	it('renders the fallback notice without hiding the skills board', () => {
+		const data = {
+			...baseData,
+			skills: {
+				...baseData.skills,
+				notice: 'Extension status source is not wired into this daemon.'
+			}
+		};
+		const { body } = render(SkillsPage, { props: { data } });
+		expect(body).toContain('Extension status source is not wired into this daemon.');
+		expect(body).toContain('Configured extension inventory');
+	});
 });

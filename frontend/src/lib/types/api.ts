@@ -298,6 +298,7 @@ export interface LogsResponse {
 }
 
 export interface UpdateStatusResponse {
+	notice?: string;
 	release: {
 		version: string;
 		commit: string;
@@ -365,6 +366,7 @@ export interface ExtensionToolResponse {
 }
 
 export interface ExtensionStatusResponse {
+	notice?: string;
 	summary: {
 		shipped_surfaces: number;
 		configured_surfaces: number;
@@ -377,6 +379,7 @@ export interface ExtensionStatusResponse {
 }
 
 export interface NodeInventoryResponse {
+	notice?: string;
 	summary: {
 		connectors: number;
 		healthy_connectors: number;

@@ -132,3 +132,46 @@ func TestUpdateStatusReturnsMaintenanceSnapshot(t *testing.T) {
 		t.Fatalf("unexpected guides: %+v", resp.Guides)
 	}
 }
+
+func TestUpdateStatusReturnsFallbackWhenSourceMissing(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/update", nil)
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Notice string `json:"notice"`
+		Release struct {
+			Version string `json:"version"`
+		} `json:"release"`
+		Runtime struct {
+			UptimeLabel string `json:"uptime_label"`
+		} `json:"runtime"`
+		Guides struct {
+			ReleaseNotesURL string `json:"release_notes_url"`
+		} `json:"guides"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode update fallback response: %v", err)
+	}
+
+	if resp.Notice != "Maintenance status source is not wired into this daemon." {
+		t.Fatalf("unexpected notice: %q", resp.Notice)
+	}
+	if resp.Release.Version != "unknown" {
+		t.Fatalf("unexpected fallback release version: %+v", resp.Release)
+	}
+	if resp.Runtime.UptimeLabel != "Unavailable" {
+		t.Fatalf("unexpected fallback runtime: %+v", resp.Runtime)
+	}
+	if resp.Guides.ReleaseNotesURL != "https://github.com/canhta/gistclaw/releases" {
+		t.Fatalf("unexpected fallback guides: %+v", resp.Guides)
+	}
+}

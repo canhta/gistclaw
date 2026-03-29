@@ -1,10 +1,14 @@
 package web
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/canhta/gistclaw/internal/nodeinventory"
+)
 
 func (s *Server) handleNodesStatus(w http.ResponseWriter, r *http.Request) {
 	if s.nodes == nil {
-		http.Error(w, "node inventory unavailable", http.StatusServiceUnavailable)
+		writeJSON(w, http.StatusOK, nodeinventory.FallbackStatus("Node inventory source is not wired into this daemon."))
 		return
 	}
 

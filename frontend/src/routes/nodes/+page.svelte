@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
 	import type { PageData } from './$types';
@@ -31,6 +32,7 @@
 	const activeTab = $derived(activeTabOverride ?? requestedTab);
 	const projectName = $derived(data.project?.active_name ?? 'No project');
 	const projectPath = $derived(data.project?.active_path ?? 'No active project path');
+	const nodesNotice = $derived(data.nodes.notice ?? '');
 </script>
 
 <svelte:head>
@@ -48,6 +50,10 @@
 	</div>
 
 	<div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+		{#if nodesNotice !== ''}
+			<SurfaceMessage label="NODES" message={nodesNotice} className="mb-4" />
+		{/if}
+
 		<div class="grid gap-4 xl:grid-cols-4">
 			<SurfaceMetricCard
 				label="Configured Connectors"

@@ -72,6 +72,7 @@ describe('skills load', () => {
 			throw new Error('expected skills load to return fallback data');
 		}
 
+		expect(result.skills.notice).toBe('Skills status could not be loaded. Reload to retry.');
 		expect(result.skills.summary.shipped_surfaces).toBe(0);
 		expect(result.skills.surfaces).toEqual([]);
 		expect(result.skills.tools).toEqual([]);

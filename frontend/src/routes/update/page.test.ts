@@ -97,4 +97,17 @@ describe('Update page', () => {
 		expect(body).toContain('/var/lib/gistclaw/backups/backup-2026-03-29.db');
 		expect(body).toContain('low_disk_space');
 	});
+
+	it('renders the fallback notice without hiding the update board', () => {
+		const data = {
+			...baseData,
+			update: {
+				...baseData.update,
+				notice: 'Maintenance status source is not wired into this daemon.'
+			}
+		};
+		const { body } = render(UpdatePage, { props: { data } });
+		expect(body).toContain('Maintenance status source is not wired into this daemon.');
+		expect(body).toContain('Run the shipped update path');
+	});
 });

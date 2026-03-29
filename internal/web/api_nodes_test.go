@@ -131,3 +131,41 @@ func TestNodesStatusReturnsInventorySnapshot(t *testing.T) {
 		t.Fatalf("unexpected capabilities: %+v", resp.Capabilities)
 	}
 }
+
+func TestNodesStatusReturnsFallbackWhenSourceMissing(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Notice  string `json:"notice"`
+		Summary struct {
+			Connectors   int `json:"connectors"`
+			Capabilities int `json:"capabilities"`
+		} `json:"summary"`
+		Connectors   []struct{} `json:"connectors"`
+		Runs         []struct{} `json:"runs"`
+		Capabilities []struct{} `json:"capabilities"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode nodes fallback response: %v", err)
+	}
+
+	if resp.Notice != "Node inventory source is not wired into this daemon." {
+		t.Fatalf("unexpected notice: %q", resp.Notice)
+	}
+	if resp.Summary.Connectors != 0 || resp.Summary.Capabilities != 0 {
+		t.Fatalf("unexpected fallback summary: %+v", resp.Summary)
+	}
+	if len(resp.Connectors) != 0 || len(resp.Runs) != 0 || len(resp.Capabilities) != 0 {
+		t.Fatalf("unexpected fallback payload: connectors=%d runs=%d capabilities=%d", len(resp.Connectors), len(resp.Runs), len(resp.Capabilities))
+	}
+}

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
 	import type { PageData } from './$types';
@@ -40,6 +41,7 @@
 			? 'No backup path recorded.'
 			: data.update.storage.latest_backup_path
 	);
+	const updateNotice = $derived(data.update.notice ?? '');
 </script>
 
 <svelte:head>
@@ -57,6 +59,10 @@
 	</div>
 
 	<div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+		{#if updateNotice !== ''}
+			<SurfaceMessage label="UPDATE" message={updateNotice} className="mb-4" />
+		{/if}
+
 		<div class="grid gap-4 xl:grid-cols-4">
 			<SurfaceMetricCard
 				label="Release Version"

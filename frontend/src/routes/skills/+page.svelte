@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceStatusCard from '$lib/components/skills/SurfaceStatusCard.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
@@ -43,6 +44,7 @@
 	const connectorTools = $derived(
 		data.skills.tools.filter((tool) => tool.family === 'connector').length
 	);
+	const skillsNotice = $derived(data.skills.notice ?? '');
 </script>
 
 <svelte:head>
@@ -60,6 +62,10 @@
 	</div>
 
 	<div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+		{#if skillsNotice !== ''}
+			<SurfaceMessage label="SKILLS" message={skillsNotice} className="mb-4" />
+		{/if}
+
 		<div class="grid gap-4 xl:grid-cols-4">
 			<SurfaceMetricCard
 				label="Shipped Surfaces"

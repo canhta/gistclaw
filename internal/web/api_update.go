@@ -1,10 +1,14 @@
 package web
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/canhta/gistclaw/internal/maintenance"
+)
 
 func (s *Server) handleUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	if s.maintenance == nil {
-		http.Error(w, "update status unavailable", http.StatusServiceUnavailable)
+		writeJSON(w, http.StatusOK, maintenance.FallbackStatus("Maintenance status source is not wired into this daemon."))
 		return
 	}
 

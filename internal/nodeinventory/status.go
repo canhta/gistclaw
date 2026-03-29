@@ -1,10 +1,27 @@
 package nodeinventory
 
 type Status struct {
+	Notice       string            `json:"notice,omitempty"`
 	Summary      Summary           `json:"summary"`
 	Connectors   []ConnectorStatus `json:"connectors"`
 	Runs         []RunNode         `json:"runs"`
 	Capabilities []Capability      `json:"capabilities"`
+}
+
+func FallbackStatus(notice string) Status {
+	return Status{
+		Notice: notice,
+		Summary: Summary{
+			Connectors:        0,
+			HealthyConnectors: 0,
+			RunNodes:          0,
+			ApprovalNodes:     0,
+			Capabilities:      0,
+		},
+		Connectors:   []ConnectorStatus{},
+		Runs:         []RunNode{},
+		Capabilities: []Capability{},
+	}
 }
 
 type Summary struct {

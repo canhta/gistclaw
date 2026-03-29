@@ -124,4 +124,17 @@ describe('Nodes page', () => {
 		expect(body).toContain('connector_send');
 		expect(body).toContain('app_action');
 	});
+
+	it('renders the fallback notice without hiding the nodes board', () => {
+		const data = {
+			...baseData,
+			nodes: {
+				...baseData.nodes,
+				notice: 'Node inventory source is not wired into this daemon.'
+			}
+		};
+		const { body } = render(NodesPage, { props: { data } });
+		expect(body).toContain('Node inventory source is not wired into this daemon.');
+		expect(body).toContain('Configured connector inventory');
+	});
 });

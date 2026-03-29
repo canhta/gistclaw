@@ -1,12 +1,53 @@
 package maintenance
 
 type Status struct {
+	Notice  string        `json:"notice,omitempty"`
 	Release ReleaseStatus `json:"release"`
 	Runtime RuntimeStatus `json:"runtime"`
 	Install InstallStatus `json:"install"`
 	Service ServiceStatus `json:"service"`
 	Storage StorageStatus `json:"storage"`
 	Guides  GuideStatus   `json:"guides"`
+}
+
+func FallbackStatus(notice string) Status {
+	return Status{
+		Notice: notice,
+		Release: ReleaseStatus{
+			Version:        "unknown",
+			Commit:         "unknown",
+			BuildDate:      "unknown",
+			BuildDateLabel: "unknown",
+		},
+		Runtime: RuntimeStatus{
+			StartedAtLabel: "Unavailable",
+			UptimeLabel:    "Unavailable",
+		},
+		Install: InstallStatus{
+			ConfigPath:       "Unavailable",
+			StateDir:         "Unavailable",
+			DatabaseDir:      "Unavailable",
+			StorageRoot:      "Unavailable",
+			BinaryPath:       "Unavailable",
+			WorkingDirectory: "Unavailable",
+			ServiceUnitPath:  "Unavailable",
+		},
+		Service: ServiceStatus{
+			RestartPolicy: "unknown",
+			UnitPreview:   "Unavailable",
+		},
+		Storage: StorageStatus{
+			BackupStatus: "unknown",
+			Warnings:     []string{},
+		},
+		Guides: GuideStatus{
+			ReleaseNotesURL: "https://github.com/canhta/gistclaw/releases",
+			UbuntuDocPath:   "docs/install-ubuntu.md",
+			MacOSDocPath:    "docs/install-macos.md",
+			RecoveryDocPath: "docs/recovery.md",
+			ChangelogPath:   "CHANGELOG.md",
+		},
+	}
 }
 
 type ReleaseStatus struct {

@@ -85,6 +85,7 @@ describe('update load', () => {
 			throw new Error('expected update load to return fallback data');
 		}
 
+		expect(result.update.notice).toBe('Update status could not be loaded. Reload to retry.');
 		expect(result.update.release.version).toBe('unknown');
 		expect(result.update.runtime.uptime_label).toBe('Unavailable');
 		expect(result.update.guides.release_notes_url).toBe(

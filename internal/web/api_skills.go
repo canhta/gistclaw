@@ -1,10 +1,14 @@
 package web
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/canhta/gistclaw/internal/extensionstatus"
+)
 
 func (s *Server) handleSkillsStatus(w http.ResponseWriter, r *http.Request) {
 	if s.extensions == nil {
-		http.Error(w, "extension status unavailable", http.StatusServiceUnavailable)
+		writeJSON(w, http.StatusOK, extensionstatus.FallbackStatus("Extension status source is not wired into this daemon."))
 		return
 	}
 

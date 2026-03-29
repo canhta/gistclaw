@@ -111,3 +111,44 @@ func TestSkillsStatusReturnsExtensionSnapshot(t *testing.T) {
 		t.Fatalf("unexpected tools: %+v", resp.Tools)
 	}
 }
+
+func TestSkillsStatusReturnsFallbackWhenSourceMissing(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/skills", nil)
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Notice  string `json:"notice"`
+		Summary struct {
+			ShippedSurfaces int `json:"shipped_surfaces"`
+			InstalledTools  int `json:"installed_tools"`
+		} `json:"summary"`
+		Surfaces []struct {
+			ID string `json:"id"`
+		} `json:"surfaces"`
+		Tools []struct {
+			Name string `json:"name"`
+		} `json:"tools"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode skills fallback response: %v", err)
+	}
+
+	if resp.Notice != "Extension status source is not wired into this daemon." {
+		t.Fatalf("unexpected notice: %q", resp.Notice)
+	}
+	if resp.Summary.ShippedSurfaces != 0 || resp.Summary.InstalledTools != 0 {
+		t.Fatalf("unexpected fallback summary: %+v", resp.Summary)
+	}
+	if len(resp.Surfaces) != 0 || len(resp.Tools) != 0 {
+		t.Fatalf("unexpected fallback payload: surfaces=%+v tools=%+v", resp.Surfaces, resp.Tools)
+	}
+}
