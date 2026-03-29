@@ -1,7 +1,14 @@
-import { buildConversationListSearch, buildSessionsPageHref } from '$lib/conversations/query';
-import { loadConversationDetail } from '$lib/conversations/load';
+import {
+	buildConversationListSearch,
+	buildSessionDeliverySearch,
+	buildSessionsPageHref
+} from '$lib/conversations/query';
 import { buildHistorySearch } from '$lib/history/query';
-import { loadConversations } from '$lib/conversations/load';
+import {
+	loadConversationDeliveryQueue,
+	loadConversationDetail,
+	loadConversations
+} from '$lib/conversations/load';
 import { loadHistory } from '$lib/history/load';
 import type { PageLoad } from './$types';
 
@@ -28,22 +35,39 @@ const emptyHistory = {
 	deliveries: []
 };
 
+const emptyDeliveryQueue = {
+	items: [],
+	paging: {
+		has_next: false,
+		has_prev: false,
+		nextHref: undefined,
+		prevHref: undefined
+	}
+};
+
 export const load: PageLoad = async ({ fetch, url }) => {
 	const search = buildConversationListSearch(url.searchParams);
 	const historySearch = buildHistorySearch(url.searchParams);
 	const historyRequested = url.searchParams.get('tab') === 'history';
 	const selectedSessionID = url.searchParams.get('session')?.trim() ?? '';
 	const selectedDetailRequested = selectedSessionID !== '';
+	const deliverySearch = buildSessionDeliverySearch(url.searchParams, selectedSessionID);
+	const currentSearch = url.searchParams.toString();
 
 	try {
-		const [data, history, selectedDetail] = await Promise.all([
+		const [data, history, selectedDetail, deliveryQueue] = await Promise.all([
 			loadConversations(fetch, search),
 			historyRequested
 				? loadHistory(fetch, historySearch).catch(() => emptyHistory)
 				: Promise.resolve(emptyHistory),
 			selectedDetailRequested
 				? loadConversationDetail(fetch, selectedSessionID).catch(() => null)
-				: Promise.resolve(null)
+				: Promise.resolve(null),
+			selectedDetailRequested
+				? loadConversationDeliveryQueue(fetch, deliverySearch, currentSearch).catch(
+						() => emptyDeliveryQueue
+					)
+				: Promise.resolve(emptyDeliveryQueue)
 		]);
 		return {
 			sessions: {
@@ -69,6 +93,7 @@ export const load: PageLoad = async ({ fetch, url }) => {
 				},
 				runtimeConnectors: data.runtime_connectors ?? [],
 				selectedDetail,
+				deliveryQueue,
 				history: history ?? emptyHistory
 			}
 		};
@@ -97,6 +122,7 @@ export const load: PageLoad = async ({ fetch, url }) => {
 				},
 				runtimeConnectors: [],
 				selectedDetail: null,
+				deliveryQueue: emptyDeliveryQueue,
 				history: emptyHistory
 			}
 		};

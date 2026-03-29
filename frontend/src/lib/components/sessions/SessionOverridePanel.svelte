@@ -1,11 +1,15 @@
 <script lang="ts">
 	import SessionDeliveryBoard from '$lib/components/sessions/SessionDeliveryBoard.svelte';
 	import type { CreateRouteInput } from '$lib/conversations/actions';
-	import type { ConversationDetailResponse } from '$lib/types/api';
+	import type {
+		ConversationDeliveryQueueResponse,
+		ConversationDetailResponse
+	} from '$lib/types/api';
 	import type { RecoverRuntimeHealthResponse } from '$lib/types/api';
 
 	let {
 		detail,
+		deliveryQueue,
 		runtimeConnectors = [],
 		onBindRoute,
 		onDeactivateRoute,
@@ -19,6 +23,7 @@
 		error = ''
 	}: {
 		detail: ConversationDetailResponse;
+		deliveryQueue: ConversationDeliveryQueueResponse;
 		runtimeConnectors?: RecoverRuntimeHealthResponse[];
 		onBindRoute?: (input: CreateRouteInput) => void;
 		onDeactivateRoute?: () => void;
@@ -237,6 +242,6 @@
 	</section>
 
 	<section class="gc-panel-soft flex min-h-0 flex-col overflow-hidden px-0 py-0">
-		<SessionDeliveryBoard {detail} {retryingDeliveryID} {onRetryDelivery} />
+		<SessionDeliveryBoard {detail} {deliveryQueue} {retryingDeliveryID} {onRetryDelivery} />
 	</section>
 </div>

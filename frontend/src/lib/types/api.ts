@@ -391,6 +391,29 @@ export interface ConversationsResponse {
 	runtime_connectors: RecoverRuntimeHealthResponse[];
 }
 
+export interface ConversationDeliveryQueueItemResponse {
+	id: string;
+	run_id: string;
+	session_id: string;
+	conversation_id: string;
+	connector_id: string;
+	chat_id: string;
+	status: string;
+	status_label: string;
+	attempts_label: string;
+	message_preview: string;
+}
+
+export interface ConversationDeliveryQueueResponse {
+	items: ConversationDeliveryQueueItemResponse[];
+	paging: {
+		has_next: boolean;
+		has_prev: boolean;
+		nextHref?: string;
+		prevHref?: string;
+	};
+}
+
 export interface AutomateScheduleResponse {
 	id: string;
 	name: string;

@@ -309,6 +309,33 @@ describe('sessions load', () => {
 				);
 			}
 
+			if (url === '/api/deliveries?session_id=sess-1&limit=50') {
+				return new Response(
+					JSON.stringify({
+						deliveries: [
+							{
+								ID: 'delivery-queue-1',
+								RunID: 'run-queue-1',
+								SessionID: 'sess-1',
+								ConversationID: 'conv-1',
+								ConnectorID: 'telegram',
+								ChatID: 'chat-1',
+								MessageText: 'Queued follow-up',
+								Status: 'terminal',
+								Attempts: 2
+							}
+						],
+						has_next: true,
+						has_prev: false,
+						next_cursor: 'delivery-next'
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
 			throw new Error(`unexpected url: ${url}`);
 		});
 
@@ -320,8 +347,25 @@ describe('sessions load', () => {
 
 		expect(fetcher).toHaveBeenNthCalledWith(1, '/api/conversations', expect.any(Object));
 		expect(fetcher).toHaveBeenNthCalledWith(2, '/api/conversations/sess-1', expect.any(Object));
+		expect(fetcher).toHaveBeenNthCalledWith(
+			3,
+			'/api/deliveries?session_id=sess-1&limit=50',
+			expect.any(Object)
+		);
 		expect(result.sessions.selectedDetail?.session.id).toBe('sess-1');
 		expect(result.sessions.selectedDetail?.route?.id).toBe('route-1');
+		expect(result.sessions.deliveryQueue.items).toHaveLength(1);
+		expect(result.sessions.deliveryQueue.items[0]).toMatchObject({
+			id: 'delivery-queue-1',
+			run_id: 'run-queue-1',
+			connector_id: 'telegram',
+			status_label: 'Terminal',
+			attempts_label: '2 attempts',
+			message_preview: 'Queued follow-up'
+		});
+		expect(result.sessions.deliveryQueue.paging.nextHref).toBe(
+			'/sessions?tab=overrides&session=sess-1&delivery_cursor=delivery-next&delivery_direction=next&delivery_limit=50'
+		);
 	});
 
 	it('returns empty sessions data when the request fails', async () => {
@@ -354,6 +398,15 @@ describe('sessions load', () => {
 				paging: { has_next: false, has_prev: false, nextHref: undefined, prevHref: undefined },
 				runtimeConnectors: [],
 				selectedDetail: null,
+				deliveryQueue: {
+					items: [],
+					paging: {
+						has_next: false,
+						has_prev: false,
+						nextHref: undefined,
+						prevHref: undefined
+					}
+				},
 				history: {
 					summary: {
 						run_count: 0,

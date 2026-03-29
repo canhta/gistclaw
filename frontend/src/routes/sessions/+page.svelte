@@ -6,6 +6,7 @@
 	import SessionOverridePanel from '$lib/components/sessions/SessionOverridePanel.svelte';
 	import SessionRow from '$lib/components/sessions/SessionRow.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
+	import { buildSessionDeliverySearch } from '$lib/conversations/query';
 	import {
 		createRoute,
 		deactivateRoute,
@@ -13,8 +14,11 @@
 		sendRouteMessage,
 		type CreateRouteInput
 	} from '$lib/conversations/actions';
-	import { loadConversationDetail } from '$lib/conversations/load';
-	import type { ConversationDetailResponse } from '$lib/types/api';
+	import { loadConversationDeliveryQueue, loadConversationDetail } from '$lib/conversations/load';
+	import type {
+		ConversationDeliveryQueueResponse,
+		ConversationDetailResponse
+	} from '$lib/types/api';
 	import type { PageData } from './$types';
 
 	type TabID = 'list' | 'overrides' | 'history';
@@ -29,10 +33,23 @@
 	const initialSelectedDetail = untrack(
 		() => data.sessions.selectedDetail as ConversationDetailResponse | null
 	);
+	const initialDeliveryQueue = untrack(
+		() => data.sessions.deliveryQueue as ConversationDeliveryQueueResponse
+	);
+	const emptyDeliveryQueue: ConversationDeliveryQueueResponse = {
+		items: [],
+		paging: {
+			has_next: false,
+			has_prev: false,
+			nextHref: undefined,
+			prevHref: undefined
+		}
+	};
 
 	let activeTabOverride = $state<TabID | null>(null);
 	let selectedID = $state<string | null>(initialSelectedDetail?.session.id ?? null);
 	let detail = $state<ConversationDetailResponse | null>(initialSelectedDetail);
+	let deliveryQueue = $state<ConversationDeliveryQueueResponse>(initialDeliveryQueue);
 	let detailLoading = $state(false);
 	let detailError = $state('');
 	let bindingRoute = $state(false);
@@ -68,6 +85,7 @@
 		if (selectedID === id) {
 			selectedID = null;
 			detail = null;
+			deliveryQueue = emptyDeliveryQueue;
 			detailError = '';
 			detailActionNotice = '';
 			detailActionError = '';
@@ -81,9 +99,20 @@
 		detailActionError = '';
 
 		try {
-			detail = await loadConversationDetail(globalThis.fetch.bind(globalThis), id);
+			const nextSearch = buildOverridesSearch(id);
+			const [nextDetail, nextDeliveryQueue] = await Promise.all([
+				loadConversationDetail(globalThis.fetch.bind(globalThis), id),
+				loadConversationDeliveryQueue(
+					globalThis.fetch.bind(globalThis),
+					buildSessionDeliverySearch(new URLSearchParams(nextSearch), id),
+					nextSearch
+				).catch(() => emptyDeliveryQueue)
+			]);
+			detail = nextDetail;
+			deliveryQueue = nextDeliveryQueue;
 		} catch {
 			detail = null;
+			deliveryQueue = emptyDeliveryQueue;
 			detailError = 'Failed to load session detail.';
 		} finally {
 			detailLoading = false;
@@ -105,6 +134,32 @@
 		void goto('/sessions?tab=history');
 	}
 
+	function buildOverridesSearch(sessionID: string): string {
+		const current = new URLSearchParams(data.currentSearch);
+		const entries = Array.from(current.entries()).filter(
+			([key]) => key !== 'tab' && key !== 'session'
+		);
+		return new URLSearchParams([
+			...entries,
+			['tab', 'overrides'],
+			['session', sessionID]
+		]).toString();
+	}
+
+	async function refreshSelectedSessionState(sessionID: string): Promise<void> {
+		const nextSearch = buildOverridesSearch(sessionID);
+		const [nextDetail, nextDeliveryQueue] = await Promise.all([
+			loadConversationDetail(globalThis.fetch.bind(globalThis), sessionID),
+			loadConversationDeliveryQueue(
+				globalThis.fetch.bind(globalThis),
+				buildSessionDeliverySearch(new URLSearchParams(nextSearch), sessionID),
+				nextSearch
+			).catch(() => emptyDeliveryQueue)
+		]);
+		detail = nextDetail;
+		deliveryQueue = nextDeliveryQueue;
+	}
+
 	async function handleRetryDelivery(deliveryID: string): Promise<void> {
 		if (!detail) {
 			return;
@@ -115,15 +170,12 @@
 		detailActionError = '';
 
 		try {
-			await retryConversationDelivery(
-				globalThis.fetch.bind(globalThis),
-				detail.session.id,
-				deliveryID
-			);
+			const sessionID = detail.session.id;
+			await retryConversationDelivery(globalThis.fetch.bind(globalThis), sessionID, deliveryID);
 			detailActionNotice = 'Delivery requeued.';
 
 			try {
-				detail = await loadConversationDetail(globalThis.fetch.bind(globalThis), detail.session.id);
+				await refreshSelectedSessionState(sessionID);
 			} catch {
 				detailActionNotice = 'Delivery requeued. Refresh the session to see the latest state.';
 			}
@@ -147,11 +199,12 @@
 		detailActionError = '';
 
 		try {
+			const sessionID = detail.session.id;
 			await deactivateRoute(globalThis.fetch.bind(globalThis), detail.route.id);
 			detailActionNotice = 'Route deactivated.';
 
 			try {
-				detail = await loadConversationDetail(globalThis.fetch.bind(globalThis), detail.session.id);
+				await refreshSelectedSessionState(sessionID);
 			} catch {
 				detailActionNotice = 'Route deactivated. Refresh the session to see the latest state.';
 			}
@@ -175,11 +228,12 @@
 		detailActionError = '';
 
 		try {
+			const sessionID = detail.session.id;
 			await createRoute(globalThis.fetch.bind(globalThis), input);
 			detailActionNotice = 'Route bound.';
 
 			try {
-				detail = await loadConversationDetail(globalThis.fetch.bind(globalThis), detail.session.id);
+				await refreshSelectedSessionState(sessionID);
 			} catch {
 				detailActionNotice = 'Route bound. Refresh the session to see the latest state.';
 			}
@@ -201,6 +255,7 @@
 		detailActionError = '';
 
 		try {
+			const sessionID = detail.session.id;
 			const response = await sendRouteMessage(
 				globalThis.fetch.bind(globalThis),
 				detail.route.id,
@@ -209,7 +264,7 @@
 			detailActionNotice = `Route message queued in run ${response.run_id}.`;
 
 			try {
-				detail = await loadConversationDetail(globalThis.fetch.bind(globalThis), detail.session.id);
+				await refreshSelectedSessionState(sessionID);
 			} catch {
 				detailActionNotice = `Route message queued in run ${response.run_id}. Refresh the session to see the latest state.`;
 			}
@@ -430,6 +485,7 @@
 				{#if detail}
 					<SessionOverridePanel
 						{detail}
+						{deliveryQueue}
 						{runtimeConnectors}
 						{bindingRoute}
 						{deactivatingRoute}

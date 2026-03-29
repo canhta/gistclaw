@@ -10,6 +10,14 @@ const conversationListKeys = [
 	'limit'
 ] as const;
 
+const sessionDeliveryKeyMap = {
+	delivery_q: 'q',
+	delivery_status: 'status',
+	delivery_cursor: 'cursor',
+	delivery_direction: 'direction',
+	delivery_limit: 'limit'
+} as const;
+
 export function buildConversationListSearch(params: URLSearchParams): string {
 	const next = new URLSearchParams();
 
@@ -18,6 +26,29 @@ export function buildConversationListSearch(params: URLSearchParams): string {
 		if (value != null && value.trim() !== '') {
 			next.set(key, value);
 		}
+	}
+
+	return next.toString();
+}
+
+export function buildSessionDeliverySearch(params: URLSearchParams, sessionID: string): string {
+	const next = new URLSearchParams();
+	const normalizedSessionID = sessionID.trim();
+	if (normalizedSessionID === '') {
+		return '';
+	}
+
+	next.set('session_id', normalizedSessionID);
+
+	for (const [sourceKey, targetKey] of Object.entries(sessionDeliveryKeyMap)) {
+		const value = params.get(sourceKey);
+		if (value != null && value.trim() !== '') {
+			next.set(targetKey, value);
+		}
+	}
+
+	if (!next.has('limit')) {
+		next.set('limit', '50');
 	}
 
 	return next.toString();
@@ -39,6 +70,30 @@ export function buildSessionsPageHref(
 	if (tab != null && tab.trim() !== '') {
 		next.set('tab', tab);
 	}
+
+	const suffix = next.toString();
+	return suffix === '' ? '/sessions' : `/sessions?${suffix}`;
+}
+
+export function buildSessionsDeliveryHref(
+	cursor: string | undefined,
+	direction: 'next' | 'prev',
+	sessionID: string,
+	currentSearch = '',
+	limit?: string
+): string | undefined {
+	if (cursor == null || cursor.trim() === '' || sessionID.trim() === '') {
+		return undefined;
+	}
+
+	const next = new URLSearchParams(currentSearch);
+	next.set('tab', 'overrides');
+	next.set('session', sessionID);
+	next.set('delivery_cursor', cursor);
+	next.set('delivery_direction', direction);
+
+	const resolvedLimit = limit?.trim() || next.get('delivery_limit')?.trim() || '50';
+	next.set('delivery_limit', resolvedLimit);
 
 	const suffix = next.toString();
 	return suffix === '' ? '/sessions' : `/sessions?${suffix}`;

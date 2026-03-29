@@ -29,6 +29,10 @@ const baseData = {
 		paging: { has_next: false, has_prev: false, nextHref: undefined, prevHref: undefined },
 		runtimeConnectors: [],
 		selectedDetail: null,
+		deliveryQueue: {
+			items: [],
+			paging: { has_next: false, has_prev: false, nextHref: undefined, prevHref: undefined }
+		},
 		history: {
 			summary: {
 				run_count: 0,
@@ -186,6 +190,29 @@ describe('Sessions page', () => {
 							created_at_label: 'just now'
 						}
 					]
+				},
+				deliveryQueue: {
+					items: [
+						{
+							id: 'delivery-queue-1',
+							run_id: 'run-queue-1',
+							session_id: 'sess-1',
+							conversation_id: 'conv-1',
+							connector_id: 'telegram',
+							chat_id: 'chat-1',
+							status: 'terminal',
+							status_label: 'Terminal',
+							attempts_label: '2 attempts',
+							message_preview: 'Queued follow-up'
+						}
+					],
+					paging: {
+						has_next: true,
+						has_prev: false,
+						nextHref:
+							'/sessions?tab=overrides&session=sess-1&delivery_cursor=delivery-next&delivery_direction=next&delivery_limit=50',
+						prevHref: undefined
+					}
 				}
 			}
 		};
@@ -198,6 +225,10 @@ describe('Sessions page', () => {
 		expect(body).toContain('Message body');
 		expect(body).toContain('Wake the bound session with a manual operator message.');
 		expect(body).toContain('Send message');
+		expect(body).toContain('Session delivery queue');
+		expect(body).toContain('run-queue-1');
+		expect(body).toContain('Queued follow-up');
+		expect(body).toContain('Next queue page');
 		expect(body).toContain('Retry delivery');
 		expect(body).toContain('Webhook delivery');
 	});
