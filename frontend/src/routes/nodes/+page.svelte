@@ -50,93 +50,167 @@
 	<div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
 		<div class="grid gap-4 xl:grid-cols-4">
 			<SurfaceMetricCard
-				label="Inventory"
-				value="Deferred"
-				detail="GistClaw does not expose a dedicated node inventory endpoint yet."
-				tone="warning"
-			/>
-			<SurfaceMetricCard
-				label="Capability Registry"
-				value="Shipped"
-				detail="Direct runtime capabilities already exist under the generic seam."
+				label="Configured Connectors"
+				value={String(data.nodes.summary.connectors)}
+				detail={`${data.nodes.summary.approval_nodes} approval-bound nodes visible`}
 				tone="accent"
 			/>
 			<SurfaceMetricCard
-				label="Exec Surface"
-				value="Run Graph"
-				detail="Live node detail still comes from work graphs and recovery surfaces."
+				label="Healthy Connectors"
+				value={String(data.nodes.summary.healthy_connectors)}
+				detail={`${data.nodes.summary.connectors - data.nodes.summary.healthy_connectors} connectors need attention`}
+			/>
+			<SurfaceMetricCard
+				label="Capability Tools"
+				value={String(data.nodes.summary.capabilities)}
+				detail={`${data.nodes.summary.run_nodes} recent run nodes loaded`}
 			/>
 			<SurfaceMetricCard label="Project" value={projectName} detail={projectPath} tone="accent" />
 		</div>
 
 		{#if activeTab === 'list'}
-			<div class="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.75fr)]">
+			<div class="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
 				<section class="gc-panel-soft px-5 py-5">
 					<p class="gc-stamp text-[var(--gc-ink-3)]">LIST</p>
-					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
-						Node inventory is waiting on a dedicated backend.
-					</h2>
+					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Configured connector inventory</h2>
 					<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-						GistClaw already exposes live run nodes, but not a standalone machine inventory. This
-						page should eventually unify worker availability, bound execution targets, and
-						capability claims without inventing them ahead of the runtime.
+						This inventory stays inside the shipped runtime boundary: configured connectors on one
+						side, recent run nodes from the active project on the other.
 					</p>
 
-					<div class="mt-5 grid gap-3 md:grid-cols-3">
-						<div class="border border-[var(--gc-border)] px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Run Graph</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-								Use Chat to inspect active run nodes, path state, and node-level graph detail.
-							</p>
-						</div>
-						<div class="border border-[var(--gc-border)] px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Debug</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-								Use Debug for machine health, queue signal, and current runtime posture.
-							</p>
-						</div>
-						<div class="border border-[var(--gc-border)] px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Recovery</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-								Use Recover when node-linked work needs operator intervention or approval.
-							</p>
-						</div>
+					<div class="mt-6 grid gap-4 lg:grid-cols-2">
+						<section class="border border-[var(--gc-border)] px-4 py-4">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Connectors</p>
+							{#if data.nodes.connectors.length === 0}
+								<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">No configured connectors found.</p>
+							{:else}
+								<div class="mt-4 grid gap-4">
+									{#each data.nodes.connectors as connector (connector.id)}
+										<div
+											class="border-t border-[var(--gc-border)] pt-4 first:border-t-0 first:pt-0"
+										>
+											<div class="flex items-center justify-between gap-3">
+												<p class="gc-panel-title text-[var(--gc-ink)]">{connector.id}</p>
+												<span class="gc-badge border-[var(--gc-border)] text-[var(--gc-ink-2)]">
+													{connector.state_label}
+												</span>
+											</div>
+											<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+												{connector.exposure}{#if connector.aliases.length > 0}
+													{` · aliases ${connector.aliases.join(', ')}`}
+												{/if}
+											</p>
+											<p class="gc-copy mt-2 text-[var(--gc-ink)]">{connector.summary}</p>
+											{#if connector.checked_at_label !== ''}
+												<p class="gc-machine mt-2">{connector.checked_at_label}</p>
+											{/if}
+											{#if connector.restart_suggested}
+												<p class="gc-machine mt-2 text-[var(--gc-warning)]">restart suggested</p>
+											{/if}
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</section>
+
+						<section class="border border-[var(--gc-border)] px-4 py-4">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Recent run nodes</p>
+							{#if data.nodes.runs.length === 0}
+								<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">No recent run nodes found.</p>
+							{:else}
+								<div class="mt-4 grid gap-4">
+									{#each data.nodes.runs as run (run.id)}
+										<div
+											class="border-t border-[var(--gc-border)] pt-4 first:border-t-0 first:pt-0"
+										>
+											<div class="flex items-center justify-between gap-3">
+												<p class="gc-panel-title text-[var(--gc-ink)]">{run.short_id}</p>
+												<span class="gc-badge border-[var(--gc-border)] text-[var(--gc-ink-2)]">
+													{run.status_label}
+												</span>
+											</div>
+											<p class="gc-copy mt-2 text-[var(--gc-ink)]">{run.objective_preview}</p>
+											<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+												{run.kind} · {run.agent_id}
+											</p>
+											<p class="gc-machine mt-2">
+												{run.started_at_label} · {run.updated_at_label}
+											</p>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</section>
 					</div>
 				</section>
 
 				<section class="gc-panel-soft px-5 py-5">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">Operator note</p>
-					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Keep node facts runtime-owned</h2>
-					<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-						This surface should eventually reflect durable runtime claims, not a frontend-only list
-						of imagined workers or devices.
-					</p>
+					<p class="gc-stamp text-[var(--gc-ink-3)]">Operator focus</p>
+					<div class="mt-4 space-y-4">
+						<div>
+							<p class="gc-panel-title text-[var(--gc-ink)]">Connector posture</p>
+							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+								Use this board to see which configured connectors are healthy, degraded, or asking
+								for a restart.
+							</p>
+						</div>
+						<div>
+							<p class="gc-panel-title text-[var(--gc-ink)]">Run-node pressure</p>
+							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+								Recent run nodes give a quick inventory of root and worker activity without
+								pretending there is a separate worker-control plane.
+							</p>
+						</div>
+					</div>
 				</section>
 			</div>
 		{:else}
-			<div class="mt-6 grid gap-4 lg:grid-cols-2">
+			<div class="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
 				<section class="gc-panel-soft px-5 py-5">
 					<p class="gc-stamp text-[var(--gc-ink-3)]">CAPABILITIES</p>
-					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
-						Capability seams ship before node inventory.
-					</h2>
+					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Direct runtime capability tools</h2>
 					<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-						The runtime already knows about transport and app capabilities. What is missing is the
-						inventory and reporting layer that turns those claims into a node supervision surface.
+						These are the registered direct tools currently available through the shipped runtime
+						seam. They describe what the runtime can ask connectors or the app boundary to do right
+						now.
 					</p>
+
+					{#if data.nodes.capabilities.length === 0}
+						<p class="gc-copy mt-4 text-[var(--gc-ink-2)]">
+							No direct capability tools registered.
+						</p>
+					{:else}
+						<div class="mt-5 grid gap-4">
+							{#each data.nodes.capabilities as capability (capability.name)}
+								<div class="border border-[var(--gc-border)] px-4 py-4">
+									<div class="flex items-center justify-between gap-3">
+										<p class="gc-machine text-[var(--gc-ink)]">{capability.name}</p>
+										<span class="gc-badge border-[var(--gc-border)] text-[var(--gc-ink-2)]">
+											{capability.family}
+										</span>
+									</div>
+									<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">{capability.description}</p>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				</section>
 
 				<section class="gc-panel-soft px-5 py-5">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">SHIPPED EXAMPLES</p>
-					<div class="mt-3 grid gap-3">
-						<div class="border border-[var(--gc-border)] px-4 py-3">
-							<p class="gc-machine text-[var(--gc-ink)]">connector_inbox_list</p>
+					<p class="gc-stamp text-[var(--gc-ink-3)]">Capability posture</p>
+					<div class="mt-4 space-y-4">
+						<div>
+							<p class="gc-panel-title text-[var(--gc-ink)]">Connector tools</p>
+							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+								Connector tools cover inbox, directory, target resolution, send, and live status
+								operations.
+							</p>
 						</div>
-						<div class="border border-[var(--gc-border)] px-4 py-3">
-							<p class="gc-machine text-[var(--gc-ink)]">connector_send</p>
-						</div>
-						<div class="border border-[var(--gc-border)] px-4 py-3">
-							<p class="gc-machine text-[var(--gc-ink)]">system.run</p>
+						<div>
+							<p class="gc-panel-title text-[var(--gc-ink)]">App actions</p>
+							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+								App actions stay on the runtime boundary for operator-safe product actions.
+							</p>
 						</div>
 					</div>
 				</section>

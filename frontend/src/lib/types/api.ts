@@ -343,6 +343,43 @@ export interface UpdateStatusResponse {
 	};
 }
 
+export interface NodeInventoryResponse {
+	summary: {
+		connectors: number;
+		healthy_connectors: number;
+		run_nodes: number;
+		approval_nodes: number;
+		capabilities: number;
+	};
+	connectors: Array<{
+		id: string;
+		aliases: string[];
+		exposure: string;
+		state: string;
+		state_label: string;
+		summary: string;
+		checked_at_label: string;
+		restart_suggested: boolean;
+	}>;
+	runs: Array<{
+		id: string;
+		short_id: string;
+		parent_run_id: string;
+		kind: string;
+		agent_id: string;
+		status: string;
+		status_label: string;
+		objective_preview: string;
+		started_at_label: string;
+		updated_at_label: string;
+	}>;
+	capabilities: Array<{
+		name: string;
+		family: string;
+		description: string;
+	}>;
+}
+
 export interface TeamProfileResponse {
 	id: string;
 	label: string;

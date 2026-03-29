@@ -13,6 +13,7 @@ import (
 	"github.com/canhta/gistclaw/internal/logstream"
 	"github.com/canhta/gistclaw/internal/maintenance"
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/nodeinventory"
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
 	"github.com/canhta/gistclaw/internal/scheduler"
@@ -26,6 +27,7 @@ type Options struct {
 	Runtime         *runtime.Runtime
 	Logs            *logstream.Sink
 	Maintenance     maintenanceSource
+	Nodes           nodeInventorySource
 	Schedules       scheduleService
 	StorageRoot     string
 	WhatsAppWebhook http.Handler
@@ -39,6 +41,7 @@ type Server struct {
 	rt              *runtime.Runtime
 	logs            *logstream.Sink
 	maintenance     maintenanceSource
+	nodes           nodeInventorySource
 	schedules       scheduleService
 	storageRoot     string
 	whatsAppWebhook http.Handler
@@ -52,6 +55,10 @@ type connectorHealthSource interface {
 
 type maintenanceSource interface {
 	MaintenanceStatus(context.Context) (maintenance.Status, error)
+}
+
+type nodeInventorySource interface {
+	NodeInventoryStatus(context.Context) (nodeinventory.Status, error)
 }
 
 type scheduleService interface {
@@ -96,6 +103,7 @@ func NewServer(opts Options) (*Server, error) {
 		rt:              opts.Runtime,
 		logs:            opts.Logs,
 		maintenance:     opts.Maintenance,
+		nodes:           opts.Nodes,
 		schedules:       opts.Schedules,
 		storageRoot:     opts.StorageRoot,
 		whatsAppWebhook: opts.WhatsAppWebhook,
@@ -175,6 +183,7 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("POST /api/automate/{id}/disable", s.adminAuth(http.HandlerFunc(s.handleAutomateDisable)))
 	s.mux.Handle("POST /api/automate/{id}/run", s.adminAuth(http.HandlerFunc(s.handleAutomateRun)))
 	s.mux.HandleFunc("GET /api/history", s.handleHistoryIndex)
+	s.mux.HandleFunc("GET /api/nodes", s.handleNodesStatus)
 	s.mux.HandleFunc("GET /api/update", s.handleUpdateStatus)
 	s.mux.HandleFunc("GET /api/settings", s.handleSettingsAPI)
 	s.mux.Handle("POST /api/settings", s.adminAuth(http.HandlerFunc(s.handleSettingsUpdateAPI)))

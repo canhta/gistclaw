@@ -44,6 +44,7 @@ type App struct {
 	scheduler        *scheduler.Service
 	replay           *replay.Service
 	logs             *logstream.Sink
+	toolRegistry     *tools.Registry
 	webServer        *web.Server
 	connectors       []model.Connector
 	supervisor       *connectorSupervisor
@@ -164,16 +165,17 @@ func Bootstrap(cfg Config) (*App, error) {
 	connectorNotifier.SetConnectors(connectors)
 
 	application := &App{
-		cfg:        cfg,
-		db:         db,
-		convStore:  convStore,
-		runtime:    rt,
-		scheduler:  sched,
-		replay:     rp,
-		logs:       logs,
-		connectors: connectors,
-		toolCloser: toolCloser,
-		startedAt:  time.Now().UTC(),
+		cfg:          cfg,
+		db:           db,
+		convStore:    convStore,
+		runtime:      rt,
+		scheduler:    sched,
+		replay:       rp,
+		logs:         logs,
+		toolRegistry: reg,
+		connectors:   connectors,
+		toolCloser:   toolCloser,
+		startedAt:    time.Now().UTC(),
 	}
 	capabilityRegistry.RegisterAppAction("status", application)
 
@@ -184,6 +186,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		Runtime:         rt,
 		Logs:            logs,
 		Maintenance:     application,
+		Nodes:           application,
 		Schedules:       application,
 		StorageRoot:     cfg.StorageRoot,
 		WhatsAppWebhook: buildWhatsAppWebhook(cfg, db, convStore, rt, whatsappHealth),
