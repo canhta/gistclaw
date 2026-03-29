@@ -96,6 +96,39 @@ const baseData = {
 	currentSearch: '',
 	config: {
 		work: workData,
+		knowledge: {
+			headline: 'Filtered knowledge for the current project.',
+			filters: {
+				query: 'operator',
+				scope: 'local',
+				agent_id: 'assistant',
+				limit: 5
+			},
+			summary: {
+				visible_count: 1
+			},
+			items: [
+				{
+					id: 'mem-1',
+					agent_id: 'assistant',
+					scope: 'local',
+					content: 'capture operator preference',
+					source: 'model',
+					provenance: 'Captured from review run',
+					confidence: 0.92,
+					created_at_label: '2026-03-29 09:00',
+					updated_at_label: '2026-03-29 10:00'
+				}
+			],
+			paging: {
+				has_next: true,
+				has_prev: false,
+				next_cursor: 'cursor-next',
+				nextHref:
+					'/config?tab=general&knowledge_q=operator&knowledge_scope=local&knowledge_agent_id=assistant&knowledge_limit=5&knowledge_cursor=cursor-next&knowledge_direction=next',
+				prevHref: undefined
+			}
+		},
 		team: {
 			notice: 'Loaded from team file',
 			active_profile: {
@@ -241,6 +274,27 @@ describe('Config page', () => {
 		expect(body).toContain('Revoke');
 		expect(body).toContain('Block');
 		expect(body).toContain('Unblock');
+		expect(body).toContain('Saved knowledge');
+		expect(body).toContain('Filtered knowledge for the current project.');
+		expect(body).toContain('capture operator preference');
+		expect(body).toContain('Search knowledge');
+		expect(body).toContain('Knowledge scope');
+		expect(body).toContain('Agent');
+		expect(body).toContain('Knowledge limit');
+		expect(body).toContain('Next knowledge page');
+	});
+
+	it('renders a knowledge-unavailable message when /api/knowledge data is missing', () => {
+		const data = {
+			...baseData,
+			config: {
+				...baseData.config,
+				knowledge: null
+			}
+		};
+		const { body } = render(ConfigPage, { props: { data } });
+		expect(body).toContain('Knowledge surface unavailable');
+		expect(body).toContain('/api/knowledge');
 	});
 
 	it('renders team-backed agents and routing details when selected through search', () => {

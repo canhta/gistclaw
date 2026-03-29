@@ -258,6 +258,8 @@ export interface KnowledgeResponse {
 		prev_cursor?: string;
 		has_next: boolean;
 		has_prev: boolean;
+		nextHref?: string;
+		prevHref?: string;
 	};
 }
 

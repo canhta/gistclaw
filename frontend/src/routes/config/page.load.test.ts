@@ -1,12 +1,15 @@
 import { describe, expect, it, vi } from 'vitest';
 import { load } from './+page';
 
-function makeLoadEvent(fetcher: typeof fetch): Parameters<typeof load>[0] {
-	return { fetch: fetcher } as unknown as Parameters<typeof load>[0];
+function makeLoadEvent(fetcher: typeof fetch, search = ''): Parameters<typeof load>[0] {
+	return {
+		fetch: fetcher,
+		url: new URL(`http://localhost/config${search}`)
+	} as unknown as Parameters<typeof load>[0];
 }
 
 describe('config load', () => {
-	it('loads settings, team data, and recent work for config', async () => {
+	it('loads settings, team data, recent work, and knowledge for config', async () => {
 		const fetcher = vi.fn<typeof fetch>(async (input) => {
 			if (input === '/api/settings') {
 				return new Response(
@@ -153,10 +156,54 @@ describe('config load', () => {
 				);
 			}
 
+			if (input === '/api/knowledge?q=operator&scope=local&agent_id=assistant&limit=5') {
+				return new Response(
+					JSON.stringify({
+						headline: 'Filtered knowledge for the current project.',
+						filters: {
+							query: 'operator',
+							scope: 'local',
+							agent_id: 'assistant',
+							limit: 5
+						},
+						summary: {
+							visible_count: 1
+						},
+						items: [
+							{
+								id: 'mem-1',
+								agent_id: 'assistant',
+								scope: 'local',
+								content: 'capture operator preference',
+								source: 'model',
+								provenance: 'Captured from review run',
+								confidence: 0.92,
+								created_at_label: '2026-03-29 09:00',
+								updated_at_label: '2026-03-29 10:00'
+							}
+						],
+						paging: {
+							has_next: true,
+							has_prev: false,
+							next_cursor: 'cursor-next'
+						}
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
 			throw new Error(`unexpected request: ${String(input)}`);
 		});
 
-		const result = await load(makeLoadEvent(fetcher));
+		const result = await load(
+			makeLoadEvent(
+				fetcher,
+				'?tab=general&knowledge_q=operator&knowledge_scope=local&knowledge_agent_id=assistant&knowledge_limit=5'
+			)
+		);
 
 		if (!result) {
 			throw new Error('expected config load to return data');
@@ -165,16 +212,64 @@ describe('config load', () => {
 		expect(fetcher).toHaveBeenNthCalledWith(1, '/api/settings', expect.any(Object));
 		expect(fetcher).toHaveBeenNthCalledWith(2, '/api/team', expect.any(Object));
 		expect(fetcher).toHaveBeenNthCalledWith(3, '/api/work', expect.any(Object));
+		expect(fetcher).toHaveBeenNthCalledWith(
+			4,
+			'/api/knowledge?q=operator&scope=local&agent_id=assistant&limit=5',
+			expect.any(Object)
+		);
 		expect(result.config.settings?.machine.per_run_token_budget).toBe('50000');
 		expect(result.config.team?.team.name).toBe('Repo Task Team');
 		expect(result.config.team?.team.front_agent_id).toBe('assistant');
 		expect(result.config.work?.clusters[0]?.root.model_display).toBe('gpt-5.4');
+		expect(result.config.knowledge?.summary.visible_count).toBe(1);
+		expect(result.config.knowledge?.items[0]?.content).toBe('capture operator preference');
+		expect(result.config.knowledge?.paging.nextHref).toBe(
+			'/config?tab=general&knowledge_q=operator&knowledge_scope=local&knowledge_agent_id=assistant&knowledge_limit=5&knowledge_cursor=cursor-next&knowledge_direction=next'
+		);
 	});
 
 	it('returns partial fallback data when one request fails', async () => {
 		const fetcher = vi.fn<typeof fetch>(async (input) => {
 			if (input === '/api/settings') {
 				throw new Error('boom');
+			}
+
+			if (input === '/api/knowledge') {
+				return new Response(
+					JSON.stringify({
+						headline: 'Knowledge shaping future work in this project.',
+						filters: {
+							query: '',
+							scope: '',
+							agent_id: '',
+							limit: 20
+						},
+						summary: {
+							visible_count: 1
+						},
+						items: [
+							{
+								id: 'mem-1',
+								agent_id: 'assistant',
+								scope: 'project',
+								content: 'remember team preference',
+								source: 'model',
+								provenance: 'Captured from prior run',
+								confidence: 0.81,
+								created_at_label: '2026-03-29 08:00',
+								updated_at_label: '2026-03-29 08:30'
+							}
+						],
+						paging: {
+							has_next: false,
+							has_prev: false
+						}
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
 			}
 
 			return new Response(
@@ -292,6 +387,11 @@ describe('config load', () => {
 							})
 						})
 					]
+				}),
+				knowledge: expect.objectContaining({
+					summary: expect.objectContaining({
+						visible_count: 1
+					})
 				})
 			}
 		});

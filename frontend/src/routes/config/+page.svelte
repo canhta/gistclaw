@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import { resolve } from '$app/paths';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import DeviceAccessCard from '$lib/components/common/DeviceAccessCard.svelte';
 	import SettingsField from '$lib/components/config/SettingsField.svelte';
@@ -44,6 +45,12 @@
 	const hostAccessModeOptions = [
 		{ value: 'standard', label: 'Standard' },
 		{ value: 'elevated', label: 'Elevated' }
+	];
+
+	const knowledgeScopeOptions = [
+		{ value: '', label: 'All scopes' },
+		{ value: 'local', label: 'Local' },
+		{ value: 'team', label: 'Team' }
 	];
 
 	let activeTabOverride = $state<TabID | null>(null);
@@ -94,6 +101,23 @@
 		return values.length > 0 ? values.join(', ') : 'None';
 	}
 
+	function formatKnowledgeScope(scope: string): string {
+		if (scope === 'local') {
+			return 'Local';
+		}
+
+		if (scope === 'team') {
+			return 'Team';
+		}
+
+		return scope.trim() === '' ? 'Project' : scope;
+	}
+
+	function formatKnowledgeConfidence(confidence: number): string {
+		const normalized = Number.isFinite(confidence) ? confidence : 0;
+		return `${Math.round(normalized * 100)}% confidence`;
+	}
+
 	const requestedTab = $derived.by<TabID>(() => {
 		const tab = new URLSearchParams(data.currentSearch).get('tab');
 		return isTabID(tab) ? tab : 'general';
@@ -110,6 +134,7 @@
 	const inactiveProfiles = $derived(profiles.filter((profile) => !profile.active));
 	const members = $derived(team?.members ?? []);
 	const work = $derived(data.config?.work ?? null);
+	const knowledge = $derived(data.config?.knowledge ?? null);
 	const modelUsage = $derived(summarizeModelUsage(work?.clusters));
 	const currentDevice = $derived(access?.current_device ?? null);
 	const otherActiveDevices = $derived(access?.other_active_devices ?? []);
@@ -654,6 +679,229 @@
 								</button>
 							</div>
 						</form>
+					</section>
+				</div>
+
+				<div class="mt-6">
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">SAVED KNOWLEDGE</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Saved knowledge</h2>
+
+						{#if knowledge}
+							<p class="gc-copy mt-3 max-w-3xl text-[var(--gc-ink-2)]">
+								{knowledge.headline}
+							</p>
+
+							<form method="GET" class="mt-5 grid gap-4 xl:grid-cols-4">
+								<input type="hidden" name="tab" value="general" />
+
+								<div class="flex flex-col gap-2">
+									<label for="knowledge-search" class="gc-stamp text-[var(--gc-ink-3)]">
+										Search knowledge
+									</label>
+									<input
+										id="knowledge-search"
+										name="knowledge_q"
+										value={knowledge.filters.query}
+										placeholder="Search saved knowledge"
+										class="gc-control min-h-[2.75rem]"
+									/>
+								</div>
+
+								<div class="flex flex-col gap-2">
+									<label for="knowledge-scope" class="gc-stamp text-[var(--gc-ink-3)]">
+										Knowledge scope
+									</label>
+									<select
+										id="knowledge-scope"
+										name="knowledge_scope"
+										class="gc-control min-h-[2.75rem]"
+									>
+										{#each knowledgeScopeOptions as option (option.value)}
+											<option
+												value={option.value}
+												selected={knowledge.filters.scope === option.value}
+											>
+												{option.label}
+											</option>
+										{/each}
+									</select>
+								</div>
+
+								<div class="flex flex-col gap-2">
+									<label for="knowledge-agent" class="gc-stamp text-[var(--gc-ink-3)]">
+										Agent
+									</label>
+									<input
+										id="knowledge-agent"
+										name="knowledge_agent_id"
+										value={knowledge.filters.agent_id}
+										placeholder="assistant"
+										class="gc-control min-h-[2.75rem]"
+									/>
+								</div>
+
+								<div class="flex flex-col gap-2">
+									<label for="knowledge-limit" class="gc-stamp text-[var(--gc-ink-3)]">
+										Knowledge limit
+									</label>
+									<input
+										id="knowledge-limit"
+										type="number"
+										min="1"
+										max="100"
+										name="knowledge_limit"
+										value={String(knowledge.filters.limit)}
+										class="gc-control min-h-[2.75rem]"
+									/>
+								</div>
+
+								<div class="flex flex-wrap justify-end gap-3 xl:col-span-4">
+									<a
+										href={resolve('/config?tab=general')}
+										class="gc-action gc-action-accent px-4 py-2"
+									>
+										Clear filters
+									</a>
+									<button type="submit" class="gc-action gc-action-solid px-4 py-2">
+										Apply filters
+									</button>
+								</div>
+							</form>
+
+							<div class="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.85fr)]">
+								<div class="grid gap-3">
+									{#if knowledge.items.length > 0}
+										{#each knowledge.items as item (item.id)}
+											<article class="border border-[var(--gc-border)] px-4 py-4">
+												<div class="flex flex-wrap items-start justify-between gap-3">
+													<div>
+														<p class="gc-copy text-[var(--gc-ink)]">{item.content}</p>
+														<p class="gc-copy mt-2 text-sm text-[var(--gc-ink-3)]">
+															{item.provenance}
+														</p>
+													</div>
+													<div class="flex flex-wrap gap-2 text-xs text-[var(--gc-ink-3)]">
+														<span class="gc-chip">{formatKnowledgeScope(item.scope)}</span>
+														<span class="gc-chip">{item.agent_id}</span>
+														<span class="gc-chip">{item.source}</span>
+													</div>
+												</div>
+
+												<div class="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+													<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
+														{formatKnowledgeConfidence(item.confidence)}
+													</p>
+													<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
+														Created {item.created_at_label}
+													</p>
+													<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
+														Updated {item.updated_at_label}
+													</p>
+												</div>
+											</article>
+										{/each}
+									{:else}
+										<div class="border border-dashed border-[var(--gc-border)] px-4 py-5">
+											<p class="gc-copy text-[var(--gc-ink)]">
+												No saved knowledge matched the current filters.
+											</p>
+										</div>
+									{/if}
+								</div>
+
+								<div class="flex flex-col gap-4">
+									<section class="border border-[var(--gc-border)] px-4 py-4">
+										<p class="gc-stamp text-[var(--gc-ink-3)]">Visible items</p>
+										<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">
+											{knowledge.summary.visible_count}
+										</p>
+										<p class="gc-copy mt-3 text-[var(--gc-ink-3)]">
+											Knowledge entries currently shaping this project view.
+										</p>
+									</section>
+
+									<section class="border border-[var(--gc-border)] px-4 py-4">
+										<p class="gc-stamp text-[var(--gc-ink-3)]">Page controls</p>
+										<div class="mt-4 flex flex-wrap gap-3">
+											{#if knowledge.paging.prev_cursor}
+												<form method="GET" action={resolve('/config')}>
+													<input type="hidden" name="tab" value="general" />
+													<input type="hidden" name="knowledge_q" value={knowledge.filters.query} />
+													<input
+														type="hidden"
+														name="knowledge_scope"
+														value={knowledge.filters.scope}
+													/>
+													<input
+														type="hidden"
+														name="knowledge_agent_id"
+														value={knowledge.filters.agent_id}
+													/>
+													<input
+														type="hidden"
+														name="knowledge_limit"
+														value={String(knowledge.filters.limit)}
+													/>
+													<input
+														type="hidden"
+														name="knowledge_cursor"
+														value={knowledge.paging.prev_cursor}
+													/>
+													<input type="hidden" name="knowledge_direction" value="prev" />
+													<button type="submit" class="gc-action gc-action-accent px-4 py-2">
+														Previous knowledge page
+													</button>
+												</form>
+											{/if}
+											{#if knowledge.paging.next_cursor}
+												<form method="GET" action={resolve('/config')}>
+													<input type="hidden" name="tab" value="general" />
+													<input type="hidden" name="knowledge_q" value={knowledge.filters.query} />
+													<input
+														type="hidden"
+														name="knowledge_scope"
+														value={knowledge.filters.scope}
+													/>
+													<input
+														type="hidden"
+														name="knowledge_agent_id"
+														value={knowledge.filters.agent_id}
+													/>
+													<input
+														type="hidden"
+														name="knowledge_limit"
+														value={String(knowledge.filters.limit)}
+													/>
+													<input
+														type="hidden"
+														name="knowledge_cursor"
+														value={knowledge.paging.next_cursor}
+													/>
+													<input type="hidden" name="knowledge_direction" value="next" />
+													<button type="submit" class="gc-action gc-action-solid px-4 py-2">
+														Next knowledge page
+													</button>
+												</form>
+											{/if}
+											{#if !knowledge.paging.prev_cursor && !knowledge.paging.next_cursor}
+												<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
+													No additional knowledge pages are available.
+												</p>
+											{/if}
+										</div>
+									</section>
+								</div>
+							</div>
+						{:else}
+							<div class="mt-5">
+								<SurfaceMessage
+									label="UNAVAILABLE"
+									message="Knowledge surface unavailable. The current browser UI expects /api/knowledge."
+									tone="error"
+								/>
+							</div>
+						{/if}
 					</section>
 				</div>
 			</div>
