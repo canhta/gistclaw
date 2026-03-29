@@ -23,8 +23,30 @@ describe('Nodes page', () => {
 		expect(body).toContain('Capabilities');
 	});
 
-	it('renders COMING SOON state', () => {
+	it('renders node summary cards and project context', () => {
 		const { body } = render(NodesPage, { props: { data: baseData } });
-		expect(body).toContain('COMING SOON');
+		expect(body).toContain('Inventory');
+		expect(body).toContain('Deferred');
+		expect(body).toContain('Capability Registry');
+		expect(body).toContain('Project');
+		expect(body).toContain('my-project');
+		expect(body).toContain('/home/user/my-project');
+	});
+
+	it('renders node inventory guidance by default', () => {
+		const { body } = render(NodesPage, { props: { data: baseData } });
+		expect(body).toContain('Node inventory is waiting on a dedicated backend.');
+		expect(body).toContain('Run Graph');
+		expect(body).toContain('Debug');
+		expect(body).toContain('Recovery');
+	});
+
+	it('renders capabilities guidance when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=capabilities' };
+		const { body } = render(NodesPage, { props: { data } });
+		expect(body).toContain('Capability seams ship before node inventory.');
+		expect(body).toContain('connector_inbox_list');
+		expect(body).toContain('connector_send');
+		expect(body).toContain('system.run');
 	});
 });
