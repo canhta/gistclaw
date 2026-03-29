@@ -1,6 +1,7 @@
 <script lang="ts">
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
+	import { summarizeModelUsage } from '$lib/work/models';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -38,17 +39,7 @@
 		const clusters = work?.clusters ?? [];
 		return clusters.flatMap((cluster) => [cluster.root, ...(cluster.children ?? [])]);
 	});
-	const modelUsage = $derived.by(() => {
-		const counts: Record<string, number> = {};
-		for (const run of runs) {
-			const model = run.model_display?.trim();
-			if (!model) {
-				continue;
-			}
-			counts[model] = (counts[model] ?? 0) + 1;
-		}
-		return Object.entries(counts).map(([model, count]) => ({ model, count }));
-	});
+	const modelUsage = $derived(summarizeModelUsage(work?.clusters));
 	const eventSources = $derived.by(() =>
 		runs.map((run) => ({
 			id: run.id,

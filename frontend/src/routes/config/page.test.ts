@@ -21,6 +21,72 @@ const machineSettings = {
 	active_project_summary: '3 agents'
 };
 
+const workData = {
+	active_project_name: 'my-project',
+	active_project_path: '/home/user/my-project',
+	queue_strip: {
+		headline: '1 active run',
+		root_runs: 1,
+		worker_runs: 1,
+		recovery_runs: 0,
+		summary: {
+			total: 2,
+			pending: 0,
+			active: 1,
+			needs_approval: 0,
+			completed: 1,
+			failed: 0,
+			interrupted: 0,
+			root_status: 'active'
+		}
+	},
+	paging: { has_next: false, has_prev: false },
+	clusters: [
+		{
+			root: {
+				id: 'run-root',
+				objective: 'Review the repo',
+				agent_id: 'assistant',
+				status: 'active',
+				status_label: 'Active',
+				status_class: 'is-active',
+				model_display: 'gpt-5.4',
+				token_summary: '1K tokens',
+				started_at_short: '10:00',
+				started_at_exact: '2026-03-29 10:00',
+				started_at_iso: '2026-03-29T10:00:00Z',
+				last_activity_short: '10:05',
+				last_activity_exact: '2026-03-29 10:05',
+				last_activity_iso: '2026-03-29T10:05:00Z',
+				depth: 0
+			},
+			children: [
+				{
+					id: 'run-child',
+					objective: 'Check tests',
+					agent_id: 'reviewer',
+					status: 'completed',
+					status_label: 'Completed',
+					status_class: 'is-success',
+					model_display: 'gpt-5.4-mini',
+					token_summary: '400 tokens',
+					started_at_short: '10:01',
+					started_at_exact: '2026-03-29 10:01',
+					started_at_iso: '2026-03-29T10:01:00Z',
+					last_activity_short: '10:03',
+					last_activity_exact: '2026-03-29 10:03',
+					last_activity_iso: '2026-03-29T10:03:00Z',
+					depth: 1
+				}
+			],
+			child_count: 1,
+			child_count_label: '1 child run',
+			blocker_label: '',
+			has_children: true
+		}
+	]
+};
+
 const baseData = {
 	auth: { authenticated: true, password_configured: true, setup_required: false },
 	project: { active_id: 'p1', active_name: 'my-project', active_path: '/home/user/my-project' },
@@ -29,6 +95,7 @@ const baseData = {
 	currentPath: '/config',
 	currentSearch: '',
 	config: {
+		work: workData,
 		team: {
 			notice: 'Loaded from team file',
 			active_profile: {
@@ -160,6 +227,29 @@ describe('Config page', () => {
 		const { body } = render(ConfigPage, { props: { data } });
 		expect(body).toContain('Team surface unavailable');
 		expect(body).toContain('/api/team');
+	});
+
+	it('renders model posture and recent usage when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=models' };
+		const { body } = render(ConfigPage, { props: { data } });
+		expect(body).toContain('Recent model usage');
+		expect(body).toContain('gpt-5.4');
+		expect(body).toContain('gpt-5.4-mini');
+		expect(body).toContain('Anthropic + OpenAI-compatible');
+		expect(body).toContain('Runtime-owned');
+	});
+
+	it('renders a no-evidence state when recent work data is missing', () => {
+		const data = {
+			...baseData,
+			currentSearch: 'tab=models',
+			config: {
+				...baseData.config,
+				work: null
+			}
+		};
+		const { body } = render(ConfigPage, { props: { data } });
+		expect(body).toContain('No recent model evidence');
 	});
 
 	it('renders error state when settings is null', () => {

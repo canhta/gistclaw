@@ -6,6 +6,7 @@
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
 	import { requestJSON } from '$lib/http/client';
 	import type { SettingsActionResponse, SettingsResponse } from '$lib/types/api';
+	import { summarizeModelUsage } from '$lib/work/models';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -78,6 +79,8 @@
 	const activeProfile = $derived(teamConfig?.active_profile ?? null);
 	const profiles = $derived(teamConfig?.profiles ?? []);
 	const members = $derived(team?.members ?? []);
+	const work = $derived(data.config?.work ?? null);
+	const modelUsage = $derived(summarizeModelUsage(work?.clusters));
 	const frontAgent = $derived.by(() => {
 		if (!team) {
 			return null;
@@ -513,13 +516,108 @@
 				{/if}
 			</div>
 		{:else if activeTab === 'models'}
-			<div class="flex flex-1 items-center justify-center p-10">
-				<div class="text-center">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">COMING SOON</p>
-					<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">Models</p>
-					<p class="gc-copy mt-3 max-w-xs text-[var(--gc-ink-2)]">
-						Model inventories and per-role model selection will land here once their API arrives.
-					</p>
+			<div class="mx-auto w-full max-w-6xl px-6 py-6">
+				<div class="grid gap-4 xl:grid-cols-4">
+					<SurfaceMetricCard
+						label="Shipped Providers"
+						value="Anthropic + OpenAI-compatible"
+						detail="Those are the provider seams wired in the runtime today."
+						tone="accent"
+					/>
+					<SurfaceMetricCard
+						label="Selection"
+						value="Runtime-owned"
+						detail="Per-role defaults still live in checked-in config and team files."
+					/>
+					<SurfaceMetricCard
+						label="Recent Models"
+						value={String(modelUsage.length)}
+						detail={`${work?.clusters.length ?? 0} visible run cluster${work?.clusters.length === 1 ? '' : 's'}.`}
+					/>
+					<SurfaceMetricCard
+						label="Active Project"
+						value={machine?.active_project_name ?? 'None'}
+						detail={machine?.active_project_path ?? 'Project path unavailable'}
+						tone="accent"
+					/>
+				</div>
+
+				<div class="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">MODELS</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Model posture stays explicit</h2>
+						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+							OpenClaw separates model inventory from live usage. In GistClaw, the browser can show
+							evidence about current model usage, but model defaults and provider wiring are still
+							runtime-owned rather than browser-editable.
+						</p>
+
+						<div class="mt-5 grid gap-3 md:grid-cols-2">
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Provider Seams</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink)]">Anthropic + OpenAI-compatible</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
+									The shipped adapters already plug in behind the provider seam.
+								</p>
+							</div>
+
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Selection</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink)]">Runtime-owned</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
+									Use checked-in config and team files when you need to change defaults.
+								</p>
+							</div>
+
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Operator Flow</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+									Check Chat and Debug when you need live run-level evidence.
+								</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
+									This tab keeps the machine posture and recent usage in one place.
+								</p>
+							</div>
+
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Browser Editing</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink)]">Not wired yet</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
+									No live model catalog or save API ships in GistClaw today.
+								</p>
+							</div>
+						</div>
+					</section>
+
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">RECENT MODEL USAGE</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Recent model usage</h2>
+						<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+							Summary derived from the visible `/api/work` run clusters.
+						</p>
+
+						{#if modelUsage.length === 0}
+							<div class="mt-5 border border-dashed border-[var(--gc-border)] px-4 py-5">
+								<p class="gc-copy text-[var(--gc-ink)]">No recent model evidence</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
+									Run work from Chat to populate model usage here.
+								</p>
+							</div>
+						{:else}
+							<div class="mt-5 grid gap-3">
+								{#each modelUsage as entry (entry.model)}
+									<div class="border border-[var(--gc-border)] px-4 py-4">
+										<div class="flex items-center justify-between gap-4">
+											<p class="gc-copy text-[var(--gc-ink)]">{entry.model}</p>
+											<span class="gc-stamp text-[var(--gc-primary)]">
+												{entry.count} run{entry.count === 1 ? '' : 's'}
+											</span>
+										</div>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</section>
 				</div>
 			</div>
 		{:else if activeTab === 'channels'}
