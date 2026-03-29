@@ -1,10 +1,12 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import SessionDetail from '$lib/components/sessions/SessionDetail.svelte';
+	import SessionOverridePanel from '$lib/components/sessions/SessionOverridePanel.svelte';
 	import SessionRow from '$lib/components/sessions/SessionRow.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
-	import { retryConversationDelivery } from '$lib/conversations/actions';
+	import { deactivateRoute, retryConversationDelivery } from '$lib/conversations/actions';
 	import { loadConversationDetail } from '$lib/conversations/load';
 	import type { ConversationDetailResponse } from '$lib/types/api';
 	import type { PageData } from './$types';
@@ -18,15 +20,19 @@
 		{ id: 'overrides', label: 'Overrides' },
 		{ id: 'history', label: 'History' }
 	];
+	const initialSelectedDetail = untrack(
+		() => data.sessions.selectedDetail as ConversationDetailResponse | null
+	);
 
 	let activeTabOverride = $state<TabID | null>(null);
-	let selectedID = $state<string | null>(null);
-	let detail = $state<ConversationDetailResponse | null>(null);
+	let selectedID = $state<string | null>(initialSelectedDetail?.session.id ?? null);
+	let detail = $state<ConversationDetailResponse | null>(initialSelectedDetail);
 	let detailLoading = $state(false);
 	let detailError = $state('');
+	let deactivatingRoute = $state(false);
 	let retryingDeliveryID = $state<string | null>(null);
-	let detailRetryNotice = $state('');
-	let detailRetryError = $state('');
+	let detailActionNotice = $state('');
+	let detailActionError = $state('');
 
 	const requestedTab = $derived.by<TabID>(() => {
 		const tab = new URLSearchParams(data.currentSearch).get('tab');
@@ -55,16 +61,16 @@
 			selectedID = null;
 			detail = null;
 			detailError = '';
-			detailRetryNotice = '';
-			detailRetryError = '';
+			detailActionNotice = '';
+			detailActionError = '';
 			return;
 		}
 
 		selectedID = id;
 		detailLoading = true;
 		detailError = '';
-		detailRetryNotice = '';
-		detailRetryError = '';
+		detailActionNotice = '';
+		detailActionError = '';
 
 		try {
 			detail = await loadConversationDetail(globalThis.fetch.bind(globalThis), id);
@@ -97,8 +103,8 @@
 		}
 
 		retryingDeliveryID = deliveryID;
-		detailRetryNotice = '';
-		detailRetryError = '';
+		detailActionNotice = '';
+		detailActionError = '';
 
 		try {
 			await retryConversationDelivery(
@@ -106,20 +112,48 @@
 				detail.session.id,
 				deliveryID
 			);
-			detailRetryNotice = 'Delivery requeued.';
+			detailActionNotice = 'Delivery requeued.';
 
 			try {
 				detail = await loadConversationDetail(globalThis.fetch.bind(globalThis), detail.session.id);
 			} catch {
-				detailRetryNotice = 'Delivery requeued. Refresh the session to see the latest state.';
+				detailActionNotice = 'Delivery requeued. Refresh the session to see the latest state.';
 			}
 		} catch (err) {
-			detailRetryError =
+			detailActionError =
 				err instanceof Error && err.message.trim() !== ''
 					? err.message
 					: 'Failed to retry delivery.';
 		} finally {
 			retryingDeliveryID = null;
+		}
+	}
+
+	async function handleDeactivateRoute(): Promise<void> {
+		if (!detail?.route) {
+			return;
+		}
+
+		deactivatingRoute = true;
+		detailActionNotice = '';
+		detailActionError = '';
+
+		try {
+			await deactivateRoute(globalThis.fetch.bind(globalThis), detail.route.id);
+			detailActionNotice = 'Route deactivated.';
+
+			try {
+				detail = await loadConversationDetail(globalThis.fetch.bind(globalThis), detail.session.id);
+			} catch {
+				detailActionNotice = 'Route deactivated. Refresh the session to see the latest state.';
+			}
+		} catch (err) {
+			detailActionError =
+				err instanceof Error && err.message.trim() !== ''
+					? err.message
+					: 'Failed to deactivate route.';
+		} finally {
+			deactivatingRoute = false;
 		}
 	}
 </script>
@@ -315,8 +349,8 @@
 							<SessionDetail
 								{detail}
 								{retryingDeliveryID}
-								retryNotice={detailRetryNotice}
-								retryError={detailRetryError}
+								notice={detailActionNotice}
+								error={detailActionError}
 								onOpenChat={() => openChat(detail!.session.id)}
 								onRetryDelivery={(deliveryID) => void handleRetryDelivery(deliveryID)}
 							/>
@@ -324,53 +358,48 @@
 					</div>
 				{/if}
 			{:else if activeTab === 'overrides'}
-				<div class="grid flex-1 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)]">
-					<section class="gc-panel px-5 py-5">
-						<p class="gc-stamp text-[var(--gc-warning)]">OVERRIDES</p>
-						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
-							Session overrides still depend on runtime-owned state.
-						</h2>
-						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-							GistClaw can inspect a session and jump straight into Chat, but it does not expose a
-							browser write path for route or delivery overrides yet. Treat this panel as the
-							handoff point into the existing operator surfaces rather than a dead end.
-						</p>
-						<div class="mt-5 border border-[var(--gc-border)] px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Current seam</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-								The shipped conversations API is read-only. Routing and delivery policy still live
-								in runtime-managed state and connector configuration.
+				{#if detail}
+					<SessionOverridePanel
+						{detail}
+						{deactivatingRoute}
+						{retryingDeliveryID}
+						notice={detailActionNotice}
+						error={detailActionError}
+						onDeactivateRoute={() => void handleDeactivateRoute()}
+						onRetryDelivery={(deliveryID) => void handleRetryDelivery(deliveryID)}
+					/>
+				{:else}
+					<div class="grid flex-1 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)]">
+						<section class="gc-panel px-5 py-5">
+							<p class="gc-stamp text-[var(--gc-warning)]">OVERRIDES</p>
+							<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Select a session from List</h2>
+							<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+								Choose one conversation first so route state, delivery recovery, and active-run
+								evidence all point at the same session.
 							</p>
-						</div>
-					</section>
+						</section>
 
-					<section class="gc-panel-soft px-5 py-5">
-						<p class="gc-stamp text-[var(--gc-ink-3)]">Use these surfaces</p>
-						<div class="mt-4 space-y-4">
-							<div>
-								<p class="gc-panel-title text-[var(--gc-ink)]">Chat</p>
-								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-									Jump into the active run to inspect intent and current operator context before
-									changing policy.
-								</p>
+						<section class="gc-panel-soft px-5 py-5">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Next step</p>
+							<div class="mt-4 space-y-4">
+								<div>
+									<p class="gc-panel-title text-[var(--gc-ink)]">List</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+										Pick the conversation you want to inspect. Its detail stays selected when you
+										move into Overrides.
+									</p>
+								</div>
+								<div>
+									<p class="gc-panel-title text-[var(--gc-ink)]">History</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+										Use project evidence when you need surrounding runs, approvals, or delivery
+										outcomes before changing the route state.
+									</p>
+								</div>
 							</div>
-							<div>
-								<p class="gc-panel-title text-[var(--gc-ink)]">Channels</p>
-								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-									Check connector health and delivery pressure before treating a session issue as a
-									per-session override problem.
-								</p>
-							</div>
-							<div>
-								<p class="gc-panel-title text-[var(--gc-ink)]">Config</p>
-								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-									Keep durable routing or host-access policy in Config until a dedicated
-									`sessions.patch` path exists.
-								</p>
-							</div>
-						</div>
-					</section>
-				</div>
+						</section>
+					</div>
+				{/if}
 			{:else}
 				<div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
 					<section class="gc-panel-soft px-5 py-5">

@@ -7,6 +7,13 @@ interface ConversationRetryDeliveryResponse {
 	};
 }
 
+interface RouteDeactivateResponse {
+	route: {
+		id: string;
+		status: string;
+	};
+}
+
 export function retryConversationDelivery(
 	fetcher: typeof fetch,
 	sessionID: string,
@@ -15,6 +22,19 @@ export function retryConversationDelivery(
 	return requestJSON<ConversationRetryDeliveryResponse>(
 		fetcher,
 		`/api/conversations/${encodeURIComponent(sessionID)}/deliveries/${encodeURIComponent(deliveryID)}/retry`,
+		{
+			method: 'POST'
+		}
+	);
+}
+
+export function deactivateRoute(
+	fetcher: typeof fetch,
+	routeID: string
+): Promise<RouteDeactivateResponse> {
+	return requestJSON<RouteDeactivateResponse>(
+		fetcher,
+		`/api/routes/${encodeURIComponent(routeID)}/deactivate`,
 		{
 			method: 'POST'
 		}

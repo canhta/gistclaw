@@ -99,8 +99,8 @@ describe('SessionDetail', () => {
 			props: {
 				detail,
 				retryingDeliveryID: 'delivery-terminal',
-				retryNotice: 'Delivery requeued.',
-				retryError: 'Only terminal deliveries can be retried.'
+				notice: 'Delivery requeued.',
+				error: 'Only terminal deliveries can be retried.'
 			}
 		});
 		expect(body).toContain('Retrying…');

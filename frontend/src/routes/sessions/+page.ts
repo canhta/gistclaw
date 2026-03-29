@@ -1,4 +1,5 @@
 import { buildConversationListSearch, buildSessionsPageHref } from '$lib/conversations/query';
+import { loadConversationDetail } from '$lib/conversations/load';
 import { buildHistorySearch } from '$lib/history/query';
 import { loadConversations } from '$lib/conversations/load';
 import { loadHistory } from '$lib/history/load';
@@ -31,13 +32,18 @@ export const load: PageLoad = async ({ fetch, url }) => {
 	const search = buildConversationListSearch(url.searchParams);
 	const historySearch = buildHistorySearch(url.searchParams);
 	const historyRequested = url.searchParams.get('tab') === 'history';
+	const selectedSessionID = url.searchParams.get('session')?.trim() ?? '';
+	const selectedDetailRequested = selectedSessionID !== '';
 
 	try {
-		const [data, history] = await Promise.all([
+		const [data, history, selectedDetail] = await Promise.all([
 			loadConversations(fetch, search),
 			historyRequested
 				? loadHistory(fetch, historySearch).catch(() => emptyHistory)
-				: Promise.resolve(emptyHistory)
+				: Promise.resolve(emptyHistory),
+			selectedDetailRequested
+				? loadConversationDetail(fetch, selectedSessionID).catch(() => null)
+				: Promise.resolve(null)
 		]);
 		return {
 			sessions: {
@@ -62,6 +68,7 @@ export const load: PageLoad = async ({ fetch, url }) => {
 					prevHref: buildSessionsPageHref(data.paging?.prev_url, url.searchParams.toString())
 				},
 				runtimeConnectors: data.runtime_connectors ?? [],
+				selectedDetail,
 				history: history ?? emptyHistory
 			}
 		};
@@ -89,6 +96,7 @@ export const load: PageLoad = async ({ fetch, url }) => {
 					prevHref: undefined
 				},
 				runtimeConnectors: [],
+				selectedDetail: null,
 				history: emptyHistory
 			}
 		};

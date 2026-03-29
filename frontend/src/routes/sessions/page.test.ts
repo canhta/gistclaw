@@ -28,6 +28,7 @@ const baseData = {
 		items: [],
 		paging: { has_next: false, has_prev: false, nextHref: undefined, prevHref: undefined },
 		runtimeConnectors: [],
+		selectedDetail: null,
 		history: {
 			summary: {
 				run_count: 0,
@@ -136,10 +137,65 @@ describe('Sessions page', () => {
 	it('renders override guidance when selected through search', () => {
 		const data = { ...baseData, currentSearch: 'tab=overrides' };
 		const { body } = render(SessionsPage, { props: { data } });
-		expect(body).toContain('Session overrides still depend on runtime-owned state.');
-		expect(body).toContain('Chat');
-		expect(body).toContain('Channels');
-		expect(body).toContain('Config');
+		expect(body).toContain('Select a session from List');
+		expect(body).toContain('Choose one conversation first');
+		expect(body).toContain('List');
+		expect(body).toContain('History');
+	});
+
+	it('renders session override controls when selected detail is available', () => {
+		const data = {
+			...baseData,
+			currentSearch: 'tab=overrides&session=sess-1',
+			sessions: {
+				...baseData.sessions,
+				selectedDetail: {
+					session: {
+						id: 'sess-1',
+						agent_id: 'front',
+						role_label: 'User',
+						status_label: 'Active'
+					},
+					messages: [],
+					route: {
+						id: 'route-1',
+						connector_id: 'telegram',
+						external_id: 'ext-1',
+						thread_id: 'thread-1',
+						status_label: 'Active',
+						created_at_label: 'just now'
+					},
+					deliveries: [
+						{
+							id: 'delivery-1',
+							connector_id: 'telegram',
+							chat_id: 'chat-1',
+							message: { plain_text: 'Retry exhausted', html: '<p>Retry exhausted</p>' },
+							status: 'terminal',
+							status_label: 'Terminal',
+							attempts_label: '2 attempts'
+						}
+					],
+					delivery_failures: [
+						{
+							id: 'failure-1',
+							connector_id: 'telegram',
+							chat_id: 'chat-1',
+							event_kind_label: 'Webhook delivery',
+							error: 'Connector timeout',
+							created_at_label: 'just now'
+						}
+					]
+				}
+			}
+		};
+		const { body } = render(SessionsPage, { props: { data } });
+		expect(body).toContain('Manage route and delivery overrides');
+		expect(body).toContain('sess-1');
+		expect(body).toContain('route-1');
+		expect(body).toContain('Deactivate route');
+		expect(body).toContain('Retry delivery');
+		expect(body).toContain('Webhook delivery');
 	});
 
 	it('renders session history evidence when selected through search', () => {
