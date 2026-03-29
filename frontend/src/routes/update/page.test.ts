@@ -23,8 +23,29 @@ describe('Update page', () => {
 		expect(body).toContain('Restart Report');
 	});
 
-	it('renders COMING SOON state', () => {
+	it('renders maintenance summary cards and project context', () => {
 		const { body } = render(UpdatePage, { props: { data: baseData } });
-		expect(body).toContain('COMING SOON');
+		expect(body).toContain('Release Channel');
+		expect(body).toContain('Manual');
+		expect(body).toContain('Machine Restart');
+		expect(body).toContain('Project');
+		expect(body).toContain('my-project');
+		expect(body).toContain('/home/user/my-project');
+	});
+
+	it('renders the run update maintenance guidance by default', () => {
+		const { body } = render(UpdatePage, { props: { data: baseData } });
+		expect(body).toContain('Plan a controlled runtime update');
+		expect(body).toContain('Update workflow is not connected to a backend yet.');
+		expect(body).toContain('Check Release Notes');
+		expect(body).toContain('Run Update');
+	});
+
+	it('renders the restart report guidance when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=restart-report' };
+		const { body } = render(UpdatePage, { props: { data } });
+		expect(body).toContain('Restart report');
+		expect(body).toContain('No restart report captured yet.');
+		expect(body).toContain('Apply with restart currently lives in Config.');
 	});
 });
