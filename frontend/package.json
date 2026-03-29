@@ -41,7 +41,9 @@
 		"vitest": "^4.1.0"
 	},
 	"dependencies": {
+		"@codemirror/lang-json": "^6.0.2",
 		"@tabler/icons-svelte-runes": "^3.41.0",
-		"@xyflow/svelte": "^1.5.2"
+		"@xyflow/svelte": "^1.5.2",
+		"codemirror": "^6.0.2"
 	}
 }
