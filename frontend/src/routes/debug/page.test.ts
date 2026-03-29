@@ -356,4 +356,38 @@ describe('Debug page', () => {
 		expect(body).toContain('1 connector snapshot loaded');
 		expect(body).toContain('degraded');
 	});
+
+	it('renders the rpc board with a fallback notice instead of hiding it', () => {
+		const data = {
+			...baseData,
+			currentSearch: 'tab=rpc',
+			debug: {
+				...baseData.debug,
+				rpc: {
+					notice: 'RPC probes could not be loaded. Reload to retry.',
+					summary: {
+						probe_count: 4,
+						read_only: true,
+						default_probe: 'status',
+						selected_probe: 'status'
+					},
+					probes: baseData.debug.rpc.probes,
+					result: {
+						probe: 'status',
+						label: 'Status',
+						summary: 'RPC probes could not be loaded. Reload to retry.',
+						executed_at: '',
+						executed_at_label: 'Unavailable',
+						data: {}
+					}
+				}
+			}
+		};
+		const { body } = render(DebugPage, { props: { data } });
+		expect(body).toContain('RPC probes');
+		expect(body).toContain('RPC probes could not be loaded. Reload to retry.');
+		expect(body).toContain('Probe catalog');
+		expect(body).toContain('Result');
+		expect(body).not.toContain('RPC probes are currently unavailable from this daemon.');
+	});
 });

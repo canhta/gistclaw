@@ -1,4 +1,9 @@
-import { loadDebugEvents, loadDebugRPC, loadDeliveryHealth } from '$lib/debug/load';
+import {
+	fallbackDebugRPCStatus,
+	loadDebugEvents,
+	loadDebugRPC,
+	loadDeliveryHealth
+} from '$lib/debug/load';
 import { loadSettings } from '$lib/settings/load';
 import { loadWorkIndex } from '$lib/work/load';
 import type { PageLoad } from './$types';
@@ -23,7 +28,13 @@ export const load: PageLoad = async ({ fetch, url }) => {
 							connectors: [],
 							runtime_connectors: []
 						},
-			rpc: rpc.status === 'fulfilled' ? rpc.value : null,
+			rpc:
+				rpc.status === 'fulfilled'
+					? rpc.value
+					: fallbackDebugRPCStatus(
+							'RPC probes could not be loaded. Reload to retry.',
+							url.searchParams.get('probe')
+						),
 			events: events.status === 'fulfilled' ? events.value : null
 		}
 	};

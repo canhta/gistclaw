@@ -894,6 +894,7 @@ export interface DebugRPCResultResponse {
 }
 
 export interface DebugRPCStatusResponse {
+	notice?: string;
 	summary: {
 		probe_count: number;
 		read_only: boolean;

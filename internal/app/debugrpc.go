@@ -13,7 +13,7 @@ import (
 )
 
 func (a *App) DebugRPCStatus(ctx context.Context, selected string) (debugrpc.Status, error) {
-	probes := debugRPCProbeCatalog()
+	probes := debugrpc.Catalog()
 	result, err := a.DebugRPCProbe(ctx, selected)
 	if err != nil {
 		return debugrpc.Status{}, err
@@ -36,7 +36,7 @@ func (a *App) DebugRPCProbe(ctx context.Context, selected string) (debugrpc.Resu
 		return debugrpc.Result{}, fmt.Errorf("debug rpc: app is required")
 	}
 
-	probe, ok := lookupDebugRPCProbe(selected)
+	probe, ok := debugrpc.ResolveProbe(strings.TrimSpace(selected))
 	if !ok {
 		return debugrpc.Result{}, fmt.Errorf("%w: %s", debugrpc.ErrUnknownProbe, strings.TrimSpace(selected))
 	}
@@ -55,45 +55,6 @@ func (a *App) DebugRPCProbe(ctx context.Context, selected string) (debugrpc.Resu
 		ExecutedAtLabel: executedAt.Format("2006-01-02 15:04:05 MST"),
 		Data:            action.Data,
 	}, nil
-}
-
-func debugRPCProbeCatalog() []debugrpc.Probe {
-	return []debugrpc.Probe{
-		{
-			Name:        debugrpc.ProbeStatus,
-			Label:       "Status",
-			Description: "Inspect active runs, approvals, and storage health.",
-		},
-		{
-			Name:        debugrpc.ProbeConnectorHealth,
-			Label:       "Connector health",
-			Description: "Inspect configured connector health snapshots.",
-		},
-		{
-			Name:        debugrpc.ProbeActiveProject,
-			Label:       "Active project",
-			Description: "Inspect the current project scope and workspace path.",
-		},
-		{
-			Name:        debugrpc.ProbeScheduleStatus,
-			Label:       "Scheduler",
-			Description: "Inspect schedule counters and the next scheduler wake time.",
-		},
-	}
-}
-
-func lookupDebugRPCProbe(raw string) (debugrpc.Probe, bool) {
-	name := strings.TrimSpace(raw)
-	if name == "" {
-		name = debugrpc.ProbeStatus
-	}
-
-	for _, probe := range debugRPCProbeCatalog() {
-		if probe.Name == name {
-			return probe, true
-		}
-	}
-	return debugrpc.Probe{}, false
 }
 
 func (a *App) connectorHealthActionResult(ctx context.Context) (capabilities.AppActionResult, error) {

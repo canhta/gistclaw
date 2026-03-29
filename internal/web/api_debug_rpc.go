@@ -9,7 +9,16 @@ import (
 
 func (s *Server) handleDebugRPCStatus(w http.ResponseWriter, r *http.Request) {
 	if s.debugRPC == nil {
-		http.Error(w, "debug rpc unavailable", http.StatusServiceUnavailable)
+		if _, ok := debugrpc.ResolveProbe(r.URL.Query().Get("probe")); !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"message": "Unknown debug probe.",
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, debugrpc.FallbackStatus(
+			r.URL.Query().Get("probe"),
+			"RPC probe source is not wired into this daemon.",
+		))
 		return
 	}
 

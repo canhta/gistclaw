@@ -254,7 +254,41 @@ describe('debug load', () => {
 					connectors: [],
 					runtime_connectors: []
 				},
-				rpc: null,
+				rpc: {
+					notice: 'RPC probes could not be loaded. Reload to retry.',
+					summary: {
+						probe_count: 4,
+						read_only: true,
+						default_probe: 'status',
+						selected_probe: 'status'
+					},
+					probes: [
+						expect.objectContaining({
+							name: 'status',
+							label: 'Status'
+						}),
+						expect.objectContaining({
+							name: 'connector_health',
+							label: 'Connector health'
+						}),
+						expect.objectContaining({
+							name: 'active_project',
+							label: 'Active project'
+						}),
+						expect.objectContaining({
+							name: 'schedule_status',
+							label: 'Scheduler'
+						})
+					],
+					result: {
+						probe: 'status',
+						label: 'Status',
+						summary: 'RPC probes could not be loaded. Reload to retry.',
+						executed_at: '',
+						executed_at_label: 'Unavailable',
+						data: {}
+					}
+				},
 				events: null
 			}
 		});

@@ -482,80 +482,74 @@
 					</div>
 				{/if}
 
-				{#if !rpc}
-					<div class="gc-panel-soft mt-6 px-5 py-5">
-						<p class="gc-stamp text-[var(--gc-warning)]">UNAVAILABLE</p>
-						<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-							RPC probes are currently unavailable from this daemon.
-						</p>
-					</div>
-				{:else}
-					<div class="mt-6 grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.15fr)]">
-						<section class="gc-panel px-5 py-5">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Probe catalog</p>
-							<div class="mt-4 flex flex-col gap-4">
-								{#each rpcProbes as probe (probe.name)}
-									<div class="border-b border-[var(--gc-border)] pb-4 last:border-b-0 last:pb-0">
-										<div class="flex items-start justify-between gap-4">
-											<div>
-												<div class="flex flex-wrap items-center gap-2">
-													<p class="gc-panel-title text-[var(--gc-ink)]">{probe.label}</p>
-													{#if selectedRpcProbeName === probe.name}
-														<span
-															class="gc-badge border-[var(--gc-primary)] text-[var(--gc-primary)]"
-														>
-															SELECTED
-														</span>
-													{/if}
-												</div>
-												<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">{probe.description}</p>
-												<p class="gc-machine mt-3 text-[var(--gc-ink-4)]">{probe.name}</p>
-											</div>
-											<button
-												type="button"
-												onclick={() => void refreshRPCProbe(probe.name)}
-												class="gc-action px-4 py-2"
-												disabled={rpcBusy}
-											>
-												{rpcBusy && selectedRpcProbeName === probe.name
-													? 'Refreshing…'
-													: 'Run probe'}
-											</button>
-										</div>
-									</div>
-								{/each}
-							</div>
-						</section>
-
-						<section class="gc-panel-soft px-5 py-5">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Result</p>
-							<div class="mt-4 flex flex-wrap items-center gap-3">
-								<p class="gc-panel-title text-[var(--gc-ink)]">
-									{selectedRpcProbe?.label ?? rpc.result.label}
-								</p>
-								<span class="gc-badge border-[var(--gc-cyan)] text-[var(--gc-cyan)]">READ-ONLY</span
-								>
-							</div>
-							<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">{rpc.result.summary}</p>
-							<div class="mt-4 grid gap-3 sm:grid-cols-2">
-								<div>
-									<p class="gc-stamp text-[var(--gc-ink-3)]">Last run</p>
-									<p class="gc-copy mt-2 text-[var(--gc-ink)]">{rpc.result.executed_at_label}</p>
-								</div>
-								<div>
-									<p class="gc-stamp text-[var(--gc-ink-3)]">Probe</p>
-									<p class="gc-copy mt-2 text-[var(--gc-ink)]">{rpc.result.probe}</p>
-								</div>
-							</div>
-
-							<div class="mt-5">
-								<p class="gc-stamp text-[var(--gc-ink-3)]">JSON</p>
-								<pre
-									class="gc-panel mt-3 overflow-x-auto px-4 py-4 text-sm leading-6 text-[var(--gc-ink)]">{rpcPayload}</pre>
-							</div>
-						</section>
+				{#if rpc?.notice}
+					<div class="mt-5">
+						<SurfaceMessage label="RPC" message={rpc.notice} />
 					</div>
 				{/if}
+
+				<div class="mt-6 grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.15fr)]">
+					<section class="gc-panel px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Probe catalog</p>
+						<div class="mt-4 flex flex-col gap-4">
+							{#each rpcProbes as probe (probe.name)}
+								<div class="border-b border-[var(--gc-border)] pb-4 last:border-b-0 last:pb-0">
+									<div class="flex items-start justify-between gap-4">
+										<div>
+											<div class="flex flex-wrap items-center gap-2">
+												<p class="gc-panel-title text-[var(--gc-ink)]">{probe.label}</p>
+												{#if selectedRpcProbeName === probe.name}
+													<span
+														class="gc-badge border-[var(--gc-primary)] text-[var(--gc-primary)]"
+													>
+														SELECTED
+													</span>
+												{/if}
+											</div>
+											<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">{probe.description}</p>
+											<p class="gc-machine mt-3 text-[var(--gc-ink-4)]">{probe.name}</p>
+										</div>
+										<button
+											type="button"
+											onclick={() => void refreshRPCProbe(probe.name)}
+											class="gc-action px-4 py-2"
+											disabled={rpcBusy}
+										>
+											{rpcBusy && selectedRpcProbeName === probe.name ? 'Refreshing…' : 'Run probe'}
+										</button>
+									</div>
+								</div>
+							{/each}
+						</div>
+					</section>
+
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Result</p>
+						<div class="mt-4 flex flex-wrap items-center gap-3">
+							<p class="gc-panel-title text-[var(--gc-ink)]">
+								{selectedRpcProbe?.label ?? rpc.result.label}
+							</p>
+							<span class="gc-badge border-[var(--gc-cyan)] text-[var(--gc-cyan)]">READ-ONLY</span>
+						</div>
+						<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">{rpc.result.summary}</p>
+						<div class="mt-4 grid gap-3 sm:grid-cols-2">
+							<div>
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Last run</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink)]">{rpc.result.executed_at_label}</p>
+							</div>
+							<div>
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Probe</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink)]">{rpc.result.probe}</p>
+							</div>
+						</div>
+
+						<div class="mt-5">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">JSON</p>
+							<pre
+								class="gc-panel mt-3 overflow-x-auto px-4 py-4 text-sm leading-6 text-[var(--gc-ink)]">{rpcPayload}</pre>
+						</div>
+					</section>
+				</div>
 			</div>
 		{/if}
 	</div>

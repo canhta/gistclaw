@@ -1,6 +1,29 @@
 import { requestJSON } from '$lib/http/client';
 import type { DebugEventsResponse, DebugRPCStatusResponse } from '$lib/types/api';
 
+const debugRPCProbeCatalog = [
+	{
+		name: 'status',
+		label: 'Status',
+		description: 'Inspect active runs, approvals, and storage health.'
+	},
+	{
+		name: 'connector_health',
+		label: 'Connector health',
+		description: 'Inspect configured connector health snapshots.'
+	},
+	{
+		name: 'active_project',
+		label: 'Active project',
+		description: 'Inspect the current project scope and workspace path.'
+	},
+	{
+		name: 'schedule_status',
+		label: 'Scheduler',
+		description: 'Inspect schedule counters and the next scheduler wake time.'
+	}
+] as const;
+
 interface DeliveryHealthRaw {
 	Connectors?: Array<{
 		ConnectorID: string;
@@ -66,6 +89,38 @@ export async function loadDebugRPC(
 
 	const suffix = query.size > 0 ? `?${query.toString()}` : '';
 	return requestJSON<DebugRPCStatusResponse>(fetcher, `/api/debug/rpc${suffix}`);
+}
+
+export function fallbackDebugRPCStatus(
+	notice = 'RPC probes could not be loaded. Reload to retry.',
+	probe?: string | null
+): DebugRPCStatusResponse {
+	const selected =
+		probe && debugRPCProbeCatalog.some((candidate) => candidate.name === probe.trim())
+			? probe.trim()
+			: 'status';
+	const selectedProbe =
+		debugRPCProbeCatalog.find((candidate) => candidate.name === selected) ??
+		debugRPCProbeCatalog[0];
+
+	return {
+		notice,
+		summary: {
+			probe_count: debugRPCProbeCatalog.length,
+			read_only: true,
+			default_probe: 'status',
+			selected_probe: selectedProbe.name
+		},
+		probes: [...debugRPCProbeCatalog],
+		result: {
+			probe: selectedProbe.name,
+			label: selectedProbe.label,
+			summary: notice,
+			executed_at: '',
+			executed_at_label: 'Unavailable',
+			data: {}
+		}
+	};
 }
 
 export async function loadDebugEvents(

@@ -136,3 +136,62 @@ func TestDebugRPCStatusRejectsUnknownProbe(t *testing.T) {
 		t.Fatalf("expected error message, got %+v", resp)
 	}
 }
+
+func TestDebugRPCStatusReturnsFallbackSurfaceWhenSourceMissing(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+	h.rawServer.debugRPC = nil
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/debug/rpc?probe=connector_health", nil)
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Notice  string `json:"notice"`
+		Summary struct {
+			ProbeCount    int    `json:"probe_count"`
+			ReadOnly      bool   `json:"read_only"`
+			DefaultProbe  string `json:"default_probe"`
+			SelectedProbe string `json:"selected_probe"`
+		} `json:"summary"`
+		Probes []struct {
+			Name string `json:"name"`
+		} `json:"probes"`
+		Result struct {
+			Probe   string         `json:"probe"`
+			Label   string         `json:"label"`
+			Summary string         `json:"summary"`
+			Data    map[string]any `json:"data"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode fallback response: %v", err)
+	}
+
+	if resp.Notice != "RPC probe source is not wired into this daemon." {
+		t.Fatalf("notice = %q", resp.Notice)
+	}
+	if resp.Summary.ProbeCount != 4 || !resp.Summary.ReadOnly {
+		t.Fatalf("unexpected summary: %+v", resp.Summary)
+	}
+	if resp.Summary.DefaultProbe != "status" || resp.Summary.SelectedProbe != "connector_health" {
+		t.Fatalf("unexpected selected probe summary: %+v", resp.Summary)
+	}
+	if len(resp.Probes) != 4 {
+		t.Fatalf("expected fallback probe catalog, got %+v", resp.Probes)
+	}
+	if resp.Result.Probe != "connector_health" || resp.Result.Label != "Connector health" {
+		t.Fatalf("unexpected result: %+v", resp.Result)
+	}
+	if resp.Result.Summary != "RPC probe source is not wired into this daemon." {
+		t.Fatalf("unexpected result summary: %+v", resp.Result)
+	}
+	if len(resp.Result.Data) != 0 {
+		t.Fatalf("expected empty fallback data, got %+v", resp.Result.Data)
+	}
+}
