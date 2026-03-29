@@ -12,8 +12,21 @@ const baseData = {
 	currentPath: '/sessions',
 	currentSearch: '',
 	sessions: {
+		summary: {
+			session_count: 4,
+			connector_count: 2,
+			terminal_deliveries: 3
+		},
+		filters: {
+			query: '',
+			agent_id: '',
+			role: '',
+			status: '',
+			connector_id: '',
+			binding: ''
+		},
 		items: [],
-		paging: { has_next: false, has_prev: false },
+		paging: { has_next: false, has_prev: false, nextHref: undefined, prevHref: undefined },
 		runtimeConnectors: []
 	}
 };
@@ -31,9 +44,21 @@ describe('Sessions page', () => {
 		expect(body).toContain('History');
 	});
 
-	it('renders a sessions search field and table headings', () => {
+	it('renders session summary cards and filter controls', () => {
 		const { body } = render(SessionsPage, { props: { data: baseData } });
+		expect(body).toContain('4');
+		expect(body).toContain('2');
+		expect(body).toContain('3');
+		expect(body).toContain('Filter sessions');
 		expect(body).toContain('Search sessions');
+		expect(body).toContain('Binding');
+		expect(body).toContain('Connector');
+		expect(body).toContain('Apply filters');
+		expect(body).toContain('Clear filters');
+	});
+
+	it('renders the sessions table headings', () => {
+		const { body } = render(SessionsPage, { props: { data: baseData } });
 		expect(body).toContain('Session');
 		expect(body).toContain('Agent');
 		expect(body).toContain('Role');
@@ -50,6 +75,7 @@ describe('Sessions page', () => {
 		const data = {
 			...baseData,
 			sessions: {
+				...baseData.sessions,
 				items: [
 					{
 						id: 'sess-abc',
@@ -60,11 +86,38 @@ describe('Sessions page', () => {
 						updated_at_label: '1 min ago'
 					}
 				],
-				paging: { has_next: false, has_prev: false },
+				paging: { has_next: false, has_prev: false, nextHref: undefined, prevHref: undefined },
 				runtimeConnectors: []
 			}
 		};
 		const { body } = render(SessionsPage, { props: { data } });
 		expect(body).toContain('sess-abc');
+	});
+
+	it('renders paging links when more sessions are available', () => {
+		const data = {
+			...baseData,
+			sessions: {
+				...baseData.sessions,
+				paging: {
+					has_next: true,
+					has_prev: true,
+					nextHref: '/sessions?cursor=next',
+					prevHref: '/sessions?cursor=prev'
+				}
+			}
+		};
+		const { body } = render(SessionsPage, { props: { data } });
+		expect(body).toContain('Previous Page');
+		expect(body).toContain('/sessions?cursor=prev');
+		expect(body).toContain('Next Page');
+		expect(body).toContain('/sessions?cursor=next');
+	});
+
+	it('renders the history placeholder when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=history' };
+		const { body } = render(SessionsPage, { props: { data } });
+		expect(body).toContain('Session history');
+		expect(body).toContain('not connected to a backend yet');
 	});
 });

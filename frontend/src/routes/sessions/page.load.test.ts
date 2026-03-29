@@ -9,7 +9,7 @@ function makeLoadEvent(fetcher: typeof fetch, search = ''): Parameters<typeof lo
 }
 
 describe('sessions load', () => {
-	it('loads sessions, paging, and runtime connectors from conversations', async () => {
+	it('loads sessions, summary, filters, paging, and runtime connectors from conversations', async () => {
 		const fetcher = vi.fn<typeof fetch>(
 			async () =>
 				new Response(
@@ -22,8 +22,8 @@ describe('sessions load', () => {
 						filters: {
 							query: '',
 							agent_id: '',
-							role: '',
-							status: '',
+							role: 'worker',
+							status: 'active',
 							connector_id: '',
 							binding: ''
 						},
@@ -37,7 +37,12 @@ describe('sessions load', () => {
 								updated_at_label: '2 min ago'
 							}
 						],
-						paging: { has_next: false, has_prev: false },
+						paging: {
+							has_next: true,
+							has_prev: false,
+							next_url:
+								'/api/conversations?status=active&role=worker&cursor=cursor-next&direction=next'
+						},
 						health: [],
 						runtime_connectors: [
 							{
@@ -58,15 +63,23 @@ describe('sessions load', () => {
 				)
 		);
 
-		const result = await load(makeLoadEvent(fetcher, '?status=active'));
+		const result = await load(makeLoadEvent(fetcher, '?status=active&role=worker&tab=history'));
 
 		if (!result) {
 			throw new Error('expected sessions load to return data');
 		}
 
-		expect(fetcher).toHaveBeenCalledWith('/api/conversations?status=active', expect.any(Object));
+		expect(fetcher).toHaveBeenCalledWith(
+			'/api/conversations?role=worker&status=active',
+			expect.any(Object)
+		);
+		expect(result.sessions.summary.session_count).toBe(1);
+		expect(result.sessions.filters.role).toBe('worker');
 		expect(result.sessions.items).toHaveLength(1);
 		expect(result.sessions.runtimeConnectors).toHaveLength(1);
+		expect(result.sessions.paging.nextHref).toBe(
+			'/sessions?status=active&role=worker&cursor=cursor-next&direction=next&tab=history'
+		);
 	});
 
 	it('returns empty sessions data when the request fails', async () => {
@@ -82,8 +95,21 @@ describe('sessions load', () => {
 
 		expect(result).toEqual({
 			sessions: {
+				summary: {
+					session_count: 0,
+					connector_count: 0,
+					terminal_deliveries: 0
+				},
+				filters: {
+					query: '',
+					agent_id: '',
+					role: '',
+					status: '',
+					connector_id: '',
+					binding: ''
+				},
 				items: [],
-				paging: { has_next: false, has_prev: false },
+				paging: { has_next: false, has_prev: false, nextHref: undefined, prevHref: undefined },
 				runtimeConnectors: []
 			}
 		});
