@@ -8,7 +8,12 @@ export const load: PageLoad = async ({ fetch }) => {
 			approvals: {
 				items: data.approvals ?? [],
 				paging: data.approval_paging,
-				openCount: data.summary?.open_approvals ?? 0
+				openCount: data.summary?.open_approvals ?? 0,
+				summary: {
+					pendingCount: data.summary?.pending_approvals ?? 0,
+					connectorCount: data.summary?.connector_count ?? 0,
+					activeRoutes: data.summary?.active_routes ?? 0
+				}
 			}
 		};
 	} catch {
@@ -16,7 +21,12 @@ export const load: PageLoad = async ({ fetch }) => {
 			approvals: {
 				items: [],
 				paging: { has_next: false, has_prev: false },
-				openCount: 0
+				openCount: 0,
+				summary: {
+					pendingCount: 0,
+					connectorCount: 0,
+					activeRoutes: 0
+				}
 			}
 		};
 	}

@@ -1,33 +1,58 @@
 <script lang="ts">
 	import ApprovalRow from '$lib/components/approvals/ApprovalRow.svelte';
+	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
 	import { requestJSON } from '$lib/http/client';
 	import type { PageData } from './$types';
 
+	type TabID = 'gateway' | 'nodes' | 'allowlists';
+
 	let { data }: { data: PageData } = $props();
 
-	const tabs = [
+	const tabs: Array<{ id: TabID; label: string }> = [
 		{ id: 'gateway', label: 'Gateway' },
 		{ id: 'nodes', label: 'Nodes' },
 		{ id: 'allowlists', label: 'Allowlists' }
 	];
 
-	let activeTab = $state('gateway');
+	let activeTabOverride = $state<TabID | null>(null);
 	let confirmApprovalID = $state<string | null>(null);
 	let actionMessage = $state('');
 	let actionError = $state('');
 	let resolvedApprovalIDs = $state<string[]>([]);
 
+	const requestedTab = $derived.by<TabID>(() => {
+		const tab = new URLSearchParams(data.currentSearch).get('tab');
+		return isTabID(tab) ? tab : 'gateway';
+	});
 	const approvals = $derived(
 		(data.approvals?.items ?? [])
 			.filter((item) => item.status === 'pending')
 			.filter((item) => !resolvedApprovalIDs.includes(item.id))
 	);
+	const activeTab = $derived(activeTabOverride ?? requestedTab);
 	const openCount = $derived(
 		Math.max(0, (data.approvals?.openCount ?? approvals.length) - resolvedApprovalIDs.length)
 	);
+	const summary = $derived(
+		data.approvals?.summary ?? {
+			pendingCount: approvals.length,
+			connectorCount: 0,
+			activeRoutes: 0
+		}
+	);
 	const confirmApproval = $derived(approvals.find((item) => item.id === confirmApprovalID) ?? null);
+
+	function isTabID(value: string | null): value is TabID {
+		return value === 'gateway' || value === 'nodes' || value === 'allowlists';
+	}
+
+	function setActiveTab(id: string): void {
+		if (isTabID(id)) {
+			activeTabOverride = id;
+		}
+	}
 
 	function requestApprove(id: string): void {
 		confirmApprovalID = id;
@@ -141,82 +166,186 @@
 		<div class="px-6 pt-4 pb-0">
 			<h1 class="gc-panel-title text-[var(--gc-ink)]">Exec Approvals</h1>
 		</div>
-		<SectionTabs {tabs} bind:activeTab />
+		<SectionTabs {tabs} {activeTab} onchange={setActiveTab} />
 	</div>
 
-	<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-		{#if activeTab === 'gateway'}
-			<div
-				class="shrink-0 border-b border-[var(--gc-border)] bg-[var(--gc-surface-raised)] px-5 py-4"
-			>
-				<div class="flex items-end justify-between gap-4">
-					<div>
-						<p class="gc-stamp text-[var(--gc-warning)]">GATEWAY QUEUE</p>
-						<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-							Pending exec approvals pause the run until an operator decides.
-						</p>
-					</div>
-					<div class="text-right">
-						<p class="gc-stamp text-[var(--gc-ink-3)]">Open</p>
-						<p class="gc-panel-title mt-1 text-[var(--gc-ink)]">{openCount}</p>
-					</div>
-				</div>
-			</div>
+	<div class="flex min-h-0 flex-1 flex-col overflow-hidden px-6 py-6">
+		<div class="grid gap-4 xl:grid-cols-4">
+			<SurfaceMetricCard
+				label="Open Queue"
+				value={String(openCount)}
+				detail="Pending approvals still waiting for an operator decision."
+				tone="warning"
+			/>
+			<SurfaceMetricCard
+				label="Routes Holding"
+				value={String(summary.pendingCount ?? 0)}
+				detail="Runs currently paused behind the gateway approval wall."
+			/>
+			<SurfaceMetricCard
+				label="Connected Lanes"
+				value={String(summary.connectorCount ?? 0)}
+				detail="Connector lanes currently participating in recovery and approvals."
+				tone="accent"
+			/>
+			<SurfaceMetricCard
+				label="Project"
+				value={data.project?.active_name ?? 'No active project'}
+				detail={data.project?.active_path ?? 'Select a project to scope approvals and recovery.'}
+			/>
+		</div>
 
-			{#if actionMessage}
-				<div class="border-b border-[var(--gc-border)] px-5 py-4">
-					<SurfaceMessage label="UPDATED" message={actionMessage} />
-				</div>
-			{/if}
-
-			{#if actionError}
-				<div class="border-b border-[var(--gc-border)] px-5 py-4">
-					<SurfaceMessage label="ACTION FAILED" message={actionError} tone="error" />
-				</div>
-			{/if}
-
-			<div class="min-h-0 flex-1 overflow-auto">
-				{#if approvals.length === 0}
-					<div class="flex h-full items-center justify-center p-10">
-						<div class="text-center">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">GATEWAY</p>
-							<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">No pending approvals</p>
-							<p class="gc-copy mt-3 max-w-xs text-[var(--gc-ink-2)]">
-								The gateway is clear. Approval requests appear here when agents need exec
-								permission.
-							</p>
+		<div class="mt-5 flex min-h-0 flex-1 overflow-hidden">
+			{#if activeTab === 'gateway'}
+				<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+					<div class="gc-panel-soft shrink-0 px-5 py-4">
+						<div class="flex items-end justify-between gap-4">
+							<div>
+								<p class="gc-stamp text-[var(--gc-warning)]">GATEWAY QUEUE</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									Pending exec approvals pause the run until an operator decides.
+								</p>
+							</div>
+							<div class="text-right">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Open</p>
+								<p class="gc-panel-title mt-1 text-[var(--gc-ink)]">{openCount}</p>
+							</div>
 						</div>
 					</div>
-				{:else}
-					{#each approvals as approval (approval.id)}
-						<ApprovalRow
-							{approval}
-							onApprove={requestApprove}
-							onDeny={(id) => void denyApproval(id)}
-						/>
-					{/each}
-				{/if}
-			</div>
-		{:else if activeTab === 'nodes'}
-			<div class="flex flex-1 items-center justify-center p-10">
-				<div class="text-center">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">COMING SOON</p>
-					<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">Node policy</p>
-					<p class="gc-copy mt-3 max-w-xs text-[var(--gc-ink-2)]">
-						Per-node exec approval policy will land here once the web API exposes those controls.
-					</p>
+
+					{#if actionMessage}
+						<div class="mt-4">
+							<SurfaceMessage label="UPDATED" message={actionMessage} />
+						</div>
+					{/if}
+
+					{#if actionError}
+						<div class="mt-4">
+							<SurfaceMessage label="ACTION FAILED" message={actionError} tone="error" />
+						</div>
+					{/if}
+
+					<div class="mt-5 min-h-0 flex-1 overflow-auto">
+						{#if approvals.length === 0}
+							<div class="gc-panel flex h-full items-center justify-center p-10">
+								<div class="text-center">
+									<p class="gc-stamp text-[var(--gc-ink-3)]">GATEWAY</p>
+									<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">No pending approvals</p>
+									<p class="gc-copy mt-3 max-w-xs text-[var(--gc-ink-2)]">
+										The gateway is clear. Approval requests appear here when agents need exec
+										permission.
+									</p>
+								</div>
+							</div>
+						{:else}
+							<div
+								class="overflow-hidden rounded-[var(--gc-radius)] border border-[var(--gc-border)]"
+							>
+								{#each approvals as approval (approval.id)}
+									<ApprovalRow
+										{approval}
+										onApprove={requestApprove}
+										onDeny={(id) => void denyApproval(id)}
+									/>
+								{/each}
+							</div>
+						{/if}
+					</div>
 				</div>
-			</div>
-		{:else}
-			<div class="flex flex-1 items-center justify-center p-10">
-				<div class="text-center">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">COMING SOON</p>
-					<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">Allowlists</p>
-					<p class="gc-copy mt-3 max-w-xs text-[var(--gc-ink-2)]">
-						Path and command allowlists will appear here when the backend exposes editable entries.
-					</p>
+			{:else if activeTab === 'nodes'}
+				<div class="grid flex-1 gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,0.9fr)]">
+					<div class="gc-panel px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-warning)]">NODE POLICY</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
+							Node approval policy remains centralized at the gateway.
+						</h2>
+						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+							GistClaw already runs worker sessions under the same runtime approval wall, but the
+							web API does not expose per-node policy editing yet. Keep worker sessions on the
+							shared gateway defaults until runtime policy moves into a dedicated node control
+							surface.
+						</p>
+						<div class="mt-5">
+							<SurfaceMessage
+								label="DEFERRED CONTROL"
+								message="Use the gateway queue for live decisions today; per-node policy still belongs to runtime and config seams."
+								tone="error"
+							/>
+						</div>
+					</div>
+
+					<div class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Current operator path</p>
+						<div class="mt-4 space-y-4">
+							<div>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Sessions</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									Worker sessions show which agent asked for host access and where the request came
+									from.
+								</p>
+							</div>
+							<div>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Debug</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									Check runtime state and connector health before widening policy for a noisy node.
+								</p>
+							</div>
+							<div>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Gateway queue</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									Review each pending command directly until node-scoped approval controls exist.
+								</p>
+							</div>
+						</div>
+					</div>
 				</div>
-			</div>
-		{/if}
+			{:else}
+				<div class="grid flex-1 gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+					<div class="gc-panel px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-warning)]">ALLOWLISTS</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
+							Allowlists are still managed outside the browser.
+						</h2>
+						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+							Path and command allowlists have not been promoted into a browser editor yet. Treat
+							the Gateway queue as the active safety boundary and only broaden long-lived exceptions
+							after you confirm the command pattern in project config and live run evidence.
+						</p>
+						<div class="mt-5">
+							<SurfaceMessage
+								label="MANUAL SEAM"
+								message="Keep broad exec exceptions in Config or runtime-managed policy until the recover API exposes editable allowlists."
+							/>
+						</div>
+					</div>
+
+					<div class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Verification trail</p>
+						<div class="mt-4 space-y-4">
+							<div>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Config</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									Confirm the project and runtime settings before adding any durable exception.
+								</p>
+							</div>
+							<div>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Gateway queue</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									Use one-off approvals while you decide whether a repeat command deserves an
+									allowlist entry.
+								</p>
+							</div>
+							<div>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Chat</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									Check run context and tool intent in Chat before converting a repeated request
+									into a durable exception.
+								</p>
+							</div>
+						</div>
+					</div>
+				</div>
+			{/if}
+		</div>
 	</div>
 </div>

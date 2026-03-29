@@ -67,6 +67,11 @@ describe('approvals load', () => {
 		expect(fetcher).toHaveBeenCalledWith('/api/recover?status=pending', expect.any(Object));
 		expect(result.approvals.items).toHaveLength(1);
 		expect(result.approvals.openCount).toBe(1);
+		expect(result.approvals.summary).toEqual({
+			pendingCount: 1,
+			connectorCount: 2,
+			activeRoutes: 3
+		});
 	});
 
 	it('returns empty approvals data when the request fails', async () => {
@@ -84,7 +89,12 @@ describe('approvals load', () => {
 			approvals: {
 				items: [],
 				paging: { has_next: false, has_prev: false },
-				openCount: 0
+				openCount: 0,
+				summary: {
+					pendingCount: 0,
+					connectorCount: 0,
+					activeRoutes: 0
+				}
 			}
 		});
 	});

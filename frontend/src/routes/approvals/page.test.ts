@@ -14,7 +14,12 @@ const baseData = {
 	approvals: {
 		items: [],
 		paging: { has_next: false, has_prev: false },
-		openCount: 0
+		openCount: 0,
+		summary: {
+			pendingCount: 0,
+			connectorCount: 2,
+			activeRoutes: 0
+		}
 	}
 };
 
@@ -29,6 +34,27 @@ describe('Exec Approvals page', () => {
 		expect(body).toContain('Gateway');
 		expect(body).toContain('Nodes');
 		expect(body).toContain('Allowlists');
+	});
+
+	it('renders approval summary cards and project context', () => {
+		const data = {
+			...baseData,
+			approvals: {
+				...baseData.approvals,
+				openCount: 1,
+				summary: {
+					pendingCount: 1,
+					connectorCount: 2,
+					activeRoutes: 3
+				}
+			}
+		};
+		const { body } = render(ApprovalsPage, { props: { data } });
+		expect(body).toContain('Open Queue');
+		expect(body).toContain('Connected Lanes');
+		expect(body).toContain('Project');
+		expect(body).toContain('my-project');
+		expect(body).toContain('/home/user/my-project');
 	});
 
 	it('renders empty state when no pending approvals', () => {
@@ -53,7 +79,12 @@ describe('Exec Approvals page', () => {
 					}
 				],
 				paging: { has_next: false, has_prev: false },
-				openCount: 1
+				openCount: 1,
+				summary: {
+					pendingCount: 1,
+					connectorCount: 2,
+					activeRoutes: 1
+				}
 			}
 		};
 		const { body } = render(ApprovalsPage, { props: { data } });
@@ -88,11 +119,34 @@ describe('Exec Approvals page', () => {
 					}
 				],
 				paging: { has_next: false, has_prev: false },
-				openCount: 1
+				openCount: 1,
+				summary: {
+					pendingCount: 1,
+					connectorCount: 2,
+					activeRoutes: 1
+				}
 			}
 		};
 		const { body } = render(ApprovalsPage, { props: { data } });
 		expect(body).toContain('bash');
 		expect(body).not.toContain('read_file');
+	});
+
+	it('renders node policy guidance when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=nodes' };
+		const { body } = render(ApprovalsPage, { props: { data } });
+		expect(body).toContain('Node approval policy remains centralized at the gateway.');
+		expect(body).toContain('worker sessions');
+		expect(body).toContain('Debug');
+		expect(body).toContain('Sessions');
+	});
+
+	it('renders allowlist guidance when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=allowlists' };
+		const { body } = render(ApprovalsPage, { props: { data } });
+		expect(body).toContain('Allowlists are still managed outside the browser.');
+		expect(body).toContain('Config');
+		expect(body).toContain('Gateway queue');
+		expect(body).toContain('Chat');
 	});
 });
