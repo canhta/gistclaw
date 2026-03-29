@@ -4,6 +4,7 @@
 	import SessionDetail from '$lib/components/sessions/SessionDetail.svelte';
 	import SessionRow from '$lib/components/sessions/SessionRow.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
+	import { retryConversationDelivery } from '$lib/conversations/actions';
 	import { loadConversationDetail } from '$lib/conversations/load';
 	import type { ConversationDetailResponse } from '$lib/types/api';
 	import type { PageData } from './$types';
@@ -23,6 +24,9 @@
 	let detail = $state<ConversationDetailResponse | null>(null);
 	let detailLoading = $state(false);
 	let detailError = $state('');
+	let retryingDeliveryID = $state<string | null>(null);
+	let detailRetryNotice = $state('');
+	let detailRetryError = $state('');
 
 	const requestedTab = $derived.by<TabID>(() => {
 		const tab = new URLSearchParams(data.currentSearch).get('tab');
@@ -51,12 +55,16 @@
 			selectedID = null;
 			detail = null;
 			detailError = '';
+			detailRetryNotice = '';
+			detailRetryError = '';
 			return;
 		}
 
 		selectedID = id;
 		detailLoading = true;
 		detailError = '';
+		detailRetryNotice = '';
+		detailRetryError = '';
 
 		try {
 			detail = await loadConversationDetail(globalThis.fetch.bind(globalThis), id);
@@ -81,6 +89,38 @@
 	function clearHistoryFilters(): void {
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		void goto('/sessions?tab=history');
+	}
+
+	async function handleRetryDelivery(deliveryID: string): Promise<void> {
+		if (!detail) {
+			return;
+		}
+
+		retryingDeliveryID = deliveryID;
+		detailRetryNotice = '';
+		detailRetryError = '';
+
+		try {
+			await retryConversationDelivery(
+				globalThis.fetch.bind(globalThis),
+				detail.session.id,
+				deliveryID
+			);
+			detailRetryNotice = 'Delivery requeued.';
+
+			try {
+				detail = await loadConversationDetail(globalThis.fetch.bind(globalThis), detail.session.id);
+			} catch {
+				detailRetryNotice = 'Delivery requeued. Refresh the session to see the latest state.';
+			}
+		} catch (err) {
+			detailRetryError =
+				err instanceof Error && err.message.trim() !== ''
+					? err.message
+					: 'Failed to retry delivery.';
+		} finally {
+			retryingDeliveryID = null;
+		}
 	}
 </script>
 
@@ -272,7 +312,14 @@
 								<p class="gc-copy text-[var(--gc-error)]">{detailError}</p>
 							</div>
 						{:else if detail}
-							<SessionDetail {detail} onOpenChat={() => openChat(detail!.session.id)} />
+							<SessionDetail
+								{detail}
+								{retryingDeliveryID}
+								retryNotice={detailRetryNotice}
+								retryError={detailRetryError}
+								onOpenChat={() => openChat(detail!.session.id)}
+								onRetryDelivery={(deliveryID) => void handleRetryDelivery(deliveryID)}
+							/>
 						{/if}
 					</div>
 				{/if}
