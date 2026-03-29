@@ -31,6 +31,15 @@
 	const activeTab = $derived(activeTabOverride ?? requestedTab);
 	const projectName = $derived(data.project?.active_name ?? 'No project');
 	const projectPath = $derived(data.project?.active_path ?? 'No active project path');
+	const commitLabel = $derived.by(() =>
+		data.update.release.commit === 'unknown' ? 'unknown' : data.update.release.commit.slice(0, 12)
+	);
+	const warningCount = $derived(data.update.storage.warnings.length);
+	const backupPath = $derived(
+		data.update.storage.latest_backup_path === ''
+			? 'No backup path recorded.'
+			: data.update.storage.latest_backup_path
+	);
 </script>
 
 <svelte:head>
@@ -50,108 +59,212 @@
 	<div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
 		<div class="grid gap-4 xl:grid-cols-4">
 			<SurfaceMetricCard
-				label="Release Channel"
-				value="Manual"
-				detail="GitHub Releases and package docs remain the shipped update path."
-				tone="warning"
+				label="Release Version"
+				value={data.update.release.version}
+				detail={`Commit ${commitLabel} · built ${data.update.release.build_date_label}`}
+				tone="accent"
 			/>
 			<SurfaceMetricCard
-				label="Machine Restart"
-				value="Deferred"
-				detail="Restart capture and restart-reason reporting are not wired into the web UI yet."
+				label="Runtime Uptime"
+				value={data.update.runtime.uptime_label}
+				detail={`Started ${data.update.runtime.started_at_label}`}
 			/>
 			<SurfaceMetricCard
-				label="Operator Flow"
-				value="Review -> Apply"
-				detail="Use release notes plus Config apply until the dedicated workflow exists."
+				label="Backup Status"
+				value={data.update.storage.backup_status}
+				detail={`${warningCount} storage warning${warningCount === 1 ? '' : 's'}`}
+				tone={warningCount > 0 ? 'warning' : 'default'}
 			/>
 			<SurfaceMetricCard label="Project" value={projectName} detail={projectPath} tone="accent" />
 		</div>
 
 		{#if activeTab === 'run-update'}
-			<div class="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.3fr)_minmax(18rem,0.8fr)]">
+			<div class="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.85fr)]">
 				<section class="gc-panel-soft px-5 py-5">
 					<p class="gc-stamp text-[var(--gc-ink-3)]">RUN UPDATE</p>
-					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Plan a controlled runtime update</h2>
+					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Run the shipped update path</h2>
 					<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-						Update workflow is not connected to a backend yet. The shipped maintenance path is still
-						release-driven: review the published artifact, apply config or installer changes, then
-						bring the runtime back under observation.
+						GistClaw ships a release-driven maintenance flow today. This board exposes the exact
+						build, install, and service context the runtime is using so you can review the release,
+						apply it, and bring the daemon back under observation without leaving the control UI.
 					</p>
 
 					<div class="mt-5 flex flex-wrap gap-3">
-						<button type="button" disabled class="gc-action px-4 py-2 opacity-40">
-							Check Release Notes
-						</button>
-						<button type="button" disabled class="gc-action gc-action-solid px-4 py-2 opacity-40">
-							Run Update
-						</button>
+						<a
+							href={data.update.guides.release_notes_url}
+							rel="external"
+							class="gc-action gc-action-solid px-4 py-2"
+						>
+							GitHub Releases
+						</a>
+						<span class="gc-action px-4 py-2">{data.update.guides.changelog_path}</span>
 					</div>
 
-					<div class="mt-5 grid gap-3">
+					<div class="mt-6 grid gap-4 md:grid-cols-2">
 						<div class="border border-[var(--gc-border)] px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Current shipped path</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-								Use GitHub Releases, the Ubuntu installer docs, or the Homebrew path from the
-								project README for controlled upgrades.
-							</p>
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Build</p>
+							<div class="mt-3 space-y-3">
+								<p class="gc-copy text-[var(--gc-ink)]">
+									{data.update.release.version} · {commitLabel}
+								</p>
+								<p class="gc-machine">{data.update.release.build_date_label}</p>
+							</div>
 						</div>
 						<div class="border border-[var(--gc-border)] px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">After update</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-								Return to Debug, Channels, and Chat to verify queue health, connector state, and
-								live run behavior.
-							</p>
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Restart policy</p>
+							<div class="mt-3 space-y-3">
+								<p class="gc-copy text-[var(--gc-ink)]">{data.update.service.restart_policy}</p>
+								<p class="gc-machine">{data.update.install.service_unit_path}</p>
+							</div>
 						</div>
+					</div>
+
+					<div class="mt-6 grid gap-4 md:grid-cols-2">
+						<div class="border border-[var(--gc-border)] px-4 py-4">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Install paths</p>
+							<div class="mt-3 grid gap-3">
+								<div>
+									<p class="gc-stamp">Config</p>
+									<p class="gc-machine mt-2 break-all">{data.update.install.config_path}</p>
+								</div>
+								<div>
+									<p class="gc-stamp">State</p>
+									<p class="gc-machine mt-2 break-all">{data.update.install.state_dir}</p>
+								</div>
+								<div>
+									<p class="gc-stamp">Storage root</p>
+									<p class="gc-machine mt-2 break-all">{data.update.install.storage_root}</p>
+								</div>
+							</div>
+						</div>
+						<div class="border border-[var(--gc-border)] px-4 py-4">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Operator docs</p>
+							<div class="mt-3 grid gap-3">
+								<div>
+									<p class="gc-stamp">Ubuntu</p>
+									<p class="gc-machine mt-2">{data.update.guides.ubuntu_doc_path}</p>
+								</div>
+								<div>
+									<p class="gc-stamp">macOS</p>
+									<p class="gc-machine mt-2">{data.update.guides.macos_doc_path}</p>
+								</div>
+								<div>
+									<p class="gc-stamp">Recovery</p>
+									<p class="gc-machine mt-2">{data.update.guides.recovery_doc_path}</p>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div class="mt-6 border border-[var(--gc-border)] px-4 py-4">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Service unit preview</p>
+						<pre
+							class="gc-code mt-4 max-h-[18rem] overflow-auto border border-[var(--gc-border)] bg-[var(--gc-canvas)] px-4 py-4">{data
+								.update.service.unit_preview}</pre>
 					</div>
 				</section>
 
 				<section class="gc-panel-soft px-5 py-5">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">Maintenance note</p>
-					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Keep restarts explicit</h2>
-					<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-						The roadmap calls for clearer maintenance workflows, but without bypassing the runtime
-						boundary or inventing a fake updater.
-					</p>
-
-					<div class="mt-5 space-y-4">
-						<div class="border-t border-[var(--gc-border)] pt-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Config</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-								Apply config changes in the Config section, then watch for the required restart
-								path.
+					<p class="gc-stamp text-[var(--gc-ink-3)]">Maintenance handoff</p>
+					<div class="mt-4 space-y-4">
+						<div class="border-t border-[var(--gc-border)] pt-4 first:border-t-0 first:pt-0">
+							<p class="gc-panel-title text-[var(--gc-ink)]">Review the target build</p>
+							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+								Confirm version, commit, and build date before applying the release.
 							</p>
 						</div>
 						<div class="border-t border-[var(--gc-border)] pt-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Docs</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-								Installer and packaging guidance remain the source of truth until the update surface
-								is wired.
+							<p class="gc-panel-title text-[var(--gc-ink)]">
+								Apply through the shipped install path
+							</p>
+							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+								The current runtime uses {data.update.install.binary_path} and the config at
+								{` ${data.update.install.config_path}`}.
+							</p>
+						</div>
+						<div class="border-t border-[var(--gc-border)] pt-4">
+							<p class="gc-panel-title text-[var(--gc-ink)]">
+								Verify the runtime comes back cleanly
+							</p>
+							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+								Current queue signal: {data.update.runtime.active_runs} active runs,
+								{` ${data.update.runtime.pending_approvals}`} pending approvals, and
+								{` ${data.update.runtime.interrupted_runs}`} interrupted runs.
 							</p>
 						</div>
 					</div>
 				</section>
 			</div>
 		{:else}
-			<div class="mt-6 grid gap-4 lg:grid-cols-2">
+			<div class="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
 				<section class="gc-panel-soft px-5 py-5">
 					<p class="gc-stamp text-[var(--gc-ink-3)]">RESTART REPORT</p>
-					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Restart report</h2>
-					<p class="gc-copy mt-3 text-[var(--gc-ink)]">No restart report captured yet.</p>
+					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Runtime boot report</h2>
 					<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-						When the maintenance workflow lands, this tab should show who triggered the restart,
-						what version or config change caused it, and whether the runtime came back healthy.
+						This report captures the currently running daemon after its last boot so operators can
+						check restart timing, queue posture, and storage health from one place.
 					</p>
+
+					<div class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+						<div class="border border-[var(--gc-border)] px-4 py-4">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Started at</p>
+							<p class="gc-copy mt-3 text-[var(--gc-ink)]">
+								{data.update.runtime.started_at_label}
+							</p>
+						</div>
+						<div class="border border-[var(--gc-border)] px-4 py-4">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Uptime</p>
+							<p class="gc-value mt-3 text-[1.2rem]">{data.update.runtime.uptime_label}</p>
+						</div>
+						<div class="border border-[var(--gc-border)] px-4 py-4">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Pending approvals</p>
+							<p class="gc-value mt-3 text-[1.2rem]">{data.update.runtime.pending_approvals}</p>
+						</div>
+						<div class="border border-[var(--gc-border)] px-4 py-4">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Active runs</p>
+							<p class="gc-value mt-3 text-[1.2rem]">{data.update.runtime.active_runs}</p>
+						</div>
+						<div class="border border-[var(--gc-border)] px-4 py-4">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Interrupted runs</p>
+							<p class="gc-value mt-3 text-[1.2rem]">{data.update.runtime.interrupted_runs}</p>
+						</div>
+						<div class="border border-[var(--gc-border)] px-4 py-4">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Backup status</p>
+							<p class="gc-copy mt-3 text-[var(--gc-ink)]">{data.update.storage.backup_status}</p>
+						</div>
+					</div>
 				</section>
 
 				<section class="gc-panel-soft px-5 py-5">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">CURRENT WORKAROUND</p>
-					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Keep the evidence path simple</h2>
-					<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-						Apply with restart currently lives in Config. After a restart, confirm machine recovery
-						in Debug and connector recovery in Channels until this report is backed by runtime
-						events.
-					</p>
+					<p class="gc-stamp text-[var(--gc-ink-3)]">Recovery evidence</p>
+					<div class="mt-4 space-y-4">
+						<div>
+							<p class="gc-stamp">Latest backup</p>
+							<p class="gc-copy mt-2 text-[var(--gc-ink)]">{backupPath}</p>
+							{#if data.update.storage.latest_backup_at_label !== ''}
+								<p class="gc-machine mt-2">{data.update.storage.latest_backup_at_label}</p>
+							{/if}
+						</div>
+						<div class="border-t border-[var(--gc-border)] pt-4">
+							<p class="gc-stamp">Storage warnings</p>
+							{#if data.update.storage.warnings.length === 0}
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">No storage warnings recorded.</p>
+							{:else}
+								<div class="mt-3 grid gap-2">
+									{#each data.update.storage.warnings as warning (warning)}
+										<p class="gc-machine">{warning}</p>
+									{/each}
+								</div>
+							{/if}
+						</div>
+						<div class="border-t border-[var(--gc-border)] pt-4">
+							<p class="gc-stamp">Database footprint</p>
+							<p class="gc-machine mt-2">
+								db={data.update.storage.database_bytes} wal={data.update.storage.wal_bytes}
+								free={data.update.storage.free_disk_bytes}
+							</p>
+						</div>
+					</div>
 				</section>
 			</div>
 		{/if}

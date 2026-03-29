@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/canhta/gistclaw/internal/auth"
 	telegramconnector "github.com/canhta/gistclaw/internal/connectors/telegram"
@@ -52,6 +53,10 @@ type App struct {
 	prepared         bool
 	webAddrMu        sync.RWMutex
 	webAddress       string
+	configPath       string
+	binaryPath       string
+	buildInfo        BuildInfo
+	startedAt        time.Time
 }
 
 func Bootstrap(cfg Config) (*App, error) {
@@ -168,6 +173,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		logs:       logs,
 		connectors: connectors,
 		toolCloser: toolCloser,
+		startedAt:  time.Now().UTC(),
 	}
 	capabilityRegistry.RegisterAppAction("status", application)
 
@@ -177,6 +183,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		Broadcaster:     broadcaster,
 		Runtime:         rt,
 		Logs:            logs,
+		Maintenance:     application,
 		Schedules:       application,
 		StorageRoot:     cfg.StorageRoot,
 		WhatsAppWebhook: buildWhatsAppWebhook(cfg, db, convStore, rt, whatsappHealth),

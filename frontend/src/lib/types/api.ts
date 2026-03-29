@@ -297,6 +297,52 @@ export interface LogsResponse {
 	entries: LogEntryResponse[];
 }
 
+export interface UpdateStatusResponse {
+	release: {
+		version: string;
+		commit: string;
+		build_date: string;
+		build_date_label: string;
+	};
+	runtime: {
+		started_at: string;
+		started_at_label: string;
+		uptime_label: string;
+		active_runs: number;
+		interrupted_runs: number;
+		pending_approvals: number;
+	};
+	install: {
+		config_path: string;
+		state_dir: string;
+		database_dir: string;
+		storage_root: string;
+		binary_path: string;
+		working_directory: string;
+		service_unit_path: string;
+	};
+	service: {
+		restart_policy: string;
+		unit_preview: string;
+	};
+	storage: {
+		database_bytes: number;
+		wal_bytes: number;
+		free_disk_bytes: number;
+		backup_status: string;
+		latest_backup_at_label: string;
+		latest_backup_path: string;
+		warnings: string[];
+	};
+	guides: {
+		release_notes_url: string;
+		ubuntu_doc_path: string;
+		macos_doc_path: string;
+		recovery_doc_path: string;
+		changelog_path: string;
+	};
+}
+
 export interface TeamProfileResponse {
 	id: string;
 	label: string;

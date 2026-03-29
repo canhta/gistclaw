@@ -8,7 +8,52 @@ const baseData = {
 	navigation: [{ id: 'update', label: 'Update', href: '/update' }],
 	onboarding: null,
 	currentPath: '/update',
-	currentSearch: ''
+	currentSearch: '',
+	update: {
+		release: {
+			version: 'v1.2.3',
+			commit: 'abcdef1234567890',
+			build_date: '2026-03-29T09:15:00Z',
+			build_date_label: '2026-03-29 09:15:00 UTC'
+		},
+		runtime: {
+			started_at: '2026-03-29T09:30:00Z',
+			started_at_label: '2026-03-29 09:30:00 UTC',
+			uptime_label: '47m',
+			active_runs: 2,
+			interrupted_runs: 1,
+			pending_approvals: 3
+		},
+		install: {
+			config_path: '/etc/gistclaw/config.yaml',
+			state_dir: '/var/lib/gistclaw',
+			database_dir: '/var/lib/gistclaw',
+			storage_root: '/var/lib/gistclaw/storage',
+			binary_path: '/usr/local/bin/gistclaw',
+			working_directory: '/var/lib/gistclaw',
+			service_unit_path: '/etc/systemd/system/gistclaw.service'
+		},
+		service: {
+			restart_policy: 'on-failure',
+			unit_preview: '[Unit]\nDescription=GistClaw service\n'
+		},
+		storage: {
+			database_bytes: 4096,
+			wal_bytes: 256,
+			free_disk_bytes: 1048576,
+			backup_status: 'healthy',
+			latest_backup_at_label: '2026-03-29 09:10:00 UTC',
+			latest_backup_path: '/var/lib/gistclaw/backups/backup-2026-03-29.db',
+			warnings: ['low_disk_space']
+		},
+		guides: {
+			release_notes_url: 'https://github.com/canhta/gistclaw/releases',
+			ubuntu_doc_path: 'docs/install-ubuntu.md',
+			macos_doc_path: 'docs/install-macos.md',
+			recovery_doc_path: 'docs/recovery.md',
+			changelog_path: 'CHANGELOG.md'
+		}
+	}
 };
 
 describe('Update page', () => {
@@ -25,27 +70,31 @@ describe('Update page', () => {
 
 	it('renders maintenance summary cards and project context', () => {
 		const { body } = render(UpdatePage, { props: { data: baseData } });
-		expect(body).toContain('Release Channel');
-		expect(body).toContain('Manual');
-		expect(body).toContain('Machine Restart');
+		expect(body).toContain('Release Version');
+		expect(body).toContain('v1.2.3');
+		expect(body).toContain('Runtime Uptime');
+		expect(body).toContain('47m');
 		expect(body).toContain('Project');
 		expect(body).toContain('my-project');
 		expect(body).toContain('/home/user/my-project');
 	});
 
-	it('renders the run update maintenance guidance by default', () => {
+	it('renders the run update maintenance board by default', () => {
 		const { body } = render(UpdatePage, { props: { data: baseData } });
-		expect(body).toContain('Plan a controlled runtime update');
-		expect(body).toContain('Update workflow is not connected to a backend yet.');
-		expect(body).toContain('Check Release Notes');
-		expect(body).toContain('Run Update');
+		expect(body).toContain('Run the shipped update path');
+		expect(body).toContain('GitHub Releases');
+		expect(body).toContain('/etc/gistclaw/config.yaml');
+		expect(body).toContain('/etc/systemd/system/gistclaw.service');
+		expect(body).toContain('Restart policy');
 	});
 
-	it('renders the restart report guidance when selected through search', () => {
+	it('renders the restart report when selected through search', () => {
 		const data = { ...baseData, currentSearch: 'tab=restart-report' };
 		const { body } = render(UpdatePage, { props: { data } });
-		expect(body).toContain('Restart report');
-		expect(body).toContain('No restart report captured yet.');
-		expect(body).toContain('Apply with restart currently lives in Config.');
+		expect(body).toContain('Runtime boot report');
+		expect(body).toContain('2026-03-29 09:30:00 UTC');
+		expect(body).toContain('Pending approvals');
+		expect(body).toContain('/var/lib/gistclaw/backups/backup-2026-03-29.db');
+		expect(body).toContain('low_disk_space');
 	});
 });

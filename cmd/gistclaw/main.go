@@ -293,6 +293,15 @@ func loadApp(opts globalOptions) (*app.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	application.SetConfigPath(opts.ConfigPath)
+	application.SetBuildInfo(app.BuildInfo{
+		Version:   resolvedBuildInfo().Version,
+		Commit:    resolvedBuildInfo().Commit,
+		BuildDate: resolvedBuildInfo().BuildDate,
+	})
+	if binaryPath, err := os.Executable(); err == nil {
+		application.SetBinaryPath(binaryPath)
+	}
 	return application, nil
 }
 
