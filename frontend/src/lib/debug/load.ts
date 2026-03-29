@@ -1,0 +1,55 @@
+import { requestJSON } from '$lib/http/client';
+
+interface DeliveryHealthRaw {
+	Connectors?: Array<{
+		ConnectorID: string;
+		PendingCount: number;
+		RetryingCount: number;
+		TerminalCount: number;
+	}>;
+	RuntimeConnectors?: Array<{
+		ConnectorID: string;
+		State: string;
+		Summary: string;
+		CheckedAt?: string;
+		RestartSuggested?: boolean;
+	}>;
+}
+
+export interface DebugDeliveryHealthResponse {
+	connectors: Array<{
+		connector_id: string;
+		pending_count: number;
+		retrying_count: number;
+		terminal_count: number;
+	}>;
+	runtime_connectors: Array<{
+		connector_id: string;
+		state: string;
+		summary: string;
+		checked_at?: string;
+		restart_suggested: boolean;
+	}>;
+}
+
+export async function loadDeliveryHealth(
+	fetcher: typeof fetch
+): Promise<DebugDeliveryHealthResponse> {
+	const raw = await requestJSON<DeliveryHealthRaw>(fetcher, '/api/deliveries/health');
+
+	return {
+		connectors: (raw.Connectors ?? []).map((entry) => ({
+			connector_id: entry.ConnectorID,
+			pending_count: entry.PendingCount,
+			retrying_count: entry.RetryingCount,
+			terminal_count: entry.TerminalCount
+		})),
+		runtime_connectors: (raw.RuntimeConnectors ?? []).map((entry) => ({
+			connector_id: entry.ConnectorID,
+			state: entry.State,
+			summary: entry.Summary,
+			checked_at: entry.CheckedAt,
+			restart_suggested: Boolean(entry.RestartSuggested)
+		}))
+	};
+}
