@@ -1,7 +1,22 @@
 import { requestJSON } from '$lib/http/client';
 
+export interface CreateRouteInput {
+	sessionID: string;
+	connectorID: string;
+	externalID: string;
+	threadID?: string;
+	accountID?: string;
+}
+
 interface ConversationRetryDeliveryResponse {
 	delivery: {
+		id: string;
+		status: string;
+	};
+}
+
+interface RouteCreateResponse {
+	route: {
 		id: string;
 		status: string;
 	};
@@ -39,4 +54,23 @@ export function deactivateRoute(
 			method: 'POST'
 		}
 	);
+}
+
+export function createRoute(
+	fetcher: typeof fetch,
+	input: CreateRouteInput
+): Promise<RouteCreateResponse> {
+	return requestJSON<RouteCreateResponse>(fetcher, '/api/routes', {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/json'
+		},
+		body: JSON.stringify({
+			session_id: input.sessionID,
+			connector_id: input.connectorID,
+			external_id: input.externalID,
+			thread_id: input.threadID,
+			account_id: input.accountID
+		})
+	});
 }

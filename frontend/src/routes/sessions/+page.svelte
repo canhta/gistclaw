@@ -6,7 +6,12 @@
 	import SessionOverridePanel from '$lib/components/sessions/SessionOverridePanel.svelte';
 	import SessionRow from '$lib/components/sessions/SessionRow.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
-	import { deactivateRoute, retryConversationDelivery } from '$lib/conversations/actions';
+	import {
+		createRoute,
+		deactivateRoute,
+		retryConversationDelivery,
+		type CreateRouteInput
+	} from '$lib/conversations/actions';
 	import { loadConversationDetail } from '$lib/conversations/load';
 	import type { ConversationDetailResponse } from '$lib/types/api';
 	import type { PageData } from './$types';
@@ -29,6 +34,7 @@
 	let detail = $state<ConversationDetailResponse | null>(initialSelectedDetail);
 	let detailLoading = $state(false);
 	let detailError = $state('');
+	let bindingRoute = $state(false);
 	let deactivatingRoute = $state(false);
 	let retryingDeliveryID = $state<string | null>(null);
 	let detailActionNotice = $state('');
@@ -154,6 +160,32 @@
 					: 'Failed to deactivate route.';
 		} finally {
 			deactivatingRoute = false;
+		}
+	}
+
+	async function handleBindRoute(input: CreateRouteInput): Promise<void> {
+		if (!detail) {
+			return;
+		}
+
+		bindingRoute = true;
+		detailActionNotice = '';
+		detailActionError = '';
+
+		try {
+			await createRoute(globalThis.fetch.bind(globalThis), input);
+			detailActionNotice = 'Route bound.';
+
+			try {
+				detail = await loadConversationDetail(globalThis.fetch.bind(globalThis), detail.session.id);
+			} catch {
+				detailActionNotice = 'Route bound. Refresh the session to see the latest state.';
+			}
+		} catch (err) {
+			detailActionError =
+				err instanceof Error && err.message.trim() !== '' ? err.message : 'Failed to bind route.';
+		} finally {
+			bindingRoute = false;
 		}
 	}
 </script>
@@ -361,10 +393,13 @@
 				{#if detail}
 					<SessionOverridePanel
 						{detail}
+						{runtimeConnectors}
+						{bindingRoute}
 						{deactivatingRoute}
 						{retryingDeliveryID}
 						notice={detailActionNotice}
 						error={detailActionError}
+						onBindRoute={(input) => void handleBindRoute(input)}
 						onDeactivateRoute={() => void handleDeactivateRoute()}
 						onRetryDelivery={(deliveryID) => void handleRetryDelivery(deliveryID)}
 					/>

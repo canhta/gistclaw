@@ -198,6 +198,44 @@ describe('Sessions page', () => {
 		expect(body).toContain('Webhook delivery');
 	});
 
+	it('renders route bind controls when the selected session has no active route', () => {
+		const data = {
+			...baseData,
+			currentSearch: 'tab=overrides&session=sess-1',
+			sessions: {
+				...baseData.sessions,
+				runtimeConnectors: [
+					{
+						connector_id: 'telegram',
+						state: 'active',
+						state_label: 'Active',
+						state_class: 'is-success',
+						summary: 'Connected',
+						checked_at_label: '1 min ago',
+						restart_suggested: false
+					}
+				],
+				selectedDetail: {
+					session: {
+						id: 'sess-1',
+						agent_id: 'front',
+						role_label: 'User',
+						status_label: 'Active'
+					},
+					messages: [],
+					deliveries: [],
+					delivery_failures: []
+				}
+			}
+		};
+		const { body } = render(SessionsPage, { props: { data } });
+		expect(body).toContain('Bind route');
+		expect(body).toContain('Connector');
+		expect(body).toContain('External ID');
+		expect(body).toContain('Thread ID');
+		expect(body).toContain('telegram');
+	});
+
 	it('renders session history evidence when selected through search', () => {
 		const data = {
 			...baseData,

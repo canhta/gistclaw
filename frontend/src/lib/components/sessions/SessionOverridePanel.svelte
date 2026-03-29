@@ -1,24 +1,60 @@
 <script lang="ts">
 	import SessionDeliveryBoard from '$lib/components/sessions/SessionDeliveryBoard.svelte';
+	import type { CreateRouteInput } from '$lib/conversations/actions';
 	import type { ConversationDetailResponse } from '$lib/types/api';
+	import type { RecoverRuntimeHealthResponse } from '$lib/types/api';
 
 	let {
 		detail,
+		runtimeConnectors = [],
+		onBindRoute,
 		onDeactivateRoute,
 		onRetryDelivery,
+		bindingRoute = false,
 		deactivatingRoute = false,
 		retryingDeliveryID = null,
 		notice = '',
 		error = ''
 	}: {
 		detail: ConversationDetailResponse;
+		runtimeConnectors?: RecoverRuntimeHealthResponse[];
+		onBindRoute?: (input: CreateRouteInput) => void;
 		onDeactivateRoute?: () => void;
 		onRetryDelivery?: (deliveryID: string) => void;
+		bindingRoute?: boolean;
 		deactivatingRoute?: boolean;
 		retryingDeliveryID?: string | null;
 		notice?: string;
 		error?: string;
 	} = $props();
+
+	let connectorID = $state('');
+	let externalID = $state('');
+	let threadID = $state('');
+	let accountID = $state('');
+
+	const canBind = $derived(!bindingRoute && connectorID.trim() !== '' && externalID.trim() !== '');
+
+	$effect(() => {
+		if (connectorID === '' && runtimeConnectors[0]?.connector_id) {
+			connectorID = runtimeConnectors[0].connector_id;
+		}
+	});
+
+	function handleBindSubmit(event: SubmitEvent): void {
+		event.preventDefault();
+		if (!canBind) {
+			return;
+		}
+
+		onBindRoute?.({
+			sessionID: detail.session.id,
+			connectorID: connectorID.trim(),
+			externalID: externalID.trim(),
+			threadID: threadID.trim() || undefined,
+			accountID: accountID.trim() || undefined
+		});
+	}
 </script>
 
 <div class="grid flex-1 gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)]">
@@ -29,6 +65,12 @@
 			Use the selected session as the unit of control. Route state comes from the live conversation
 			detail seam, and delivery recovery actions stay journal-backed.
 		</p>
+		{#if notice}
+			<p class="gc-copy mt-4 text-[var(--gc-primary)]">{notice}</p>
+		{/if}
+		{#if error}
+			<p class="gc-copy mt-2 text-[var(--gc-error)]">{error}</p>
+		{/if}
 
 		<div class="mt-5 grid gap-4 lg:grid-cols-2">
 			<div class="border border-[var(--gc-border)] px-4 py-4">
@@ -93,13 +135,63 @@
 			<div class="mt-5 border border-dashed border-[var(--gc-border)] px-4 py-5">
 				<p class="gc-copy text-[var(--gc-ink)]">No active route is bound to this session.</p>
 				<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
-					When the runtime binds a route, its connector and thread details appear here.
+					Bind a live connector target to let inbound work and delivery recovery stay attached to
+					this session.
 				</p>
+
+				<form class="mt-5 grid gap-4 lg:grid-cols-2" onsubmit={handleBindSubmit}>
+					<label class="flex flex-col gap-2">
+						<span class="gc-copy text-[var(--gc-ink-2)]">Connector</span>
+						<select bind:value={connectorID} class="gc-control min-h-[2.75rem]">
+							<option value="" disabled>Select connector</option>
+							{#each runtimeConnectors as connector (connector.connector_id)}
+								<option value={connector.connector_id}>{connector.connector_id}</option>
+							{/each}
+						</select>
+					</label>
+
+					<label class="flex flex-col gap-2">
+						<span class="gc-copy text-[var(--gc-ink-2)]">External ID</span>
+						<input
+							bind:value={externalID}
+							class="gc-control min-h-[2.75rem]"
+							placeholder="Chat ID, phone, or user handle"
+						/>
+					</label>
+
+					<label class="flex flex-col gap-2">
+						<span class="gc-copy text-[var(--gc-ink-2)]">Thread ID</span>
+						<input
+							bind:value={threadID}
+							class="gc-control min-h-[2.75rem]"
+							placeholder="Optional thread or topic"
+						/>
+					</label>
+
+					<label class="flex flex-col gap-2">
+						<span class="gc-copy text-[var(--gc-ink-2)]">Account override</span>
+						<input
+							bind:value={accountID}
+							class="gc-control min-h-[2.75rem]"
+							placeholder="Optional account ID"
+						/>
+					</label>
+
+					<div class="flex items-end justify-end lg:col-span-2">
+						<button
+							type="submit"
+							class="gc-action gc-action-solid min-w-[10rem] justify-center disabled:opacity-50"
+							disabled={!canBind}
+						>
+							{bindingRoute ? 'Binding…' : 'Bind route'}
+						</button>
+					</div>
+				</form>
 			</div>
 		{/if}
 	</section>
 
 	<section class="gc-panel-soft flex min-h-0 flex-col overflow-hidden px-0 py-0">
-		<SessionDeliveryBoard {detail} {retryingDeliveryID} {notice} {error} {onRetryDelivery} />
+		<SessionDeliveryBoard {detail} {retryingDeliveryID} {onRetryDelivery} />
 	</section>
 </div>
