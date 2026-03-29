@@ -65,7 +65,7 @@ describe('sessions load', () => {
 				);
 			}
 
-			if (url === '/api/history') {
+			if (url === '/api/history?q=repair&status=failed&scope=all&limit=10') {
 				return new Response(
 					JSON.stringify({
 						summary: {
@@ -76,10 +76,10 @@ describe('sessions load', () => {
 							delivery_outcomes: 1
 						},
 						filters: {
-							query: '',
-							status: '',
+							query: 'repair',
+							status: 'failed',
 							scope: 'all',
-							limit: 25
+							limit: 10
 						},
 						paging: {
 							has_next: false,
@@ -146,7 +146,12 @@ describe('sessions load', () => {
 			throw new Error(`unexpected url: ${url}`);
 		});
 
-		const result = await load(makeLoadEvent(fetcher, '?status=active&role=worker&tab=history'));
+		const result = await load(
+			makeLoadEvent(
+				fetcher,
+				'?status=active&role=worker&tab=history&history_q=repair&history_status=failed&history_scope=all&history_limit=10'
+			)
+		);
 
 		if (!result) {
 			throw new Error('expected sessions load to return data');
@@ -157,7 +162,11 @@ describe('sessions load', () => {
 			'/api/conversations?role=worker&status=active',
 			expect.any(Object)
 		);
-		expect(fetcher).toHaveBeenNthCalledWith(2, '/api/history', expect.any(Object));
+		expect(fetcher).toHaveBeenNthCalledWith(
+			2,
+			'/api/history?q=repair&status=failed&scope=all&limit=10',
+			expect.any(Object)
+		);
 		expect(result.sessions.summary.session_count).toBe(1);
 		expect(result.sessions.filters.role).toBe('worker');
 		expect(result.sessions.items).toHaveLength(1);
@@ -166,6 +175,9 @@ describe('sessions load', () => {
 			'/sessions?status=active&role=worker&cursor=cursor-next&direction=next&tab=history'
 		);
 		expect(result.sessions.history.summary.run_count).toBe(2);
+		expect(result.sessions.history.filters.query).toBe('repair');
+		expect(result.sessions.history.filters.status).toBe('failed');
+		expect(result.sessions.history.filters.limit).toBe(10);
 		expect(result.sessions.history.runs).toHaveLength(1);
 		expect(result.sessions.history.approvals[0]?.tool_name).toBe('apply_patch');
 		expect(result.sessions.history.deliveries[0]?.connector_id).toBe('telegram');

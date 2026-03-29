@@ -157,10 +157,10 @@ describe('Sessions page', () => {
 						delivery_outcomes: 1
 					},
 					filters: {
-						query: '',
-						status: '',
+						query: 'repair',
+						status: 'failed',
 						scope: 'all',
-						limit: 25
+						limit: 10
 					},
 					paging: { has_next: false, has_prev: false },
 					runs: [
@@ -218,6 +218,13 @@ describe('Sessions page', () => {
 		};
 		const { body } = render(SessionsPage, { props: { data } });
 		expect(body).toContain('Project history');
+		expect(body).toContain('Filter evidence');
+		expect(body).toContain('Search evidence');
+		expect(body).toContain('Run status');
+		expect(body).toContain('Scope');
+		expect(body).toContain('Limit');
+		expect(body).toContain('Clear evidence filters');
+		expect(body).toContain('Run filters only affect the run lane');
 		expect(body).toContain('Repair connector backlog');
 		expect(body).toContain('apply_patch');
 		expect(body).toContain('telegram');

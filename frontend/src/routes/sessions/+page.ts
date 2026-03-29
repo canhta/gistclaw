@@ -1,4 +1,5 @@
 import { buildConversationListSearch, buildSessionsPageHref } from '$lib/conversations/query';
+import { buildHistorySearch } from '$lib/history/query';
 import { loadConversations } from '$lib/conversations/load';
 import { loadHistory } from '$lib/history/load';
 import type { PageLoad } from './$types';
@@ -28,13 +29,14 @@ const emptyHistory = {
 
 export const load: PageLoad = async ({ fetch, url }) => {
 	const search = buildConversationListSearch(url.searchParams);
+	const historySearch = buildHistorySearch(url.searchParams);
 	const historyRequested = url.searchParams.get('tab') === 'history';
 
 	try {
 		const [data, history] = await Promise.all([
 			loadConversations(fetch, search),
 			historyRequested
-				? loadHistory(fetch).catch(() => emptyHistory)
+				? loadHistory(fetch, historySearch).catch(() => emptyHistory)
 				: Promise.resolve(emptyHistory)
 		]);
 		return {

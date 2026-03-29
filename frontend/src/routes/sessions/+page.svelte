@@ -77,6 +77,11 @@
 		// eslint-disable-next-line svelte/no-navigation-without-resolve
 		void goto('/sessions?tab=list');
 	}
+
+	function clearHistoryFilters(): void {
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		void goto('/sessions?tab=history');
+	}
 </script>
 
 <svelte:head>
@@ -330,6 +335,102 @@
 							happened around the conversations you are inspecting.
 						</p>
 					</section>
+
+					<form
+						method="GET"
+						action="/sessions"
+						class="gc-panel-soft mt-5 grid gap-4 px-4 py-4 xl:grid-cols-[minmax(0,1.5fr)_repeat(3,minmax(0,0.6fr))_auto_auto]"
+					>
+						<input type="hidden" name="tab" value="history" />
+						<div class="xl:col-span-6">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Filter evidence</p>
+						</div>
+
+						<label class="flex min-w-0 flex-col gap-2 xl:col-span-2">
+							<span class="gc-copy text-[var(--gc-ink-2)]">Search evidence</span>
+							<input
+								type="search"
+								name="history_q"
+								value={history.filters.query}
+								placeholder="Search runs"
+								class="gc-control min-h-[2.75rem]"
+							/>
+						</label>
+
+						<label class="flex flex-col gap-2">
+							<span class="gc-copy text-[var(--gc-ink-2)]">Run status</span>
+							<select name="history_status" class="gc-control min-h-[2.75rem]">
+								<option value="" selected={history.filters.status === ''}>All run states</option>
+								<option value="active" selected={history.filters.status === 'active'}>Active</option
+								>
+								<option value="pending" selected={history.filters.status === 'pending'}
+									>Pending</option
+								>
+								<option
+									value="needs_approval"
+									selected={history.filters.status === 'needs_approval'}
+								>
+									Needs approval
+								</option>
+								<option value="completed" selected={history.filters.status === 'completed'}>
+									Completed
+								</option>
+								<option value="failed" selected={history.filters.status === 'failed'}>Failed</option
+								>
+								<option value="interrupted" selected={history.filters.status === 'interrupted'}>
+									Interrupted
+								</option>
+							</select>
+						</label>
+
+						<label class="flex flex-col gap-2">
+							<span class="gc-copy text-[var(--gc-ink-2)]">Scope</span>
+							<select name="history_scope" class="gc-control min-h-[2.75rem]">
+								<option value="active" selected={history.filters.scope === 'active'}>
+									Active project
+								</option>
+								<option value="all" selected={history.filters.scope === 'all'}>All projects</option>
+							</select>
+						</label>
+
+						<label class="flex flex-col gap-2">
+							<span class="gc-copy text-[var(--gc-ink-2)]">Limit</span>
+							<select name="history_limit" class="gc-control min-h-[2.75rem]">
+								<option value="10" selected={history.filters.limit === 10}>10</option>
+								<option
+									value="20"
+									selected={history.filters.limit === 0 || history.filters.limit === 20}
+								>
+									20
+								</option>
+								<option value="50" selected={history.filters.limit === 50}>50</option>
+							</select>
+						</label>
+
+						<div class="flex items-end">
+							<button type="submit" class="gc-action gc-action-solid min-w-[9rem] justify-center">
+								Apply filters
+							</button>
+						</div>
+
+						<div class="flex items-end">
+							<button
+								type="button"
+								class="gc-action gc-action-accent min-w-[11rem] justify-center"
+								onclick={clearHistoryFilters}
+							>
+								Clear evidence filters
+							</button>
+						</div>
+					</form>
+
+					<div class="gc-panel-soft mt-4 px-5 py-4">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Filter scope</p>
+						<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+							Run filters only affect the run lane. Approval and delivery evidence remain recent
+							project-wide snapshots until the history API exposes scoped evidence filters.
+						</p>
+					</div>
 
 					<div class="mt-5 grid gap-4 xl:grid-cols-4">
 						<SurfaceMetricCard
