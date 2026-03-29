@@ -1,5 +1,5 @@
 import { requestJSON } from '$lib/http/client';
-import type { DebugRPCStatusResponse } from '$lib/types/api';
+import type { DebugEventsResponse, DebugRPCStatusResponse } from '$lib/types/api';
 
 interface DeliveryHealthRaw {
 	Connectors?: Array<{
@@ -66,4 +66,17 @@ export async function loadDebugRPC(
 
 	const suffix = query.size > 0 ? `?${query.toString()}` : '';
 	return requestJSON<DebugRPCStatusResponse>(fetcher, `/api/debug/rpc${suffix}`);
+}
+
+export async function loadDebugEvents(
+	fetcher: typeof fetch,
+	runID?: string | null
+): Promise<DebugEventsResponse> {
+	const query = new URLSearchParams();
+	if (runID && runID.trim() !== '') {
+		query.set('run_id', runID.trim());
+	}
+
+	const suffix = query.size > 0 ? `?${query.toString()}` : '';
+	return requestJSON<DebugEventsResponse>(fetcher, `/api/debug/events${suffix}`);
 }

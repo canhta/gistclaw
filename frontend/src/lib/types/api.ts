@@ -856,3 +856,43 @@ export interface DebugRPCStatusResponse {
 	probes: DebugRPCProbeResponse[];
 	result: DebugRPCResultResponse;
 }
+
+export interface DebugEventsSourceResponse {
+	run_id: string;
+	objective: string;
+	agent_id: string;
+	status: string;
+	status_label: string;
+	event_count: number;
+	latest_event_at_label: string;
+	stream_url: string;
+}
+
+export interface DebugEventsEntryResponse {
+	id: string;
+	run_id: string;
+	run_short_id: string;
+	objective: string;
+	agent_id: string;
+	kind: string;
+	kind_label: string;
+	payload_preview: string;
+	occurred_at: string;
+	occurred_at_label: string;
+}
+
+export interface DebugEventsResponse {
+	summary: {
+		source_count: number;
+		event_count: number;
+		selected_run_id?: string;
+		latest_event_label?: string;
+		latest_event_at_label?: string;
+	};
+	filters: {
+		run_id?: string;
+		limit: number;
+	};
+	sources: DebugEventsSourceResponse[];
+	events: DebugEventsEntryResponse[];
+}

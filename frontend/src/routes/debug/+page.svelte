@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
@@ -45,13 +46,11 @@
 		return clusters.flatMap((cluster) => [cluster.root, ...(cluster.children ?? [])]);
 	});
 	const modelUsage = $derived(summarizeModelUsage(work?.clusters));
-	const eventSources = $derived.by(() =>
-		runs.map((run) => ({
-			id: run.id,
-			objective: run.objective,
-			agentID: run.agent_id,
-			streamURL: `/api/work/${encodeURIComponent(run.id)}/events`
-		}))
+	const eventBoard = $derived(data.debug?.events ?? null);
+	const eventSources = $derived(eventBoard?.sources ?? []);
+	const eventEntries = $derived(eventBoard?.events ?? []);
+	const selectedEventSource = $derived(
+		eventSources.find((source) => source.run_id === eventBoard?.summary.selected_run_id) ?? null
 	);
 	const rpc = $derived(rpcState ?? data.debug?.rpc ?? null);
 	const rpcProbes = $derived(rpc?.probes ?? []);
@@ -323,29 +322,29 @@
 		{:else if activeTab === 'events'}
 			<div class="mx-auto w-full max-w-6xl px-6 py-6">
 				<p class="gc-stamp text-[var(--gc-ink-3)]">EVENTS</p>
-				<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Event stream handoff</h2>
+				<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Recent event log</h2>
 				<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-					The raw event stream already exists per run, but GistClaw does not yet ship a
-					section-level debug feed. Use this handoff to see which runs have SSE sources, then follow
-					the richer operator timeline in Chat under the Run Events tab.
+					This board pulls recent replay events for the active project and keeps the live SSE source
+					for the selected run visible. Use it to inspect the latest run activity without leaving
+					Debug.
 				</p>
 
 				<div class="mt-6 grid gap-4 xl:grid-cols-3">
 					<SurfaceMetricCard
 						label="Live Sources"
-						value={String(eventSources.length)}
-						detail="Run-scoped SSE streams visible from the current queue."
+						value={String(eventBoard?.summary.source_count ?? eventSources.length)}
+						detail="Recent runs in the active project that already have replay events."
 					/>
 					<SurfaceMetricCard
-						label="Recovery Runs"
-						value={String(work?.queue_strip.recovery_runs ?? 0)}
-						detail="Runs that deserve event inspection first."
+						label="Loaded Events"
+						value={String(eventBoard?.summary.event_count ?? 0)}
+						detail="Recent events loaded for the selected run."
 						tone="warning"
 					/>
 					<SurfaceMetricCard
-						label="Operator Path"
-						value="Chat -> Run Events"
-						detail="Use Chat for decoded event timelines and live replay."
+						label="Latest Event"
+						value={eventBoard?.summary.latest_event_label ?? 'No events yet'}
+						detail={eventBoard?.summary.latest_event_at_label ?? 'No replay activity sampled yet.'}
 						tone="accent"
 					/>
 				</div>
@@ -355,18 +354,42 @@
 						<p class="gc-stamp text-[var(--gc-ink-3)]">SSE sources</p>
 						{#if eventSources.length === 0}
 							<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-								No active run streams are visible right now.
+								No replay-backed runs are visible right now.
 							</p>
 						{:else}
 							<div class="mt-4 flex flex-col gap-4">
-								{#each eventSources as source (source.id)}
+								{#each eventSources as source (source.run_id)}
 									<div class="border-b border-[var(--gc-border)] pb-4 last:border-b-0 last:pb-0">
-										<p class="gc-panel-title text-[var(--gc-ink)]">{source.objective}</p>
-										<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-											{source.id} · {source.agentID}
-										</p>
+										<div class="flex items-start justify-between gap-4">
+											<div>
+												<div class="flex flex-wrap items-center gap-2">
+													<p class="gc-panel-title text-[var(--gc-ink)]">{source.objective}</p>
+													{#if source.run_id === eventBoard?.summary.selected_run_id}
+														<span
+															class="gc-badge border-[var(--gc-primary)] text-[var(--gc-primary)]"
+														>
+															SELECTED
+														</span>
+													{/if}
+												</div>
+												<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+													{source.run_id} · {source.agent_id}
+												</p>
+												<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
+													{source.event_count} events · {source.latest_event_at_label}
+												</p>
+											</div>
+											<a
+												href={resolve(
+													`/debug?tab=events&run_id=${encodeURIComponent(source.run_id)}`
+												)}
+												class="gc-action px-4 py-2"
+											>
+												View
+											</a>
+										</div>
 										<p class="gc-copy mt-3 font-mono text-sm break-all text-[var(--gc-signal)]">
-											{source.streamURL}
+											{source.stream_url}
 										</p>
 									</div>
 								{/each}
@@ -375,29 +398,42 @@
 					</section>
 
 					<section class="gc-panel-soft px-5 py-5">
-						<p class="gc-stamp text-[var(--gc-ink-3)]">Next step</p>
-						<div class="mt-4 space-y-4">
-							<div>
-								<p class="gc-panel-title text-[var(--gc-ink)]">Chat</p>
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Recent event log</p>
+						{#if selectedEventSource}
+							<div class="mt-4 border-b border-[var(--gc-border)] pb-4">
+								<p class="gc-panel-title text-[var(--gc-ink)]">{selectedEventSource.objective}</p>
 								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-									Use Chat when you need the decoded operator timeline rather than raw SSE
-									endpoints.
+									{selectedEventSource.run_id} · {selectedEventSource.agent_id}
+								</p>
+								<p class="gc-copy mt-2 font-mono text-sm break-all text-[var(--gc-signal)]">
+									{selectedEventSource.stream_url}
 								</p>
 							</div>
-							<div>
-								<p class="gc-panel-title text-[var(--gc-ink)]">Run Events</p>
-								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-									Run Events is the current supported place for streaming event playback and event
-									kind inspection.
-								</p>
+						{/if}
+
+						{#if eventEntries.length === 0}
+							<p class="gc-copy mt-4 text-[var(--gc-ink-2)]">No events loaded for this run yet.</p>
+						{:else}
+							<div class="mt-4 flex flex-col gap-4">
+								{#each eventEntries as event (event.id)}
+									<div class="border-b border-[var(--gc-border)] pb-4 last:border-b-0 last:pb-0">
+										<div class="flex flex-wrap items-center gap-3">
+											<p class="gc-panel-title text-[var(--gc-ink)]">{event.kind_label}</p>
+											<span class="gc-badge border-[var(--gc-border)] text-[var(--gc-ink-2)]">
+												{event.run_short_id}
+											</span>
+										</div>
+										<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+											{event.objective} · {event.agent_id}
+										</p>
+										<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">{event.occurred_at_label}</p>
+										<p class="gc-copy mt-3 font-mono text-sm break-all text-[var(--gc-signal)]">
+											{event.payload_preview}
+										</p>
+									</div>
+								{/each}
 							</div>
-							<div>
-								<p class="gc-panel-title text-[var(--gc-ink)]">Logs</p>
-								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-									Use Logs for connector-level output once the live tail backend arrives.
-								</p>
-							</div>
-						</div>
+						{/if}
 					</section>
 				</div>
 			</div>

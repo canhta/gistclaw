@@ -153,6 +153,67 @@ const baseData = {
 					storage_backup: 'healthy'
 				}
 			}
+		},
+		events: {
+			summary: {
+				source_count: 2,
+				event_count: 2,
+				selected_run_id: 'run-root',
+				latest_event_label: 'Approval Requested',
+				latest_event_at_label: '2026-03-29 10:06:00 UTC'
+			},
+			filters: {
+				run_id: 'run-root',
+				limit: 20
+			},
+			sources: [
+				{
+					run_id: 'run-root',
+					objective: 'Repair connector backlog',
+					agent_id: 'front',
+					status: 'active',
+					status_label: 'Active',
+					event_count: 2,
+					latest_event_at_label: '2026-03-29 10:06:00 UTC',
+					stream_url: '/api/work/run-root/events'
+				},
+				{
+					run_id: 'run-worker',
+					objective: 'Collect connector evidence',
+					agent_id: 'worker-1',
+					status: 'active',
+					status_label: 'Active',
+					event_count: 1,
+					latest_event_at_label: '2026-03-29 10:04:00 UTC',
+					stream_url: '/api/work/run-worker/events'
+				}
+			],
+			events: [
+				{
+					id: 'evt-approval',
+					run_id: 'run-root',
+					run_short_id: 'run-root',
+					objective: 'Repair connector backlog',
+					agent_id: 'front',
+					kind: 'approval_requested',
+					kind_label: 'Approval Requested',
+					payload_preview: '{"tool_name":"system.run"}',
+					occurred_at: '2026-03-29T10:06:00Z',
+					occurred_at_label: '2026-03-29 10:06:00 UTC'
+				},
+				{
+					id: 'evt-tool',
+					run_id: 'run-root',
+					run_short_id: 'run-root',
+					objective: 'Repair connector backlog',
+					agent_id: 'front',
+					kind: 'run_started',
+					kind_label: 'Run Started',
+					payload_preview: 'No payload',
+					occurred_at: '2026-03-29T10:05:00Z',
+					occurred_at_label: '2026-03-29 10:05:00 UTC'
+				}
+			]
 		}
 	}
 };
@@ -197,14 +258,57 @@ describe('Debug page', () => {
 		expect(body).toContain('2 runs');
 	});
 
-	it('renders event stream handoff when the events tab is selected', () => {
+	it('renders the recent event board when the events tab is selected', () => {
 		const data = { ...baseData, currentSearch: 'tab=events' };
 		const { body } = render(DebugPage, { props: { data } });
-		expect(body).toContain('Event stream handoff');
+		expect(body).toContain('Recent event log');
+		expect(body).toContain('Approval Requested');
+		expect(body).toContain('Repair connector backlog');
+		expect(body).toContain('Latest Event');
 		expect(body).toContain('/api/work/run-root/events');
 		expect(body).toContain('/api/work/run-worker/events');
-		expect(body).toContain('Chat');
-		expect(body).toContain('Run Events');
+		expect(body).toContain('Run Started');
+	});
+
+	it('renders the selected event source when the events tab chooses a run', () => {
+		const data = {
+			...baseData,
+			currentSearch: 'tab=events&run_id=run-worker',
+			debug: {
+				...baseData.debug,
+				events: {
+					...baseData.debug.events,
+					summary: {
+						...baseData.debug.events.summary,
+						selected_run_id: 'run-worker',
+						event_count: 1,
+						latest_event_label: 'Tool Started'
+					},
+					filters: {
+						...baseData.debug.events.filters,
+						run_id: 'run-worker'
+					},
+					events: [
+						{
+							id: 'evt-worker',
+							run_id: 'run-worker',
+							run_short_id: 'run-worker',
+							objective: 'Collect connector evidence',
+							agent_id: 'worker-1',
+							kind: 'tool_started',
+							kind_label: 'Tool Started',
+							payload_preview: '{"tool_name":"connector_send"}',
+							occurred_at: '2026-03-29T10:04:00Z',
+							occurred_at_label: '2026-03-29 10:04:00 UTC'
+						}
+					]
+				}
+			}
+		};
+		const { body } = render(DebugPage, { props: { data } });
+		expect(body).toContain('Collect connector evidence');
+		expect(body).toContain('worker-1');
+		expect(body).toContain('Tool Started');
 	});
 
 	it('renders the RPC probe console when rpc tab is selected', () => {

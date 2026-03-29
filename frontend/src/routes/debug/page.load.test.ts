@@ -12,7 +12,7 @@ function makeLoadEvent(
 }
 
 describe('debug load', () => {
-	it('loads settings, work queue, delivery health, and rpc probes in parallel', async () => {
+	it('loads settings, work queue, delivery health, rpc probes, and debug events in parallel', async () => {
 		const fetcher = vi.fn<typeof fetch>(async (input) => {
 			switch (String(input)) {
 				case '/api/settings':
@@ -120,6 +120,49 @@ describe('debug load', () => {
 						}),
 						{ status: 200, headers: { 'content-type': 'application/json' } }
 					);
+				case '/api/debug/events':
+					return new Response(
+						JSON.stringify({
+							summary: {
+								source_count: 1,
+								event_count: 2,
+								selected_run_id: 'run-root',
+								latest_event_label: 'Run Started',
+								latest_event_at_label: '2026-03-29 10:06:00 UTC'
+							},
+							filters: {
+								run_id: 'run-root',
+								limit: 20
+							},
+							sources: [
+								{
+									run_id: 'run-root',
+									objective: 'Repair connector backlog',
+									agent_id: 'front',
+									status: 'active',
+									status_label: 'Active',
+									event_count: 2,
+									latest_event_at_label: '2026-03-29 10:06:00 UTC',
+									stream_url: '/api/work/run-root/events'
+								}
+							],
+							events: [
+								{
+									id: 'evt-2',
+									run_id: 'run-root',
+									run_short_id: 'run-root',
+									objective: 'Repair connector backlog',
+									agent_id: 'front',
+									kind: 'run_started',
+									kind_label: 'Run Started',
+									payload_preview: 'No payload',
+									occurred_at: '2026-03-29T10:06:00Z',
+									occurred_at_label: '2026-03-29 10:06:00 UTC'
+								}
+							]
+						}),
+						{ status: 200, headers: { 'content-type': 'application/json' } }
+					);
 				default:
 					throw new Error(`unexpected input ${String(input)}`);
 			}
@@ -135,10 +178,12 @@ describe('debug load', () => {
 		expect(fetcher).toHaveBeenCalledWith('/api/work', expect.any(Object));
 		expect(fetcher).toHaveBeenCalledWith('/api/deliveries/health', expect.any(Object));
 		expect(fetcher).toHaveBeenCalledWith('/api/debug/rpc', expect.any(Object));
+		expect(fetcher).toHaveBeenCalledWith('/api/debug/events', expect.any(Object));
 		expect(result.debug.settings?.machine.approval_mode_label).toBe('Prompt');
 		expect(result.debug.work?.queue_strip.headline).toBe('1 active run');
 		expect(result.debug.health.connectors[0].connector_id).toBe('telegram');
 		expect(result.debug.rpc?.summary.selected_probe).toBe('status');
+		expect(result.debug.events?.summary.selected_run_id).toBe('run-root');
 	});
 
 	it('returns partial fallbacks when requests fail', async () => {
@@ -209,7 +254,8 @@ describe('debug load', () => {
 					connectors: [],
 					runtime_connectors: []
 				},
-				rpc: null
+				rpc: null,
+				events: null
 			}
 		});
 	});
@@ -258,5 +304,42 @@ describe('debug load', () => {
 			'/api/debug/rpc?probe=connector_health',
 			expect.any(Object)
 		);
+	});
+
+	it('loads the requested debug events run when the search param selects one', async () => {
+		const fetcher = vi.fn<typeof fetch>(async (input) => {
+			switch (String(input)) {
+				case '/api/settings':
+				case '/api/work':
+				case '/api/deliveries/health':
+				case '/api/debug/rpc':
+					return new Response('{}', {
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					});
+				case '/api/debug/events?run_id=run-worker':
+					return new Response(
+						JSON.stringify({
+							summary: {
+								source_count: 1,
+								event_count: 1,
+								selected_run_id: 'run-worker',
+								latest_event_label: 'Tool Started',
+								latest_event_at_label: '2026-03-29 10:07:00 UTC'
+							},
+							filters: { run_id: 'run-worker', limit: 20 },
+							sources: [],
+							events: []
+						}),
+						{ status: 200, headers: { 'content-type': 'application/json' } }
+					);
+				default:
+					throw new Error(`unexpected input ${String(input)}`);
+			}
+		});
+
+		await load(makeLoadEvent(fetcher, 'http://localhost:3000/debug?tab=events&run_id=run-worker'));
+
+		expect(fetcher).toHaveBeenCalledWith('/api/debug/events?run_id=run-worker', expect.any(Object));
 	});
 });
