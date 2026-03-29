@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/canhta/gistclaw/internal/extensionstatus"
 	"github.com/canhta/gistclaw/internal/logstream"
 	"github.com/canhta/gistclaw/internal/maintenance"
 	"github.com/canhta/gistclaw/internal/model"
@@ -25,6 +26,7 @@ type Options struct {
 	Replay          *replay.Service
 	Broadcaster     *SSEBroadcaster
 	Runtime         *runtime.Runtime
+	Extensions      extensionStatusSource
 	Logs            *logstream.Sink
 	Maintenance     maintenanceSource
 	Nodes           nodeInventorySource
@@ -39,6 +41,7 @@ type Server struct {
 	replay          *replay.Service
 	broadcaster     *SSEBroadcaster
 	rt              *runtime.Runtime
+	extensions      extensionStatusSource
 	logs            *logstream.Sink
 	maintenance     maintenanceSource
 	nodes           nodeInventorySource
@@ -55,6 +58,10 @@ type connectorHealthSource interface {
 
 type maintenanceSource interface {
 	MaintenanceStatus(context.Context) (maintenance.Status, error)
+}
+
+type extensionStatusSource interface {
+	ExtensionStatus(context.Context) (extensionstatus.Status, error)
 }
 
 type nodeInventorySource interface {
@@ -101,6 +108,7 @@ func NewServer(opts Options) (*Server, error) {
 		replay:          opts.Replay,
 		broadcaster:     opts.Broadcaster,
 		rt:              opts.Runtime,
+		extensions:      opts.Extensions,
 		logs:            opts.Logs,
 		maintenance:     opts.Maintenance,
 		nodes:           opts.Nodes,
@@ -141,6 +149,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET "+pageDebug, s.handleSPADocument)
 	s.mux.HandleFunc("GET "+pageLogs, s.handleSPADocument)
 	s.mux.HandleFunc("GET "+pageUpdate, s.handleSPADocument)
+	s.mux.HandleFunc("GET /api/skills", s.handleSkillsStatus)
 	s.mux.HandleFunc("GET /api/logs", s.handleLogsIndex)
 	s.mux.HandleFunc("GET /api/logs/stream", s.handleLogsStream)
 	s.mux.HandleFunc("GET /api/auth/session", s.handleAuthSession)

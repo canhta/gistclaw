@@ -343,6 +343,39 @@ export interface UpdateStatusResponse {
 	};
 }
 
+export interface ExtensionSurfaceResponse {
+	id: string;
+	name: string;
+	kind: string;
+	configured: boolean;
+	active: boolean;
+	credential_state: string;
+	credential_state_label: string;
+	summary: string;
+	detail: string;
+}
+
+export interface ExtensionToolResponse {
+	name: string;
+	family: string;
+	risk: string;
+	approval: string;
+	side_effect: string;
+	description: string;
+}
+
+export interface ExtensionStatusResponse {
+	summary: {
+		shipped_surfaces: number;
+		configured_surfaces: number;
+		installed_tools: number;
+		ready_credentials: number;
+		missing_credentials: number;
+	};
+	surfaces: ExtensionSurfaceResponse[];
+	tools: ExtensionToolResponse[];
+}
+
 export interface NodeInventoryResponse {
 	summary: {
 		connectors: number;

@@ -184,6 +184,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		Replay:          rp,
 		Broadcaster:     broadcaster,
 		Runtime:         rt,
+		Extensions:      application,
 		Logs:            logs,
 		Maintenance:     application,
 		Nodes:           application,
