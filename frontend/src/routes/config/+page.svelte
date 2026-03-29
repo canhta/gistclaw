@@ -6,10 +6,17 @@
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
 	import { requestJSON } from '$lib/http/client';
+	import {
+		cloneTeamProfile,
+		createTeamProfile,
+		deleteTeamProfile,
+		selectTeamProfile
+	} from '$lib/team/actions';
 	import type {
 		SettingsActionResponse,
 		SettingsDeviceResponse,
-		SettingsResponse
+		SettingsResponse,
+		TeamResponse
 	} from '$lib/types/api';
 	import { summarizeModelUsage } from '$lib/work/models';
 	import type { PageData } from './$types';
@@ -39,14 +46,17 @@
 
 	let activeTabOverride = $state<TabID | null>(null);
 	let savedSettings = $state<SettingsResponse | null>(null);
+	let savedTeam = $state<TeamResponse | null>(null);
 	let approvalMode = $state('');
 	let hostAccessMode = $state('');
 	let perRunTokenBudget = $state('');
 	let dailyCostCapUSD = $state('');
 	let telegramBotToken = $state('');
 	let lastMachineSignature = $state('');
+	let lastTeamSignature = $state('');
 	let saving = $state(false);
 	let passwordSaving = $state(false);
+	let teamSaving = $state(false);
 	let deviceMutationID = $state<string | null>(null);
 	let saveMessage = $state('');
 	let saveError = $state('');
@@ -54,6 +64,11 @@
 	let currentPassword = $state('');
 	let newPassword = $state('');
 	let confirmPassword = $state('');
+	let selectedProfileID = $state('');
+	let createProfileID = $state('');
+	let cloneSourceProfileID = $state('');
+	let cloneProfileID = $state('');
+	let deleteProfileID = $state('');
 
 	function isTabID(value: string | null): value is TabID {
 		return (
@@ -85,10 +100,11 @@
 	const machine = $derived(settings?.machine ?? null);
 	const access = $derived(settings?.access ?? null);
 	const rawDocument = $derived(JSON.stringify(settings ?? {}, null, 2));
-	const teamConfig = $derived(data.config?.team ?? null);
+	const teamConfig = $derived(savedTeam ?? data.config?.team ?? null);
 	const team = $derived(teamConfig?.team ?? null);
 	const activeProfile = $derived(teamConfig?.active_profile ?? null);
 	const profiles = $derived(teamConfig?.profiles ?? []);
+	const inactiveProfiles = $derived(profiles.filter((profile) => !profile.active));
 	const members = $derived(team?.members ?? []);
 	const work = $derived(data.config?.work ?? null);
 	const modelUsage = $derived(summarizeModelUsage(work?.clusters));
@@ -128,6 +144,22 @@
 		perRunTokenBudget = machine?.per_run_token_budget ?? '';
 		dailyCostCapUSD = machine?.daily_cost_cap_usd ?? '';
 		telegramBotToken = '';
+	});
+
+	$effect(() => {
+		const nextSignature = [
+			activeProfile?.id ?? '',
+			profiles.map((profile) => `${profile.id}:${profile.active ? '1' : '0'}`).join('|')
+		].join('|');
+
+		if (nextSignature === lastTeamSignature) {
+			return;
+		}
+
+		lastTeamSignature = nextSignature;
+		selectedProfileID = activeProfile?.id ?? profiles[0]?.id ?? '';
+		cloneSourceProfileID = activeProfile?.id ?? profiles[0]?.id ?? '';
+		deleteProfileID = inactiveProfiles[0]?.id ?? '';
 	});
 
 	$effect(() => {
@@ -268,6 +300,95 @@
 						: 'Failed to unblock device.';
 		} finally {
 			deviceMutationID = null;
+		}
+	}
+
+	function setTeamMutationResult(response: TeamResponse | null, fallbackMessage: string): void {
+		savedTeam = response;
+		saveMessage = response?.notice ?? fallbackMessage;
+		saveError = '';
+	}
+
+	function mutationErrorMessage(action: string, err: unknown): string {
+		if (err instanceof Error && err.message.trim() !== '') {
+			return err.message;
+		}
+
+		return `Failed to ${action}.`;
+	}
+
+	async function handleSwitchProfile(event: SubmitEvent): Promise<void> {
+		event.preventDefault();
+		saveMessage = '';
+		saveError = '';
+		teamSaving = true;
+
+		try {
+			const response = await selectTeamProfile(
+				globalThis.fetch.bind(globalThis),
+				selectedProfileID
+			);
+			setTeamMutationResult(response, `Active profile switched to ${selectedProfileID}.`);
+		} catch (err) {
+			saveError = mutationErrorMessage('switch profile', err);
+		} finally {
+			teamSaving = false;
+		}
+	}
+
+	async function handleCreateProfile(event: SubmitEvent): Promise<void> {
+		event.preventDefault();
+		saveMessage = '';
+		saveError = '';
+		teamSaving = true;
+
+		try {
+			const nextProfileID = createProfileID.trim();
+			const response = await createTeamProfile(globalThis.fetch.bind(globalThis), nextProfileID);
+			setTeamMutationResult(response, `Profile ${nextProfileID} created.`);
+			createProfileID = '';
+		} catch (err) {
+			saveError = mutationErrorMessage('create profile', err);
+		} finally {
+			teamSaving = false;
+		}
+	}
+
+	async function handleCloneProfile(event: SubmitEvent): Promise<void> {
+		event.preventDefault();
+		saveMessage = '';
+		saveError = '';
+		teamSaving = true;
+
+		try {
+			const nextProfileID = cloneProfileID.trim();
+			const response = await cloneTeamProfile(
+				globalThis.fetch.bind(globalThis),
+				cloneSourceProfileID,
+				nextProfileID
+			);
+			setTeamMutationResult(response, `Profile ${nextProfileID} cloned.`);
+			cloneProfileID = '';
+		} catch (err) {
+			saveError = mutationErrorMessage('clone profile', err);
+		} finally {
+			teamSaving = false;
+		}
+	}
+
+	async function handleDeleteProfile(event: SubmitEvent): Promise<void> {
+		event.preventDefault();
+		saveMessage = '';
+		saveError = '';
+		teamSaving = true;
+
+		try {
+			const response = await deleteTeamProfile(globalThis.fetch.bind(globalThis), deleteProfileID);
+			setTeamMutationResult(response, `Profile ${deleteProfileID} deleted.`);
+		} catch (err) {
+			saveError = mutationErrorMessage('delete profile', err);
+		} finally {
+			teamSaving = false;
 		}
 	}
 </script>
@@ -586,32 +707,175 @@
 							</div>
 						</section>
 
-						<section class="gc-panel-soft px-5 py-5">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">PROFILES</p>
-							<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Saved profiles</h2>
-							<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-								Profile defaults still live in checked-in runtime files, but the active selection is
-								visible here.
-							</p>
+						<div class="flex flex-col gap-4">
+							<section class="gc-panel-soft px-5 py-5">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">PROFILES</p>
+								<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Saved profiles</h2>
+								<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+									Profile defaults still live in checked-in runtime files, but the active selection
+									and lifecycle controls are live here.
+								</p>
 
-							<div class="mt-5 grid gap-3">
-								{#each profiles as profile (profile.id)}
-									<div class="border border-[var(--gc-border)] px-4 py-4">
-										<div class="flex items-start justify-between gap-3">
-											<div>
-												<p class="gc-copy text-[var(--gc-ink)]">{profile.label}</p>
-												<p class="gc-copy mt-2 font-mono text-sm text-[var(--gc-ink-3)]">
-													{profile.save_path ?? 'Runtime default'}
-												</p>
+								<div class="mt-5 grid gap-3">
+									{#each profiles as profile (profile.id)}
+										<div class="border border-[var(--gc-border)] px-4 py-4">
+											<div class="flex items-start justify-between gap-3">
+												<div>
+													<p class="gc-copy text-[var(--gc-ink)]">{profile.label}</p>
+													<p class="gc-copy mt-2 font-mono text-sm text-[var(--gc-ink-3)]">
+														{profile.save_path ?? 'Runtime default'}
+													</p>
+												</div>
+												{#if profile.active}
+													<span class="gc-stamp text-[var(--gc-primary)]">ACTIVE</span>
+												{/if}
 											</div>
-											{#if profile.active}
-												<span class="gc-stamp text-[var(--gc-primary)]">ACTIVE</span>
-											{/if}
 										</div>
+									{/each}
+								</div>
+							</section>
+
+							<section class="gc-panel-soft px-5 py-5">
+								<div class="flex items-start justify-between gap-3">
+									<div>
+										<p class="gc-stamp text-[var(--gc-ink-3)]">PROFILE ACTIONS</p>
+										<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Profile control board</h2>
 									</div>
-								{/each}
-							</div>
-						</section>
+									<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+									<a href="/api/team/export" class="gc-action gc-action-accent">
+										Export team file
+									</a>
+								</div>
+								<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+									Use the shipped `/api/team` profile actions here, then keep deep member edits in
+									the checked-in team files until the browser exposes import and save workflows.
+								</p>
+
+								<div class="mt-5 grid gap-4">
+									<form
+										class="border border-[var(--gc-border)] px-4 py-4"
+										onsubmit={handleSwitchProfile}
+									>
+										<p class="gc-stamp text-[var(--gc-ink-3)]">Switch profile</p>
+										<div class="mt-4 flex flex-col gap-4">
+											<SettingsField
+												id="team-profile-select"
+												label="Profile"
+												type="select"
+												bind:value={selectedProfileID}
+												options={profiles.map((profile) => ({
+													value: profile.id,
+													label: profile.label
+												}))}
+											/>
+											<div class="flex justify-end">
+												<button
+													type="submit"
+													disabled={teamSaving || selectedProfileID.trim() === ''}
+													class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
+												>
+													Switch profile
+												</button>
+											</div>
+										</div>
+									</form>
+
+									<form
+										class="border border-[var(--gc-border)] px-4 py-4"
+										onsubmit={handleCreateProfile}
+									>
+										<p class="gc-stamp text-[var(--gc-ink-3)]">Create profile</p>
+										<div class="mt-4 flex flex-col gap-4">
+											<SettingsField
+												id="team-profile-create"
+												label="New profile ID"
+												bind:value={createProfileID}
+												placeholder="ops"
+											/>
+											<div class="flex justify-end">
+												<button
+													type="submit"
+													disabled={teamSaving || createProfileID.trim() === ''}
+													class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
+												>
+													Create profile
+												</button>
+											</div>
+										</div>
+									</form>
+
+									<form
+										class="border border-[var(--gc-border)] px-4 py-4"
+										onsubmit={handleCloneProfile}
+									>
+										<p class="gc-stamp text-[var(--gc-ink-3)]">Clone profile</p>
+										<div class="mt-4 flex flex-col gap-4">
+											<SettingsField
+												id="team-profile-clone-source"
+												label="Source profile"
+												type="select"
+												bind:value={cloneSourceProfileID}
+												options={profiles.map((profile) => ({
+													value: profile.id,
+													label: profile.label
+												}))}
+											/>
+											<SettingsField
+												id="team-profile-clone-target"
+												label="Clone to profile"
+												bind:value={cloneProfileID}
+												placeholder="ops"
+											/>
+											<div class="flex justify-end">
+												<button
+													type="submit"
+													disabled={teamSaving ||
+														cloneSourceProfileID.trim() === '' ||
+														cloneProfileID.trim() === ''}
+													class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
+												>
+													Clone profile
+												</button>
+											</div>
+										</div>
+									</form>
+
+									<form
+										class="border border-[var(--gc-border)] px-4 py-4"
+										onsubmit={handleDeleteProfile}
+									>
+										<p class="gc-stamp text-[var(--gc-ink-3)]">Delete profile</p>
+										{#if inactiveProfiles.length === 0}
+											<p class="gc-copy mt-4 text-[var(--gc-ink-3)]">
+												No inactive profiles are available to delete.
+											</p>
+										{:else}
+											<div class="mt-4 flex flex-col gap-4">
+												<SettingsField
+													id="team-profile-delete"
+													label="Inactive profile"
+													type="select"
+													bind:value={deleteProfileID}
+													options={inactiveProfiles.map((profile) => ({
+														value: profile.id,
+														label: profile.label
+													}))}
+												/>
+												<div class="flex justify-end">
+													<button
+														type="submit"
+														disabled={teamSaving || deleteProfileID.trim() === ''}
+														class="gc-action gc-action-warning px-4 py-2 disabled:opacity-50"
+													>
+														Delete profile
+													</button>
+												</div>
+											</div>
+										{/if}
+									</form>
+								</div>
+							</section>
+						</div>
 					</div>
 
 					<section class="gc-panel-soft mt-6 px-5 py-5">
@@ -620,8 +884,8 @@
 							Specialists exposed by the runtime
 						</h2>
 						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-							The browser surface stays read-only here. Edit the team files in the repo when you
-							want to change routing posture, roles, or tool families.
+							Profile lifecycle is live in this tab, but role definitions, tool families, and deep
+							routing edits still belong to the checked-in team files for now.
 						</p>
 
 						<div class="mt-5 grid gap-3">

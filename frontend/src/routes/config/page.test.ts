@@ -257,6 +257,12 @@ describe('Config page', () => {
 		expect(body).toContain('repo_read');
 		expect(body).toContain('default');
 		expect(body).toContain('/home/user/.gistclaw/profiles/default.json5');
+		expect(body).toContain('Switch profile');
+		expect(body).toContain('Create profile');
+		expect(body).toContain('Clone profile');
+		expect(body).toContain('Delete profile');
+		expect(body).toContain('/api/team/export');
+		expect(body).toContain('Export team file');
 	});
 
 	it('renders a team-unavailable message when /api/team data is missing', () => {
