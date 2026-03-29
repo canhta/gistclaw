@@ -24,8 +24,39 @@ describe('Logs page', () => {
 		expect(body).toContain('Export');
 	});
 
-	it('renders COMING SOON state', () => {
+	it('renders the logs summary cards and project context', () => {
 		const { body } = render(LogsPage, { props: { data: baseData } });
-		expect(body).toContain('COMING SOON');
+		expect(body).toContain('Tail Status');
+		expect(body).toContain('Offline');
+		expect(body).toContain('Default Window');
+		expect(body).toContain('Project');
+		expect(body).toContain('my-project');
+		expect(body).toContain('/home/user/my-project');
+	});
+
+	it('renders the live tail placeholder workflow by default', () => {
+		const { body } = render(LogsPage, { props: { data: baseData } });
+		expect(body).toContain('Live tail is waiting on the runtime log stream.');
+		expect(body).toContain('Start Tail');
+		expect(body).toContain('Auto-follow');
+		expect(body).toContain('No log stream available yet.');
+	});
+
+	it('renders the filter workbench when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=filters' };
+		const { body } = render(LogsPage, { props: { data } });
+		expect(body).toContain('Filter toolbar');
+		expect(body).toContain('Search logs');
+		expect(body).toContain('Level');
+		expect(body).toContain('Time Range');
+	});
+
+	it('renders export actions when the export tab is selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=export' };
+		const { body } = render(LogsPage, { props: { data } });
+		expect(body).toContain('Export buffer');
+		expect(body).toContain('Download Current Buffer');
+		expect(body).toContain('Copy JSONL');
+		expect(body).toContain('Export depends on the same tail backend.');
 	});
 });
