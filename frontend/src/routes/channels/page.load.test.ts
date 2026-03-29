@@ -6,7 +6,7 @@ function makeLoadEvent(fetcher: typeof fetch): Parameters<typeof load>[0] {
 }
 
 describe('channels load', () => {
-	it('loads runtime connectors and delivery health from conversations', async () => {
+	it('loads a merged channels status board from conversations', async () => {
 		const fetcher = vi.fn<typeof fetch>(
 			async () =>
 				new Response(
@@ -61,8 +61,23 @@ describe('channels load', () => {
 		}
 
 		expect(fetcher).toHaveBeenCalledWith('/api/conversations', expect.any(Object));
-		expect(result.channels.connectors).toHaveLength(1);
-		expect(result.channels.deliveryHealth).toHaveLength(1);
+		expect(result.channels.summary).toEqual({
+			connector_count: 1,
+			active_count: 1,
+			pending_count: 1,
+			retrying_count: 0,
+			terminal_count: 0,
+			restart_suggested_count: 0
+		});
+		expect(result.channels.items).toEqual([
+			expect.objectContaining({
+				connector_id: 'telegram',
+				state_label: 'Active',
+				pending_count: 1,
+				retrying_count: 0,
+				terminal_count: 0
+			})
+		]);
 	});
 
 	it('returns empty channels data when the request fails', async () => {
@@ -78,8 +93,15 @@ describe('channels load', () => {
 
 		expect(result).toEqual({
 			channels: {
-				connectors: [],
-				deliveryHealth: []
+				summary: {
+					connector_count: 0,
+					active_count: 0,
+					pending_count: 0,
+					retrying_count: 0,
+					terminal_count: 0,
+					restart_suggested_count: 0
+				},
+				items: []
 			}
 		});
 	});

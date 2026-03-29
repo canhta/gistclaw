@@ -11,7 +11,17 @@ const baseData = {
 	onboarding: null,
 	currentPath: '/channels',
 	currentSearch: '',
-	channels: { connectors: [], deliveryHealth: [] }
+	channels: {
+		summary: {
+			connector_count: 0,
+			active_count: 0,
+			pending_count: 0,
+			retrying_count: 0,
+			terminal_count: 0,
+			restart_suggested_count: 0
+		},
+		items: []
+	}
 };
 
 describe('Channels page', () => {
@@ -27,16 +37,32 @@ describe('Channels page', () => {
 		expect(body).toContain('Settings');
 	});
 
+	it('renders channel summary cards on the status tab', () => {
+		const { body } = render(ChannelsPage, { props: { data: baseData } });
+		expect(body).toContain('Live Channels');
+		expect(body).toContain('Pending Deliveries');
+		expect(body).toContain('Retrying Deliveries');
+		expect(body).toContain('Terminal Deliveries');
+	});
+
 	it('renders empty state when no connectors', () => {
 		const { body } = render(ChannelsPage, { props: { data: baseData } });
 		expect(body).toContain('No channels connected');
 	});
 
-	it('renders connector row when connectors are provided', () => {
+	it('renders connector row when channels are provided', () => {
 		const data = {
 			...baseData,
 			channels: {
-				connectors: [
+				summary: {
+					connector_count: 1,
+					active_count: 1,
+					pending_count: 1,
+					retrying_count: 0,
+					terminal_count: 0,
+					restart_suggested_count: 0
+				},
+				items: [
 					{
 						connector_id: 'telegram',
 						state: 'active',
@@ -44,14 +70,32 @@ describe('Channels page', () => {
 						state_class: 'is-success',
 						summary: 'Bot is connected',
 						checked_at_label: '2 min ago',
-						restart_suggested: false
+						restart_suggested: false,
+						pending_count: 1,
+						retrying_count: 0,
+						terminal_count: 0
 					}
-				],
-				deliveryHealth: []
+				]
 			}
 		};
 		const { body } = render(ChannelsPage, { props: { data } });
 		expect(body).toContain('telegram');
 		expect(body).toContain('Bot is connected');
+		expect(body).toContain('Pending deliveries');
+	});
+
+	it('renders login guidance when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=login' };
+		const { body } = render(ChannelsPage, { props: { data } });
+		expect(body).toContain('Bring a channel online');
+		expect(body).toContain('Telegram bot');
+		expect(body).toContain('WhatsApp Web');
+	});
+
+	it('renders settings guidance when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=settings' };
+		const { body } = render(ChannelsPage, { props: { data } });
+		expect(body).toContain('Channel settings moved');
+		expect(body).toContain('Config');
 	});
 });
