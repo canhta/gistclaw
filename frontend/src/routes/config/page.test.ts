@@ -29,6 +29,72 @@ const baseData = {
 	currentPath: '/config',
 	currentSearch: '',
 	config: {
+		team: {
+			notice: 'Loaded from team file',
+			active_profile: {
+				id: 'default',
+				label: 'default',
+				active: true,
+				save_path: '/home/user/.gistclaw/profiles/default.json5'
+			},
+			profiles: [
+				{
+					id: 'default',
+					label: 'default',
+					active: true,
+					save_path: '/home/user/.gistclaw/profiles/default.json5'
+				},
+				{
+					id: 'safe',
+					label: 'safe',
+					active: false,
+					save_path: '/home/user/.gistclaw/profiles/safe.json5'
+				}
+			],
+			team: {
+				name: 'Repo Task Team',
+				front_agent_id: 'assistant',
+				member_count: 3,
+				members: [
+					{
+						id: 'assistant',
+						role: 'front assistant',
+						soul_file: 'teams/assistant.md',
+						base_profile: 'default',
+						tool_families: ['repo_read', 'web_fetch'],
+						delegation_kinds: ['reviewer', 'patcher'],
+						can_message: ['reviewer', 'patcher'],
+						specialist_summary_visibility: 'full',
+						soul_extra: {},
+						is_front: true
+					},
+					{
+						id: 'reviewer',
+						role: 'diff reviewer',
+						soul_file: 'teams/reviewer.md',
+						base_profile: 'default',
+						tool_families: ['repo_read'],
+						delegation_kinds: [],
+						can_message: [],
+						specialist_summary_visibility: 'summary',
+						soul_extra: {},
+						is_front: false
+					},
+					{
+						id: 'patcher',
+						role: 'repo patcher',
+						soul_file: 'teams/patcher.md',
+						base_profile: 'safe',
+						tool_families: ['repo_read', 'repo_write'],
+						delegation_kinds: [],
+						can_message: [],
+						specialist_summary_visibility: 'summary',
+						soul_extra: {},
+						is_front: false
+					}
+				]
+			}
+		},
 		settings: {
 			machine: machineSettings,
 			access: {
@@ -66,8 +132,38 @@ describe('Config page', () => {
 		expect(body).toContain('$0.42');
 	});
 
+	it('renders team-backed agents and routing details when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=agents' };
+		const { body } = render(ConfigPage, { props: { data } });
+		expect(body).toContain('Repo Task Team');
+		expect(body).toContain('Front Agent');
+		expect(body).toContain('assistant');
+		expect(body).toContain('front assistant');
+		expect(body).toContain('diff reviewer');
+		expect(body).toContain('repo patcher');
+		expect(body).toContain('reviewer');
+		expect(body).toContain('patcher');
+		expect(body).toContain('repo_read');
+		expect(body).toContain('default');
+		expect(body).toContain('/home/user/.gistclaw/profiles/default.json5');
+	});
+
+	it('renders a team-unavailable message when /api/team data is missing', () => {
+		const data = {
+			...baseData,
+			currentSearch: 'tab=agents',
+			config: {
+				...baseData.config,
+				team: null
+			}
+		};
+		const { body } = render(ConfigPage, { props: { data } });
+		expect(body).toContain('Team surface unavailable');
+		expect(body).toContain('/api/team');
+	});
+
 	it('renders error state when settings is null', () => {
-		const data = { ...baseData, config: { settings: null } };
+		const data = { ...baseData, config: { ...baseData.config, settings: null } };
 		const { body } = render(ConfigPage, { props: { data } });
 		expect(body).toContain('Failed to load');
 	});

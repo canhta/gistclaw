@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
+	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import SettingsField from '$lib/components/config/SettingsField.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
@@ -9,7 +10,9 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const tabs = [
+	type TabID = 'general' | 'agents' | 'models' | 'channels' | 'raw' | 'apply';
+
+	const tabs: Array<{ id: TabID; label: string }> = [
 		{ id: 'general', label: 'General' },
 		{ id: 'agents', label: 'Agents & Routing' },
 		{ id: 'models', label: 'Models' },
@@ -28,7 +31,7 @@
 		{ value: 'elevated', label: 'Elevated' }
 	];
 
-	let activeTab = $state('general');
+	let activeTabOverride = $state<TabID | null>(null);
 	let savedSettings = $state<SettingsResponse | null>(null);
 	let approvalMode = $state('');
 	let hostAccessMode = $state('');
@@ -41,9 +44,51 @@
 	let saveError = $state('');
 	let rawEditorEl = $state<HTMLDivElement | null>(null);
 
+	function isTabID(value: string | null): value is TabID {
+		return (
+			value === 'general' ||
+			value === 'agents' ||
+			value === 'models' ||
+			value === 'channels' ||
+			value === 'raw' ||
+			value === 'apply'
+		);
+	}
+
+	function setActiveTab(id: string): void {
+		if (isTabID(id)) {
+			activeTabOverride = id;
+		}
+	}
+
+	function listOrNone(values: string[]): string {
+		return values.length > 0 ? values.join(', ') : 'None';
+	}
+
+	const requestedTab = $derived.by<TabID>(() => {
+		const tab = new URLSearchParams(data.currentSearch).get('tab');
+		return isTabID(tab) ? tab : 'general';
+	});
+	const activeTab = $derived(activeTabOverride ?? requestedTab);
 	const settings = $derived(savedSettings ?? data.config?.settings ?? null);
 	const machine = $derived(settings?.machine ?? null);
 	const rawDocument = $derived(JSON.stringify(settings ?? {}, null, 2));
+	const teamConfig = $derived(data.config?.team ?? null);
+	const team = $derived(teamConfig?.team ?? null);
+	const activeProfile = $derived(teamConfig?.active_profile ?? null);
+	const profiles = $derived(teamConfig?.profiles ?? []);
+	const members = $derived(team?.members ?? []);
+	const frontAgent = $derived.by(() => {
+		if (!team) {
+			return null;
+		}
+
+		return (
+			members.find((member) => member.id === team.front_agent_id) ??
+			members.find((member) => member.is_front) ??
+			null
+		);
+	});
 
 	$effect(() => {
 		const nextSignature = machine
@@ -147,7 +192,7 @@
 		<div class="px-6 pt-4 pb-0">
 			<h1 class="gc-panel-title text-[var(--gc-ink)]">Config</h1>
 		</div>
-		<SectionTabs {tabs} bind:activeTab />
+		<SectionTabs {tabs} {activeTab} onchange={setActiveTab} />
 	</div>
 
 	<div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
@@ -274,14 +319,198 @@
 				</div>
 			</div>
 		{:else if activeTab === 'agents'}
-			<div class="flex flex-1 items-center justify-center p-10">
-				<div class="text-center">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">COMING SOON</p>
-					<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">Agents &amp; Routing</p>
-					<p class="gc-copy mt-3 max-w-xs text-[var(--gc-ink-2)]">
-						Agent profiles, defaults, and routing rules are not exposed by the web API yet.
-					</p>
-				</div>
+			<div class="mx-auto w-full max-w-6xl px-6 py-6">
+				{#if team}
+					{#if teamConfig?.notice}
+						<div class="mb-6">
+							<SurfaceMessage label="TEAM FILE" message={teamConfig.notice} />
+						</div>
+					{/if}
+
+					<div class="grid gap-4 xl:grid-cols-4">
+						<SurfaceMetricCard
+							label="Team"
+							value={team.name}
+							detail={`Front agent ${frontAgent?.id ?? team.front_agent_id}`}
+							tone="accent"
+						/>
+						<SurfaceMetricCard
+							label="Members"
+							value={String(team.member_count)}
+							detail={`${members.length} runtime role${members.length === 1 ? '' : 's'} exposed by /api/team.`}
+						/>
+						<SurfaceMetricCard
+							label="Front Agent"
+							value={frontAgent?.id ?? team.front_agent_id}
+							detail={frontAgent?.role ?? 'Front role not described'}
+							tone="accent"
+						/>
+						<SurfaceMetricCard
+							label="Active Profile"
+							value={activeProfile?.label ?? 'None'}
+							detail={activeProfile?.save_path ?? 'Profile save path not exposed'}
+						/>
+					</div>
+
+					<div class="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
+						<section class="gc-panel-soft px-5 py-5">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">ROUTING</p>
+							<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
+								Route work through the front agent
+							</h2>
+							<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+								This follows OpenClaw's operator flow, but only shows the team and routing facts
+								GistClaw actually ships through `/api/team`.
+							</p>
+
+							<div class="mt-5 grid gap-3 md:grid-cols-2">
+								<div class="border border-[var(--gc-border)] px-4 py-4">
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Front Agent</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+										{frontAgent?.id ?? team.front_agent_id}
+									</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+										{frontAgent?.role ?? 'No front role description'}
+									</p>
+								</div>
+
+								<div class="border border-[var(--gc-border)] px-4 py-4">
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Base Profile</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+										{frontAgent?.base_profile ?? activeProfile?.label ?? 'None'}
+									</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
+										Front agent defaults before specialist handoff.
+									</p>
+								</div>
+
+								<div class="border border-[var(--gc-border)] px-4 py-4">
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Delegation</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+										{listOrNone(frontAgent?.delegation_kinds ?? [])}
+									</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
+										Specialist lanes the front agent may hand work to directly.
+									</p>
+								</div>
+
+								<div class="border border-[var(--gc-border)] px-4 py-4">
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Can Message</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+										{listOrNone(frontAgent?.can_message ?? [])}
+									</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
+										Direct peers the front agent is allowed to wake or consult.
+									</p>
+								</div>
+							</div>
+						</section>
+
+						<section class="gc-panel-soft px-5 py-5">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">PROFILES</p>
+							<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Saved profiles</h2>
+							<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+								Profile defaults still live in checked-in runtime files, but the active selection is
+								visible here.
+							</p>
+
+							<div class="mt-5 grid gap-3">
+								{#each profiles as profile (profile.id)}
+									<div class="border border-[var(--gc-border)] px-4 py-4">
+										<div class="flex items-start justify-between gap-3">
+											<div>
+												<p class="gc-copy text-[var(--gc-ink)]">{profile.label}</p>
+												<p class="gc-copy mt-2 font-mono text-sm text-[var(--gc-ink-3)]">
+													{profile.save_path ?? 'Runtime default'}
+												</p>
+											</div>
+											{#if profile.active}
+												<span class="gc-stamp text-[var(--gc-primary)]">ACTIVE</span>
+											{/if}
+										</div>
+									</div>
+								{/each}
+							</div>
+						</section>
+					</div>
+
+					<section class="gc-panel-soft mt-6 px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">TEAM MEMBERS</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
+							Specialists exposed by the runtime
+						</h2>
+						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+							The browser surface stays read-only here. Edit the team files in the repo when you
+							want to change routing posture, roles, or tool families.
+						</p>
+
+						<div class="mt-5 grid gap-3">
+							{#each members as member (member.id)}
+								<article class="border border-[var(--gc-border)] px-4 py-4">
+									<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+										<div>
+											<p class="gc-copy text-[var(--gc-ink)]">{member.id}</p>
+											<p class="gc-copy mt-1 text-[var(--gc-ink-2)]">{member.role}</p>
+											<p class="gc-copy mt-2 font-mono text-sm text-[var(--gc-ink-3)]">
+												{member.soul_file}
+											</p>
+										</div>
+
+										<div class="flex flex-wrap gap-2">
+											{#if member.is_front}
+												<span
+													class="gc-stamp border border-[var(--gc-primary)] px-2 py-1 text-[var(--gc-primary)]"
+												>
+													Front agent
+												</span>
+											{/if}
+											<span
+												class="gc-stamp border border-[var(--gc-border)] px-2 py-1 text-[var(--gc-ink-3)]"
+											>
+												Profile {member.base_profile}
+											</span>
+											<span
+												class="gc-stamp border border-[var(--gc-border)] px-2 py-1 text-[var(--gc-ink-3)]"
+											>
+												Summary {member.specialist_summary_visibility}
+											</span>
+										</div>
+									</div>
+
+									<div class="mt-4 grid gap-3 md:grid-cols-3">
+										<div>
+											<p class="gc-stamp text-[var(--gc-ink-3)]">Tools</p>
+											<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+												{listOrNone(member.tool_families)}
+											</p>
+										</div>
+										<div>
+											<p class="gc-stamp text-[var(--gc-ink-3)]">Delegation</p>
+											<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+												{listOrNone(member.delegation_kinds)}
+											</p>
+										</div>
+										<div>
+											<p class="gc-stamp text-[var(--gc-ink-3)]">Can Message</p>
+											<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+												{listOrNone(member.can_message)}
+											</p>
+										</div>
+									</div>
+								</article>
+							{/each}
+						</div>
+					</section>
+				{:else}
+					<div class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">AGENTS &amp; ROUTING</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Team surface unavailable</h2>
+						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+							The runtime did not return `/api/team`. Use the checked-in team files until that
+							surface is available again.
+						</p>
+					</div>
+				{/if}
 			</div>
 		{:else if activeTab === 'models'}
 			<div class="flex flex-1 items-center justify-center p-10">

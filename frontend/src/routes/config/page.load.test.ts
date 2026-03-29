@@ -6,10 +6,10 @@ function makeLoadEvent(fetcher: typeof fetch): Parameters<typeof load>[0] {
 }
 
 describe('config load', () => {
-	it('loads settings from /api/settings', async () => {
-		const fetcher = vi.fn<typeof fetch>(
-			async () =>
-				new Response(
+	it('loads settings and team data for config', async () => {
+		const fetcher = vi.fn<typeof fetch>(async (input) => {
+			if (input === '/api/settings') {
+				return new Response(
 					JSON.stringify({
 						machine: {
 							storage_root: '/home/user/.gistclaw',
@@ -37,8 +37,68 @@ describe('config load', () => {
 						status: 200,
 						headers: { 'content-type': 'application/json' }
 					}
-				)
-		);
+				);
+			}
+
+			if (input === '/api/team') {
+				return new Response(
+					JSON.stringify({
+						notice: 'Loaded from team file',
+						active_profile: {
+							id: 'default',
+							label: 'default',
+							active: true,
+							save_path: '/home/user/.gistclaw/profiles/default.json5'
+						},
+						profiles: [
+							{
+								id: 'default',
+								label: 'default',
+								active: true,
+								save_path: '/home/user/.gistclaw/profiles/default.json5'
+							}
+						],
+						team: {
+							name: 'Repo Task Team',
+							front_agent_id: 'assistant',
+							member_count: 2,
+							members: [
+								{
+									id: 'assistant',
+									role: 'front assistant',
+									soul_file: 'teams/assistant.md',
+									base_profile: 'default',
+									tool_families: ['repo_read', 'web_fetch'],
+									delegation_kinds: ['reviewer', 'patcher'],
+									can_message: ['reviewer', 'patcher'],
+									specialist_summary_visibility: 'full',
+									soul_extra: {},
+									is_front: true
+								},
+								{
+									id: 'reviewer',
+									role: 'diff reviewer',
+									soul_file: 'teams/reviewer.md',
+									base_profile: 'default',
+									tool_families: ['repo_read'],
+									delegation_kinds: [],
+									can_message: [],
+									specialist_summary_visibility: 'summary',
+									soul_extra: {},
+									is_front: false
+								}
+							]
+						}
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
+			throw new Error(`unexpected request: ${String(input)}`);
+		});
 
 		const result = await load(makeLoadEvent(fetcher));
 
@@ -46,13 +106,60 @@ describe('config load', () => {
 			throw new Error('expected config load to return data');
 		}
 
-		expect(fetcher).toHaveBeenCalledWith('/api/settings', expect.any(Object));
+		expect(fetcher).toHaveBeenNthCalledWith(1, '/api/settings', expect.any(Object));
+		expect(fetcher).toHaveBeenNthCalledWith(2, '/api/team', expect.any(Object));
 		expect(result.config.settings?.machine.per_run_token_budget).toBe('50000');
+		expect(result.config.team?.team.name).toBe('Repo Task Team');
+		expect(result.config.team?.team.front_agent_id).toBe('assistant');
 	});
 
-	it('returns null settings when the request fails', async () => {
-		const fetcher = vi.fn<typeof fetch>(async () => {
-			throw new Error('boom');
+	it('returns partial fallback data when one request fails', async () => {
+		const fetcher = vi.fn<typeof fetch>(async (input) => {
+			if (input === '/api/settings') {
+				throw new Error('boom');
+			}
+
+			return new Response(
+				JSON.stringify({
+					active_profile: {
+						id: 'default',
+						label: 'default',
+						active: true,
+						save_path: '/home/user/.gistclaw/profiles/default.json5'
+					},
+					profiles: [
+						{
+							id: 'default',
+							label: 'default',
+							active: true,
+							save_path: '/home/user/.gistclaw/profiles/default.json5'
+						}
+					],
+					team: {
+						name: 'Repo Task Team',
+						front_agent_id: 'assistant',
+						member_count: 1,
+						members: [
+							{
+								id: 'assistant',
+								role: 'front assistant',
+								soul_file: 'teams/assistant.md',
+								base_profile: 'default',
+								tool_families: ['repo_read'],
+								delegation_kinds: ['reviewer'],
+								can_message: ['reviewer'],
+								specialist_summary_visibility: 'full',
+								soul_extra: {},
+								is_front: true
+							}
+						]
+					}
+				}),
+				{
+					status: 200,
+					headers: { 'content-type': 'application/json' }
+				}
+			);
 		});
 
 		const result = await load(makeLoadEvent(fetcher));
@@ -63,7 +170,12 @@ describe('config load', () => {
 
 		expect(result).toEqual({
 			config: {
-				settings: null
+				settings: null,
+				team: expect.objectContaining({
+					team: expect.objectContaining({
+						name: 'Repo Task Team'
+					})
+				})
 			}
 		});
 	});
