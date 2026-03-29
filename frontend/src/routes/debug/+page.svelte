@@ -1,15 +1,45 @@
+<script lang="ts">
+	import PlaceholderSectionShell from '$lib/components/common/PlaceholderSectionShell.svelte';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
+
+	const tabs = [
+		{
+			id: 'status',
+			label: 'Status',
+			title: 'Runtime status',
+			description: 'Runtime status is not connected to a backend yet.'
+		},
+		{
+			id: 'health',
+			label: 'Health',
+			title: 'System health',
+			description: 'Health inspection is not connected to a backend yet.'
+		},
+		{
+			id: 'models',
+			label: 'Models',
+			title: 'Model inventory',
+			description: 'Model inventory is not connected to a backend yet.'
+		},
+		{
+			id: 'events',
+			label: 'Events',
+			title: 'Runtime events',
+			description: 'Event inspection is not connected to a backend yet.'
+		},
+		{
+			id: 'rpc',
+			label: 'RPC',
+			title: 'RPC console',
+			description: 'RPC control is not connected to a backend yet.'
+		}
+	];
+</script>
+
 <svelte:head>
 	<title>Debug | GistClaw</title>
 </svelte:head>
 
-<div class="flex h-full flex-col">
-	<div class="flex flex-1 items-center justify-center p-6">
-		<div class="gc-panel max-w-md px-6 py-5 text-center">
-			<p class="gc-stamp text-[var(--gc-ink-3)]">COMING SOON</p>
-			<h1 class="gc-panel-title mt-2 text-[var(--gc-ink)]">Debug</h1>
-			<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-				Runtime status, health checks, model inventory, event log, and RPC console.
-			</p>
-		</div>
-	</div>
-</div>
+<PlaceholderSectionShell sectionTitle="Debug" {tabs} currentPath={data.currentPath} />
