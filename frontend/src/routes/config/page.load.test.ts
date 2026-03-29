@@ -396,4 +396,96 @@ describe('config load', () => {
 			}
 		});
 	});
+
+	it('returns shaped team and knowledge fallbacks when those requests fail', async () => {
+		const fetcher = vi.fn<typeof fetch>(async (input) => {
+			if (input === '/api/settings') {
+				return new Response(
+					JSON.stringify({
+						machine: {
+							storage_root: '/home/user/.gistclaw',
+							approval_mode: 'on_request',
+							approval_mode_label: 'On Request',
+							host_access_mode: 'local',
+							host_access_mode_label: 'Local',
+							admin_token: 'tok-123',
+							per_run_token_budget: '50000',
+							daily_cost_cap_usd: '5.00',
+							rolling_cost_usd: 0.42,
+							rolling_cost_label: '$0.42',
+							telegram_token: '',
+							active_project_name: '',
+							active_project_path: '',
+							active_project_summary: ''
+						},
+						access: {
+							password_configured: true,
+							other_active_devices: [],
+							blocked_devices: []
+						}
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
+			if (input === '/api/work') {
+				return new Response(
+					JSON.stringify({
+						active_project_name: '',
+						active_project_path: '',
+						queue_strip: {
+							headline: 'No active runs',
+							root_runs: 0,
+							worker_runs: 0,
+							recovery_runs: 0,
+							summary: {
+								total: 0,
+								pending: 0,
+								active: 0,
+								needs_approval: 0,
+								completed: 0,
+								failed: 0,
+								interrupted: 0,
+								root_status: 'idle'
+							}
+						},
+						paging: { has_next: false, has_prev: false },
+						clusters: []
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
+			if (input === '/api/team' || input === '/api/knowledge') {
+				throw new Error('boom');
+			}
+
+			throw new Error(`unexpected request: ${String(input)}`);
+		});
+
+		const result = await load(makeLoadEvent(fetcher));
+
+		if (!result) {
+			throw new Error('expected config load to return data');
+		}
+
+		expect(result.config.team).toMatchObject({
+			notice: 'Team controls could not be loaded. Reload to retry.',
+			active_profile: { id: 'default', label: 'default', active: true },
+			team: { name: '', front_agent_id: '', member_count: 0, members: [] }
+		});
+		expect(result.config.knowledge).toMatchObject({
+			notice: 'Saved knowledge could not be loaded. Reload to retry.',
+			headline: 'No saved knowledge is shaping work yet.',
+			filters: { query: '', scope: '', agent_id: '', limit: 20 },
+			summary: { visible_count: 0 },
+			items: []
+		});
+	});
 });

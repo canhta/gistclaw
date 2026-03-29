@@ -286,17 +286,36 @@ describe('Config page', () => {
 		expect(body).toContain('Next knowledge page');
 	});
 
-	it('renders a knowledge-unavailable message when /api/knowledge data is missing', () => {
+	it('renders a knowledge notice and empty board when saved knowledge falls back', () => {
 		const data = {
 			...baseData,
 			config: {
 				...baseData.config,
-				knowledge: null
+				knowledge: {
+					notice: 'Saved knowledge could not be loaded. Reload to retry.',
+					headline: 'No saved knowledge is shaping work yet.',
+					filters: {
+						query: '',
+						scope: '',
+						agent_id: '',
+						limit: 20
+					},
+					summary: {
+						visible_count: 0
+					},
+					items: [],
+					paging: {
+						has_next: false,
+						has_prev: false
+					}
+				}
 			}
 		};
 		const { body } = render(ConfigPage, { props: { data } });
-		expect(body).toContain('Knowledge surface unavailable');
-		expect(body).toContain('/api/knowledge');
+		expect(body).toContain('Saved knowledge');
+		expect(body).toContain('Saved knowledge could not be loaded. Reload to retry.');
+		expect(body).toContain('No saved knowledge is shaping work yet.');
+		expect(body).not.toContain('Knowledge surface unavailable');
 	});
 
 	it('renders team-backed agents and routing details when selected through search', () => {
@@ -325,18 +344,44 @@ describe('Config page', () => {
 		expect(body).toContain('Export team file');
 	});
 
-	it('renders a team-unavailable message when /api/team data is missing', () => {
+	it('renders an empty team board instead of a team-unavailable placeholder', () => {
 		const data = {
 			...baseData,
 			currentSearch: 'tab=agents',
 			config: {
 				...baseData.config,
-				team: null
+				team: {
+					notice:
+						'No checked-in team file is available for this project yet. Import a team file or create a profile to start routing work.',
+					active_profile: {
+						id: 'default',
+						label: 'default',
+						active: true
+					},
+					profiles: [
+						{
+							id: 'default',
+							label: 'default',
+							active: true
+						}
+					],
+					team: {
+						name: '',
+						front_agent_id: '',
+						member_count: 0,
+						members: []
+					}
+				}
 			}
 		};
 		const { body } = render(ConfigPage, { props: { data } });
-		expect(body).toContain('Team surface unavailable');
-		expect(body).toContain('/api/team');
+		expect(body).toContain('Route work through the front agent');
+		expect(body).toContain(
+			'No checked-in team file is available for this project yet. Import a team file or create a profile to start routing work.'
+		);
+		expect(body).toContain('Saved profiles');
+		expect(body).toContain('No team members are configured yet.');
+		expect(body).not.toContain('Team surface unavailable');
 	});
 
 	it('renders model posture and recent usage when selected through search', () => {

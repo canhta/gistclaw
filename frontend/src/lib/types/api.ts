@@ -467,6 +467,7 @@ export interface KnowledgeItemResponse {
 }
 
 export interface KnowledgeResponse {
+	notice?: string;
 	headline: string;
 	filters: KnowledgeFilterResponse;
 	summary: {

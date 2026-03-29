@@ -199,6 +199,66 @@ func TestKnowledgeAPIAppliesFiltersAndMissingItemResponses(t *testing.T) {
 	}
 }
 
+func TestKnowledgeAPIWithoutActiveProjectReturnsEmptySurface(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+	if _, err := h.db.RawDB().Exec("DELETE FROM settings WHERE key = 'active_project_id'"); err != nil {
+		t.Fatalf("remove active_project_id: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/knowledge?scope=local&agent_id=assistant&q=operator&limit=5", nil)
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Notice   string `json:"notice"`
+		Headline string `json:"headline"`
+		Filters  struct {
+			Scope   string `json:"scope"`
+			AgentID string `json:"agent_id"`
+			Query   string `json:"query"`
+			Limit   int    `json:"limit"`
+		} `json:"filters"`
+		Summary struct {
+			VisibleCount int `json:"visible_count"`
+		} `json:"summary"`
+		Items  []knowledgeItemResponse `json:"items"`
+		Paging struct {
+			HasNext bool `json:"has_next"`
+			HasPrev bool `json:"has_prev"`
+		} `json:"paging"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode empty response: %v", err)
+	}
+	if resp.Notice != "Choose an active project to load saved knowledge." {
+		t.Fatalf("notice = %q", resp.Notice)
+	}
+	if resp.Headline != "No saved knowledge is shaping work yet." {
+		t.Fatalf("headline = %q", resp.Headline)
+	}
+	if resp.Filters.Scope != "local" || resp.Filters.AgentID != "assistant" || resp.Filters.Query != "operator" {
+		t.Fatalf("unexpected filters %+v", resp.Filters)
+	}
+	if resp.Filters.Limit != 5 {
+		t.Fatalf("filters.limit = %d, want 5", resp.Filters.Limit)
+	}
+	if resp.Summary.VisibleCount != 0 {
+		t.Fatalf("visible_count = %d, want 0", resp.Summary.VisibleCount)
+	}
+	if len(resp.Items) != 0 {
+		t.Fatalf("expected no items, got %d", len(resp.Items))
+	}
+	if resp.Paging.HasNext || resp.Paging.HasPrev {
+		t.Fatalf("expected empty paging, got %+v", resp.Paging)
+	}
+}
+
 func TestKnowledgeEditRejectsInvalidBodies(t *testing.T) {
 	t.Parallel()
 

@@ -82,7 +82,7 @@ type teamMemberInput struct {
 func (s *Server) handleTeamAPI(w http.ResponseWriter, r *http.Request) {
 	state, err := s.loadTeamState(r.Context())
 	if err != nil {
-		http.Error(w, "failed to load team surface", http.StatusInternalServerError)
+		writeJSON(w, http.StatusOK, buildTeamAPIResponse(teamState{}, teamSurfaceNotice(err)))
 		return
 	}
 	writeJSON(w, http.StatusOK, buildTeamAPIResponse(state, ""))
@@ -264,11 +264,26 @@ func (s *Server) handleTeamImportAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	state, err := s.loadTeamState(r.Context())
 	if err != nil {
-		http.Error(w, "failed to load team surface", http.StatusInternalServerError)
-		return
+		state = teamState{}
 	}
 	state.Config = cfg
 	writeJSON(w, http.StatusOK, buildTeamAPIResponse(state, "Imported file loaded. Save Team to apply the change."))
+}
+
+func teamSurfaceNotice(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	message := err.Error()
+	switch {
+	case strings.Contains(message, "team dir not configured"),
+		strings.Contains(message, "team: read team.yaml"),
+		strings.Contains(message, "team profile"):
+		return "No checked-in team file is available for this project yet. Import a team file or create a profile to start routing work."
+	default:
+		return "Team controls could not be loaded. Reload to retry."
+	}
 }
 
 func buildTeamAPIResponse(state teamState, notice string) teamAPIResponse {

@@ -402,6 +402,57 @@ func TestTeamExportAPIDownloadsEditableYAML(t *testing.T) {
 	}
 }
 
+func TestTeamAPIWithoutReadableTeamFileReturnsEmptySurface(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+	h.rt.SetTeamDir("")
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/team", nil)
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Notice        string `json:"notice"`
+		ActiveProfile struct {
+			ID string `json:"id"`
+		} `json:"active_profile"`
+		Profiles []struct {
+			ID string `json:"id"`
+		} `json:"profiles"`
+		Team struct {
+			Name         string `json:"name"`
+			FrontAgentID string `json:"front_agent_id"`
+			MemberCount  int    `json:"member_count"`
+			Members      []struct {
+				ID string `json:"id"`
+			} `json:"members"`
+		} `json:"team"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode empty team response: %v", err)
+	}
+	if resp.Notice != "No checked-in team file is available for this project yet. Import a team file or create a profile to start routing work." {
+		t.Fatalf("notice = %q", resp.Notice)
+	}
+	if resp.ActiveProfile.ID != "default" {
+		t.Fatalf("active profile = %q, want %q", resp.ActiveProfile.ID, "default")
+	}
+	if len(resp.Profiles) != 1 || resp.Profiles[0].ID != "default" {
+		t.Fatalf("expected default profile in response, got %+v", resp.Profiles)
+	}
+	if resp.Team.Name != "" || resp.Team.FrontAgentID != "" {
+		t.Fatalf("expected empty team identity, got %+v", resp.Team)
+	}
+	if resp.Team.MemberCount != 0 || len(resp.Team.Members) != 0 {
+		t.Fatalf("expected empty team members, got %+v", resp.Team)
+	}
+}
+
 func TestTeamMutationAPIRejectsInvalidCloneDeleteAndImportRequests(t *testing.T) {
 	t.Parallel()
 

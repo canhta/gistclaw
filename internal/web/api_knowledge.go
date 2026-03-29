@@ -13,6 +13,7 @@ import (
 )
 
 type knowledgeIndexResponse struct {
+	Notice   string                   `json:"notice,omitempty"`
 	Headline string                   `json:"headline"`
 	Filters  knowledgeFilterResponse  `json:"filters"`
 	Summary  knowledgeSummaryResponse `json:"summary"`
@@ -72,6 +73,16 @@ func (s *Server) handleKnowledgeIndex(w http.ResponseWriter, r *http.Request) {
 	project, err := runtime.ActiveProject(r.Context(), s.db)
 	if err != nil {
 		http.Error(w, "failed to load active project", http.StatusInternalServerError)
+		return
+	}
+	if strings.TrimSpace(project.ID) == "" {
+		writeJSON(w, http.StatusOK, emptyKnowledgeIndexResponse(
+			scope,
+			agentID,
+			keyword,
+			limit,
+			"Choose an active project to load saved knowledge.",
+		))
 		return
 	}
 
@@ -186,6 +197,28 @@ func buildKnowledgeHeadline(itemCount int, scope, agentID, keyword string) strin
 		return "Filtered knowledge for the current project."
 	default:
 		return "Knowledge shaping future work in this project."
+	}
+}
+
+func emptyKnowledgeIndexResponse(scope, agentID, keyword string, limit int, notice string) knowledgeIndexResponse {
+	if limit <= 0 {
+		limit = 20
+	}
+
+	return knowledgeIndexResponse{
+		Notice:   notice,
+		Headline: buildKnowledgeHeadline(0, scope, agentID, keyword),
+		Filters: knowledgeFilterResponse{
+			Scope:   scope,
+			AgentID: agentID,
+			Query:   keyword,
+			Limit:   limit,
+		},
+		Summary: knowledgeSummaryResponse{
+			VisibleCount: 0,
+		},
+		Items:  []knowledgeItemResponse{},
+		Paging: knowledgePagingResponse{HasNext: false, HasPrev: false},
 	}
 }
 

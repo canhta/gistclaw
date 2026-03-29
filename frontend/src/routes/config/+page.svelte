@@ -57,6 +57,45 @@
 		{ value: 'team', label: 'Team' }
 	];
 
+	const emptyTeamResponse: TeamResponse = {
+		active_profile: {
+			id: 'default',
+			label: 'default',
+			active: true
+		},
+		profiles: [
+			{
+				id: 'default',
+				label: 'default',
+				active: true
+			}
+		],
+		team: {
+			name: '',
+			front_agent_id: '',
+			member_count: 0,
+			members: []
+		}
+	};
+
+	const emptyKnowledgeResponse: KnowledgeResponse = {
+		headline: 'No saved knowledge is shaping work yet.',
+		filters: {
+			query: '',
+			scope: '',
+			agent_id: '',
+			limit: 20
+		},
+		summary: {
+			visible_count: 0
+		},
+		items: [],
+		paging: {
+			has_next: false,
+			has_prev: false
+		}
+	};
+
 	let activeTabOverride = $state<TabID | null>(null);
 	let savedSettings = $state<SettingsResponse | null>(null);
 	let savedTeam = $state<TeamResponse | null>(null);
@@ -151,18 +190,20 @@
 	const machine = $derived(settings?.machine ?? null);
 	const access = $derived(settings?.access ?? null);
 	const rawDocument = $derived(JSON.stringify(settings ?? {}, null, 2));
-	const teamConfig = $derived(savedTeam ?? data.config?.team ?? null);
-	const team = $derived(teamConfig?.team ?? null);
+	const teamConfig = $derived(savedTeam ?? data.config?.team ?? emptyTeamResponse);
+	const team = $derived(teamConfig.team);
 	const activeProfile = $derived(teamConfig?.active_profile ?? null);
 	const profiles = $derived(teamConfig?.profiles ?? []);
 	const inactiveProfiles = $derived(profiles.filter((profile) => !profile.active));
 	const members = $derived(team?.members ?? []);
 	const work = $derived(data.config?.work ?? null);
-	const knowledge = $derived(savedKnowledge ?? data.config?.knowledge ?? null);
+	const knowledge = $derived(savedKnowledge ?? data.config?.knowledge ?? emptyKnowledgeResponse);
 	const modelUsage = $derived(summarizeModelUsage(work?.clusters));
 	const currentDevice = $derived(access?.current_device ?? null);
 	const otherActiveDevices = $derived(access?.other_active_devices ?? []);
 	const blockedDevices = $derived(access?.blocked_devices ?? []);
+	const hasTeamConfig = $derived(team.name.trim() !== '' && team.member_count > 0);
+	const teamName = $derived(team.name.trim() !== '' ? team.name : 'Unconfigured');
 	const frontAgent = $derived.by(() => {
 		if (!team) {
 			return null;
@@ -174,6 +215,10 @@
 			null
 		);
 	});
+	const frontAgentID = $derived(
+		frontAgent?.id ?? (team.front_agent_id.trim() !== '' ? team.front_agent_id : 'None')
+	);
+	const frontAgentRole = $derived(frontAgent?.role ?? 'No front role description');
 
 	$effect(() => {
 		const nextSignature = machine
@@ -460,8 +505,8 @@
 	}
 
 	async function handleSaveTeam(): Promise<void> {
-		if (!team) {
-			saveError = 'Failed to save team.';
+		if (!team || team.name.trim() === '' || team.member_count === 0) {
+			saveError = 'Import or load a team file before saving.';
 			return;
 		}
 
@@ -800,599 +845,598 @@
 						<p class="gc-stamp text-[var(--gc-ink-3)]">SAVED KNOWLEDGE</p>
 						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Saved knowledge</h2>
 
-						{#if knowledge}
-							<p class="gc-copy mt-3 max-w-3xl text-[var(--gc-ink-2)]">
-								{knowledge.headline}
-							</p>
-
-							<form method="GET" class="mt-5 grid gap-4 xl:grid-cols-4">
-								<input type="hidden" name="tab" value="general" />
-
-								<div class="flex flex-col gap-2">
-									<label for="knowledge-search" class="gc-stamp text-[var(--gc-ink-3)]">
-										Search knowledge
-									</label>
-									<input
-										id="knowledge-search"
-										name="knowledge_q"
-										value={knowledge.filters.query}
-										placeholder="Search saved knowledge"
-										class="gc-control min-h-[2.75rem]"
-									/>
-								</div>
-
-								<div class="flex flex-col gap-2">
-									<label for="knowledge-scope" class="gc-stamp text-[var(--gc-ink-3)]">
-										Knowledge scope
-									</label>
-									<select
-										id="knowledge-scope"
-										name="knowledge_scope"
-										class="gc-control min-h-[2.75rem]"
-									>
-										{#each knowledgeScopeOptions as option (option.value)}
-											<option
-												value={option.value}
-												selected={knowledge.filters.scope === option.value}
-											>
-												{option.label}
-											</option>
-										{/each}
-									</select>
-								</div>
-
-								<div class="flex flex-col gap-2">
-									<label for="knowledge-agent" class="gc-stamp text-[var(--gc-ink-3)]">
-										Agent
-									</label>
-									<input
-										id="knowledge-agent"
-										name="knowledge_agent_id"
-										value={knowledge.filters.agent_id}
-										placeholder="assistant"
-										class="gc-control min-h-[2.75rem]"
-									/>
-								</div>
-
-								<div class="flex flex-col gap-2">
-									<label for="knowledge-limit" class="gc-stamp text-[var(--gc-ink-3)]">
-										Knowledge limit
-									</label>
-									<input
-										id="knowledge-limit"
-										type="number"
-										min="1"
-										max="100"
-										name="knowledge_limit"
-										value={String(knowledge.filters.limit)}
-										class="gc-control min-h-[2.75rem]"
-									/>
-								</div>
-
-								<div class="flex flex-wrap justify-end gap-3 xl:col-span-4">
-									<a
-										href={resolve('/config?tab=general')}
-										class="gc-action gc-action-accent px-4 py-2"
-									>
-										Clear filters
-									</a>
-									<button type="submit" class="gc-action gc-action-solid px-4 py-2">
-										Apply filters
-									</button>
-								</div>
-							</form>
-
-							<div class="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.85fr)]">
-								<div class="grid gap-3">
-									{#if knowledge.items.length > 0}
-										{#each knowledge.items as item (item.id)}
-											<article class="border border-[var(--gc-border)] px-4 py-4">
-												<div class="flex flex-wrap items-start justify-between gap-3">
-													<div>
-														{#if editingKnowledgeID === item.id}
-															<label
-																for={`knowledge-edit-${item.id}`}
-																class="gc-stamp text-[var(--gc-ink-3)]"
-															>
-																Edit knowledge
-															</label>
-															<textarea
-																id={`knowledge-edit-${item.id}`}
-																bind:value={editingKnowledgeContent}
-																rows="4"
-																class="gc-control mt-2 min-h-[7rem] w-full"
-															></textarea>
-														{:else}
-															<p class="gc-copy text-[var(--gc-ink)]">{item.content}</p>
-															<p class="gc-copy mt-2 text-sm text-[var(--gc-ink-3)]">
-																{item.provenance}
-															</p>
-														{/if}
-													</div>
-													<div class="flex flex-wrap gap-2 text-xs text-[var(--gc-ink-3)]">
-														<span class="gc-chip">{formatKnowledgeScope(item.scope)}</span>
-														<span class="gc-chip">{item.agent_id}</span>
-														<span class="gc-chip">{item.source}</span>
-													</div>
-												</div>
-
-												<div class="mt-4 flex flex-wrap gap-x-5 gap-y-2">
-													<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
-														{formatKnowledgeConfidence(item.confidence)}
-													</p>
-													<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
-														Created {item.created_at_label}
-													</p>
-													<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
-														Updated {item.updated_at_label}
-													</p>
-												</div>
-
-												<div class="mt-4 flex flex-wrap justify-end gap-3">
-													{#if editingKnowledgeID === item.id}
-														<button
-															type="button"
-															disabled={knowledgeMutationID === item.id}
-															class="gc-action gc-action-accent px-4 py-2 disabled:opacity-50"
-															onclick={() => {
-																cancelKnowledgeEdit();
-															}}
-														>
-															Cancel edit
-														</button>
-														<button
-															type="button"
-															disabled={knowledgeMutationID === item.id}
-															class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
-															onclick={() => {
-																void handleKnowledgeEdit(item.id);
-															}}
-														>
-															{knowledgeMutationID === item.id ? 'Saving…' : 'Save knowledge'}
-														</button>
-													{:else}
-														<button
-															type="button"
-															disabled={knowledgeMutationID === item.id}
-															class="gc-action gc-action-accent px-4 py-2 disabled:opacity-50"
-															onclick={() => {
-																startKnowledgeEdit(item.id, item.content);
-															}}
-														>
-															Edit knowledge
-														</button>
-														<button
-															type="button"
-															disabled={knowledgeMutationID === item.id}
-															class="gc-action gc-action-warning px-4 py-2 disabled:opacity-50"
-															onclick={() => {
-																void handleKnowledgeForget(item.id);
-															}}
-														>
-															{knowledgeMutationID === item.id ? 'Forgetting…' : 'Forget knowledge'}
-														</button>
-													{/if}
-												</div>
-											</article>
-										{/each}
-									{:else}
-										<div class="border border-dashed border-[var(--gc-border)] px-4 py-5">
-											<p class="gc-copy text-[var(--gc-ink)]">
-												No saved knowledge matched the current filters.
-											</p>
-										</div>
-									{/if}
-								</div>
-
-								<div class="flex flex-col gap-4">
-									<section class="border border-[var(--gc-border)] px-4 py-4">
-										<p class="gc-stamp text-[var(--gc-ink-3)]">Visible items</p>
-										<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">
-											{knowledge.summary.visible_count}
-										</p>
-										<p class="gc-copy mt-3 text-[var(--gc-ink-3)]">
-											Knowledge entries currently shaping this project view.
-										</p>
-									</section>
-
-									<section class="border border-[var(--gc-border)] px-4 py-4">
-										<p class="gc-stamp text-[var(--gc-ink-3)]">Page controls</p>
-										<div class="mt-4 flex flex-wrap gap-3">
-											{#if knowledge.paging.prev_cursor}
-												<form method="GET" action={resolve('/config')}>
-													<input type="hidden" name="tab" value="general" />
-													<input type="hidden" name="knowledge_q" value={knowledge.filters.query} />
-													<input
-														type="hidden"
-														name="knowledge_scope"
-														value={knowledge.filters.scope}
-													/>
-													<input
-														type="hidden"
-														name="knowledge_agent_id"
-														value={knowledge.filters.agent_id}
-													/>
-													<input
-														type="hidden"
-														name="knowledge_limit"
-														value={String(knowledge.filters.limit)}
-													/>
-													<input
-														type="hidden"
-														name="knowledge_cursor"
-														value={knowledge.paging.prev_cursor}
-													/>
-													<input type="hidden" name="knowledge_direction" value="prev" />
-													<button type="submit" class="gc-action gc-action-accent px-4 py-2">
-														Previous knowledge page
-													</button>
-												</form>
-											{/if}
-											{#if knowledge.paging.next_cursor}
-												<form method="GET" action={resolve('/config')}>
-													<input type="hidden" name="tab" value="general" />
-													<input type="hidden" name="knowledge_q" value={knowledge.filters.query} />
-													<input
-														type="hidden"
-														name="knowledge_scope"
-														value={knowledge.filters.scope}
-													/>
-													<input
-														type="hidden"
-														name="knowledge_agent_id"
-														value={knowledge.filters.agent_id}
-													/>
-													<input
-														type="hidden"
-														name="knowledge_limit"
-														value={String(knowledge.filters.limit)}
-													/>
-													<input
-														type="hidden"
-														name="knowledge_cursor"
-														value={knowledge.paging.next_cursor}
-													/>
-													<input type="hidden" name="knowledge_direction" value="next" />
-													<button type="submit" class="gc-action gc-action-solid px-4 py-2">
-														Next knowledge page
-													</button>
-												</form>
-											{/if}
-											{#if !knowledge.paging.prev_cursor && !knowledge.paging.next_cursor}
-												<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
-													No additional knowledge pages are available.
-												</p>
-											{/if}
-										</div>
-									</section>
-								</div>
-							</div>
-						{:else}
-							<div class="mt-5">
-								<SurfaceMessage
-									label="UNAVAILABLE"
-									message="Knowledge surface unavailable. The current browser UI expects /api/knowledge."
-									tone="error"
-								/>
+						{#if knowledge.notice}
+							<div class="mt-4">
+								<SurfaceMessage label="KNOWLEDGE" message={knowledge.notice} />
 							</div>
 						{/if}
+
+						<p class="gc-copy mt-3 max-w-3xl text-[var(--gc-ink-2)]">
+							{knowledge.headline}
+						</p>
+
+						<form method="GET" class="mt-5 grid gap-4 xl:grid-cols-4">
+							<input type="hidden" name="tab" value="general" />
+
+							<div class="flex flex-col gap-2">
+								<label for="knowledge-search" class="gc-stamp text-[var(--gc-ink-3)]">
+									Search knowledge
+								</label>
+								<input
+									id="knowledge-search"
+									name="knowledge_q"
+									value={knowledge.filters.query}
+									placeholder="Search saved knowledge"
+									class="gc-control min-h-[2.75rem]"
+								/>
+							</div>
+
+							<div class="flex flex-col gap-2">
+								<label for="knowledge-scope" class="gc-stamp text-[var(--gc-ink-3)]">
+									Knowledge scope
+								</label>
+								<select
+									id="knowledge-scope"
+									name="knowledge_scope"
+									class="gc-control min-h-[2.75rem]"
+								>
+									{#each knowledgeScopeOptions as option (option.value)}
+										<option
+											value={option.value}
+											selected={knowledge.filters.scope === option.value}
+										>
+											{option.label}
+										</option>
+									{/each}
+								</select>
+							</div>
+
+							<div class="flex flex-col gap-2">
+								<label for="knowledge-agent" class="gc-stamp text-[var(--gc-ink-3)]"> Agent </label>
+								<input
+									id="knowledge-agent"
+									name="knowledge_agent_id"
+									value={knowledge.filters.agent_id}
+									placeholder="assistant"
+									class="gc-control min-h-[2.75rem]"
+								/>
+							</div>
+
+							<div class="flex flex-col gap-2">
+								<label for="knowledge-limit" class="gc-stamp text-[var(--gc-ink-3)]">
+									Knowledge limit
+								</label>
+								<input
+									id="knowledge-limit"
+									type="number"
+									min="1"
+									max="100"
+									name="knowledge_limit"
+									value={String(knowledge.filters.limit)}
+									class="gc-control min-h-[2.75rem]"
+								/>
+							</div>
+
+							<div class="flex flex-wrap justify-end gap-3 xl:col-span-4">
+								<a
+									href={resolve('/config?tab=general')}
+									class="gc-action gc-action-accent px-4 py-2"
+								>
+									Clear filters
+								</a>
+								<button type="submit" class="gc-action gc-action-solid px-4 py-2">
+									Apply filters
+								</button>
+							</div>
+						</form>
+
+						<div class="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(16rem,0.85fr)]">
+							<div class="grid gap-3">
+								{#if knowledge.items.length > 0}
+									{#each knowledge.items as item (item.id)}
+										<article class="border border-[var(--gc-border)] px-4 py-4">
+											<div class="flex flex-wrap items-start justify-between gap-3">
+												<div>
+													{#if editingKnowledgeID === item.id}
+														<label
+															for={`knowledge-edit-${item.id}`}
+															class="gc-stamp text-[var(--gc-ink-3)]"
+														>
+															Edit knowledge
+														</label>
+														<textarea
+															id={`knowledge-edit-${item.id}`}
+															bind:value={editingKnowledgeContent}
+															rows="4"
+															class="gc-control mt-2 min-h-[7rem] w-full"
+														></textarea>
+													{:else}
+														<p class="gc-copy text-[var(--gc-ink)]">{item.content}</p>
+														<p class="gc-copy mt-2 text-sm text-[var(--gc-ink-3)]">
+															{item.provenance}
+														</p>
+													{/if}
+												</div>
+												<div class="flex flex-wrap gap-2 text-xs text-[var(--gc-ink-3)]">
+													<span class="gc-chip">{formatKnowledgeScope(item.scope)}</span>
+													<span class="gc-chip">{item.agent_id}</span>
+													<span class="gc-chip">{item.source}</span>
+												</div>
+											</div>
+
+											<div class="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+												<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
+													{formatKnowledgeConfidence(item.confidence)}
+												</p>
+												<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
+													Created {item.created_at_label}
+												</p>
+												<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
+													Updated {item.updated_at_label}
+												</p>
+											</div>
+
+											<div class="mt-4 flex flex-wrap justify-end gap-3">
+												{#if editingKnowledgeID === item.id}
+													<button
+														type="button"
+														disabled={knowledgeMutationID === item.id}
+														class="gc-action gc-action-accent px-4 py-2 disabled:opacity-50"
+														onclick={() => {
+															cancelKnowledgeEdit();
+														}}
+													>
+														Cancel edit
+													</button>
+													<button
+														type="button"
+														disabled={knowledgeMutationID === item.id}
+														class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
+														onclick={() => {
+															void handleKnowledgeEdit(item.id);
+														}}
+													>
+														{knowledgeMutationID === item.id ? 'Saving…' : 'Save knowledge'}
+													</button>
+												{:else}
+													<button
+														type="button"
+														disabled={knowledgeMutationID === item.id}
+														class="gc-action gc-action-accent px-4 py-2 disabled:opacity-50"
+														onclick={() => {
+															startKnowledgeEdit(item.id, item.content);
+														}}
+													>
+														Edit knowledge
+													</button>
+													<button
+														type="button"
+														disabled={knowledgeMutationID === item.id}
+														class="gc-action gc-action-warning px-4 py-2 disabled:opacity-50"
+														onclick={() => {
+															void handleKnowledgeForget(item.id);
+														}}
+													>
+														{knowledgeMutationID === item.id ? 'Forgetting…' : 'Forget knowledge'}
+													</button>
+												{/if}
+											</div>
+										</article>
+									{/each}
+								{:else}
+									<div class="border border-dashed border-[var(--gc-border)] px-4 py-5">
+										<p class="gc-copy text-[var(--gc-ink)]">{knowledge.headline}</p>
+									</div>
+								{/if}
+							</div>
+
+							<div class="flex flex-col gap-4">
+								<section class="border border-[var(--gc-border)] px-4 py-4">
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Visible items</p>
+									<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">
+										{knowledge.summary.visible_count}
+									</p>
+									<p class="gc-copy mt-3 text-[var(--gc-ink-3)]">
+										Knowledge entries currently shaping this project view.
+									</p>
+								</section>
+
+								<section class="border border-[var(--gc-border)] px-4 py-4">
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Page controls</p>
+									<div class="mt-4 flex flex-wrap gap-3">
+										{#if knowledge.paging.prev_cursor}
+											<form method="GET" action={resolve('/config')}>
+												<input type="hidden" name="tab" value="general" />
+												<input type="hidden" name="knowledge_q" value={knowledge.filters.query} />
+												<input
+													type="hidden"
+													name="knowledge_scope"
+													value={knowledge.filters.scope}
+												/>
+												<input
+													type="hidden"
+													name="knowledge_agent_id"
+													value={knowledge.filters.agent_id}
+												/>
+												<input
+													type="hidden"
+													name="knowledge_limit"
+													value={String(knowledge.filters.limit)}
+												/>
+												<input
+													type="hidden"
+													name="knowledge_cursor"
+													value={knowledge.paging.prev_cursor}
+												/>
+												<input type="hidden" name="knowledge_direction" value="prev" />
+												<button type="submit" class="gc-action gc-action-accent px-4 py-2">
+													Previous knowledge page
+												</button>
+											</form>
+										{/if}
+										{#if knowledge.paging.next_cursor}
+											<form method="GET" action={resolve('/config')}>
+												<input type="hidden" name="tab" value="general" />
+												<input type="hidden" name="knowledge_q" value={knowledge.filters.query} />
+												<input
+													type="hidden"
+													name="knowledge_scope"
+													value={knowledge.filters.scope}
+												/>
+												<input
+													type="hidden"
+													name="knowledge_agent_id"
+													value={knowledge.filters.agent_id}
+												/>
+												<input
+													type="hidden"
+													name="knowledge_limit"
+													value={String(knowledge.filters.limit)}
+												/>
+												<input
+													type="hidden"
+													name="knowledge_cursor"
+													value={knowledge.paging.next_cursor}
+												/>
+												<input type="hidden" name="knowledge_direction" value="next" />
+												<button type="submit" class="gc-action gc-action-solid px-4 py-2">
+													Next knowledge page
+												</button>
+											</form>
+										{/if}
+										{#if !knowledge.paging.prev_cursor && !knowledge.paging.next_cursor}
+											<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
+												No additional knowledge pages are available.
+											</p>
+										{/if}
+									</div>
+								</section>
+							</div>
+						</div>
 					</section>
 				</div>
 			</div>
 		{:else if activeTab === 'agents'}
 			<div class="mx-auto w-full max-w-6xl px-6 py-6">
-				{#if team}
-					{#if teamConfig?.notice}
-						<div class="mb-6">
-							<SurfaceMessage label="TEAM FILE" message={teamConfig.notice} />
-						</div>
-					{/if}
-
-					<div class="grid gap-4 xl:grid-cols-4">
-						<SurfaceMetricCard
-							label="Team"
-							value={team.name}
-							detail={`Front agent ${frontAgent?.id ?? team.front_agent_id}`}
-							tone="accent"
-						/>
-						<SurfaceMetricCard
-							label="Members"
-							value={String(team.member_count)}
-							detail={`${members.length} runtime role${members.length === 1 ? '' : 's'} exposed by /api/team.`}
-						/>
-						<SurfaceMetricCard
-							label="Front Agent"
-							value={frontAgent?.id ?? team.front_agent_id}
-							detail={frontAgent?.role ?? 'Front role not described'}
-							tone="accent"
-						/>
-						<SurfaceMetricCard
-							label="Active Profile"
-							value={activeProfile?.label ?? 'None'}
-							detail={activeProfile?.save_path ?? 'Profile save path not exposed'}
-						/>
+				{#if teamConfig?.notice}
+					<div class="mb-6">
+						<SurfaceMessage label="TEAM FILE" message={teamConfig.notice} />
 					</div>
+				{/if}
 
-					<div class="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
+				<div class="grid gap-4 xl:grid-cols-4">
+					<SurfaceMetricCard
+						label="Team"
+						value={teamName}
+						detail={`Front agent ${frontAgentID}`}
+						tone="accent"
+					/>
+					<SurfaceMetricCard
+						label="Members"
+						value={String(team.member_count)}
+						detail={`${members.length} runtime role${members.length === 1 ? '' : 's'} exposed by /api/team.`}
+					/>
+					<SurfaceMetricCard
+						label="Front Agent"
+						value={frontAgentID}
+						detail={frontAgentRole}
+						tone="accent"
+					/>
+					<SurfaceMetricCard
+						label="Active Profile"
+						value={activeProfile?.label ?? 'None'}
+						detail={activeProfile?.save_path ??
+							'Save path will appear after the first team file is written.'}
+					/>
+				</div>
+
+				<div class="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">ROUTING</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
+							Route work through the front agent
+						</h2>
+						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+							This follows OpenClaw's operator flow, but only shows the team and routing facts
+							GistClaw actually ships through `/api/team`.
+						</p>
+
+						<div class="mt-5 grid gap-3 md:grid-cols-2">
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Front Agent</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+									{frontAgentID}
+								</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									{frontAgentRole}
+								</p>
+							</div>
+
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Base Profile</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+									{frontAgent?.base_profile ?? activeProfile?.label ?? 'None'}
+								</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
+									Front agent defaults before specialist handoff.
+								</p>
+							</div>
+
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Delegation</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+									{listOrNone(frontAgent?.delegation_kinds ?? [])}
+								</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
+									Specialist lanes the front agent may hand work to directly.
+								</p>
+							</div>
+
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Can Message</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+									{listOrNone(frontAgent?.can_message ?? [])}
+								</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
+									Direct peers the front agent is allowed to wake or consult.
+								</p>
+							</div>
+						</div>
+					</section>
+
+					<div class="flex flex-col gap-4">
 						<section class="gc-panel-soft px-5 py-5">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">ROUTING</p>
-							<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
-								Route work through the front agent
-							</h2>
-							<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-								This follows OpenClaw's operator flow, but only shows the team and routing facts
-								GistClaw actually ships through `/api/team`.
+							<p class="gc-stamp text-[var(--gc-ink-3)]">PROFILES</p>
+							<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Saved profiles</h2>
+							<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+								Profile defaults still live in checked-in runtime files, but the active selection
+								and lifecycle controls are live here.
 							</p>
 
-							<div class="mt-5 grid gap-3 md:grid-cols-2">
-								<div class="border border-[var(--gc-border)] px-4 py-4">
-									<p class="gc-stamp text-[var(--gc-ink-3)]">Front Agent</p>
-									<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-										{frontAgent?.id ?? team.front_agent_id}
-									</p>
-									<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-										{frontAgent?.role ?? 'No front role description'}
-									</p>
-								</div>
-
-								<div class="border border-[var(--gc-border)] px-4 py-4">
-									<p class="gc-stamp text-[var(--gc-ink-3)]">Base Profile</p>
-									<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-										{frontAgent?.base_profile ?? activeProfile?.label ?? 'None'}
-									</p>
-									<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
-										Front agent defaults before specialist handoff.
-									</p>
-								</div>
-
-								<div class="border border-[var(--gc-border)] px-4 py-4">
-									<p class="gc-stamp text-[var(--gc-ink-3)]">Delegation</p>
-									<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-										{listOrNone(frontAgent?.delegation_kinds ?? [])}
-									</p>
-									<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
-										Specialist lanes the front agent may hand work to directly.
-									</p>
-								</div>
-
-								<div class="border border-[var(--gc-border)] px-4 py-4">
-									<p class="gc-stamp text-[var(--gc-ink-3)]">Can Message</p>
-									<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-										{listOrNone(frontAgent?.can_message ?? [])}
-									</p>
-									<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
-										Direct peers the front agent is allowed to wake or consult.
-									</p>
-								</div>
+							<div class="mt-5 grid gap-3">
+								{#each profiles as profile (profile.id)}
+									<div class="border border-[var(--gc-border)] px-4 py-4">
+										<div class="flex items-start justify-between gap-3">
+											<div>
+												<p class="gc-copy text-[var(--gc-ink)]">{profile.label}</p>
+												<p class="gc-copy mt-2 font-mono text-sm text-[var(--gc-ink-3)]">
+													{profile.save_path ?? 'Runtime default'}
+												</p>
+											</div>
+											{#if profile.active}
+												<span class="gc-stamp text-[var(--gc-primary)]">ACTIVE</span>
+											{/if}
+										</div>
+									</div>
+								{/each}
 							</div>
 						</section>
 
-						<div class="flex flex-col gap-4">
-							<section class="gc-panel-soft px-5 py-5">
-								<p class="gc-stamp text-[var(--gc-ink-3)]">PROFILES</p>
-								<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Saved profiles</h2>
-								<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-									Profile defaults still live in checked-in runtime files, but the active selection
-									and lifecycle controls are live here.
-								</p>
-
-								<div class="mt-5 grid gap-3">
-									{#each profiles as profile (profile.id)}
-										<div class="border border-[var(--gc-border)] px-4 py-4">
-											<div class="flex items-start justify-between gap-3">
-												<div>
-													<p class="gc-copy text-[var(--gc-ink)]">{profile.label}</p>
-													<p class="gc-copy mt-2 font-mono text-sm text-[var(--gc-ink-3)]">
-														{profile.save_path ?? 'Runtime default'}
-													</p>
-												</div>
-												{#if profile.active}
-													<span class="gc-stamp text-[var(--gc-primary)]">ACTIVE</span>
-												{/if}
-											</div>
-										</div>
-									{/each}
+						<section class="gc-panel-soft px-5 py-5">
+							<div class="flex items-start justify-between gap-3">
+								<div>
+									<p class="gc-stamp text-[var(--gc-ink-3)]">PROFILE ACTIONS</p>
+									<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Profile control board</h2>
 								</div>
-							</section>
-
-							<section class="gc-panel-soft px-5 py-5">
-								<div class="flex items-start justify-between gap-3">
-									<div>
-										<p class="gc-stamp text-[var(--gc-ink-3)]">PROFILE ACTIONS</p>
-										<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Profile control board</h2>
-									</div>
+								{#if hasTeamConfig}
 									<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
 									<a href="/api/team/export" class="gc-action gc-action-accent">
 										Export team file
 									</a>
-								</div>
-								<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-									Use the shipped `/api/team` actions here. Profile switching is live, and team file
-									import/save now lets you preview broader changes before you apply them.
-								</p>
+								{:else}
+									<span class="gc-stamp text-[var(--gc-ink-3)]">
+										Export available after import
+									</span>
+								{/if}
+							</div>
+							<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+								Use the shipped `/api/team` actions here. Profile switching is live, and team file
+								import/save now lets you preview broader changes before you apply them.
+							</p>
 
-								<div class="mt-5 grid gap-4">
-									<form
-										class="border border-[var(--gc-border)] px-4 py-4"
-										onsubmit={handleSwitchProfile}
-									>
-										<p class="gc-stamp text-[var(--gc-ink-3)]">Switch profile</p>
-										<div class="mt-4 flex flex-col gap-4">
-											<SettingsField
-												id="team-profile-select"
-												label="Profile"
-												type="select"
-												bind:value={selectedProfileID}
-												options={profiles.map((profile) => ({
-													value: profile.id,
-													label: profile.label
-												}))}
-											/>
-											<div class="flex justify-end">
-												<button
-													type="submit"
-													disabled={teamSaving || selectedProfileID.trim() === ''}
-													class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
-												>
-													Switch profile
-												</button>
-											</div>
-										</div>
-									</form>
-
-									<form
-										class="border border-[var(--gc-border)] px-4 py-4"
-										onsubmit={handleCreateProfile}
-									>
-										<p class="gc-stamp text-[var(--gc-ink-3)]">Create profile</p>
-										<div class="mt-4 flex flex-col gap-4">
-											<SettingsField
-												id="team-profile-create"
-												label="New profile ID"
-												bind:value={createProfileID}
-												placeholder="ops"
-											/>
-											<div class="flex justify-end">
-												<button
-													type="submit"
-													disabled={teamSaving || createProfileID.trim() === ''}
-													class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
-												>
-													Create profile
-												</button>
-											</div>
-										</div>
-									</form>
-
-									<form
-										class="border border-[var(--gc-border)] px-4 py-4"
-										onsubmit={handleCloneProfile}
-									>
-										<p class="gc-stamp text-[var(--gc-ink-3)]">Clone profile</p>
-										<div class="mt-4 flex flex-col gap-4">
-											<SettingsField
-												id="team-profile-clone-source"
-												label="Source profile"
-												type="select"
-												bind:value={cloneSourceProfileID}
-												options={profiles.map((profile) => ({
-													value: profile.id,
-													label: profile.label
-												}))}
-											/>
-											<SettingsField
-												id="team-profile-clone-target"
-												label="Clone to profile"
-												bind:value={cloneProfileID}
-												placeholder="ops"
-											/>
-											<div class="flex justify-end">
-												<button
-													type="submit"
-													disabled={teamSaving ||
-														cloneSourceProfileID.trim() === '' ||
-														cloneProfileID.trim() === ''}
-													class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
-												>
-													Clone profile
-												</button>
-											</div>
-										</div>
-									</form>
-
-									<form
-										class="border border-[var(--gc-border)] px-4 py-4"
-										onsubmit={handleDeleteProfile}
-									>
-										<p class="gc-stamp text-[var(--gc-ink-3)]">Delete profile</p>
-										{#if inactiveProfiles.length === 0}
-											<p class="gc-copy mt-4 text-[var(--gc-ink-3)]">
-												No inactive profiles are available to delete.
-											</p>
-										{:else}
-											<div class="mt-4 flex flex-col gap-4">
-												<SettingsField
-													id="team-profile-delete"
-													label="Inactive profile"
-													type="select"
-													bind:value={deleteProfileID}
-													options={inactiveProfiles.map((profile) => ({
-														value: profile.id,
-														label: profile.label
-													}))}
-												/>
-												<div class="flex justify-end">
-													<button
-														type="submit"
-														disabled={teamSaving || deleteProfileID.trim() === ''}
-														class="gc-action gc-action-warning px-4 py-2 disabled:opacity-50"
-													>
-														Delete profile
-													</button>
-												</div>
-											</div>
-										{/if}
-									</form>
-
-									<section class="border border-[var(--gc-border)] px-4 py-4">
-										<div class="flex items-start justify-between gap-3">
-											<div>
-												<p class="gc-stamp text-[var(--gc-ink-3)]">TEAM FILE</p>
-												<p class="gc-copy mt-2 text-[var(--gc-ink)]">Imported YAML</p>
-											</div>
+							<div class="mt-5 grid gap-4">
+								<form
+									class="border border-[var(--gc-border)] px-4 py-4"
+									onsubmit={handleSwitchProfile}
+								>
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Switch profile</p>
+									<div class="mt-4 flex flex-col gap-4">
+										<SettingsField
+											id="team-profile-select"
+											label="Profile"
+											type="select"
+											bind:value={selectedProfileID}
+											options={profiles.map((profile) => ({
+												value: profile.id,
+												label: profile.label
+											}))}
+										/>
+										<div class="flex justify-end">
 											<button
-												type="button"
-												disabled={teamSaving || !team}
-												class="gc-action gc-action-warning px-4 py-2 disabled:opacity-50"
-												onclick={() => void handleSaveTeam()}
+												type="submit"
+												disabled={teamSaving || selectedProfileID.trim() === ''}
+												class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
 											>
-												Save team
+												Switch profile
 											</button>
 										</div>
-										<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-											Import lets you preview the imported team here until you save it.
-										</p>
+									</div>
+								</form>
 
-										<label class="mt-4 flex flex-col gap-2">
-											<span class="gc-stamp text-[var(--gc-ink-3)]">Imported YAML</span>
-											<textarea
-												bind:value={importYAML}
-												class="gc-control min-h-[12rem] font-mono text-sm"
-												placeholder="name: Repo Task Team
+								<form
+									class="border border-[var(--gc-border)] px-4 py-4"
+									onsubmit={handleCreateProfile}
+								>
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Create profile</p>
+									<div class="mt-4 flex flex-col gap-4">
+										<SettingsField
+											id="team-profile-create"
+											label="New profile ID"
+											bind:value={createProfileID}
+											placeholder="ops"
+										/>
+										<div class="flex justify-end">
+											<button
+												type="submit"
+												disabled={teamSaving || createProfileID.trim() === ''}
+												class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
+											>
+												Create profile
+											</button>
+										</div>
+									</div>
+								</form>
+
+								<form
+									class="border border-[var(--gc-border)] px-4 py-4"
+									onsubmit={handleCloneProfile}
+								>
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Clone profile</p>
+									<div class="mt-4 flex flex-col gap-4">
+										<SettingsField
+											id="team-profile-clone-source"
+											label="Source profile"
+											type="select"
+											bind:value={cloneSourceProfileID}
+											options={profiles.map((profile) => ({
+												value: profile.id,
+												label: profile.label
+											}))}
+										/>
+										<SettingsField
+											id="team-profile-clone-target"
+											label="Clone to profile"
+											bind:value={cloneProfileID}
+											placeholder="ops"
+										/>
+										<div class="flex justify-end">
+											<button
+												type="submit"
+												disabled={teamSaving ||
+													cloneSourceProfileID.trim() === '' ||
+													cloneProfileID.trim() === ''}
+												class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
+											>
+												Clone profile
+											</button>
+										</div>
+									</div>
+								</form>
+
+								<form
+									class="border border-[var(--gc-border)] px-4 py-4"
+									onsubmit={handleDeleteProfile}
+								>
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Delete profile</p>
+									{#if inactiveProfiles.length === 0}
+										<p class="gc-copy mt-4 text-[var(--gc-ink-3)]">
+											No inactive profiles are available to delete.
+										</p>
+									{:else}
+										<div class="mt-4 flex flex-col gap-4">
+											<SettingsField
+												id="team-profile-delete"
+												label="Inactive profile"
+												type="select"
+												bind:value={deleteProfileID}
+												options={inactiveProfiles.map((profile) => ({
+													value: profile.id,
+													label: profile.label
+												}))}
+											/>
+											<div class="flex justify-end">
+												<button
+													type="submit"
+													disabled={teamSaving || deleteProfileID.trim() === ''}
+													class="gc-action gc-action-warning px-4 py-2 disabled:opacity-50"
+												>
+													Delete profile
+												</button>
+											</div>
+										</div>
+									{/if}
+								</form>
+
+								<section class="border border-[var(--gc-border)] px-4 py-4">
+									<div class="flex items-start justify-between gap-3">
+										<div>
+											<p class="gc-stamp text-[var(--gc-ink-3)]">TEAM FILE</p>
+											<p class="gc-copy mt-2 text-[var(--gc-ink)]">Imported YAML</p>
+										</div>
+										<button
+											type="button"
+											disabled={teamSaving || !hasTeamConfig}
+											class="gc-action gc-action-warning px-4 py-2 disabled:opacity-50"
+											onclick={() => void handleSaveTeam()}
+										>
+											Save team
+										</button>
+									</div>
+									<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+										Import lets you preview the imported team here until you save it.
+									</p>
+
+									<label class="mt-4 flex flex-col gap-2">
+										<span class="gc-stamp text-[var(--gc-ink-3)]">Imported YAML</span>
+										<textarea
+											bind:value={importYAML}
+											class="gc-control min-h-[12rem] font-mono text-sm"
+											placeholder="name: Repo Task Team
 front_agent: assistant
 agents:
   - id: assistant"
-											></textarea>
-										</label>
+										></textarea>
+									</label>
 
-										<div class="mt-4 flex justify-end">
-											<button
-												type="button"
-												disabled={teamSaving || importYAML.trim() === ''}
-												class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
-												onclick={() => void handleImportTeam()}
-											>
-												Import team file
-											</button>
-										</div>
-									</section>
-								</div>
-							</section>
-						</div>
+									<div class="mt-4 flex justify-end">
+										<button
+											type="button"
+											disabled={teamSaving || importYAML.trim() === ''}
+											class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
+											onclick={() => void handleImportTeam()}
+										>
+											Import team file
+										</button>
+									</div>
+								</section>
+							</div>
+						</section>
 					</div>
+				</div>
 
-					<section class="gc-panel-soft mt-6 px-5 py-5">
-						<p class="gc-stamp text-[var(--gc-ink-3)]">TEAM MEMBERS</p>
-						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
-							Specialists exposed by the runtime
-						</h2>
-						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-							Profile lifecycle and YAML import/save are live in this tab. Inline member editing is
-							still deferred, so broader structural changes should flow through the exported team
-							file.
-						</p>
+				<section class="gc-panel-soft mt-6 px-5 py-5">
+					<p class="gc-stamp text-[var(--gc-ink-3)]">TEAM MEMBERS</p>
+					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
+						Specialists exposed by the runtime
+					</h2>
+					<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+						Profile lifecycle and YAML import/save are live in this tab. Inline member editing is
+						still deferred, so broader structural changes should flow through the exported team
+						file.
+					</p>
 
-						<div class="mt-5 grid gap-3">
+					<div class="mt-5 grid gap-3">
+						{#if members.length > 0}
 							{#each members as member (member.id)}
 								<article class="border border-[var(--gc-border)] px-4 py-4">
 									<div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1447,18 +1491,16 @@ agents:
 									</div>
 								</article>
 							{/each}
-						</div>
-					</section>
-				{:else}
-					<div class="gc-panel-soft px-5 py-5">
-						<p class="gc-stamp text-[var(--gc-ink-3)]">AGENTS &amp; ROUTING</p>
-						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Team surface unavailable</h2>
-						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-							The runtime did not return `/api/team`. Use the checked-in team files until that
-							surface is available again.
-						</p>
+						{:else}
+							<div class="border border-dashed border-[var(--gc-border)] px-4 py-5">
+								<p class="gc-copy text-[var(--gc-ink)]">No team members are configured yet.</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-3)]">
+									Import a team file or create a profile to start defining routing specialists.
+								</p>
+							</div>
+						{/if}
 					</div>
-				{/if}
+				</section>
 			</div>
 		{:else if activeTab === 'models'}
 			<div class="mx-auto w-full max-w-6xl px-6 py-6">
