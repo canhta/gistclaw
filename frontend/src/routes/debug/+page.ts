@@ -1,13 +1,14 @@
-import { loadDeliveryHealth } from '$lib/debug/load';
+import { loadDebugRPC, loadDeliveryHealth } from '$lib/debug/load';
 import { loadSettings } from '$lib/settings/load';
 import { loadWorkIndex } from '$lib/work/load';
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async ({ fetch }) => {
-	const [settings, work, health] = await Promise.allSettled([
+export const load: PageLoad = async ({ fetch, url }) => {
+	const [settings, work, health, rpc] = await Promise.allSettled([
 		loadSettings(fetch),
 		loadWorkIndex(fetch),
-		loadDeliveryHealth(fetch)
+		loadDeliveryHealth(fetch),
+		loadDebugRPC(fetch, url.searchParams.get('probe'))
 	]);
 
 	return {
@@ -20,7 +21,8 @@ export const load: PageLoad = async ({ fetch }) => {
 					: {
 							connectors: [],
 							runtime_connectors: []
-						}
+						},
+			rpc: rpc.status === 'fulfilled' ? rpc.value : null
 		}
 	};
 };

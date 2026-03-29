@@ -1,4 +1,5 @@
 import { requestJSON } from '$lib/http/client';
+import type { DebugRPCStatusResponse } from '$lib/types/api';
 
 interface DeliveryHealthRaw {
 	Connectors?: Array<{
@@ -52,4 +53,17 @@ export async function loadDeliveryHealth(
 			restart_suggested: Boolean(entry.RestartSuggested)
 		}))
 	};
+}
+
+export async function loadDebugRPC(
+	fetcher: typeof fetch,
+	probe?: string | null
+): Promise<DebugRPCStatusResponse> {
+	const query = new URLSearchParams();
+	if (probe && probe.trim() !== '') {
+		query.set('probe', probe.trim());
+	}
+
+	const suffix = query.size > 0 ? `?${query.toString()}` : '';
+	return requestJSON<DebugRPCStatusResponse>(fetcher, `/api/debug/rpc${suffix}`);
 }

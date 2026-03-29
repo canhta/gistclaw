@@ -1,12 +1,18 @@
 import { describe, expect, it, vi } from 'vitest';
 import { load } from './+page';
 
-function makeLoadEvent(fetcher: typeof fetch): Parameters<typeof load>[0] {
-	return { fetch: fetcher } as unknown as Parameters<typeof load>[0];
+function makeLoadEvent(
+	fetcher: typeof fetch,
+	url = 'http://localhost:3000/debug'
+): Parameters<typeof load>[0] {
+	return {
+		fetch: fetcher,
+		url: new URL(url)
+	} as unknown as Parameters<typeof load>[0];
 }
 
 describe('debug load', () => {
-	it('loads settings, work queue, and delivery health in parallel', async () => {
+	it('loads settings, work queue, delivery health, and rpc probes in parallel', async () => {
 		const fetcher = vi.fn<typeof fetch>(async (input) => {
 			switch (String(input)) {
 				case '/api/settings':
@@ -85,6 +91,35 @@ describe('debug load', () => {
 						}),
 						{ status: 200, headers: { 'content-type': 'application/json' } }
 					);
+				case '/api/debug/rpc':
+					return new Response(
+						JSON.stringify({
+							summary: {
+								probe_count: 4,
+								read_only: true,
+								default_probe: 'status',
+								selected_probe: 'status'
+							},
+							probes: [
+								{
+									name: 'status',
+									label: 'Status',
+									description: 'Inspect active runs, approvals, and storage health.'
+								}
+							],
+							result: {
+								probe: 'status',
+								label: 'Status',
+								summary: 'system status loaded',
+								executed_at: '2026-03-29T10:06:00Z',
+								executed_at_label: '2026-03-29 10:06:00 UTC',
+								data: {
+									active_runs: 1
+								}
+							}
+						}),
+						{ status: 200, headers: { 'content-type': 'application/json' } }
+					);
 				default:
 					throw new Error(`unexpected input ${String(input)}`);
 			}
@@ -99,9 +134,11 @@ describe('debug load', () => {
 		expect(fetcher).toHaveBeenCalledWith('/api/settings', expect.any(Object));
 		expect(fetcher).toHaveBeenCalledWith('/api/work', expect.any(Object));
 		expect(fetcher).toHaveBeenCalledWith('/api/deliveries/health', expect.any(Object));
+		expect(fetcher).toHaveBeenCalledWith('/api/debug/rpc', expect.any(Object));
 		expect(result.debug.settings?.machine.approval_mode_label).toBe('Prompt');
 		expect(result.debug.work?.queue_strip.headline).toBe('1 active run');
 		expect(result.debug.health.connectors[0].connector_id).toBe('telegram');
+		expect(result.debug.rpc?.summary.selected_probe).toBe('status');
 	});
 
 	it('returns partial fallbacks when requests fail', async () => {
@@ -171,8 +208,55 @@ describe('debug load', () => {
 				health: {
 					connectors: [],
 					runtime_connectors: []
-				}
+				},
+				rpc: null
 			}
 		});
+	});
+
+	it('loads the requested rpc probe when the search param selects one', async () => {
+		const fetcher = vi.fn<typeof fetch>(async (input) => {
+			switch (String(input)) {
+				case '/api/settings':
+				case '/api/work':
+				case '/api/deliveries/health':
+					return new Response('{}', {
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					});
+				case '/api/debug/rpc?probe=connector_health':
+					return new Response(
+						JSON.stringify({
+							summary: {
+								probe_count: 4,
+								read_only: true,
+								default_probe: 'status',
+								selected_probe: 'connector_health'
+							},
+							probes: [],
+							result: {
+								probe: 'connector_health',
+								label: 'Connector health',
+								summary: 'ready',
+								executed_at: '2026-03-29T10:06:00Z',
+								executed_at_label: '2026-03-29 10:06:00 UTC',
+								data: {}
+							}
+						}),
+						{ status: 200, headers: { 'content-type': 'application/json' } }
+					);
+				default:
+					throw new Error(`unexpected input ${String(input)}`);
+			}
+		});
+
+		await load(
+			makeLoadEvent(fetcher, 'http://localhost:3000/debug?tab=rpc&probe=connector_health')
+		);
+
+		expect(fetcher).toHaveBeenCalledWith(
+			'/api/debug/rpc?probe=connector_health',
+			expect.any(Object)
+		);
 	});
 });

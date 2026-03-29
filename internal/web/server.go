@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/canhta/gistclaw/internal/debugrpc"
 	"github.com/canhta/gistclaw/internal/extensionstatus"
 	"github.com/canhta/gistclaw/internal/logstream"
 	"github.com/canhta/gistclaw/internal/maintenance"
@@ -30,6 +31,7 @@ type Options struct {
 	Logs            *logstream.Sink
 	Maintenance     maintenanceSource
 	Nodes           nodeInventorySource
+	DebugRPC        debugRPCSource
 	Schedules       scheduleService
 	StorageRoot     string
 	WhatsAppWebhook http.Handler
@@ -45,6 +47,7 @@ type Server struct {
 	logs            *logstream.Sink
 	maintenance     maintenanceSource
 	nodes           nodeInventorySource
+	debugRPC        debugRPCSource
 	schedules       scheduleService
 	storageRoot     string
 	whatsAppWebhook http.Handler
@@ -66,6 +69,10 @@ type extensionStatusSource interface {
 
 type nodeInventorySource interface {
 	NodeInventoryStatus(context.Context) (nodeinventory.Status, error)
+}
+
+type debugRPCSource interface {
+	DebugRPCStatus(context.Context, string) (debugrpc.Status, error)
 }
 
 type scheduleService interface {
@@ -112,6 +119,7 @@ func NewServer(opts Options) (*Server, error) {
 		logs:            opts.Logs,
 		maintenance:     opts.Maintenance,
 		nodes:           opts.Nodes,
+		debugRPC:        opts.DebugRPC,
 		schedules:       opts.Schedules,
 		storageRoot:     opts.StorageRoot,
 		whatsAppWebhook: opts.WhatsAppWebhook,
@@ -194,6 +202,7 @@ func (s *Server) registerRoutes() {
 	s.mux.Handle("POST /api/automate/{id}/run", s.adminAuth(http.HandlerFunc(s.handleAutomateRun)))
 	s.mux.HandleFunc("GET /api/history", s.handleHistoryIndex)
 	s.mux.HandleFunc("GET /api/nodes", s.handleNodesStatus)
+	s.mux.HandleFunc("GET /api/debug/rpc", s.handleDebugRPCStatus)
 	s.mux.HandleFunc("GET /api/update", s.handleUpdateStatus)
 	s.mux.HandleFunc("GET /api/settings", s.handleSettingsAPI)
 	s.mux.Handle("POST /api/settings", s.adminAuth(http.HandlerFunc(s.handleSettingsUpdateAPI)))

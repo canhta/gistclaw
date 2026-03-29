@@ -20,6 +20,7 @@ import (
 	whatsappconnector "github.com/canhta/gistclaw/internal/connectors/whatsapp"
 	zalopersonalconnector "github.com/canhta/gistclaw/internal/connectors/zalopersonal"
 	"github.com/canhta/gistclaw/internal/conversations"
+	"github.com/canhta/gistclaw/internal/debugrpc"
 	"github.com/canhta/gistclaw/internal/logstream"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
@@ -177,7 +178,14 @@ func Bootstrap(cfg Config) (*App, error) {
 		toolCloser:   toolCloser,
 		startedAt:    time.Now().UTC(),
 	}
-	capabilityRegistry.RegisterAppAction("status", application)
+	for _, actionName := range []string{
+		debugrpc.ProbeStatus,
+		debugrpc.ProbeConnectorHealth,
+		debugrpc.ProbeActiveProject,
+		debugrpc.ProbeScheduleStatus,
+	} {
+		capabilityRegistry.RegisterAppAction(actionName, application)
+	}
 
 	webSrv, err := web.NewServer(web.Options{
 		DB:              db,
@@ -188,6 +196,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		Logs:            logs,
 		Maintenance:     application,
 		Nodes:           application,
+		DebugRPC:        application,
 		Schedules:       application,
 		StorageRoot:     cfg.StorageRoot,
 		WhatsAppWebhook: buildWhatsAppWebhook(cfg, db, convStore, rt, whatsappHealth),

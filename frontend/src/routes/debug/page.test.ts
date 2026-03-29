@@ -111,6 +111,48 @@ const baseData = {
 					restart_suggested: true
 				}
 			]
+		},
+		rpc: {
+			summary: {
+				probe_count: 4,
+				read_only: true,
+				default_probe: 'status',
+				selected_probe: 'status'
+			},
+			probes: [
+				{
+					name: 'status',
+					label: 'Status',
+					description: 'Inspect active runs, approvals, and storage health.'
+				},
+				{
+					name: 'connector_health',
+					label: 'Connector health',
+					description: 'Inspect configured connector health snapshots.'
+				},
+				{
+					name: 'active_project',
+					label: 'Active project',
+					description: 'Inspect the current project scope and workspace path.'
+				},
+				{
+					name: 'schedule_status',
+					label: 'Scheduler',
+					description: 'Inspect schedule counters and the next scheduler wake time.'
+				}
+			],
+			result: {
+				probe: 'status',
+				label: 'Status',
+				summary: 'system status loaded',
+				executed_at: '2026-03-29T10:06:00Z',
+				executed_at_label: '2026-03-29 10:06:00 UTC',
+				data: {
+					active_runs: 1,
+					pending_approvals: 0,
+					storage_backup: 'healthy'
+				}
+			}
 		}
 	}
 };
@@ -165,11 +207,49 @@ describe('Debug page', () => {
 		expect(body).toContain('Run Events');
 	});
 
-	it('renders RPC warning state when rpc tab is selected', () => {
+	it('renders the RPC probe console when rpc tab is selected', () => {
 		const data = { ...baseData, currentSearch: 'tab=rpc' };
 		const { body } = render(DebugPage, { props: { data } });
-		expect(body).toContain('RPC console');
-		expect(body).toContain('High risk');
-		expect(body).toContain('Unlock RPC Console');
+		expect(body).toContain('RPC probes');
+		expect(body).toContain('Read-only app probes');
+		expect(body).toContain('Connector health');
+		expect(body).toContain('Run probe');
+		expect(body).toContain('system status loaded');
+		expect(body).toContain('active_runs');
+	});
+
+	it('renders the selected rpc probe result when a non-default probe is loaded', () => {
+		const data = {
+			...baseData,
+			currentSearch: 'tab=rpc&probe=connector_health',
+			debug: {
+				...baseData.debug,
+				rpc: {
+					...baseData.debug.rpc,
+					summary: {
+						...baseData.debug.rpc.summary,
+						selected_probe: 'connector_health'
+					},
+					result: {
+						probe: 'connector_health',
+						label: 'Connector health',
+						summary: '1 connector snapshot loaded',
+						executed_at: '2026-03-29T10:06:00Z',
+						executed_at_label: '2026-03-29 10:06:00 UTC',
+						data: {
+							summary: {
+								total: 1,
+								healthy: 0,
+								degraded: 1
+							}
+						}
+					}
+				}
+			}
+		};
+		const { body } = render(DebugPage, { props: { data } });
+		expect(body).toContain('Connector health');
+		expect(body).toContain('1 connector snapshot loaded');
+		expect(body).toContain('degraded');
 	});
 });

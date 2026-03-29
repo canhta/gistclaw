@@ -1,6 +1,9 @@
 <script lang="ts">
+	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
+	import { requestJSON } from '$lib/http/client';
+	import type { DebugRPCStatusResponse } from '$lib/types/api';
 	import { summarizeModelUsage } from '$lib/work/models';
 	import type { PageData } from './$types';
 
@@ -19,8 +22,10 @@
 	const validTabIDs = new Set(tabs.map((tab) => tab.id));
 
 	let activeTabOverride = $state<TabID | null>(null);
-	let confirmRpcUnlock = $state(false);
-	let rpcUnlocked = $state(false);
+	let rpcState = $state<DebugRPCStatusResponse | null>(null);
+	let rpcMessage = $state('');
+	let rpcError = $state('');
+	let rpcBusy = $state(false);
 
 	function isTabID(value: string | null): value is TabID {
 		return Boolean(value) && validTabIDs.has(value as TabID);
@@ -48,6 +53,18 @@
 			streamURL: `/api/work/${encodeURIComponent(run.id)}/events`
 		}))
 	);
+	const rpc = $derived(rpcState ?? data.debug?.rpc ?? null);
+	const rpcProbes = $derived(rpc?.probes ?? []);
+	const selectedRpcProbeName = $derived(
+		rpc?.result.probe ?? rpc?.summary.selected_probe ?? rpc?.summary.default_probe ?? 'status'
+	);
+	const selectedRpcProbe = $derived(
+		rpcProbes.find((probe) => probe.name === selectedRpcProbeName) ?? null
+	);
+	const defaultRpcProbe = $derived(
+		rpcProbes.find((probe) => probe.name === rpc?.summary.default_probe) ?? null
+	);
+	const rpcPayload = $derived.by(() => JSON.stringify(rpc?.result.data ?? {}, null, 2));
 
 	const statusToneByState: Record<string, string> = {
 		healthy: 'var(--gc-success)',
@@ -58,48 +75,37 @@
 	function statusLabel(value: string): string {
 		return value.replaceAll('_', ' ');
 	}
+
+	function probeLabel(name: string | undefined): string {
+		if (!name) {
+			return '—';
+		}
+		return rpcProbes.find((probe) => probe.name === name)?.label ?? name.replaceAll('_', ' ');
+	}
+
+	async function refreshRPCProbe(name: string): Promise<void> {
+		rpcBusy = true;
+		rpcMessage = '';
+		rpcError = '';
+
+		try {
+			const query = new URLSearchParams({ probe: name });
+			rpcState = await requestJSON<DebugRPCStatusResponse>(
+				globalThis.fetch.bind(globalThis),
+				`/api/debug/rpc?${query.toString()}`
+			);
+			rpcMessage = `${rpcState.result.label} probe refreshed.`;
+		} catch (err) {
+			rpcError = err instanceof Error ? err.message : 'Failed to refresh the selected probe.';
+		} finally {
+			rpcBusy = false;
+		}
+	}
 </script>
 
 <svelte:head>
 	<title>Debug | GistClaw</title>
 </svelte:head>
-
-{#if confirmRpcUnlock}
-	<div
-		class="fixed inset-0 z-50 flex items-center justify-center bg-[color-mix(in_srgb,var(--gc-canvas)_84%,transparent)] px-4"
-		role="dialog"
-		aria-modal="true"
-		aria-label="Confirm RPC access"
-	>
-		<div class="gc-panel max-w-md px-6 py-5">
-			<p class="gc-stamp text-[var(--gc-error)]">HIGH RISK</p>
-			<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Unlock RPC console?</h2>
-			<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-				Manual RPC can mutate runtime state directly. GistClaw does not expose a safe RPC endpoint
-				yet, so this only unlocks a placeholder panel.
-			</p>
-			<div class="mt-5 flex justify-end gap-3">
-				<button
-					type="button"
-					onclick={() => (confirmRpcUnlock = false)}
-					class="gc-action px-4 py-2 text-[var(--gc-ink-2)]"
-				>
-					Cancel
-				</button>
-				<button
-					type="button"
-					onclick={() => {
-						confirmRpcUnlock = false;
-						rpcUnlocked = true;
-					}}
-					class="gc-action gc-action-warning px-4 py-2"
-				>
-					Unlock
-				</button>
-			</div>
-		</div>
-	</div>
-{/if}
 
 <div class="flex h-full flex-col overflow-hidden">
 	<div
@@ -396,35 +402,122 @@
 				</div>
 			</div>
 		{:else}
-			<div class="mx-auto w-full max-w-4xl px-6 py-6">
+			<div class="mx-auto w-full max-w-6xl px-6 py-6">
 				<p class="gc-stamp text-[var(--gc-ink-3)]">RPC</p>
-				<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">RPC console</h2>
-				<div class="gc-panel-soft mt-6 border-[var(--gc-error)] px-4 py-4">
-					<p class="gc-stamp text-[var(--gc-error)]">High risk</p>
-					<p class="gc-copy mt-3 text-[var(--gc-ink)]">
-						Manual RPC can mutate runtime state directly. This section stays locked until you opt
-						in.
-					</p>
+				<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">RPC probes</h2>
+				<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+					Read-only app probes run through GistClaw&apos;s existing capability seam. Each probe is
+					whitelisted, returns structured JSON, and never mutates runtime state.
+				</p>
+
+				<div class="mt-6 grid gap-4 xl:grid-cols-4">
+					<SurfaceMetricCard
+						label="Safe Probes"
+						value={String(rpc?.summary.probe_count ?? 0)}
+						detail="Whitelisted probes available from the current daemon."
+					/>
+					<SurfaceMetricCard
+						label="Mode"
+						value={rpc?.summary.read_only ? 'Read-only' : 'Unavailable'}
+						detail="This surface does not expose raw mutation RPC."
+						tone="accent"
+					/>
+					<SurfaceMetricCard
+						label="Selected"
+						value={selectedRpcProbe?.label ?? probeLabel(selectedRpcProbeName)}
+						detail={rpc?.result.summary ?? 'No probe result loaded yet.'}
+					/>
+					<SurfaceMetricCard
+						label="Default"
+						value={defaultRpcProbe?.label ?? probeLabel(rpc?.summary.default_probe)}
+						detail="Default probe loaded when no specific probe is requested."
+					/>
 				</div>
 
-				<div class="mt-5 flex items-center gap-3">
-					<button
-						type="button"
-						onclick={() => (confirmRpcUnlock = true)}
-						class="gc-action gc-action-warning px-4 py-2"
-					>
-						Unlock RPC Console
-					</button>
-					<p class="gc-copy text-[var(--gc-ink-3)]">No RPC endpoint is exposed yet.</p>
-				</div>
+				{#if rpcMessage}
+					<div class="mt-5">
+						<SurfaceMessage label="REFRESHED" message={rpcMessage} />
+					</div>
+				{/if}
 
-				{#if rpcUnlocked}
-					<div class="gc-panel-soft mt-6 px-4 py-4">
-						<p class="gc-stamp text-[var(--gc-ink-3)]">UNAVAILABLE</p>
+				{#if rpcError}
+					<div class="mt-5">
+						<SurfaceMessage label="PROBE ERROR" message={rpcError} tone="error" />
+					</div>
+				{/if}
+
+				{#if !rpc}
+					<div class="gc-panel-soft mt-6 px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-warning)]">UNAVAILABLE</p>
 						<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-							The console is armed, but GistClaw still has no safe manual RPC API to call from the
-							web UI.
+							RPC probes are currently unavailable from this daemon.
 						</p>
+					</div>
+				{:else}
+					<div class="mt-6 grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.15fr)]">
+						<section class="gc-panel px-5 py-5">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Probe catalog</p>
+							<div class="mt-4 flex flex-col gap-4">
+								{#each rpcProbes as probe (probe.name)}
+									<div class="border-b border-[var(--gc-border)] pb-4 last:border-b-0 last:pb-0">
+										<div class="flex items-start justify-between gap-4">
+											<div>
+												<div class="flex flex-wrap items-center gap-2">
+													<p class="gc-panel-title text-[var(--gc-ink)]">{probe.label}</p>
+													{#if selectedRpcProbeName === probe.name}
+														<span
+															class="gc-badge border-[var(--gc-primary)] text-[var(--gc-primary)]"
+														>
+															SELECTED
+														</span>
+													{/if}
+												</div>
+												<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">{probe.description}</p>
+												<p class="gc-machine mt-3 text-[var(--gc-ink-4)]">{probe.name}</p>
+											</div>
+											<button
+												type="button"
+												onclick={() => void refreshRPCProbe(probe.name)}
+												class="gc-action px-4 py-2"
+												disabled={rpcBusy}
+											>
+												{rpcBusy && selectedRpcProbeName === probe.name
+													? 'Refreshing…'
+													: 'Run probe'}
+											</button>
+										</div>
+									</div>
+								{/each}
+							</div>
+						</section>
+
+						<section class="gc-panel-soft px-5 py-5">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Result</p>
+							<div class="mt-4 flex flex-wrap items-center gap-3">
+								<p class="gc-panel-title text-[var(--gc-ink)]">
+									{selectedRpcProbe?.label ?? rpc.result.label}
+								</p>
+								<span class="gc-badge border-[var(--gc-cyan)] text-[var(--gc-cyan)]">READ-ONLY</span
+								>
+							</div>
+							<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">{rpc.result.summary}</p>
+							<div class="mt-4 grid gap-3 sm:grid-cols-2">
+								<div>
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Last run</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink)]">{rpc.result.executed_at_label}</p>
+								</div>
+								<div>
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Probe</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink)]">{rpc.result.probe}</p>
+								</div>
+							</div>
+
+							<div class="mt-5">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">JSON</p>
+								<pre
+									class="gc-panel mt-3 overflow-x-auto px-4 py-4 text-sm leading-6 text-[var(--gc-ink)]">{rpcPayload}</pre>
+							</div>
+						</section>
 					</div>
 				{/if}
 			</div>

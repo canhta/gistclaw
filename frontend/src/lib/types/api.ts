@@ -830,3 +830,29 @@ export interface ConversationDetailResponse {
 		created_at_label: string;
 	}>;
 }
+
+export interface DebugRPCProbeResponse {
+	name: string;
+	label: string;
+	description: string;
+}
+
+export interface DebugRPCResultResponse {
+	probe: string;
+	label: string;
+	summary: string;
+	executed_at: string;
+	executed_at_label: string;
+	data?: Record<string, unknown>;
+}
+
+export interface DebugRPCStatusResponse {
+	summary: {
+		probe_count: number;
+		read_only: boolean;
+		default_probe: string;
+		selected_probe: string;
+	};
+	probes: DebugRPCProbeResponse[];
+	result: DebugRPCResultResponse;
+}
