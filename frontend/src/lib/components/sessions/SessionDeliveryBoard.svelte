@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import type {
 		ConversationDeliveryQueueResponse,
 		ConversationDetailResponse
@@ -6,13 +7,7 @@
 
 	let {
 		detail,
-		deliveryQueue = {
-			items: [],
-			paging: {
-				has_next: false,
-				has_prev: false
-			}
-		},
+		deliveryQueue,
 		onRetryDelivery,
 		retryingDeliveryID = null,
 		notice = '',
@@ -25,6 +20,11 @@
 		notice?: string;
 		error?: string;
 	} = $props();
+
+	function clearQueueFilters(): void {
+		// eslint-disable-next-line svelte/no-navigation-without-resolve
+		void goto(`/sessions?tab=overrides&session=${encodeURIComponent(detail.session.id)}`);
+	}
 </script>
 
 {#if notice || error}
@@ -38,13 +38,64 @@
 	</div>
 {/if}
 
-{#if deliveryQueue.items.length > 0 || deliveryQueue.paging.has_next || deliveryQueue.paging.has_prev}
+{#if deliveryQueue}
 	<div class="shrink-0 border-t border-t-[1px] border-[var(--gc-border)] px-5 py-3">
 		<p class="gc-stamp text-[var(--gc-primary)]">QUEUE</p>
 		<p class="gc-panel-title mt-2 text-[var(--gc-ink)]">Session delivery queue</p>
 		<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
 			Page-backed outbound intents for the selected session.
 		</p>
+		<form
+			method="GET"
+			action="/sessions"
+			class="mt-4 grid gap-3 border-t border-[var(--gc-border)] pt-4"
+		>
+			<input type="hidden" name="tab" value="overrides" />
+			<input type="hidden" name="session" value={detail.session.id} />
+			<p class="gc-stamp text-[var(--gc-ink-3)]">Filter queue</p>
+			<label class="flex flex-col gap-2">
+				<span class="gc-copy text-[var(--gc-ink-2)]">Search queue</span>
+				<input
+					type="search"
+					name="delivery_q"
+					value={deliveryQueue.filters.query}
+					placeholder="Search connector, chat, or message"
+					class="gc-control min-h-[2.75rem]"
+				/>
+			</label>
+			<div class="grid gap-3 sm:grid-cols-2">
+				<label class="flex flex-col gap-2">
+					<span class="gc-copy text-[var(--gc-ink-2)]">Queue status</span>
+					<select name="delivery_status" class="gc-control min-h-[2.75rem]">
+						<option value="" selected={deliveryQueue.filters.status === ''}>All queue states</option
+						>
+						<option value="pending" selected={deliveryQueue.filters.status === 'pending'}>
+							Pending only
+						</option>
+						<option value="retrying" selected={deliveryQueue.filters.status === 'retrying'}>
+							Retrying only
+						</option>
+						<option value="terminal" selected={deliveryQueue.filters.status === 'terminal'}>
+							Terminal only
+						</option>
+					</select>
+				</label>
+				<label class="flex flex-col gap-2">
+					<span class="gc-copy text-[var(--gc-ink-2)]">Queue limit</span>
+					<select name="delivery_limit" class="gc-control min-h-[2.75rem]">
+						<option value="10" selected={deliveryQueue.filters.limit === 10}>10 rows</option>
+						<option value="25" selected={deliveryQueue.filters.limit === 25}>25 rows</option>
+						<option value="50" selected={deliveryQueue.filters.limit === 50}>50 rows</option>
+					</select>
+				</label>
+			</div>
+			<div class="flex items-center justify-end gap-3">
+				<button type="button" class="gc-action gc-action-accent" onclick={clearQueueFilters}>
+					Clear queue filters
+				</button>
+				<button type="submit" class="gc-action gc-action-solid">Apply queue filters</button>
+			</div>
+		</form>
 		<div class="mt-3 grid gap-3">
 			{#each deliveryQueue.items as delivery (delivery.id)}
 				<div class="border border-[var(--gc-border)] px-4 py-4">
@@ -76,6 +127,11 @@
 				</div>
 			{/each}
 		</div>
+		{#if deliveryQueue.items.length === 0}
+			<div class="mt-3 border border-dashed border-[var(--gc-border)] px-4 py-4">
+				<p class="gc-copy text-[var(--gc-ink)]">No queue rows match the current filters.</p>
+			</div>
+		{/if}
 		{#if deliveryQueue.paging.has_prev || deliveryQueue.paging.has_next}
 			<div class="mt-4 flex items-center justify-end gap-3 border-t border-[var(--gc-border)] pt-4">
 				{#if deliveryQueue.paging.prevHref}

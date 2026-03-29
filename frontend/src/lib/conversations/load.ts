@@ -57,6 +57,11 @@ export async function loadConversationDeliveryQueue(
 	const limit = params.get('limit')?.trim() ?? '50';
 
 	return {
+		filters: {
+			query: params.get('q')?.trim() ?? '',
+			status: params.get('status')?.trim() ?? '',
+			limit: parseQueueLimit(limit)
+		},
 		items: (raw.deliveries ?? []).map(normalizeConversationDeliveryQueueItem),
 		paging: {
 			has_next: raw.has_next ?? false,
@@ -65,6 +70,11 @@ export async function loadConversationDeliveryQueue(
 			prevHref: buildSessionsDeliveryHref(raw.prev_cursor, 'prev', sessionID, currentSearch, limit)
 		}
 	};
+}
+
+function parseQueueLimit(value: string): number {
+	const parsed = Number.parseInt(value, 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : 50;
 }
 
 function normalizeConversationDeliveryQueueItem(

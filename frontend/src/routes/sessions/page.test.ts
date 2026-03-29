@@ -30,6 +30,11 @@ const baseData = {
 		runtimeConnectors: [],
 		selectedDetail: null,
 		deliveryQueue: {
+			filters: {
+				query: '',
+				status: '',
+				limit: 50
+			},
 			items: [],
 			paging: { has_next: false, has_prev: false, nextHref: undefined, prevHref: undefined }
 		},
@@ -150,7 +155,8 @@ describe('Sessions page', () => {
 	it('renders session override controls when selected detail is available', () => {
 		const data = {
 			...baseData,
-			currentSearch: 'tab=overrides&session=sess-1',
+			currentSearch:
+				'tab=overrides&session=sess-1&delivery_q=follow-up&delivery_status=terminal&delivery_limit=25',
 			sessions: {
 				...baseData.sessions,
 				selectedDetail: {
@@ -192,6 +198,11 @@ describe('Sessions page', () => {
 					]
 				},
 				deliveryQueue: {
+					filters: {
+						query: 'follow-up',
+						status: 'terminal',
+						limit: 25
+					},
 					items: [
 						{
 							id: 'delivery-queue-1',
@@ -210,7 +221,7 @@ describe('Sessions page', () => {
 						has_next: true,
 						has_prev: false,
 						nextHref:
-							'/sessions?tab=overrides&session=sess-1&delivery_cursor=delivery-next&delivery_direction=next&delivery_limit=50',
+							'/sessions?tab=overrides&session=sess-1&delivery_q=follow-up&delivery_status=terminal&delivery_limit=25&delivery_cursor=delivery-next&delivery_direction=next',
 						prevHref: undefined
 					}
 				}
@@ -226,6 +237,14 @@ describe('Sessions page', () => {
 		expect(body).toContain('Wake the bound session with a manual operator message.');
 		expect(body).toContain('Send message');
 		expect(body).toContain('Session delivery queue');
+		expect(body).toContain('Filter queue');
+		expect(body).toContain('Search queue');
+		expect(body).toContain('Queue status');
+		expect(body).toContain('Queue limit');
+		expect(body).toContain('follow-up');
+		expect(body).toContain('Terminal only');
+		expect(body).toContain('25 rows');
+		expect(body).toContain('Clear queue filters');
 		expect(body).toContain('run-queue-1');
 		expect(body).toContain('Queued follow-up');
 		expect(body).toContain('Next queue page');

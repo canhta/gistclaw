@@ -405,6 +405,11 @@ export interface ConversationDeliveryQueueItemResponse {
 }
 
 export interface ConversationDeliveryQueueResponse {
+	filters: {
+		query: string;
+		status: string;
+		limit: number;
+	};
 	items: ConversationDeliveryQueueItemResponse[];
 	paging: {
 		has_next: boolean;

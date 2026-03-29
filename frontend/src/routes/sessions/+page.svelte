@@ -37,6 +37,11 @@
 		() => data.sessions.deliveryQueue as ConversationDeliveryQueueResponse
 	);
 	const emptyDeliveryQueue: ConversationDeliveryQueueResponse = {
+		filters: {
+			query: '',
+			status: '',
+			limit: 50
+		},
 		items: [],
 		paging: {
 			has_next: false,

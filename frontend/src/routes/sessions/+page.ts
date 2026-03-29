@@ -36,6 +36,11 @@ const emptyHistory = {
 };
 
 const emptyDeliveryQueue = {
+	filters: {
+		query: '',
+		status: '',
+		limit: 50
+	},
 	items: [],
 	paging: {
 		has_next: false,

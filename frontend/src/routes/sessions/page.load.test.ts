@@ -226,7 +226,7 @@ describe('sessions load', () => {
 		expect(result.sessions.history.summary.run_count).toBe(0);
 	});
 
-	it('loads selected session detail when a session query is provided', async () => {
+	it('loads selected session detail and delivery queue filters when a session query is provided', async () => {
 		const fetcher = vi.fn<typeof fetch>(async (input) => {
 			const url = String(input);
 
@@ -309,7 +309,7 @@ describe('sessions load', () => {
 				);
 			}
 
-			if (url === '/api/deliveries?session_id=sess-1&limit=50') {
+			if (url === '/api/deliveries?session_id=sess-1&q=follow-up&status=terminal&limit=25') {
 				return new Response(
 					JSON.stringify({
 						deliveries: [
@@ -339,7 +339,12 @@ describe('sessions load', () => {
 			throw new Error(`unexpected url: ${url}`);
 		});
 
-		const result = await load(makeLoadEvent(fetcher, '?tab=overrides&session=sess-1'));
+		const result = await load(
+			makeLoadEvent(
+				fetcher,
+				'?tab=overrides&session=sess-1&delivery_q=follow-up&delivery_status=terminal&delivery_limit=25'
+			)
+		);
 
 		if (!result) {
 			throw new Error('expected sessions load to return data');
@@ -349,11 +354,16 @@ describe('sessions load', () => {
 		expect(fetcher).toHaveBeenNthCalledWith(2, '/api/conversations/sess-1', expect.any(Object));
 		expect(fetcher).toHaveBeenNthCalledWith(
 			3,
-			'/api/deliveries?session_id=sess-1&limit=50',
+			'/api/deliveries?session_id=sess-1&q=follow-up&status=terminal&limit=25',
 			expect.any(Object)
 		);
 		expect(result.sessions.selectedDetail?.session.id).toBe('sess-1');
 		expect(result.sessions.selectedDetail?.route?.id).toBe('route-1');
+		expect(result.sessions.deliveryQueue.filters).toEqual({
+			query: 'follow-up',
+			status: 'terminal',
+			limit: 25
+		});
 		expect(result.sessions.deliveryQueue.items).toHaveLength(1);
 		expect(result.sessions.deliveryQueue.items[0]).toMatchObject({
 			id: 'delivery-queue-1',
@@ -364,7 +374,7 @@ describe('sessions load', () => {
 			message_preview: 'Queued follow-up'
 		});
 		expect(result.sessions.deliveryQueue.paging.nextHref).toBe(
-			'/sessions?tab=overrides&session=sess-1&delivery_cursor=delivery-next&delivery_direction=next&delivery_limit=50'
+			'/sessions?tab=overrides&session=sess-1&delivery_q=follow-up&delivery_status=terminal&delivery_limit=25&delivery_cursor=delivery-next&delivery_direction=next'
 		);
 	});
 
@@ -399,6 +409,11 @@ describe('sessions load', () => {
 				runtimeConnectors: [],
 				selectedDetail: null,
 				deliveryQueue: {
+					filters: {
+						query: '',
+						status: '',
+						limit: 50
+					},
 					items: [],
 					paging: {
 						has_next: false,
