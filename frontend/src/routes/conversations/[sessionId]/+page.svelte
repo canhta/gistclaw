@@ -15,9 +15,6 @@
 	let draft = $state('');
 	const activeRunID = $derived(data.conversation.active_run_id ?? '');
 	const isBusy = $derived(activeRunID !== '');
-	const busyRunHref = $derived(
-		activeRunID === '' ? '' : resolve('/work/[runId]', { runId: activeRunID })
-	);
 
 	async function sendMessage(event: SubmitEvent): Promise<void> {
 		event.preventDefault();
@@ -94,7 +91,12 @@
 					<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
 						Active run {activeRunID} is still open. Wait for it to finish before sending.
 					</p>
-					<a class="gc-machine mt-3 inline-flex underline" href={busyRunHref}>Open active run</a>
+					<a
+						class="gc-machine mt-3 inline-flex underline"
+						href={resolve('/work/[runId]', { runId: activeRunID })}
+					>
+						Open active run
+					</a>
 				</div>
 			{/if}
 
