@@ -49,8 +49,37 @@
 
 	let stopStream: (() => void) | null = null;
 	let rawEvents = $state<Array<{ kind: string; occurred_at: string }>>([]);
-	let sendError = $state('');
+	let actionError = $state('');
 	let streamError = $state('');
+
+	function effectiveRunStatus(): 'idle' | 'active' | 'completed' | 'failed' | 'interrupted' {
+		if (transcript.runStatus !== 'idle') {
+			return transcript.runStatus;
+		}
+		switch (activeDetail?.run.status) {
+			case 'active':
+			case 'pending':
+			case 'needs_approval':
+				return 'active';
+			case 'completed':
+				return 'completed';
+			case 'failed':
+				return 'failed';
+			case 'interrupted':
+				return 'interrupted';
+			default:
+				return 'idle';
+		}
+	}
+
+	const composerRunStatus = $derived.by(() => effectiveRunStatus());
+	const canInject = $derived.by(() => {
+		if (!selectedRunId) {
+			return false;
+		}
+		const status = activeDetail?.run.status ?? '';
+		return status === 'active' || status === 'pending' || status === 'needs_approval';
+	});
 
 	function isTabID(value: string | null): value is TabID {
 		return (
@@ -129,7 +158,7 @@
 	});
 
 	async function handleSend(text: string): Promise<void> {
-		sendError = '';
+		actionError = '';
 		try {
 			const result = await requestJSON<WorkCreateResponse>(fetch, '/api/work', {
 				method: 'POST',
@@ -138,7 +167,27 @@
 			});
 			await selectRun(result.run_id);
 		} catch {
-			sendError = 'Failed to send message. Please try again.';
+			actionError = 'Failed to send message. Please try again.';
+		}
+	}
+
+	async function handleInject(text: string): Promise<void> {
+		if (!selectedRunId) {
+			return;
+		}
+		actionError = '';
+		try {
+			await requestJSON<{ injected: boolean; run_id: string; message_id: string; kind: string }>(
+				fetch,
+				`/api/work/${selectedRunId}/inject`,
+				{
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ note: text })
+				}
+			);
+		} catch {
+			actionError = 'Failed to inject note. Please try again.';
 		}
 	}
 
@@ -268,12 +317,12 @@
 					<div
 						class="flex-1 overflow-y-auto border border-[var(--gc-border)] bg-[var(--gc-surface)]"
 					>
-						{#if sendError}
+						{#if actionError}
 							<div
 								class="border-b border-b-[1.5px] border-[var(--gc-error)] bg-[var(--gc-error-dim)] px-5 py-3"
 							>
-								<p class="gc-stamp text-[var(--gc-error)]">Send error</p>
-								<p class="gc-copy mt-1 text-[var(--gc-ink)]">{sendError}</p>
+								<p class="gc-stamp text-[var(--gc-error)]">Action error</p>
+								<p class="gc-copy mt-1 text-[var(--gc-ink)]">{actionError}</p>
 							</div>
 						{/if}
 						{#if streamError}
@@ -302,7 +351,13 @@
 						{/if}
 					</div>
 
-					<Composer runStatus={transcript.runStatus} onSend={handleSend} onStop={handleStop} />
+					<Composer
+						runStatus={composerRunStatus}
+						{canInject}
+						onSend={handleSend}
+						onInject={handleInject}
+						onStop={handleStop}
+					/>
 				</div>
 			{:else if activeTab === 'graph'}
 				{#if activeDetail?.graph}

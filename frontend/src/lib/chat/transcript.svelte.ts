@@ -189,8 +189,10 @@ export function applyEvent(state: TranscriptState, delta: ReplayDeltaEnvelope): 
 		case 'session_message_added': {
 			const p = payload as SessionMessageAddedPayload | null;
 			const body = p?.body ?? '';
-			const isOutbound = p?.kind === 'outbound';
-			if (isOutbound) {
+			const kind = p?.kind ?? '';
+			if (kind === 'steer' || kind === 'announce' || kind === 'spawn') {
+				state.rows.push({ id, role: 'system', text: body, timestamp });
+			} else if (kind === 'assistant' || kind === 'agent_send' || kind === 'outbound') {
 				state.rows.push({
 					id,
 					role: 'agent',

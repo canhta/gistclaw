@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,7 +10,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/canhta/gistclaw/internal/conversations"
 	"github.com/canhta/gistclaw/internal/model"
+	"github.com/canhta/gistclaw/internal/runtime"
 )
 
 func TestWorkIndexReturnsQueueAndProjectSummary(t *testing.T) {
@@ -522,6 +525,128 @@ func TestCreateWorkTaskRejectsInvalidBodies(t *testing.T) {
 			t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
 		}
 	})
+}
+
+func TestInjectWorkAppendsSteerMessage(t *testing.T) {
+	t.Parallel()
+
+	prov := &stagedBlockingProvider{
+		release: make(chan struct{}),
+		first: runtime.GenerateResult{
+			Content:      "Front ready.",
+			InputTokens:  10,
+			OutputTokens: 12,
+			StopReason:   "end_turn",
+		},
+		followup: runtime.GenerateResult{
+			Content:      "Follow-up reply.",
+			InputTokens:  11,
+			OutputTokens: 13,
+			StopReason:   "end_turn",
+		},
+	}
+	h := newServerHarnessWithProvider(t, prov)
+
+	front, err := h.rt.StartFrontSession(context.Background(), runtime.StartFrontSession{
+		ConversationKey: conversations.ConversationKey{
+			ConnectorID: "web",
+			AccountID:   "local",
+			ExternalID:  "assistant",
+			ThreadID:    "main",
+		},
+		FrontAgentID:  "assistant",
+		InitialPrompt: "Inspect the repo.",
+		CWD:           h.workspaceRoot,
+	})
+	if err != nil {
+		close(prov.release)
+		t.Fatalf("StartFrontSession failed: %v", err)
+	}
+
+	run, err := h.rt.SendSessionAsync(context.Background(), runtime.SendSessionCommand{
+		ToSessionID: front.SessionID,
+		Body:        "What changed?",
+	})
+	if err != nil {
+		close(prov.release)
+		t.Fatalf("SendSessionAsync failed: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/work/"+run.ID+"/inject",
+		bytes.NewBufferString(`{"note":"Focus on auth logs."}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		close(prov.release)
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Injected  bool   `json:"injected"`
+		RunID     string `json:"run_id"`
+		MessageID string `json:"message_id"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		close(prov.release)
+		t.Fatalf("decode inject response: %v", err)
+	}
+	if !resp.Injected || resp.RunID != run.ID || strings.TrimSpace(resp.MessageID) == "" {
+		close(prov.release)
+		t.Fatalf("unexpected inject response %+v", resp)
+	}
+
+	var kind string
+	var body string
+	if err := h.db.RawDB().QueryRow(
+		`SELECT kind, body
+		 FROM session_messages
+		 WHERE session_id = ?
+		 ORDER BY created_at DESC, id DESC
+		 LIMIT 1`,
+		front.SessionID,
+	).Scan(&kind, &body); err != nil {
+		close(prov.release)
+		t.Fatalf("load injected session message: %v", err)
+	}
+	if kind != "steer" || body != "Focus on auth logs." {
+		close(prov.release)
+		t.Fatalf("expected steer note, got kind=%q body=%q", kind, body)
+	}
+
+	close(prov.release)
+	h.rt.WaitAsync()
+}
+
+func TestInjectWorkRejectsBlankNote(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarness(t)
+	h.insertRunWithSession(t, "run-work-inject", "conv-work-inject", "sess-work-inject", "Review the repo", "active")
+	if _, err := h.db.RawDB().Exec(
+		`INSERT INTO sessions
+		 (id, conversation_id, key, agent_id, role, parent_session_id, controller_session_id, status, created_at)
+		 VALUES ('sess-work-inject', 'conv-work-inject', 'conversation:conv-work-inject:front', 'assistant', 'front', '', '', 'active', datetime('now'))`,
+	); err != nil {
+		t.Fatalf("insert session: %v", err)
+	}
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/work/run-work-inject/inject",
+		bytes.NewBufferString(`{"note":"   "}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	h.server.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
 }
 
 func TestDismissWorkMarksInterruptedRunDismissed(t *testing.T) {

@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -744,6 +745,90 @@ func TestRuntime_AnnounceRejectsSessionWithoutRun(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "has no runs") {
 		t.Fatalf("expected missing-run error, got %v", err)
+	}
+}
+
+func TestRuntime_InjectRunNotePersistsSteerMessage(t *testing.T) {
+	prov := &stagedBlockingProvider{
+		release: make(chan struct{}),
+		first: GenerateResult{
+			Content:      "Front ready.",
+			InputTokens:  10,
+			OutputTokens: 12,
+			StopReason:   "end_turn",
+		},
+		followup: GenerateResult{
+			Content:      "Follow-up reply.",
+			InputTokens:  11,
+			OutputTokens: 13,
+			StopReason:   "end_turn",
+		},
+	}
+	db, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("Open failed: %v", err)
+	}
+	if err := store.Migrate(db); err != nil {
+		t.Fatalf("Migrate failed: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+
+	cs := conversations.NewConversationStore(db)
+	mem := memory.NewStore(db, cs)
+	reg := tools.NewRegistry()
+	rt := New(db, cs, reg, nil, mem, prov, &model.NoopEventSink{})
+	t.Cleanup(func() { rt.WaitAsync() })
+
+	front := startFrontRun(t, rt, "Inspect the repo.")
+
+	run, err := rt.SendSessionAsync(context.Background(), SendSessionCommand{
+		ToSessionID: front.SessionID,
+		Body:        "What changed?",
+	})
+	if err != nil {
+		t.Fatalf("SendSessionAsync failed: %v", err)
+	}
+
+	messageID, err := rt.InjectRunNote(context.Background(), run.ID, "Focus on auth logs.")
+	if err != nil {
+		t.Fatalf("InjectRunNote failed: %v", err)
+	}
+	if strings.TrimSpace(messageID) == "" {
+		t.Fatal("expected injected message id")
+	}
+
+	svc := sessions.NewService(db, conversations.NewConversationStore(db))
+	_, history, err := svc.LoadSessionMailbox(context.Background(), front.SessionID, 10)
+	if err != nil {
+		t.Fatalf("LoadSessionMailbox failed: %v", err)
+	}
+	if len(history) != 4 {
+		t.Fatalf("expected 4 front-session messages before release, got %d", len(history))
+	}
+	if history[3].Kind != model.MessageSteer || history[3].Body != "Focus on auth logs." {
+		t.Fatalf("expected steer note, got kind=%q body=%q", history[3].Kind, history[3].Body)
+	}
+	if history[3].Provenance.Kind != model.MessageProvenanceInbound {
+		t.Fatalf("expected inbound provenance, got %q", history[3].Provenance.Kind)
+	}
+	if history[3].Provenance.SourceConnectorID != conversations.LocalWebConnectorID {
+		t.Fatalf("expected local web connector provenance, got %q", history[3].Provenance.SourceConnectorID)
+	}
+
+	close(prov.release)
+	rt.WaitAsync()
+}
+
+func TestRuntime_InjectRunNoteRejectsCompletedRun(t *testing.T) {
+	rt, _ := newCollaborationRuntime(t, []GenerateResult{
+		{Content: "Front ready.", InputTokens: 10, OutputTokens: 12, StopReason: "end_turn"},
+	})
+
+	front := startFrontRun(t, rt, "Inspect the repo.")
+
+	_, err := rt.InjectRunNote(context.Background(), front.ID, "Too late.")
+	if !errors.Is(err, ErrRunNotInjectable) {
+		t.Fatalf("expected ErrRunNotInjectable, got %v", err)
 	}
 }
 

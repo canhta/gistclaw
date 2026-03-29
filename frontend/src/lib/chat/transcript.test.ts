@@ -165,26 +165,37 @@ describe('applyEvent — tool calls', () => {
 });
 
 describe('applyEvent — session_message_added', () => {
-	it('inbound session message creates a user row', () => {
+	it('user session message creates a user row', () => {
 		const state = makeTranscriptState();
 		applyEvent(
 			state,
-			evt('session_message_added', { kind: 'inbound', body: 'Hi from user' }, 'evt-1')
+			evt('session_message_added', { kind: 'user', body: 'Hi from user' }, 'evt-1')
 		);
 		expect(state.rows).toHaveLength(1);
 		expect(state.rows[0].role).toBe('user');
 		expect(state.rows[0].text).toBe('Hi from user');
 	});
 
-	it('outbound session message creates an agent row', () => {
+	it('assistant session message creates an agent row', () => {
 		const state = makeTranscriptState();
 		applyEvent(
 			state,
-			evt('session_message_added', { kind: 'outbound', body: 'Reply from agent' }, 'evt-1')
+			evt('session_message_added', { kind: 'assistant', body: 'Reply from agent' }, 'evt-1')
 		);
 		expect(state.rows).toHaveLength(1);
 		expect(state.rows[0].role).toBe('agent');
 		expect(state.rows[0].text).toBe('Reply from agent');
+	});
+
+	it('steer session message creates a system note row', () => {
+		const state = makeTranscriptState();
+		applyEvent(
+			state,
+			evt('session_message_added', { kind: 'steer', body: 'Focus on auth logs.' }, 'evt-1')
+		);
+		expect(state.rows).toHaveLength(1);
+		expect(state.rows[0].role).toBe('system');
+		expect(state.rows[0].text).toBe('Focus on auth logs.');
 	});
 });
 

@@ -62,6 +62,10 @@ type SendSessionCommand struct {
 	Body          string
 }
 
+var ErrRunNotFound = fmt.Errorf("runtime: run not found")
+var ErrRunNotInjectable = fmt.Errorf("runtime: run not injectable")
+var ErrRunSessionUnavailable = fmt.Errorf("runtime: run session unavailable")
+
 func (r *Runtime) StartFrontSession(ctx context.Context, cmd StartFrontSession) (model.Run, error) {
 	if strings.TrimSpace(cmd.FrontAgentID) == "" {
 		frontAgentID, err := r.FrontAgentID(ctx)
@@ -297,6 +301,51 @@ func (r *Runtime) Announce(ctx context.Context, cmd AnnounceCommand) error {
 
 func (r *Runtime) Steer(ctx context.Context, cmd SteerCommand) error {
 	return r.directSessionMessage(ctx, cmd.ControllerSessionID, cmd.TargetSessionID, model.MessageSteer, cmd.Body)
+}
+
+func (r *Runtime) InjectRunNote(ctx context.Context, runID, body string) (string, error) {
+	note := strings.TrimSpace(body)
+	if note == "" {
+		return "", fmt.Errorf("runtime: inject body is required")
+	}
+
+	run, err := r.loadRun(ctx, runID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrRunNotFound
+		}
+		return "", err
+	}
+	if strings.TrimSpace(run.SessionID) == "" {
+		return "", ErrRunSessionUnavailable
+	}
+	switch run.Status {
+	case model.RunStatusPending, model.RunStatusActive, model.RunStatusNeedsApproval:
+	default:
+		return "", ErrRunNotInjectable
+	}
+
+	sessionSvc := sessionkeys.NewService(r.store, r.convStore)
+	if _, err := sessionSvc.LoadSession(ctx, run.SessionID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrRunSessionUnavailable
+		}
+		return "", err
+	}
+
+	return r.appendSessionMessage(
+		ctx,
+		run.ConversationID,
+		run.ID,
+		run.SessionID,
+		"",
+		model.MessageSteer,
+		note,
+		model.SessionMessageProvenance{
+			Kind:              model.MessageProvenanceInbound,
+			SourceConnectorID: conversations.LocalWebConnectorID,
+		},
+	)
 }
 
 func (r *Runtime) AgentSend(ctx context.Context, cmd AgentSendCommand) error {

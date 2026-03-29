@@ -157,6 +157,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET /api/work/{id}/nodes/{node_id}", s.handleRunNodeDetail)
 	s.mux.HandleFunc("GET /api/work/{id}/events", s.handleRunEvents)
 	s.mux.Handle("POST /api/work/{id}/dismiss", s.adminAuth(http.HandlerFunc(s.handleWorkDismiss)))
+	s.mux.Handle("POST /api/work/{id}/inject", s.adminAuth(http.HandlerFunc(s.handleWorkInject)))
 	s.mux.HandleFunc("GET /api/team", s.handleTeamAPI)
 	s.mux.HandleFunc("GET /api/team/export", s.handleTeamExportAPI)
 	s.mux.Handle("POST /api/team/select", s.adminAuth(http.HandlerFunc(s.handleTeamSelectAPI)))

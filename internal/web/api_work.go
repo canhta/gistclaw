@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/canhta/gistclaw/internal/conversations"
+	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime"
 )
 
@@ -104,6 +105,17 @@ type workDismissResponse struct {
 	RunID     string `json:"run_id"`
 	Status    string `json:"status"`
 	NextHref  string `json:"next_href"`
+}
+
+type workInjectRequest struct {
+	Note string `json:"note"`
+}
+
+type workInjectResponse struct {
+	Injected  bool   `json:"injected"`
+	RunID     string `json:"run_id"`
+	MessageID string `json:"message_id"`
+	Kind      string `json:"kind"`
 }
 
 func (s *Server) startWorkRun(ctx context.Context, task string) (string, error) {
@@ -234,6 +246,56 @@ func (s *Server) handleWorkDismiss(w http.ResponseWriter, r *http.Request) {
 		RunID:     runID,
 		Status:    "dismissed",
 		NextHref:  pageChat,
+	})
+}
+
+func (s *Server) handleWorkInject(w http.ResponseWriter, r *http.Request) {
+	runID := r.PathValue("id")
+	visible, err := s.runVisibleInActiveProject(r.Context(), runID)
+	if err != nil {
+		http.Error(w, "failed to load run", http.StatusInternalServerError)
+		return
+	}
+	if !visible {
+		http.NotFound(w, r)
+		return
+	}
+	if s.rt == nil {
+		http.Error(w, "runtime not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	var req workInjectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json body", http.StatusBadRequest)
+		return
+	}
+	note := strings.TrimSpace(req.Note)
+	if note == "" {
+		http.Error(w, "note is required", http.StatusBadRequest)
+		return
+	}
+
+	messageID, err := s.rt.InjectRunNote(r.Context(), runID, note)
+	if err != nil {
+		switch {
+		case errors.Is(err, runtime.ErrRunNotFound):
+			http.NotFound(w, r)
+		case errors.Is(err, runtime.ErrRunNotInjectable), errors.Is(err, runtime.ErrRunSessionUnavailable):
+			writeJSON(w, http.StatusConflict, map[string]string{
+				"message": "Selected run cannot accept injected notes right now.",
+			})
+		default:
+			http.Error(w, "failed to inject note", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, workInjectResponse{
+		Injected:  true,
+		RunID:     runID,
+		MessageID: messageID,
+		Kind:      string(model.MessageSteer),
 	})
 }
 
