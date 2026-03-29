@@ -23,8 +23,30 @@ describe('Instances page', () => {
 		expect(body).toContain('Details');
 	});
 
-	it('renders COMING SOON state', () => {
+	it('renders presence summary cards and project context', () => {
 		const { body } = render(InstancesPage, { props: { data: baseData } });
-		expect(body).toContain('COMING SOON');
+		expect(body).toContain('Presence Feed');
+		expect(body).toContain('Deferred');
+		expect(body).toContain('Worker Sessions');
+		expect(body).toContain('Project');
+		expect(body).toContain('my-project');
+		expect(body).toContain('/home/user/my-project');
+	});
+
+	it('renders runtime presence guidance by default', () => {
+		const { body } = render(InstancesPage, { props: { data: baseData } });
+		expect(body).toContain('Instance presence is waiting on a dedicated backend.');
+		expect(body).toContain('runtime-managed typing');
+		expect(body).toContain('Chat');
+		expect(body).toContain('Channels');
+	});
+
+	it('renders details guidance when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=details' };
+		const { body } = render(InstancesPage, { props: { data } });
+		expect(body).toContain('Instance detail remains derived from live surfaces.');
+		expect(body).toContain('Sessions');
+		expect(body).toContain('Debug');
+		expect(body).toContain('Recover');
 	});
 });
