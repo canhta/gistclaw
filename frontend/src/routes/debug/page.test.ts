@@ -53,7 +53,50 @@ const baseData = {
 				}
 			},
 			paging: { has_next: false, has_prev: false },
-			clusters: []
+			clusters: [
+				{
+					root: {
+						id: 'run-root',
+						objective: 'Repair connector backlog',
+						agent_id: 'front',
+						status: 'active',
+						status_label: 'Active',
+						status_class: 'is-active',
+						model_display: 'gpt-5.4',
+						token_summary: '1.2K tokens',
+						started_at_short: '10:00',
+						started_at_exact: '2026-03-29 10:00',
+						started_at_iso: '2026-03-29T10:00:00Z',
+						last_activity_short: '10:05',
+						last_activity_exact: '2026-03-29 10:05',
+						last_activity_iso: '2026-03-29T10:05:00Z',
+						depth: 0
+					},
+					children: [
+						{
+							id: 'run-worker',
+							objective: 'Collect connector evidence',
+							agent_id: 'worker-1',
+							status: 'active',
+							status_label: 'Active',
+							status_class: 'is-active',
+							model_display: 'gpt-5.4-mini',
+							token_summary: '320 tokens',
+							started_at_short: '10:01',
+							started_at_exact: '2026-03-29 10:01',
+							started_at_iso: '2026-03-29T10:01:00Z',
+							last_activity_short: '10:04',
+							last_activity_exact: '2026-03-29 10:04',
+							last_activity_iso: '2026-03-29T10:04:00Z',
+							depth: 1
+						}
+					],
+					child_count: 1,
+					child_count_label: '1 child run',
+					blocker_label: '',
+					has_children: true
+				}
+			]
 		},
 		health: {
 			connectors: [
@@ -101,6 +144,25 @@ describe('Debug page', () => {
 		expect(body).toContain('telegram');
 		expect(body).toContain('poll loop stale');
 		expect(body).toContain('2 pending');
+	});
+
+	it('renders model usage when the models tab is selected', () => {
+		const data = { ...baseData, currentSearch: 'tab=models' };
+		const { body } = render(DebugPage, { props: { data } });
+		expect(body).toContain('Model usage');
+		expect(body).toContain('gpt-5.4');
+		expect(body).toContain('gpt-5.4-mini');
+		expect(body).toContain('2 runs');
+	});
+
+	it('renders event stream handoff when the events tab is selected', () => {
+		const data = { ...baseData, currentSearch: 'tab=events' };
+		const { body } = render(DebugPage, { props: { data } });
+		expect(body).toContain('Event stream handoff');
+		expect(body).toContain('/api/work/run-root/events');
+		expect(body).toContain('/api/work/run-worker/events');
+		expect(body).toContain('Chat');
+		expect(body).toContain('Run Events');
 	});
 
 	it('renders RPC warning state when rpc tab is selected', () => {

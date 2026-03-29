@@ -1,4 +1,5 @@
 <script lang="ts">
+	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
 	import type { PageData } from './$types';
 
@@ -33,6 +34,29 @@
 	const machine = $derived(settings?.machine ?? null);
 	const work = $derived(data.debug?.work ?? null);
 	const health = $derived(data.debug?.health ?? { connectors: [], runtime_connectors: [] });
+	const runs = $derived.by(() => {
+		const clusters = work?.clusters ?? [];
+		return clusters.flatMap((cluster) => [cluster.root, ...(cluster.children ?? [])]);
+	});
+	const modelUsage = $derived.by(() => {
+		const counts: Record<string, number> = {};
+		for (const run of runs) {
+			const model = run.model_display?.trim();
+			if (!model) {
+				continue;
+			}
+			counts[model] = (counts[model] ?? 0) + 1;
+		}
+		return Object.entries(counts).map(([model, count]) => ({ model, count }));
+	});
+	const eventSources = $derived.by(() =>
+		runs.map((run) => ({
+			id: run.id,
+			objective: run.objective,
+			agentID: run.agent_id,
+			streamURL: `/api/work/${encodeURIComponent(run.id)}/events`
+		}))
+	);
 
 	const statusToneByState: Record<string, string> = {
 		healthy: 'var(--gc-success)',
@@ -244,23 +268,140 @@
 				</div>
 			</div>
 		{:else if activeTab === 'models'}
-			<div class="flex flex-1 items-center justify-center p-10">
-				<div class="text-center">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">COMING SOON</p>
-					<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">Model inventory</p>
-					<p class="gc-copy mt-3 max-w-xs text-[var(--gc-ink-2)]">
-						GistClaw does not expose a model catalog endpoint yet.
-					</p>
+			<div class="mx-auto w-full max-w-6xl px-6 py-6">
+				<p class="gc-stamp text-[var(--gc-ink-3)]">MODELS</p>
+				<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Model usage</h2>
+				<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+					GistClaw does not expose a full model catalog yet, but the current work queue already
+					tells you which models are active. Use this tab to spot the models currently attached to
+					live or recent runs before you change config defaults elsewhere.
+				</p>
+
+				<div class="mt-6 grid gap-4 xl:grid-cols-4">
+					<SurfaceMetricCard
+						label="Observed Runs"
+						value={String(runs.length)}
+						detail={`${runs.length} runs sampled from the current queue.`}
+					/>
+					<SurfaceMetricCard
+						label="Distinct Models"
+						value={String(modelUsage.length)}
+						detail="Unique model displays attached to the visible queue."
+						tone="accent"
+					/>
+					<SurfaceMetricCard
+						label="Token Budget"
+						value={machine?.per_run_token_budget ?? '—'}
+						detail="Current per-run budget from runtime settings."
+					/>
+					<SurfaceMetricCard
+						label="Daily Cap"
+						value={machine?.daily_cost_cap_usd ?? '—'}
+						detail="Daily spend cap from runtime settings."
+						tone="warning"
+					/>
 				</div>
+
+				<section class="gc-panel-soft mt-6 px-5 py-5">
+					<p class="gc-stamp text-[var(--gc-ink-3)]">Active model displays</p>
+					{#if modelUsage.length === 0}
+						<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">No run models sampled yet.</p>
+					{:else}
+						<div class="mt-4 flex flex-col gap-4">
+							{#each modelUsage as item (item.model)}
+								<div class="border-b border-[var(--gc-border)] pb-4 last:border-b-0 last:pb-0">
+									<div class="flex items-center justify-between gap-4">
+										<p class="gc-panel-title text-[var(--gc-ink)]">{item.model}</p>
+										<span class="gc-badge border-[var(--gc-border)] text-[var(--gc-ink-2)]">
+											{item.count}
+											{item.count === 1 ? 'run' : 'runs'}
+										</span>
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</section>
 			</div>
 		{:else if activeTab === 'events'}
-			<div class="flex flex-1 items-center justify-center p-10">
-				<div class="text-center">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">COMING SOON</p>
-					<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">Runtime events</p>
-					<p class="gc-copy mt-3 max-w-xs text-[var(--gc-ink-2)]">
-						Event inspection will land here once there is a section-level event feed.
-					</p>
+			<div class="mx-auto w-full max-w-6xl px-6 py-6">
+				<p class="gc-stamp text-[var(--gc-ink-3)]">EVENTS</p>
+				<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Event stream handoff</h2>
+				<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+					The raw event stream already exists per run, but GistClaw does not yet ship a
+					section-level debug feed. Use this handoff to see which runs have SSE sources, then follow
+					the richer operator timeline in Chat under the Run Events tab.
+				</p>
+
+				<div class="mt-6 grid gap-4 xl:grid-cols-3">
+					<SurfaceMetricCard
+						label="Live Sources"
+						value={String(eventSources.length)}
+						detail="Run-scoped SSE streams visible from the current queue."
+					/>
+					<SurfaceMetricCard
+						label="Recovery Runs"
+						value={String(work?.queue_strip.recovery_runs ?? 0)}
+						detail="Runs that deserve event inspection first."
+						tone="warning"
+					/>
+					<SurfaceMetricCard
+						label="Operator Path"
+						value="Chat -> Run Events"
+						detail="Use Chat for decoded event timelines and live replay."
+						tone="accent"
+					/>
+				</div>
+
+				<div class="mt-6 grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.9fr)]">
+					<section class="gc-panel px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">SSE sources</p>
+						{#if eventSources.length === 0}
+							<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+								No active run streams are visible right now.
+							</p>
+						{:else}
+							<div class="mt-4 flex flex-col gap-4">
+								{#each eventSources as source (source.id)}
+									<div class="border-b border-[var(--gc-border)] pb-4 last:border-b-0 last:pb-0">
+										<p class="gc-panel-title text-[var(--gc-ink)]">{source.objective}</p>
+										<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+											{source.id} · {source.agentID}
+										</p>
+										<p class="gc-copy mt-3 font-mono text-sm break-all text-[var(--gc-signal)]">
+											{source.streamURL}
+										</p>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</section>
+
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Next step</p>
+						<div class="mt-4 space-y-4">
+							<div>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Chat</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									Use Chat when you need the decoded operator timeline rather than raw SSE
+									endpoints.
+								</p>
+							</div>
+							<div>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Run Events</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									Run Events is the current supported place for streaming event playback and event
+									kind inspection.
+								</p>
+							</div>
+							<div>
+								<p class="gc-panel-title text-[var(--gc-ink)]">Logs</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									Use Logs for connector-level output once the live tail backend arrives.
+								</p>
+							</div>
+						</div>
+					</section>
 				</div>
 			</div>
 		{:else}
