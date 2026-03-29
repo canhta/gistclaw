@@ -11,8 +11,6 @@ describe('automate form helpers', () => {
 
 	it('keeps blank start time empty and serializes a typed value to ISO', () => {
 		expect(serializeAnchorAt('')).toBe('');
-		expect(serializeAnchorAt('2026-03-29T08:17')).toBe(
-			new Date('2026-03-29T08:17').toISOString()
-		);
+		expect(serializeAnchorAt('2026-03-29T08:17')).toBe(new Date('2026-03-29T08:17').toISOString());
 	});
 });
