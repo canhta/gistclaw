@@ -10,6 +10,8 @@
 		cloneTeamProfile,
 		createTeamProfile,
 		deleteTeamProfile,
+		importTeamYAML,
+		saveTeamConfig,
 		selectTeamProfile
 	} from '$lib/team/actions';
 	import type {
@@ -69,6 +71,7 @@
 	let cloneSourceProfileID = $state('');
 	let cloneProfileID = $state('');
 	let deleteProfileID = $state('');
+	let importYAML = $state('');
 
 	function isTabID(value: string | null): value is TabID {
 		return (
@@ -387,6 +390,41 @@
 			setTeamMutationResult(response, `Profile ${deleteProfileID} deleted.`);
 		} catch (err) {
 			saveError = mutationErrorMessage('delete profile', err);
+		} finally {
+			teamSaving = false;
+		}
+	}
+
+	async function handleImportTeam(): Promise<void> {
+		saveMessage = '';
+		saveError = '';
+		teamSaving = true;
+
+		try {
+			const response = await importTeamYAML(globalThis.fetch.bind(globalThis), importYAML.trim());
+			setTeamMutationResult(response, 'Imported file loaded. Save Team to apply the change.');
+		} catch (err) {
+			saveError = mutationErrorMessage('import team file', err);
+		} finally {
+			teamSaving = false;
+		}
+	}
+
+	async function handleSaveTeam(): Promise<void> {
+		if (!team) {
+			saveError = 'Failed to save team.';
+			return;
+		}
+
+		saveMessage = '';
+		saveError = '';
+		teamSaving = true;
+
+		try {
+			const response = await saveTeamConfig(globalThis.fetch.bind(globalThis), team);
+			setTeamMutationResult(response, 'Team saved.');
+		} catch (err) {
+			saveError = mutationErrorMessage('save team', err);
 		} finally {
 			teamSaving = false;
 		}
@@ -747,8 +785,8 @@
 									</a>
 								</div>
 								<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-									Use the shipped `/api/team` profile actions here, then keep deep member edits in
-									the checked-in team files until the browser exposes import and save workflows.
+									Use the shipped `/api/team` actions here. Profile switching is live, and team file
+									import/save now lets you preview broader changes before you apply them.
 								</p>
 
 								<div class="mt-5 grid gap-4">
@@ -873,6 +911,49 @@
 											</div>
 										{/if}
 									</form>
+
+									<section class="border border-[var(--gc-border)] px-4 py-4">
+										<div class="flex items-start justify-between gap-3">
+											<div>
+												<p class="gc-stamp text-[var(--gc-ink-3)]">TEAM FILE</p>
+												<p class="gc-copy mt-2 text-[var(--gc-ink)]">Imported YAML</p>
+											</div>
+											<button
+												type="button"
+												disabled={teamSaving || !team}
+												class="gc-action gc-action-warning px-4 py-2 disabled:opacity-50"
+												onclick={() => void handleSaveTeam()}
+											>
+												Save team
+											</button>
+										</div>
+										<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+											Import lets you preview the imported team here until you save it.
+										</p>
+
+										<label class="mt-4 flex flex-col gap-2">
+											<span class="gc-stamp text-[var(--gc-ink-3)]">Imported YAML</span>
+											<textarea
+												bind:value={importYAML}
+												class="gc-control min-h-[12rem] font-mono text-sm"
+												placeholder="name: Repo Task Team
+front_agent: assistant
+agents:
+  - id: assistant"
+											></textarea>
+										</label>
+
+										<div class="mt-4 flex justify-end">
+											<button
+												type="button"
+												disabled={teamSaving || importYAML.trim() === ''}
+												class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
+												onclick={() => void handleImportTeam()}
+											>
+												Import team file
+											</button>
+										</div>
+									</section>
 								</div>
 							</section>
 						</div>
@@ -884,8 +965,9 @@
 							Specialists exposed by the runtime
 						</h2>
 						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-							Profile lifecycle is live in this tab, but role definitions, tool families, and deep
-							routing edits still belong to the checked-in team files for now.
+							Profile lifecycle and YAML import/save are live in this tab. Inline member editing is
+							still deferred, so broader structural changes should flow through the exported team
+							file.
 						</p>
 
 						<div class="mt-5 grid gap-3">

@@ -261,6 +261,10 @@ describe('Config page', () => {
 		expect(body).toContain('Create profile');
 		expect(body).toContain('Clone profile');
 		expect(body).toContain('Delete profile');
+		expect(body).toContain('Import team file');
+		expect(body).toContain('Save team');
+		expect(body).toContain('Imported YAML');
+		expect(body).toContain('preview the imported team here until you save it');
 		expect(body).toContain('/api/team/export');
 		expect(body).toContain('Export team file');
 	});

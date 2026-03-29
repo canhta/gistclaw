@@ -3,6 +3,8 @@ import {
 	cloneTeamProfile,
 	createTeamProfile,
 	deleteTeamProfile,
+	importTeamYAML,
+	saveTeamConfig,
 	selectTeamProfile
 } from './actions';
 
@@ -108,6 +110,82 @@ describe('team action helpers', () => {
 				'content-type': 'application/json'
 			},
 			body: JSON.stringify({ profile_id: 'ops' })
+		});
+	});
+
+	it('posts imported yaml to the team import endpoint', async () => {
+		const fetcher = vi.fn<typeof fetch>(async () => {
+			return new Response(JSON.stringify(teamResponse), {
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			});
+		});
+
+		await importTeamYAML(fetcher, 'name: Imported Team');
+
+		expect(fetcher).toHaveBeenCalledWith('/api/team/import', {
+			method: 'POST',
+			headers: {
+				accept: 'application/json',
+				'content-type': 'application/json'
+			},
+			body: JSON.stringify({ yaml: 'name: Imported Team' })
+		});
+	});
+
+	it('posts the editable team shape to the team save endpoint', async () => {
+		const fetcher = vi.fn<typeof fetch>(async () => {
+			return new Response(JSON.stringify(teamResponse), {
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			});
+		});
+
+		await saveTeamConfig(fetcher, {
+			name: 'Repo Task Team',
+			front_agent_id: 'assistant',
+			member_count: 1,
+			members: [
+				{
+					id: 'assistant',
+					role: 'front assistant',
+					soul_file: 'teams/assistant.md',
+					base_profile: 'default',
+					tool_families: ['repo_read', 'web_fetch'],
+					delegation_kinds: ['reviewer'],
+					can_message: ['reviewer'],
+					specialist_summary_visibility: 'full',
+					soul_extra: { tone: 'direct' },
+					is_front: true
+				}
+			]
+		});
+
+		expect(fetcher).toHaveBeenCalledWith('/api/team/save', {
+			method: 'POST',
+			headers: {
+				accept: 'application/json',
+				'content-type': 'application/json'
+			},
+			body: JSON.stringify({
+				team: {
+					name: 'Repo Task Team',
+					front_agent_id: 'assistant',
+					members: [
+						{
+							id: 'assistant',
+							role: 'front assistant',
+							soul_file: 'teams/assistant.md',
+							base_profile: 'default',
+							tool_families: ['repo_read', 'web_fetch'],
+							delegation_kinds: ['reviewer'],
+							can_message: ['reviewer'],
+							specialist_summary_visibility: 'full',
+							soul_extra: { tone: 'direct' }
+						}
+					]
+				}
+			})
 		});
 	});
 });
