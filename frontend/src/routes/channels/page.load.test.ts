@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { load } from './+page';
 
-function makeLoadEvent(fetcher: typeof fetch): Parameters<typeof load>[0] {
-	return { fetch: fetcher } as unknown as Parameters<typeof load>[0];
+function makeLoadEvent(fetcher: typeof fetch, search = ''): Parameters<typeof load>[0] {
+	return {
+		fetch: fetcher,
+		url: new URL(`http://localhost/channels${search}`)
+	} as unknown as Parameters<typeof load>[0];
 }
 
 describe('channels load', () => {
@@ -101,8 +104,118 @@ describe('channels load', () => {
 					terminal_count: 0,
 					restart_suggested_count: 0
 				},
-				items: []
+				items: [],
+				routes: {
+					filters: {
+						connector_id: '',
+						status: '',
+						query: '',
+						limit: 50
+					},
+					items: [],
+					paging: {
+						has_next: false,
+						has_prev: false,
+						nextHref: undefined,
+						prevHref: undefined
+					}
+				}
 			}
 		});
+	});
+
+	it('loads route inventory when the settings tab is requested', async () => {
+		const fetcher = vi.fn<typeof fetch>(async (input) => {
+			if (input === '/api/conversations') {
+				return new Response(
+					JSON.stringify({
+						summary: {
+							session_count: 2,
+							connector_count: 1,
+							terminal_deliveries: 0
+						},
+						filters: {
+							query: '',
+							agent_id: '',
+							role: '',
+							status: '',
+							connector_id: '',
+							binding: ''
+						},
+						sessions: [],
+						paging: { has_next: false, has_prev: false },
+						health: [],
+						runtime_connectors: []
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
+			if (input === '/api/routes?connector_id=telegram&status=all&limit=10') {
+				return new Response(
+					JSON.stringify({
+						routes: [
+							{
+								ID: 'route-1',
+								SessionID: 'sess-1',
+								ThreadID: 'thread-1',
+								ConnectorID: 'telegram',
+								AccountID: 'acct-1',
+								ExternalID: 'chat-1',
+								Status: 'inactive',
+								CreatedAt: '2026-03-29T10:00:00Z',
+								DeactivatedAt: '2026-03-29T11:00:00Z',
+								DeactivationReason: 'deactivated',
+								ReplacedByRouteID: '',
+								ConversationID: 'conv-1',
+								AgentID: 'assistant',
+								Role: 'front'
+							}
+						],
+						has_next: true,
+						has_prev: false,
+						next_cursor: 'cursor-next'
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
+			throw new Error(`unexpected request: ${String(input)}`);
+		});
+
+		const result = await load(
+			makeLoadEvent(
+				fetcher,
+				'?tab=settings&route_connector_id=telegram&route_status=all&route_limit=10'
+			)
+		);
+
+		if (!result) {
+			throw new Error('expected channels load to return route data');
+		}
+
+		expect(fetcher).toHaveBeenNthCalledWith(1, '/api/conversations', expect.any(Object));
+		expect(fetcher).toHaveBeenNthCalledWith(
+			2,
+			'/api/routes?connector_id=telegram&status=all&limit=10',
+			expect.any(Object)
+		);
+		expect(result.channels.routes.items[0]).toEqual(
+			expect.objectContaining({
+				id: 'route-1',
+				connector_id: 'telegram',
+				external_id: 'chat-1',
+				status_label: 'Inactive'
+			})
+		);
+		expect(result.channels.routes.paging.nextHref).toBe(
+			'/channels?tab=settings&route_connector_id=telegram&route_status=all&route_limit=10&route_cursor=cursor-next&route_direction=next'
+		);
 	});
 });

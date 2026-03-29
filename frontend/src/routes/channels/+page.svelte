@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import ConnectorRow from '$lib/components/channels/ConnectorRow.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
@@ -23,6 +24,7 @@
 	const activeTab = $derived(activeTabOverride ?? requestedTab);
 	const summary = $derived(data.channels?.summary);
 	const connectors = $derived(data.channels?.items ?? []);
+	const routes = $derived(data.channels?.routes);
 
 	function isTabID(value: string | null): value is TabID {
 		return value === 'status' || value === 'login' || value === 'settings';
@@ -123,7 +125,7 @@
 				</div>
 			</div>
 		{:else}
-			<div class="mx-auto w-full max-w-4xl">
+			<div class="mx-auto w-full max-w-6xl">
 				<section class="gc-panel-soft px-5 py-5">
 					<p class="gc-stamp text-[var(--gc-ink-3)]">SETTINGS</p>
 					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Channel settings moved</h2>
@@ -135,6 +137,175 @@
 					<p class="gc-copy mt-4 text-[var(--gc-ink)]">
 						Restart suggestions currently raised: {summary?.restart_suggested_count ?? 0}
 					</p>
+				</section>
+
+				<section class="gc-panel-soft mt-6 px-5 py-5">
+					<p class="gc-stamp text-[var(--gc-ink-3)]">ROUTE DIRECTORY</p>
+					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Route directory</h2>
+					<p class="gc-copy mt-3 max-w-3xl text-[var(--gc-ink-2)]">
+						Deep connector config still lives in Config, but the active and historical route
+						bindings are a live channel concern. This board comes from the shipped `/api/routes`
+						directory.
+					</p>
+
+					<form method="GET" class="mt-5 grid gap-4 xl:grid-cols-4">
+						<input type="hidden" name="tab" value="settings" />
+
+						<div class="flex flex-col gap-2">
+							<label for="route-search" class="gc-stamp text-[var(--gc-ink-3)]">Search routes</label
+							>
+							<input
+								id="route-search"
+								name="route_q"
+								value={routes?.filters.query ?? ''}
+								placeholder="Search by session, agent, or external id"
+								class="gc-control min-h-[2.75rem]"
+							/>
+						</div>
+
+						<div class="flex flex-col gap-2">
+							<label for="route-connector" class="gc-stamp text-[var(--gc-ink-3)]">Connector</label>
+							<input
+								id="route-connector"
+								name="route_connector_id"
+								value={routes?.filters.connector_id ?? ''}
+								placeholder="telegram"
+								class="gc-control min-h-[2.75rem]"
+							/>
+						</div>
+
+						<div class="flex flex-col gap-2">
+							<label for="route-status" class="gc-stamp text-[var(--gc-ink-3)]">Route status</label>
+							<select id="route-status" name="route_status" class="gc-control min-h-[2.75rem]">
+								<option value="" selected={routes?.filters.status === ''}>Active only</option>
+								<option value="all" selected={routes?.filters.status === 'all'}>All routes</option>
+								<option value="inactive" selected={routes?.filters.status === 'inactive'}>
+									Inactive only
+								</option>
+							</select>
+						</div>
+
+						<div class="flex flex-col gap-2">
+							<label for="route-limit" class="gc-stamp text-[var(--gc-ink-3)]">Route limit</label>
+							<input
+								id="route-limit"
+								type="number"
+								min="1"
+								max="100"
+								name="route_limit"
+								value={String(routes?.filters.limit ?? 50)}
+								class="gc-control min-h-[2.75rem]"
+							/>
+						</div>
+
+						<div class="flex flex-wrap justify-end gap-3 xl:col-span-4">
+							<a
+								href={resolve('/channels?tab=settings')}
+								class="gc-action gc-action-accent px-4 py-2"
+							>
+								Clear filters
+							</a>
+							<button type="submit" class="gc-action gc-action-solid px-4 py-2">
+								Apply filters
+							</button>
+						</div>
+					</form>
+
+					<div class="mt-5 grid gap-3">
+						{#if (routes?.items?.length ?? 0) > 0}
+							{#each routes?.items ?? [] as route (route.id)}
+								<article class="border border-[var(--gc-border)] px-4 py-4">
+									<div class="flex flex-wrap items-start justify-between gap-3">
+										<div>
+											<p class="gc-panel-title text-[var(--gc-ink)]">{route.connector_id}</p>
+											<p class="gc-copy mt-2 text-[var(--gc-ink)]">{route.external_id}</p>
+											<p class="gc-copy mt-2 text-sm text-[var(--gc-ink-3)]">
+												Session {route.session_id} • Agent {route.agent_id}
+											</p>
+										</div>
+										<div class="flex flex-wrap gap-2 text-xs text-[var(--gc-ink-3)]">
+											<span class="gc-chip">{route.status_label}</span>
+											<span class="gc-chip">{route.role_label}</span>
+											{#if route.thread_id}
+												<span class="gc-chip">{route.thread_id}</span>
+											{/if}
+										</div>
+									</div>
+
+									<div class="mt-4 flex flex-wrap gap-x-5 gap-y-2">
+										<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
+											Created {route.created_at_label}
+										</p>
+										{#if route.deactivated_at_label}
+											<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
+												Deactivated {route.deactivated_at_label}
+											</p>
+										{/if}
+										{#if route.deactivation_reason}
+											<p class="gc-copy text-sm text-[var(--gc-ink-3)]">
+												Reason {route.deactivation_reason}
+											</p>
+										{/if}
+									</div>
+								</article>
+							{/each}
+						{:else}
+							<div class="border border-dashed border-[var(--gc-border)] px-4 py-5">
+								<p class="gc-copy text-[var(--gc-ink)]">No routes matched the current filters.</p>
+							</div>
+						{/if}
+					</div>
+
+					<div class="mt-5 flex flex-wrap gap-3">
+						{#if routes?.paging.prevHref}
+							<form method="GET" action={resolve('/channels')}>
+								<input type="hidden" name="tab" value="settings" />
+								<input type="hidden" name="route_q" value={routes.filters.query} />
+								<input
+									type="hidden"
+									name="route_connector_id"
+									value={routes.filters.connector_id}
+								/>
+								<input type="hidden" name="route_status" value={routes.filters.status} />
+								<input type="hidden" name="route_limit" value={String(routes.filters.limit)} />
+								<input
+									type="hidden"
+									name="route_cursor"
+									value={new URLSearchParams(routes.paging.prevHref.split('?')[1] ?? '').get(
+										'route_cursor'
+									) ?? ''}
+								/>
+								<input type="hidden" name="route_direction" value="prev" />
+								<button type="submit" class="gc-action gc-action-accent px-4 py-2">
+									Previous route page
+								</button>
+							</form>
+						{/if}
+						{#if routes?.paging.nextHref}
+							<form method="GET" action={resolve('/channels')}>
+								<input type="hidden" name="tab" value="settings" />
+								<input type="hidden" name="route_q" value={routes.filters.query} />
+								<input
+									type="hidden"
+									name="route_connector_id"
+									value={routes.filters.connector_id}
+								/>
+								<input type="hidden" name="route_status" value={routes.filters.status} />
+								<input type="hidden" name="route_limit" value={String(routes.filters.limit)} />
+								<input
+									type="hidden"
+									name="route_cursor"
+									value={new URLSearchParams(routes.paging.nextHref.split('?')[1] ?? '').get(
+										'route_cursor'
+									) ?? ''}
+								/>
+								<input type="hidden" name="route_direction" value="next" />
+								<button type="submit" class="gc-action gc-action-solid px-4 py-2">
+									Next route page
+								</button>
+							</form>
+						{/if}
+					</div>
 				</section>
 			</div>
 		{/if}

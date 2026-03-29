@@ -20,7 +20,42 @@ const baseData = {
 			terminal_count: 0,
 			restart_suggested_count: 0
 		},
-		items: []
+		items: [],
+		routes: {
+			filters: {
+				connector_id: 'telegram',
+				status: 'all',
+				query: '',
+				limit: 10
+			},
+			items: [
+				{
+					id: 'route-1',
+					session_id: 'sess-1',
+					thread_id: 'thread-1',
+					connector_id: 'telegram',
+					account_id: 'acct-1',
+					external_id: 'chat-1',
+					status: 'inactive',
+					status_label: 'Inactive',
+					created_at_label: '2026-03-29 10:00 UTC',
+					deactivated_at_label: '2026-03-29 11:00 UTC',
+					deactivation_reason: 'deactivated',
+					replaced_by_route_id: '',
+					conversation_id: 'conv-1',
+					agent_id: 'assistant',
+					role: 'front',
+					role_label: 'Front'
+				}
+			],
+			paging: {
+				has_next: true,
+				has_prev: false,
+				nextHref:
+					'/channels?tab=settings&route_connector_id=telegram&route_status=all&route_limit=10&route_cursor=cursor-next&route_direction=next',
+				prevHref: undefined
+			}
+		}
 	}
 };
 
@@ -54,6 +89,7 @@ describe('Channels page', () => {
 		const data = {
 			...baseData,
 			channels: {
+				routes: baseData.channels.routes,
 				summary: {
 					connector_count: 1,
 					active_count: 1,
@@ -97,5 +133,12 @@ describe('Channels page', () => {
 		const { body } = render(ChannelsPage, { props: { data } });
 		expect(body).toContain('Channel settings moved');
 		expect(body).toContain('Config');
+		expect(body).toContain('Route directory');
+		expect(body).toContain('Search routes');
+		expect(body).toContain('Route status');
+		expect(body).toContain('telegram');
+		expect(body).toContain('chat-1');
+		expect(body).toContain('Inactive');
+		expect(body).toContain('Next route page');
 	});
 });
