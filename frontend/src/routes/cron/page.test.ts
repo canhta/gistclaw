@@ -12,8 +12,21 @@ const baseData = {
 	currentPath: '/cron',
 	currentSearch: '',
 	cron: {
+		summary: {
+			total_schedules: 3,
+			enabled_schedules: 2,
+			due_schedules: 1,
+			active_occurrences: 1,
+			next_wake_at_label: '2026-03-30 02:00 UTC'
+		},
+		health: {
+			invalid_schedules: 1,
+			stuck_dispatching: 0,
+			missing_next_run: 1
+		},
 		schedules: [],
-		occurrences: []
+		openOccurrences: [],
+		recentOccurrences: []
 	}
 };
 
@@ -35,10 +48,68 @@ describe('Cron page', () => {
 		expect(body).toContain('No jobs scheduled');
 	});
 
+	it('renders scheduler summary and health cards', () => {
+		const { body } = render(CronPage, { props: { data: baseData } });
+		expect(body).toContain('3');
+		expect(body).toContain('2026-03-30 02:00 UTC');
+		expect(body).toContain('1 invalid');
+		expect(body).toContain('1 missing next wake');
+	});
+
+	it('renders the real editor tab when selected through search', () => {
+		const data = { ...baseData, currentSearch: 'tab=editor' };
+		const { body } = render(CronPage, { props: { data } });
+		expect(body).toContain('Create Job');
+		expect(body).toContain('Objective');
+		expect(body).toContain('Schedule type');
+		expect(body).toContain('Cron expression');
+		expect(body).toContain('Timezone');
+	});
+
+	it('renders open and recent run lanes on the runs tab', () => {
+		const data = {
+			...baseData,
+			currentSearch: 'tab=runs',
+			cron: {
+				...baseData.cron,
+				openOccurrences: [
+					{
+						id: 'occ-open',
+						schedule_id: 'sched-1',
+						schedule_name: 'Daily digest',
+						status: 'active',
+						status_label: 'Active',
+						status_class: 'is-active',
+						slot_at_label: 'Today 09:00',
+						updated_at_label: 'just now'
+					}
+				],
+				recentOccurrences: [
+					{
+						id: 'occ-recent',
+						schedule_id: 'sched-2',
+						schedule_name: 'Repository sweep',
+						status: 'completed',
+						status_label: 'Completed',
+						status_class: 'is-active',
+						slot_at_label: 'Today 03:00',
+						updated_at_label: '2 min ago'
+					}
+				]
+			}
+		};
+		const { body } = render(CronPage, { props: { data } });
+		expect(body).toContain('Open runs');
+		expect(body).toContain('Recent runs');
+		expect(body).toContain('Daily digest');
+		expect(body).toContain('Repository sweep');
+	});
+
 	it('renders a schedule row when schedules are provided', () => {
 		const data = {
 			...baseData,
 			cron: {
+				...baseData.cron,
 				schedules: [
 					{
 						id: 'sched-1',
@@ -60,7 +131,8 @@ describe('Cron page', () => {
 						schedule_error_count: 0
 					}
 				],
-				occurrences: []
+				openOccurrences: [],
+				recentOccurrences: []
 			}
 		};
 		const { body } = render(CronPage, { props: { data } });

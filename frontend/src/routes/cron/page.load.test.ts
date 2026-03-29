@@ -6,7 +6,7 @@ function makeLoadEvent(fetcher: typeof fetch): Parameters<typeof load>[0] {
 }
 
 describe('cron load', () => {
-	it('loads schedules and occurrences from automate', async () => {
+	it('loads summary, health, schedules, and occurrence lanes from automate', async () => {
 		const fetcher = vi.fn<typeof fetch>(
 			async () =>
 				new Response(
@@ -72,8 +72,11 @@ describe('cron load', () => {
 		}
 
 		expect(fetcher).toHaveBeenCalledWith('/api/automate', expect.any(Object));
+		expect(result.cron.summary.total_schedules).toBe(1);
+		expect(result.cron.health.invalid_schedules).toBe(0);
 		expect(result.cron.schedules).toHaveLength(1);
-		expect(result.cron.occurrences).toHaveLength(1);
+		expect(result.cron.openOccurrences).toHaveLength(1);
+		expect(result.cron.recentOccurrences).toHaveLength(0);
 	});
 
 	it('returns empty cron data when the request fails', async () => {
@@ -89,8 +92,21 @@ describe('cron load', () => {
 
 		expect(result).toEqual({
 			cron: {
+				summary: {
+					total_schedules: 0,
+					enabled_schedules: 0,
+					due_schedules: 0,
+					active_occurrences: 0,
+					next_wake_at_label: 'No wake scheduled'
+				},
+				health: {
+					invalid_schedules: 0,
+					stuck_dispatching: 0,
+					missing_next_run: 0
+				},
 				schedules: [],
-				occurrences: []
+				openOccurrences: [],
+				recentOccurrences: []
 			}
 		});
 	});
