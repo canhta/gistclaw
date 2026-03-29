@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createRoute, deactivateRoute, retryConversationDelivery } from './actions';
+import {
+	createRoute,
+	deactivateRoute,
+	retryConversationDelivery,
+	sendRouteMessage
+} from './actions';
 
 describe('conversation action helpers', () => {
 	it('posts delivery retries to the session delivery retry endpoint', async () => {
@@ -69,6 +74,28 @@ describe('conversation action helpers', () => {
 				external_id: 'chat-1',
 				thread_id: 'thread-1',
 				account_id: 'acct-1'
+			})
+		});
+	});
+
+	it('posts manual route messages to the route messages endpoint', async () => {
+		const fetcher = vi.fn<typeof fetch>(async () => {
+			return new Response(JSON.stringify({ run_id: 'run-2' }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			});
+		});
+
+		await sendRouteMessage(fetcher, 'route-1', 'What changed?');
+
+		expect(fetcher).toHaveBeenCalledWith('/api/routes/route-1/messages', {
+			method: 'POST',
+			headers: {
+				accept: 'application/json',
+				'content-type': 'application/json'
+			},
+			body: JSON.stringify({
+				body: 'What changed?'
 			})
 		});
 	});

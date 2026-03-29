@@ -194,6 +194,10 @@ describe('Sessions page', () => {
 		expect(body).toContain('sess-1');
 		expect(body).toContain('route-1');
 		expect(body).toContain('Deactivate route');
+		expect(body).toContain('Send route message');
+		expect(body).toContain('Message body');
+		expect(body).toContain('Wake the bound session with a manual operator message.');
+		expect(body).toContain('Send message');
 		expect(body).toContain('Retry delivery');
 		expect(body).toContain('Webhook delivery');
 	});

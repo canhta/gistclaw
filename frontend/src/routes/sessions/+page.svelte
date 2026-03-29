@@ -10,6 +10,7 @@
 		createRoute,
 		deactivateRoute,
 		retryConversationDelivery,
+		sendRouteMessage,
 		type CreateRouteInput
 	} from '$lib/conversations/actions';
 	import { loadConversationDetail } from '$lib/conversations/load';
@@ -36,6 +37,7 @@
 	let detailError = $state('');
 	let bindingRoute = $state(false);
 	let deactivatingRoute = $state(false);
+	let sendingRouteMessage = $state(false);
 	let retryingDeliveryID = $state<string | null>(null);
 	let detailActionNotice = $state('');
 	let detailActionError = $state('');
@@ -186,6 +188,41 @@
 				err instanceof Error && err.message.trim() !== '' ? err.message : 'Failed to bind route.';
 		} finally {
 			bindingRoute = false;
+		}
+	}
+
+	async function handleSendRouteMessage(body: string): Promise<boolean> {
+		if (!detail?.route) {
+			return false;
+		}
+
+		sendingRouteMessage = true;
+		detailActionNotice = '';
+		detailActionError = '';
+
+		try {
+			const response = await sendRouteMessage(
+				globalThis.fetch.bind(globalThis),
+				detail.route.id,
+				body
+			);
+			detailActionNotice = `Route message queued in run ${response.run_id}.`;
+
+			try {
+				detail = await loadConversationDetail(globalThis.fetch.bind(globalThis), detail.session.id);
+			} catch {
+				detailActionNotice = `Route message queued in run ${response.run_id}. Refresh the session to see the latest state.`;
+			}
+
+			return true;
+		} catch (err) {
+			detailActionError =
+				err instanceof Error && err.message.trim() !== ''
+					? err.message
+					: 'Failed to send route message.';
+			return false;
+		} finally {
+			sendingRouteMessage = false;
 		}
 	}
 </script>
@@ -396,11 +433,13 @@
 						{runtimeConnectors}
 						{bindingRoute}
 						{deactivatingRoute}
+						{sendingRouteMessage}
 						{retryingDeliveryID}
 						notice={detailActionNotice}
 						error={detailActionError}
 						onBindRoute={(input) => void handleBindRoute(input)}
 						onDeactivateRoute={() => void handleDeactivateRoute()}
+						onSendRouteMessage={(body) => handleSendRouteMessage(body)}
 						onRetryDelivery={(deliveryID) => void handleRetryDelivery(deliveryID)}
 					/>
 				{:else}

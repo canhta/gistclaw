@@ -9,9 +9,11 @@
 		runtimeConnectors = [],
 		onBindRoute,
 		onDeactivateRoute,
+		onSendRouteMessage,
 		onRetryDelivery,
 		bindingRoute = false,
 		deactivatingRoute = false,
+		sendingRouteMessage = false,
 		retryingDeliveryID = null,
 		notice = '',
 		error = ''
@@ -20,9 +22,11 @@
 		runtimeConnectors?: RecoverRuntimeHealthResponse[];
 		onBindRoute?: (input: CreateRouteInput) => void;
 		onDeactivateRoute?: () => void;
+		onSendRouteMessage?: (body: string) => Promise<boolean>;
 		onRetryDelivery?: (deliveryID: string) => void;
 		bindingRoute?: boolean;
 		deactivatingRoute?: boolean;
+		sendingRouteMessage?: boolean;
 		retryingDeliveryID?: string | null;
 		notice?: string;
 		error?: string;
@@ -32,8 +36,12 @@
 	let externalID = $state('');
 	let threadID = $state('');
 	let accountID = $state('');
+	let routeMessage = $state('');
 
 	const canBind = $derived(!bindingRoute && connectorID.trim() !== '' && externalID.trim() !== '');
+	const canSendRouteMessage = $derived(
+		!sendingRouteMessage && routeMessage.trim() !== '' && Boolean(detail.route)
+	);
 
 	$effect(() => {
 		if (connectorID === '' && runtimeConnectors[0]?.connector_id) {
@@ -54,6 +62,18 @@
 			threadID: threadID.trim() || undefined,
 			accountID: accountID.trim() || undefined
 		});
+	}
+
+	async function handleRouteSendSubmit(event: SubmitEvent): Promise<void> {
+		event.preventDefault();
+		if (!canSendRouteMessage) {
+			return;
+		}
+
+		const sent = await onSendRouteMessage?.(routeMessage.trim());
+		if (sent) {
+			routeMessage = '';
+		}
 	}
 </script>
 
@@ -130,6 +150,31 @@
 						</p>
 					</div>
 				</div>
+
+				<form class="mt-5 border-t border-[var(--gc-border)] pt-5" onsubmit={handleRouteSendSubmit}>
+					<p class="gc-stamp text-[var(--gc-ink-3)]">Send route message</p>
+					<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+						Wake the bound session with a manual operator message.
+					</p>
+					<label class="mt-4 flex flex-col gap-2">
+						<span class="gc-copy text-[var(--gc-ink-2)]">Message body</span>
+						<textarea
+							bind:value={routeMessage}
+							rows={3}
+							class="gc-control min-h-[6rem] resize-y py-3"
+							placeholder="Ask the bound session what changed."
+						></textarea>
+					</label>
+					<div class="mt-4 flex justify-end">
+						<button
+							type="submit"
+							class="gc-action gc-action-solid min-w-[10rem] justify-center disabled:opacity-50"
+							disabled={!canSendRouteMessage}
+						>
+							{sendingRouteMessage ? 'Sending…' : 'Send message'}
+						</button>
+					</div>
+				</form>
 			</div>
 		{:else}
 			<div class="mt-5 border border-dashed border-[var(--gc-border)] px-4 py-5">

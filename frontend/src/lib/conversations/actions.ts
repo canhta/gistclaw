@@ -22,6 +22,10 @@ interface RouteCreateResponse {
 	};
 }
 
+interface RouteSendResponse {
+	run_id: string;
+}
+
 interface RouteDeactivateResponse {
 	route: {
 		id: string;
@@ -73,4 +77,24 @@ export function createRoute(
 			account_id: input.accountID
 		})
 	});
+}
+
+export function sendRouteMessage(
+	fetcher: typeof fetch,
+	routeID: string,
+	body: string
+): Promise<RouteSendResponse> {
+	return requestJSON<RouteSendResponse>(
+		fetcher,
+		`/api/routes/${encodeURIComponent(routeID)}/messages`,
+		{
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json'
+			},
+			body: JSON.stringify({
+				body
+			})
+		}
+	);
 }
