@@ -151,6 +151,82 @@ export interface WorkGraphResponse {
 	active_path: string[];
 }
 
+export interface WorkStructuredTextBlockResponse {
+	kind: string;
+	text?: string;
+	items?: string[];
+	start?: number;
+}
+
+export interface WorkStructuredTextResponse {
+	plain_text?: string;
+	preview_text?: string;
+	has_overflow: boolean;
+	blocks?: WorkStructuredTextBlockResponse[];
+}
+
+export interface WorkNodeChainStepResponse {
+	run_id: string;
+	short_id: string;
+	agent_id: string;
+	status: string;
+	status_label: string;
+}
+
+export interface WorkNodeChainResponse {
+	path: WorkNodeChainStepResponse[];
+	children?: WorkNodeChainStepResponse[];
+}
+
+export interface WorkNodeApprovalResponse {
+	id: string;
+	tool_name: string;
+	binding_summary?: string;
+	reason?: string;
+	status: string;
+	status_label: string;
+	status_class: string;
+	requested_at_label?: string;
+	resolved_at_label?: string;
+	resolve_url?: string;
+	view_url?: string;
+	can_resolve: boolean;
+}
+
+export interface WorkNodeLogEntryResponse {
+	title: string;
+	body: string;
+	stream: string;
+	tool_name: string;
+	tool_call_id?: string;
+	entry_key?: string;
+	created_at_label: string;
+}
+
+export interface WorkNodeDetailResponse {
+	id: string;
+	short_id: string;
+	parent_run_id?: string;
+	parent_short_id?: string;
+	agent_id: string;
+	session_id?: string;
+	session_short_id?: string;
+	session_url?: string;
+	status: string;
+	status_label: string;
+	status_class: string;
+	model_display: string;
+	token_summary: string;
+	token_exact_summary: string;
+	started_at_label: string;
+	last_activity_label: string;
+	task: WorkStructuredTextResponse;
+	output: WorkStructuredTextResponse;
+	chain: WorkNodeChainResponse;
+	approval?: WorkNodeApprovalResponse;
+	logs?: WorkNodeLogEntryResponse[];
+}
+
 export interface WorkDetailResponse {
 	run: {
 		id: string;

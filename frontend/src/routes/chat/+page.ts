@@ -1,5 +1,5 @@
 import { buildChatPageHref, buildWorkListSearch } from '$lib/work/query';
-import { loadWorkDetail, loadWorkIndex } from '$lib/work/load';
+import { loadWorkDetail, loadWorkIndex, loadWorkNodeDetail } from '$lib/work/load';
 import type { PageLoad } from './$types';
 
 const emptyQueue = {
@@ -28,11 +28,21 @@ export const load: PageLoad = async ({ fetch, url }) => {
 		const selectedRunID = requestedRunID || index.clusters[0]?.root.id || null;
 
 		let detail = null;
+		let nodeDetail = null;
 		if (selectedRunID) {
 			try {
 				detail = await loadWorkDetail(fetch, selectedRunID);
+				const inspectorNodeID = detail.inspector_seed?.id?.trim() ?? '';
+				if (inspectorNodeID !== '') {
+					try {
+						nodeDetail = await loadWorkNodeDetail(fetch, selectedRunID, inspectorNodeID);
+					} catch {
+						nodeDetail = null;
+					}
+				}
 			} catch {
 				detail = null;
+				nodeDetail = null;
 			}
 		}
 
@@ -49,7 +59,8 @@ export const load: PageLoad = async ({ fetch, url }) => {
 					prevHref: buildChatPageHref(index.paging?.prev_url, url.searchParams.toString())
 				},
 				selectedRunID,
-				detail
+				detail,
+				nodeDetail
 			}
 		};
 	} catch {
@@ -61,7 +72,8 @@ export const load: PageLoad = async ({ fetch, url }) => {
 				runs: [],
 				paging: { has_next: false, has_prev: false, nextHref: undefined, prevHref: undefined },
 				selectedRunID: null,
-				detail: null
+				detail: null,
+				nodeDetail: null
 			}
 		};
 	}

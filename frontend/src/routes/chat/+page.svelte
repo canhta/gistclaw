@@ -45,6 +45,7 @@
 	const runs: WorkClusterResponse[] = $derived(data.chat?.runs ?? []);
 	const paging = $derived(data.chat?.paging);
 	const activeDetail = $derived(detail ?? data.chat?.detail ?? null);
+	const activeNodeDetail = $derived(data.chat?.nodeDetail ?? null);
 
 	let stopStream: (() => void) | null = null;
 	let rawEvents = $state<Array<{ kind: string; occurred_at: string }>>([]);
@@ -305,7 +306,11 @@
 				</div>
 			{:else if activeTab === 'graph'}
 				{#if activeDetail?.graph}
-					<RunGraph graph={activeDetail.graph} inspectorSeedID={activeDetail.inspector_seed?.id} />
+					<RunGraph
+						graph={activeDetail.graph}
+						inspectorSeedID={activeDetail.inspector_seed?.id}
+						nodeDetail={activeNodeDetail}
+					/>
 				{:else}
 					<div class="flex flex-1 items-center justify-center p-10">
 						<div class="text-center">

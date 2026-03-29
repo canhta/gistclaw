@@ -1,5 +1,10 @@
 import { requestJSON } from '$lib/http/client';
-import type { WorkDetailResponse, WorkGraphResponse, WorkIndexResponse } from '$lib/types/api';
+import type {
+	WorkDetailResponse,
+	WorkGraphResponse,
+	WorkIndexResponse,
+	WorkNodeDetailResponse
+} from '$lib/types/api';
 
 export async function loadWorkIndex(
 	fetcher: typeof fetch,
@@ -21,4 +26,15 @@ export async function loadWorkGraph(
 	runID: string
 ): Promise<WorkGraphResponse> {
 	return requestJSON<WorkGraphResponse>(fetcher, `/api/work/${runID}/graph`);
+}
+
+export async function loadWorkNodeDetail(
+	fetcher: typeof fetch,
+	runID: string,
+	nodeID: string
+): Promise<WorkNodeDetailResponse> {
+	return requestJSON<WorkNodeDetailResponse>(
+		fetcher,
+		`/api/work/${runID}/nodes/${encodeURIComponent(nodeID)}`
+	);
 }

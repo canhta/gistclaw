@@ -1,16 +1,23 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { Background, BackgroundVariant, Controls, MiniMap, SvelteFlow } from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
-	import type { WorkGraphNodeResponse, WorkGraphResponse } from '$lib/types/api';
+	import type {
+		WorkGraphNodeResponse,
+		WorkGraphResponse,
+		WorkNodeDetailResponse
+	} from '$lib/types/api';
 	import { buildFlowGraph } from './layout';
 	import RunGraphNode from './RunGraphNode.svelte';
 
 	let {
 		graph,
-		inspectorSeedID
+		inspectorSeedID,
+		nodeDetail = null
 	}: {
 		graph: WorkGraphResponse;
 		inspectorSeedID?: string;
+		nodeDetail?: WorkNodeDetailResponse | null;
 	} = $props();
 
 	const flow = $derived(buildFlowGraph(graph));
@@ -22,6 +29,18 @@
 			.map((nodeID) => graph.nodes.find((node) => node.id === nodeID))
 			.filter((node): node is WorkGraphNodeResponse => node !== undefined)
 	);
+
+	function structuredTextSummary(
+		value: WorkNodeDetailResponse['task'] | WorkNodeDetailResponse['output']
+	): string {
+		if (value.preview_text && value.preview_text.trim() !== '') {
+			return value.preview_text;
+		}
+		if (value.plain_text && value.plain_text.trim() !== '') {
+			return value.plain_text;
+		}
+		return 'No text recorded.';
+	}
 </script>
 
 <div class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_20rem]">
@@ -88,6 +107,87 @@
 				{/each}
 			</div>
 		</div>
+
+		{#if nodeDetail}
+			<div class="gc-panel px-4 py-4">
+				<div class="flex items-start justify-between gap-3">
+					<div>
+						<p class="gc-stamp">Focused node</p>
+						<h3 class="gc-panel-title mt-3 text-[1rem]">{nodeDetail.agent_id}</h3>
+					</div>
+					<span class={`gc-badge ${nodeDetail.status_class}`}>{nodeDetail.status_label}</span>
+				</div>
+
+				<div class="mt-4 grid gap-3">
+					<div>
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Task</p>
+						<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+							{structuredTextSummary(nodeDetail.task)}
+						</p>
+					</div>
+					<div>
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Output</p>
+						<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+							{structuredTextSummary(nodeDetail.output)}
+						</p>
+					</div>
+				</div>
+
+				<div class="mt-4 grid gap-2 border-t-2 border-[var(--gc-border)] pt-4">
+					<div class="flex items-center justify-between gap-3">
+						<p class="gc-stamp">Model</p>
+						<p class="gc-machine">{nodeDetail.model_display}</p>
+					</div>
+					<div class="flex items-center justify-between gap-3">
+						<p class="gc-stamp">Tokens</p>
+						<p class="gc-machine">{nodeDetail.token_summary}</p>
+					</div>
+					<div class="flex items-center justify-between gap-3">
+						<p class="gc-stamp">Started</p>
+						<p class="gc-machine">{nodeDetail.started_at_label}</p>
+					</div>
+					<div class="flex items-center justify-between gap-3">
+						<p class="gc-stamp">Updated</p>
+						<p class="gc-machine">{nodeDetail.last_activity_label}</p>
+					</div>
+					{#if nodeDetail.session_url && nodeDetail.session_short_id}
+						<div class="flex items-center justify-between gap-3">
+							<p class="gc-stamp">Session</p>
+							<a href={resolve(nodeDetail.session_url)} class="gc-machine text-[var(--gc-cyan)]">
+								{nodeDetail.session_short_id}
+							</a>
+						</div>
+					{/if}
+				</div>
+
+				{#if nodeDetail.approval}
+					<div class="mt-4 border-t-2 border-[var(--gc-border)] pt-4">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Approval</p>
+						<p class="gc-copy mt-2 text-[var(--gc-ink)]">{nodeDetail.approval.tool_name}</p>
+						{#if nodeDetail.approval.binding_summary}
+							<p class="gc-machine mt-2">{nodeDetail.approval.binding_summary}</p>
+						{/if}
+						{#if nodeDetail.approval.reason}
+							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">{nodeDetail.approval.reason}</p>
+						{/if}
+					</div>
+				{/if}
+
+				{#if nodeDetail.logs && nodeDetail.logs.length > 0}
+					<div class="mt-4 border-t-2 border-[var(--gc-border)] pt-4">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Logs</p>
+						<div class="mt-3 grid gap-3">
+							{#each nodeDetail.logs.slice(0, 3) as entry (entry.title + entry.created_at_label)}
+								<div class="gc-panel-soft px-3 py-3">
+									<p class="gc-stamp">{entry.title}</p>
+									<p class="gc-machine mt-2 whitespace-pre-wrap">{entry.body}</p>
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			</div>
+		{/if}
 
 		<div class="gc-panel-soft px-4 py-4">
 			<p class="gc-stamp">Run ledger</p>
