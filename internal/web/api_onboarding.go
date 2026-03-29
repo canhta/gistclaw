@@ -1,10 +1,12 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
 
+	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/runtime"
 )
 
@@ -12,6 +14,7 @@ type onboardingResponse struct {
 	Completed      bool                          `json:"completed"`
 	EntryHref      string                        `json:"entry_href"`
 	Project        *bootstrapProjectResponse     `json:"project"`
+	Preview        onboardingPreviewStatusView   `json:"preview"`
 	SuggestedTasks []onboardingTaskCandidateView `json:"suggested_tasks"`
 }
 
@@ -33,6 +36,18 @@ type onboardingPreviewRequest struct {
 type onboardingPreviewResponse struct {
 	RunID    string `json:"run_id"`
 	NextHref string `json:"next_href"`
+}
+
+type onboardingPreviewStatusView struct {
+	Available   bool   `json:"available"`
+	StatusLabel string `json:"status_label"`
+	Detail      string `json:"detail"`
+}
+
+type onboardingPreviewState struct {
+	onboardingPreviewStatusView
+	frontAgentID string
+	httpStatus   int
 }
 
 func (s *Server) handleOnboardingAPI(w http.ResponseWriter, r *http.Request) {
@@ -120,29 +135,19 @@ func (s *Server) handleOnboardingPreviewAPI(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": "Choose a preview task before starting the run."})
 		return
 	}
-	if s.rt == nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "Preview runs are unavailable right now. Check the runtime configuration and try again."})
-		return
-	}
-
 	project, err := runtime.ActiveProject(r.Context(), s.db)
 	if err != nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "Unable to load the active project. Check the runtime configuration and try again."})
 		return
 	}
-	if strings.TrimSpace(project.ID) == "" || strings.TrimSpace(project.PrimaryPath) == "" {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"message": "Bind a project before starting a preview run."})
-		return
-	}
-
-	frontAgentID, err := s.rt.FrontAgentID(r.Context())
-	if err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"message": "Unable to resolve the front assistant for preview runs. Check the team configuration and try again."})
+	preview := s.resolveOnboardingPreviewState(r.Context(), project)
+	if !preview.Available {
+		writeJSON(w, preview.httpStatus, map[string]string{"message": preview.Detail})
 		return
 	}
 	run, err := s.rt.StartAsync(r.Context(), runtime.StartRun{
 		ConversationID: "onboarding",
-		AgentID:        frontAgentID,
+		AgentID:        preview.frontAgentID,
 		Objective:      task,
 		ProjectID:      project.ID,
 		CWD:            project.PrimaryPath,
@@ -170,6 +175,7 @@ func (s *Server) loadOnboardingResponse(r *http.Request) (onboardingResponse, er
 		Completed: onboardingCompleted(s.db),
 		EntryHref: s.defaultEntryPath(),
 		Project:   bootstrapProjectPointer(project),
+		Preview:   s.resolveOnboardingPreviewState(r.Context(), project).onboardingPreviewStatusView,
 	}
 	if strings.TrimSpace(project.PrimaryPath) == "" {
 		return resp, nil
@@ -181,4 +187,47 @@ func (s *Server) loadOnboardingResponse(r *http.Request) (onboardingResponse, er
 		resp.SuggestedTasks = append(resp.SuggestedTasks, onboardingTaskCandidateView(candidate))
 	}
 	return resp, nil
+}
+
+func (s *Server) resolveOnboardingPreviewState(ctx context.Context, project model.Project) onboardingPreviewState {
+	if strings.TrimSpace(project.ID) == "" || strings.TrimSpace(project.PrimaryPath) == "" {
+		return onboardingPreviewState{
+			onboardingPreviewStatusView: onboardingPreviewStatusView{
+				Available:   false,
+				StatusLabel: "Bind a repo",
+				Detail:      "Bind a repo before starting a preview run.",
+			},
+			httpStatus: http.StatusUnprocessableEntity,
+		}
+	}
+	if s.rt == nil {
+		return onboardingPreviewState{
+			onboardingPreviewStatusView: onboardingPreviewStatusView{
+				Available:   false,
+				StatusLabel: "Runtime unavailable",
+				Detail:      "Preview runs are unavailable right now. Check the runtime configuration and try again.",
+			},
+			httpStatus: http.StatusServiceUnavailable,
+		}
+	}
+	frontAgentID, err := s.rt.FrontAgentID(ctx)
+	if err != nil {
+		return onboardingPreviewState{
+			onboardingPreviewStatusView: onboardingPreviewStatusView{
+				Available:   false,
+				StatusLabel: "Team setup required",
+				Detail:      "Unable to resolve the front assistant for preview runs. Check the team configuration and try again.",
+			},
+			httpStatus: http.StatusServiceUnavailable,
+		}
+	}
+	return onboardingPreviewState{
+		onboardingPreviewStatusView: onboardingPreviewStatusView{
+			Available:   true,
+			StatusLabel: "Ready to launch",
+			Detail:      "Start a preview run with the active project and current front assistant.",
+		},
+		frontAgentID: frontAgentID,
+		httpStatus:   http.StatusOK,
+	}
 }

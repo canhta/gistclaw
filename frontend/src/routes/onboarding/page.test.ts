@@ -20,6 +20,11 @@ describe('Onboarding page', () => {
 							active_name: 'starter-project',
 							active_path: '/tmp/starter-project'
 						},
+						preview: {
+							available: true,
+							status_label: 'Ready to launch',
+							detail: 'Start a preview run with the active project and current front assistant.'
+						},
 						suggested_tasks: [
 							{
 								kind: 'explain',
@@ -55,6 +60,59 @@ describe('Onboarding page', () => {
 		expect(body).toContain('Create a fresh repo');
 		expect(body).toContain('Explain what the internal package does');
 		expect(body).toContain('Review changes in main.go');
+		expect(body).toContain('Preview readiness');
+		expect(body).toContain('Ready to launch');
 		expect(body).toContain('Start preview run');
+	});
+
+	it('renders a blocked preview state and disables preview actions', () => {
+		const { body } = render(OnboardingPage, {
+			props: {
+				data: {
+					auth: {
+						authenticated: true,
+						password_configured: true,
+						setup_required: false
+					},
+					onboarding: {
+						completed: false,
+						entry_href: '/onboarding',
+						project: {
+							active_id: 'proj-primary',
+							active_name: 'starter-project',
+							active_path: '/tmp/starter-project'
+						},
+						preview: {
+							available: false,
+							status_label: 'Runtime unavailable',
+							detail:
+								'Preview runs are unavailable right now. Check the runtime configuration and try again.'
+						},
+						suggested_tasks: [
+							{
+								kind: 'explain',
+								description: 'Explain what the internal package does',
+								signal: 'directory "internal" matches known subsystem name'
+							}
+						]
+					},
+					project: {
+						active_id: 'proj-primary',
+						active_name: 'starter-project',
+						active_path: '/tmp/starter-project'
+					},
+					navigation: [
+						{ id: 'chat', label: 'Chat', href: '/chat' },
+						{ id: 'sessions', label: 'Sessions', href: '/sessions' }
+					],
+					currentPath: '/onboarding',
+					currentSearch: ''
+				}
+			}
+		});
+
+		expect(body).toContain('Runtime unavailable');
+		expect(body).toContain('Preview unavailable');
+		expect(body).toContain('disabled');
 	});
 });

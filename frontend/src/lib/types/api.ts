@@ -45,6 +45,11 @@ export interface OnboardingResponse {
 	completed: boolean;
 	entry_href: string;
 	project: BootstrapProjectResponse | null;
+	preview: {
+		available: boolean;
+		status_label: string;
+		detail: string;
+	};
 	suggested_tasks: OnboardingTaskCandidateResponse[];
 }
 

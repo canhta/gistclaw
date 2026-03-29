@@ -20,6 +20,7 @@
 
 	const onboardingState = $derived(onboardingOverride ?? data.onboarding);
 	const activeProject = $derived(onboardingState.project);
+	const previewState = $derived(onboardingState.preview);
 	const starterAvailable = $derived(!onboardingState.completed && !!onboardingState.project);
 
 	async function bindProject(source: 'starter' | 'existing_repo' | 'new_project'): Promise<void> {
@@ -202,6 +203,19 @@
 				machine responds.
 			</p>
 
+			<div class="gc-panel-soft mt-6 px-4 py-4">
+				<div class="flex flex-wrap items-start justify-between gap-4">
+					<div class="min-w-0 flex-1">
+						<p class="gc-stamp">Preview readiness</p>
+						<p class="gc-panel-title mt-3">{previewState.status_label}</p>
+						<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">{previewState.detail}</p>
+					</div>
+					<p class="gc-stamp text-[var(--gc-text-tertiary)]">
+						{previewState.available ? 'Ready' : 'Blocked'}
+					</p>
+				</div>
+			</div>
+
 			{#if activeProject}
 				<div class="gc-panel-soft mt-6 px-4 py-4">
 					<p class="gc-stamp">{onboardingState.completed ? 'Active project' : 'Starter project'}</p>
@@ -233,12 +247,16 @@
 								<SurfaceActionButton
 									className="min-w-52"
 									tone="solid"
-									disabled={launchingTask === task.description}
+									disabled={launchingTask === task.description || !previewState.available}
 									onclick={() => {
 										void startPreview(task.description);
 									}}
 								>
-									{launchingTask === task.description ? 'Launching preview' : 'Start preview run'}
+									{launchingTask === task.description
+										? 'Launching preview'
+										: previewState.available
+											? 'Start preview run'
+											: 'Preview unavailable'}
 								</SurfaceActionButton>
 							</div>
 						</div>

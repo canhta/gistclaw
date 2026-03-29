@@ -44,6 +44,11 @@ func TestOnboardingAPIReturnsPendingStarterProjectState(t *testing.T) {
 			ActiveName string `json:"active_name"`
 			ActivePath string `json:"active_path"`
 		} `json:"project"`
+		Preview struct {
+			Available   bool   `json:"available"`
+			StatusLabel string `json:"status_label"`
+			Detail      string `json:"detail"`
+		} `json:"preview"`
 		SuggestedTasks []struct {
 			Kind string `json:"kind"`
 		} `json:"suggested_tasks"`
@@ -67,6 +72,9 @@ func TestOnboardingAPIReturnsPendingStarterProjectState(t *testing.T) {
 	if resp.Project.ActivePath != h.workspaceRoot {
 		t.Fatalf("active_path = %q, want %q", resp.Project.ActivePath, h.workspaceRoot)
 	}
+	if !resp.Preview.Available || resp.Preview.StatusLabel != "Ready to launch" {
+		t.Fatalf("unexpected preview readiness: %+v", resp.Preview)
+	}
 	if len(resp.SuggestedTasks) < 3 {
 		t.Fatalf("expected at least 3 suggested tasks, got %d", len(resp.SuggestedTasks))
 	}
@@ -79,6 +87,43 @@ func TestOnboardingAPIReturnsPendingStarterProjectState(t *testing.T) {
 		if !slices.Contains(kinds, want) {
 			t.Fatalf("expected suggested task kind %q in %v", want, kinds)
 		}
+	}
+}
+
+func TestOnboardingAPIReturnsBlockedPreviewStateWhenRuntimeUnavailable(t *testing.T) {
+	t.Parallel()
+
+	h := newServerHarnessOnboardingPending(t)
+	h.rawServer.rt = nil
+
+	rr := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/api/onboarding", nil)
+	req.Header.Set("Authorization", "Bearer "+h.adminToken)
+	h.rawServer.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	var resp struct {
+		Preview struct {
+			Available   bool   `json:"available"`
+			StatusLabel string `json:"status_label"`
+			Detail      string `json:"detail"`
+		} `json:"preview"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if resp.Preview.Available {
+		t.Fatalf("expected preview to be blocked, got %+v", resp.Preview)
+	}
+	if resp.Preview.StatusLabel != "Runtime unavailable" {
+		t.Fatalf("unexpected preview label: %+v", resp.Preview)
+	}
+	if resp.Preview.Detail != "Preview runs are unavailable right now. Check the runtime configuration and try again." {
+		t.Fatalf("unexpected preview detail: %+v", resp.Preview)
 	}
 }
 
