@@ -78,13 +78,16 @@ describe('RunGraph', () => {
 						}
 					]
 				},
-				inspectorSeedID: 'run-work-child'
+				inspectorSeedID: 'run-work-child',
+				selectedNodeID: 'run-work-child'
 			}
 		});
 
 		expect(body).toContain('1 task waiting on you.');
+		expect(body).toContain('Node clicks keep the inspector synced while the run is live.');
 		expect(body).toContain('Review the repo');
 		expect(body).toContain('Inspect docs');
 		expect(body).toContain('run-work-child');
+		expect(body).toContain('aria-pressed="true"');
 	});
 });

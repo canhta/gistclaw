@@ -28,7 +28,7 @@
 
 <div
 	data-run-node={data.runID}
-	class={`min-w-[15rem] border-2 bg-[var(--gc-surface)] px-4 py-4 text-[var(--gc-ink)] shadow-[0_0_0_1px_rgba(0,0,0,0.32)] ${toneClass(data.statusClass)} ${selected ? 'ring-2 ring-[var(--gc-cyan)]' : ''}`}
+	class={`min-w-[15rem] border-2 bg-[var(--gc-surface)] px-4 py-4 text-[var(--gc-ink)] shadow-[0_0_0_1px_rgba(0,0,0,0.32)] ${toneClass(data.statusClass)} ${selected || data.isSelected ? 'ring-2 ring-[var(--gc-cyan)]' : ''}`}
 >
 	<div class="flex items-start justify-between gap-3">
 		<div>

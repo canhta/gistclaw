@@ -19,12 +19,16 @@ export interface FlowRunNodeData extends Record<string, unknown> {
 	isActivePath: boolean;
 	isRoot: boolean;
 	childCount: number;
+	isSelected: boolean;
 }
 
 export type FlowRunNode = Node<FlowRunNodeData, 'run'>;
 export type FlowRunEdge = Edge;
 
-export function buildFlowGraph(graph: WorkGraphResponse): {
+export function buildFlowGraph(
+	graph: WorkGraphResponse,
+	selectedNodeID: string | null = null
+): {
 	nodes: FlowRunNode[];
 	edges: FlowRunEdge[];
 } {
@@ -58,7 +62,8 @@ export function buildFlowGraph(graph: WorkGraphResponse): {
 				timeLabel: node.time_label,
 				isActivePath: node.is_active_path,
 				isRoot: node.is_root,
-				childCount: node.child_count
+				childCount: node.child_count,
+				isSelected: node.id === selectedNodeID
 			},
 			draggable: false,
 			selectable: true

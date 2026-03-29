@@ -13,14 +13,23 @@
 	let {
 		graph,
 		inspectorSeedID,
-		nodeDetail = null
+		nodeDetail = null,
+		nodeDetailLoading = false,
+		selectedNodeID = null,
+		onselectnode
 	}: {
 		graph: WorkGraphResponse;
 		inspectorSeedID?: string;
 		nodeDetail?: WorkNodeDetailResponse | null;
+		nodeDetailLoading?: boolean;
+		selectedNodeID?: string | null;
+		onselectnode?: (nodeID: string) => void;
 	} = $props();
 
-	const flow = $derived(buildFlowGraph(graph));
+	const currentSelectedNodeID = $derived(
+		selectedNodeID?.trim() || nodeDetail?.id || inspectorSeedID?.trim() || null
+	);
+	const flow = $derived(buildFlowGraph(graph, currentSelectedNodeID));
 	const nodeTypes = {
 		run: RunGraphNode
 	};
@@ -51,6 +60,9 @@
 			<div>
 				<p class="gc-stamp">Graph surface</p>
 				<h2 class="gc-panel-title mt-3 text-[1.2rem]">{graph.headline}</h2>
+				<p class="gc-copy mt-3 max-w-lg text-[var(--gc-ink-2)]">
+					Node clicks keep the inspector synced while the run is live.
+				</p>
 			</div>
 			<div class="grid grid-cols-3 gap-2 md:grid-cols-4">
 				<div class="gc-panel-soft px-3 py-3">
@@ -81,6 +93,7 @@
 				minZoom={0.2}
 				maxZoom={1.6}
 				class="h-full w-full"
+				onnodeclick={({ node }) => onselectnode?.(node.id)}
 			>
 				<Controls />
 				<MiniMap pannable zoomable />
@@ -94,21 +107,29 @@
 			<p class="gc-stamp">Active path</p>
 			<div class="mt-4 grid gap-3">
 				{#each activePathNodes as node (node.id)}
-					<div
+					<button
+						type="button"
 						data-active-node={node.id}
-						class={`gc-panel-soft px-3 py-3 ${node.id === inspectorSeedID ? 'border-[var(--gc-orange)]' : ''}`}
+						aria-pressed={node.id === currentSelectedNodeID}
+						onclick={() => onselectnode?.(node.id)}
+						class={`gc-panel-soft w-full px-3 py-3 text-left transition-colors hover:border-[var(--gc-border-strong)] ${node.id === currentSelectedNodeID ? 'border-[var(--gc-orange)]' : ''}`}
 					>
 						<p class="gc-stamp">{node.agent_id}</p>
 						<p class="gc-copy mt-2 text-[var(--gc-ink)]">
 							{node.objective_preview || node.objective}
 						</p>
 						<p class="gc-machine mt-2">{node.id}</p>
-					</div>
+					</button>
 				{/each}
 			</div>
 		</div>
 
-		{#if nodeDetail}
+		{#if nodeDetailLoading && currentSelectedNodeID}
+			<div class="gc-panel px-4 py-4">
+				<p class="gc-stamp">Focused node</p>
+				<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">Loading node detail…</p>
+			</div>
+		{:else if nodeDetail}
 			<div class="gc-panel px-4 py-4">
 				<div class="flex items-start justify-between gap-3">
 					<div>
@@ -196,16 +217,19 @@
 			<p class="gc-stamp">Run ledger</p>
 			<div class="mt-4 grid gap-3">
 				{#each graph.nodes as node (node.id)}
-					<article
+					<button
+						type="button"
 						data-run-ledger={node.id}
-						class="border-t-2 border-[var(--gc-border)] pt-3 first:border-t-0 first:pt-0"
+						aria-pressed={node.id === currentSelectedNodeID}
+						onclick={() => onselectnode?.(node.id)}
+						class={`w-full border-t-2 border-[var(--gc-border)] pt-3 text-left first:border-t-0 first:pt-0 ${node.id === currentSelectedNodeID ? 'text-[var(--gc-cyan)]' : ''}`}
 					>
 						<p class="gc-stamp">{node.agent_id}</p>
 						<p class="gc-copy mt-2 text-[var(--gc-ink)]">
 							{node.objective_preview || node.objective}
 						</p>
 						<p class="gc-machine mt-2">{node.status_label} · {node.token_summary}</p>
-					</article>
+					</button>
 				{/each}
 			</div>
 		</div>

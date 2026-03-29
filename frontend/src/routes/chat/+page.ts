@@ -1,5 +1,6 @@
 import { buildChatPageHref, buildWorkListSearch } from '$lib/work/query';
-import { loadWorkDetail, loadWorkIndex, loadWorkNodeDetail } from '$lib/work/load';
+import { loadWorkIndex } from '$lib/work/load';
+import { loadLiveWorkSurface } from '$lib/work/live';
 import type { PageLoad } from './$types';
 
 const emptyQueue = {
@@ -25,24 +26,22 @@ export const load: PageLoad = async ({ fetch, url }) => {
 	try {
 		const index = await loadWorkIndex(fetch, search);
 		const requestedRunID = url.searchParams.get('run')?.trim() ?? '';
+		const requestedNodeID = url.searchParams.get('node')?.trim() ?? '';
 		const selectedRunID = requestedRunID || index.clusters[0]?.root.id || null;
 
 		let detail = null;
 		let nodeDetail = null;
+		let inspectorNodeID = null;
 		if (selectedRunID) {
 			try {
-				detail = await loadWorkDetail(fetch, selectedRunID);
-				const inspectorNodeID = detail.inspector_seed?.id?.trim() ?? '';
-				if (inspectorNodeID !== '') {
-					try {
-						nodeDetail = await loadWorkNodeDetail(fetch, selectedRunID, inspectorNodeID);
-					} catch {
-						nodeDetail = null;
-					}
-				}
+				const surface = await loadLiveWorkSurface(fetch, selectedRunID, requestedNodeID);
+				detail = surface.detail;
+				nodeDetail = surface.nodeDetail;
+				inspectorNodeID = surface.inspectorNodeID;
 			} catch {
 				detail = null;
 				nodeDetail = null;
+				inspectorNodeID = null;
 			}
 		}
 
@@ -60,7 +59,8 @@ export const load: PageLoad = async ({ fetch, url }) => {
 				},
 				selectedRunID,
 				detail,
-				nodeDetail
+				nodeDetail,
+				inspectorNodeID
 			}
 		};
 	} catch {
@@ -73,7 +73,8 @@ export const load: PageLoad = async ({ fetch, url }) => {
 				paging: { has_next: false, has_prev: false, nextHref: undefined, prevHref: undefined },
 				selectedRunID: null,
 				detail: null,
-				nodeDetail: null
+				nodeDetail: null,
+				inspectorNodeID: null
 			}
 		};
 	}

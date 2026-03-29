@@ -37,7 +37,8 @@ const baseData = {
 		paging: { has_next: false, has_prev: false, nextHref: undefined, prevHref: undefined },
 		selectedRunID: null,
 		detail: null,
-		nodeDetail: null
+		nodeDetail: null,
+		inspectorNodeID: null
 	}
 };
 

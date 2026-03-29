@@ -8,12 +8,17 @@
 	import { applyEvent, makeTranscriptState } from '$lib/chat/transcript.svelte';
 	import { connectEventStream } from '$lib/http/events';
 	import { requestJSON } from '$lib/http/client';
-	import { loadWorkDetail } from '$lib/work/load';
+	import {
+		loadLiveWorkSurface,
+		type LiveWorkSurface,
+		shouldRefreshWorkSurface
+	} from '$lib/work/live';
 	import type {
 		WorkClusterResponse,
 		WorkCreateResponse,
 		WorkDetailResponse,
-		WorkDismissResponse
+		WorkDismissResponse,
+		WorkNodeDetailResponse
 	} from '$lib/types/api';
 	import type { PageData } from './$types';
 
@@ -31,9 +36,14 @@
 	let activeTabOverride = $state<TabID | null>(null);
 	let selectedRunId = $state<string | null>(null);
 	let detail = $state<WorkDetailResponse | null>(null);
+	let nodeDetail = $state<WorkNodeDetailResponse | null>(null);
+	let selectedNodeID = $state<string | null>(null);
 	let detailLoading = $state(false);
+	let nodeDetailLoading = $state(false);
 	let detailError = $state('');
 	let connectedRunId = $state<string | null>(null);
+	let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+	let refreshRequestID = 0;
 
 	const transcript = makeTranscriptState();
 	const requestedTab = $derived.by<TabID>(() => {
@@ -45,7 +55,14 @@
 	const runs: WorkClusterResponse[] = $derived(data.chat?.runs ?? []);
 	const paging = $derived(data.chat?.paging);
 	const activeDetail = $derived(detail ?? data.chat?.detail ?? null);
-	const activeNodeDetail = $derived(data.chat?.nodeDetail ?? null);
+	const activeNodeDetail = $derived(nodeDetail ?? data.chat?.nodeDetail ?? null);
+	const activeSelectedNodeID = $derived(
+		selectedNodeID ??
+			data.chat?.inspectorNodeID ??
+			data.chat?.nodeDetail?.id ??
+			data.chat?.detail?.inspector_seed?.id ??
+			null
+	);
 
 	let stopStream: (() => void) | null = null;
 	let rawEvents = $state<Array<{ kind: string; occurred_at: string }>>([]);
@@ -107,6 +124,9 @@
 			(delta) => {
 				applyEvent(transcript, delta);
 				rawEvents.push({ kind: delta.kind, occurred_at: delta.occurred_at });
+				if (shouldRefreshWorkSurface(delta.kind)) {
+					scheduleLiveSurfaceRefresh(runId);
+				}
 			},
 			() => {
 				streamError = 'Stream disconnected.';
@@ -114,7 +134,61 @@
 		);
 	}
 
-	async function selectRun(runId: string, seededDetail?: WorkDetailResponse | null): Promise<void> {
+	function clearRefreshTimer(): void {
+		if (!refreshTimer) {
+			return;
+		}
+		clearTimeout(refreshTimer);
+		refreshTimer = null;
+	}
+
+	async function refreshLiveSurface(
+		runId: string,
+		requestedNodeID = activeSelectedNodeID ?? ''
+	): Promise<void> {
+		const requestID = ++refreshRequestID;
+		const nextSurface = await loadLiveWorkSurface(
+			globalThis.fetch.bind(globalThis),
+			runId,
+			requestedNodeID
+		);
+		if (selectedRunId !== runId || requestID !== refreshRequestID) {
+			return;
+		}
+		detail = nextSurface.detail;
+		nodeDetail = nextSurface.nodeDetail;
+		selectedNodeID = nextSurface.inspectorNodeID;
+	}
+
+	function scheduleLiveSurfaceRefresh(runId: string): void {
+		clearRefreshTimer();
+		refreshTimer = setTimeout(() => {
+			refreshTimer = null;
+			void refreshLiveSurface(runId).catch(() => {
+				// Keep the graph surface stable until the next event arrives.
+			});
+		}, 120);
+	}
+
+	function currentSeededSurface(runId: string): LiveWorkSurface | null {
+		const seededDetail = detail?.run.id === runId ? detail : (data.chat?.detail ?? null);
+		if (!seededDetail || seededDetail.run.id !== runId) {
+			return null;
+		}
+		return {
+			detail: seededDetail,
+			nodeDetail:
+				data.chat?.detail?.run.id === runId
+					? (data.chat?.nodeDetail ?? null)
+					: (nodeDetail ?? null),
+			inspectorNodeID:
+				data.chat?.detail?.run.id === runId
+					? (data.chat?.inspectorNodeID ?? data.chat?.nodeDetail?.id ?? null)
+					: (selectedNodeID ?? null)
+		};
+	}
+
+	async function selectRun(runId: string, seededSurface?: LiveWorkSurface | null): Promise<void> {
 		if (connectedRunId === runId && selectedRunId === runId) {
 			return;
 		}
@@ -124,12 +198,23 @@
 		selectedRunId = runId;
 
 		try {
-			const nextDetail =
-				seededDetail ?? (await loadWorkDetail(globalThis.fetch.bind(globalThis), runId));
-			detail = nextDetail;
-			connectToRun(runId, nextDetail.run.stream_url);
+			const nextSurface =
+				seededSurface ??
+				(await loadLiveWorkSurface(
+					globalThis.fetch.bind(globalThis),
+					runId,
+					activeSelectedNodeID ?? ''
+				));
+			detail = nextSurface.detail;
+			nodeDetail = nextSurface.nodeDetail;
+			selectedNodeID = nextSurface.inspectorNodeID;
+			nodeDetailLoading = false;
+			connectToRun(runId, nextSurface.detail.run.stream_url);
 		} catch {
-			detail = seededDetail ?? null;
+			detail = seededSurface?.detail ?? null;
+			nodeDetail = seededSurface?.nodeDetail ?? null;
+			selectedNodeID = seededSurface?.inspectorNodeID ?? null;
+			nodeDetailLoading = false;
 			detailError = 'Failed to load run detail.';
 		} finally {
 			detailLoading = false;
@@ -139,8 +224,12 @@
 	$effect(() => {
 		selectedRunId = data.chat?.selectedRunID ?? null;
 		detail = data.chat?.detail ?? null;
+		nodeDetail = data.chat?.nodeDetail ?? null;
+		selectedNodeID = data.chat?.inspectorNodeID ?? data.chat?.nodeDetail?.id ?? null;
+		nodeDetailLoading = false;
 		detailError = '';
 		connectedRunId = null;
+		clearRefreshTimer();
 	});
 
 	$effect(() => {
@@ -151,11 +240,29 @@
 			return;
 		}
 
-		void selectRun(
-			selectedRunId,
-			detail?.run.id === selectedRunId ? detail : (data.chat?.detail ?? null)
-		);
+		void selectRun(selectedRunId, currentSeededSurface(selectedRunId));
 	});
+
+	async function handleGraphNodeSelect(nodeID: string): Promise<void> {
+		if (!selectedRunId || nodeID.trim() === '') {
+			return;
+		}
+		if (nodeID === selectedNodeID && nodeDetail?.id === nodeID) {
+			return;
+		}
+
+		selectedNodeID = nodeID;
+		nodeDetail = nodeDetail?.id === nodeID ? nodeDetail : null;
+		nodeDetailLoading = true;
+
+		try {
+			await refreshLiveSurface(selectedRunId, nodeID);
+		} catch {
+			nodeDetail = null;
+		} finally {
+			nodeDetailLoading = false;
+		}
+	}
 
 	async function handleSend(text: string): Promise<void> {
 		actionError = '';
@@ -203,6 +310,7 @@
 	}
 
 	onDestroy(() => {
+		clearRefreshTimer();
 		stopStream?.();
 	});
 </script>
@@ -365,6 +473,9 @@
 						graph={activeDetail.graph}
 						inspectorSeedID={activeDetail.inspector_seed?.id}
 						nodeDetail={activeNodeDetail}
+						{nodeDetailLoading}
+						selectedNodeID={activeSelectedNodeID}
+						onselectnode={(nodeID) => void handleGraphNodeSelect(nodeID)}
 					/>
 				{:else}
 					<div class="flex flex-1 items-center justify-center p-10">
