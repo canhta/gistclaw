@@ -29,6 +29,11 @@ cd frontend && bun run test:unit -- --run
 
 **Think broadly, fix correctly.** Always identify the root cause before touching code. No hotfixes, no workarounds, no hacks. If a proper fix requires touching multiple files or refactoring a boundary, do it fully.
 
+## Reference Policy
+
+When implementing new surfaces or workflows, refer to the local `openclaw` repo at `~/Projects/OSS/openclaw` to get ideas about structure and operator flow when it is relevant.
+Use it as a reference only — do not copy it blindly. GistClaw must still follow its own shipped system boundaries, terminology, design system, and scope.
+
 ## Branch Policy
 
 **`main` only.** No feature branches, detached HEADs, or git worktrees — ever.
