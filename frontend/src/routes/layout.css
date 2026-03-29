@@ -1,68 +1,102 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;700&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500&family=JetBrains+Mono:wght@400;700&family=Space+Grotesk:wght@700&display=swap');
 @import 'tailwindcss';
 
+/* ─── Design tokens — Warm Brutalism ───────────────────────────────────────── */
+
 :root {
-	--gc-canvas: #0a0f14;
-	--gc-surface: #121a23;
-	--gc-surface-raised: #16212d;
-	--gc-surface-soft: #1d2734;
-	--gc-ink: #f4f7fb;
-	--gc-text-secondary: #97a6b6;
-	--gc-text-tertiary: #6f8194;
-	--gc-border: #314356;
-	--gc-border-strong: #4c637c;
-	--gc-orange: #ff5c39;
-	--gc-orange-hover: #ff744f;
-	--gc-cyan: #53c7f0;
-	--gc-success: #65d98a;
-	--gc-warning: #f5b64d;
-	--gc-error: #ff6a78;
+	/* Surfaces */
+	--gc-canvas: #09090c;
+	--gc-surface: #0f0f14;
+	--gc-surface-raised: #141419;
+	--gc-surface-elevated: #1b1b22;
+
+	/* Brand & signal */
+	--gc-primary: #f97316;
+	--gc-primary-hover: #ea6b0a;
+	--gc-primary-dim: rgba(249, 115, 22, 0.12);
+	--gc-signal: #22d3ee;
+	--gc-signal-dim: rgba(34, 211, 238, 0.12);
+
+	/* Ink */
+	--gc-ink: #ede8df;
+	--gc-ink-2: #9b8e7f;
+	--gc-ink-3: #6b5f53;
+	--gc-ink-4: #3d3529;
+
+	/* Borders */
+	--gc-border: #1e1e28;
+	--gc-border-strong: #2a2a38;
+
+	/* Semantic */
+	--gc-success: #4ade80;
+	--gc-success-dim: rgba(74, 222, 128, 0.12);
+	--gc-warning: #fbbf24;
+	--gc-warning-dim: rgba(251, 191, 36, 0.12);
+	--gc-error: #f87171;
+	--gc-error-dim: rgba(248, 113, 113, 0.12);
+	--gc-info: #60a5fa;
+	--gc-info-dim: rgba(96, 165, 250, 0.12);
+
+	/* Typography */
 	--gc-font-display: 'Space Grotesk', sans-serif;
-	--gc-font-body: 'Instrument Sans', sans-serif;
-	--gc-font-mono: 'IBM Plex Mono', monospace;
-	--gc-font-code: 'JetBrains Mono', monospace;
-	/* surface overlay tokens — differ between dark and light */
-	--gc-panel-overlay: rgba(255, 255, 255, 0.03);
-	--gc-panel-soft-overlay: rgba(255, 255, 255, 0.02);
-	--gc-chip-bg: rgba(10, 15, 20, 0.55);
-	--gc-shadow-panel: inset 0 0 0 1px rgba(255, 255, 255, 0.03), 0 0 0 1px rgba(0, 0, 0, 0.28);
+	--gc-font-body: 'DM Sans', sans-serif;
+	--gc-font-mono: 'JetBrains Mono', monospace;
+
+	/* Shell dimensions */
+	--gc-rail-icon: 56px;
+	--gc-rail-labeled: 200px;
+	--gc-inspector-w: 280px;
+	--gc-topbar-h: 48px;
+
+	/* ─── Legacy aliases — used by existing common components ─────────────── */
+	/* Remove these in Phase 2 when common components are rewritten           */
+	--gc-orange: var(--gc-primary);
+	--gc-orange-hover: var(--gc-primary-hover);
+	--gc-cyan: var(--gc-signal);
+	--gc-text-secondary: var(--gc-ink-2);
+	--gc-text-tertiary: var(--gc-ink-3);
+	--gc-surface-soft: var(--gc-surface-elevated);
+	--gc-panel-overlay: transparent;
+	--gc-panel-soft-overlay: transparent;
+	--gc-chip-bg: var(--gc-surface-raised);
+	--gc-shadow-panel: none;
 }
 
-/* Light theme — respects OS preference unless a manual override is applied */
+/* ─── Light mode ───────────────────────────────────────────────────────────── */
+
 @media (prefers-color-scheme: light) {
 	:root:not([data-theme='dark']) {
-		--gc-canvas: #edf0f4;
-		--gc-surface: #e2e8f0;
-		--gc-surface-raised: #d8e0eb;
-		--gc-surface-soft: #cdd8e5;
-		--gc-ink: #0c1720;
-		--gc-text-secondary: #436180;
-		--gc-text-tertiary: #6b8499;
-		--gc-border: #8aacca;
-		--gc-border-strong: #5e88a8;
-		--gc-panel-overlay: rgba(0, 0, 0, 0.025);
-		--gc-panel-soft-overlay: rgba(0, 0, 0, 0.018);
-		--gc-chip-bg: rgba(12, 23, 32, 0.06);
-		--gc-shadow-panel: inset 0 0 0 1px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.1);
+		--gc-canvas: #f5f2ee;
+		--gc-surface: #ece8e2;
+		--gc-surface-raised: #e3ded7;
+		--gc-surface-elevated: #dad4cc;
+		--gc-ink: #1a1612;
+		--gc-ink-2: #5c5145;
+		--gc-ink-3: #8c7e70;
+		--gc-ink-4: #bfb3a6;
+		--gc-border: #c8c0b8;
+		--gc-border-strong: #a89c90;
+		--gc-chip-bg: var(--gc-surface-raised);
+		--gc-shadow-panel: none;
 	}
 }
 
-/* Manual light override — takes precedence over OS preference */
 :root[data-theme='light'] {
-	--gc-canvas: #edf0f4;
-	--gc-surface: #e2e8f0;
-	--gc-surface-raised: #d8e0eb;
-	--gc-surface-soft: #cdd8e5;
-	--gc-ink: #0c1720;
-	--gc-text-secondary: #436180;
-	--gc-text-tertiary: #6b8499;
-	--gc-border: #8aacca;
-	--gc-border-strong: #5e88a8;
-	--gc-panel-overlay: rgba(0, 0, 0, 0.025);
-	--gc-panel-soft-overlay: rgba(0, 0, 0, 0.018);
-	--gc-chip-bg: rgba(12, 23, 32, 0.06);
-	--gc-shadow-panel: inset 0 0 0 1px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.1);
+	--gc-canvas: #f5f2ee;
+	--gc-surface: #ece8e2;
+	--gc-surface-raised: #e3ded7;
+	--gc-surface-elevated: #dad4cc;
+	--gc-ink: #1a1612;
+	--gc-ink-2: #5c5145;
+	--gc-ink-3: #8c7e70;
+	--gc-ink-4: #bfb3a6;
+	--gc-border: #c8c0b8;
+	--gc-border-strong: #a89c90;
+	--gc-chip-bg: var(--gc-surface-raised);
+	--gc-shadow-panel: none;
 }
+
+/* ─── Base ─────────────────────────────────────────────────────────────────── */
 
 html,
 body {
@@ -71,72 +105,13 @@ body {
 
 body {
 	margin: 0;
-	background:
-		repeating-linear-gradient(
-			90deg,
-			rgba(255, 92, 57, 0.08) 0,
-			rgba(255, 92, 57, 0.08) 2px,
-			transparent 2px,
-			transparent 160px
-		),
-		repeating-linear-gradient(
-			180deg,
-			rgba(83, 199, 240, 0.05) 0,
-			rgba(83, 199, 240, 0.05) 1px,
-			transparent 1px,
-			transparent 96px
-		),
-		radial-gradient(circle at top left, rgba(255, 92, 57, 0.16), transparent 30%),
-		radial-gradient(circle at bottom right, rgba(83, 199, 240, 0.12), transparent 28%),
-		var(--gc-canvas);
+	background: var(--gc-canvas);
 	color: var(--gc-ink);
 	font-family: var(--gc-font-body);
+	font-size: 14px;
+	line-height: 1.55;
 	text-rendering: optimizeLegibility;
-}
-
-/* Reduce grid intensity in light mode */
-@media (prefers-color-scheme: light) {
-	:root:not([data-theme='dark']) body {
-		background:
-			repeating-linear-gradient(
-				90deg,
-				rgba(255, 92, 57, 0.05) 0,
-				rgba(255, 92, 57, 0.05) 2px,
-				transparent 2px,
-				transparent 160px
-			),
-			repeating-linear-gradient(
-				180deg,
-				rgba(83, 199, 240, 0.04) 0,
-				rgba(83, 199, 240, 0.04) 1px,
-				transparent 1px,
-				transparent 96px
-			),
-			radial-gradient(circle at top left, rgba(255, 92, 57, 0.07), transparent 30%),
-			radial-gradient(circle at bottom right, rgba(83, 199, 240, 0.06), transparent 28%),
-			var(--gc-canvas);
-	}
-}
-
-:root[data-theme='light'] body {
-	background:
-		repeating-linear-gradient(
-			90deg,
-			rgba(255, 92, 57, 0.05) 0,
-			rgba(255, 92, 57, 0.05) 2px,
-			transparent 2px,
-			transparent 160px
-		),
-		repeating-linear-gradient(
-			180deg,
-			rgba(83, 199, 240, 0.04) 0,
-			rgba(83, 199, 240, 0.04) 1px,
-			transparent 1px,
-			transparent 96px
-		),
-		radial-gradient(circle at top left, rgba(255, 92, 57, 0.07), transparent 30%),
-		radial-gradient(circle at bottom right, rgba(83, 199, 240, 0.06), transparent 28%),
-		var(--gc-canvas);
+	-webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -152,38 +127,46 @@ select {
 }
 
 ::selection {
-	background: rgba(255, 92, 57, 0.35);
+	background: var(--gc-primary-dim);
 	color: var(--gc-ink);
 }
 
+/* ─── Panels ───────────────────────────────────────────────────────────────── */
+
+/* Structural panel — 1.5px border, surface background */
 .gc-panel {
-	border: 2px solid var(--gc-border-strong);
-	background: linear-gradient(180deg, var(--gc-panel-overlay), transparent 28%), var(--gc-surface);
-	box-shadow: var(--gc-shadow-panel);
+	border: 1.5px solid var(--gc-border-strong);
+	background: var(--gc-surface);
 }
 
+/* Soft panel — 1.5px border, raised background */
 .gc-panel-soft {
-	border: 2px solid var(--gc-border);
-	background:
-		linear-gradient(180deg, var(--gc-panel-soft-overlay), transparent 24%), var(--gc-surface-soft);
+	border: 1.5px solid var(--gc-border);
+	background: var(--gc-surface-raised);
+}
+
+/* Elevated panel — for modals, popovers */
+.gc-panel-elevated {
+	border: 1.5px solid var(--gc-border-strong);
+	background: var(--gc-surface-elevated);
+}
+
+/* ─── Typography — three registers ────────────────────────────────────────── */
+
+/* PAGE register — Space Grotesk 700, large scale, negative tracking */
+.gc-page-title {
+	font-family: var(--gc-font-display);
+	font-size: 28px;
+	font-weight: 700;
+	line-height: 1.1;
+	letter-spacing: -0.02em;
 }
 
 .gc-panel-title {
 	font-family: var(--gc-font-display);
-	font-size: 1.125rem;
+	font-size: 18px;
 	font-weight: 700;
-	line-height: 1.1;
-	letter-spacing: -0.04em;
-	text-transform: uppercase;
-}
-
-.gc-page-title {
-	font-family: var(--gc-font-display);
-	font-size: clamp(2.3rem, 4vw, 4rem);
-	font-weight: 700;
-	line-height: 0.95;
-	letter-spacing: -0.06em;
-	text-transform: uppercase;
+	line-height: 1.15;
 }
 
 .gc-section-title {
@@ -191,33 +174,7 @@ select {
 	font-size: clamp(1.4rem, 2vw, 2rem);
 	font-weight: 700;
 	line-height: 1;
-	letter-spacing: -0.04em;
-	text-transform: uppercase;
-}
-
-.gc-stamp {
-	font-family: var(--gc-font-mono);
-	font-size: 0.72rem;
-	font-weight: 700;
-	letter-spacing: 0.18em;
-	text-transform: uppercase;
-	color: var(--gc-text-secondary);
-}
-
-.gc-copy {
-	font-size: 0.95rem;
-	line-height: 1.55;
-}
-
-.gc-machine {
-	font-family: var(--gc-font-mono);
-	font-size: 0.8rem;
-	line-height: 1.45;
-	color: var(--gc-text-secondary);
-}
-
-.gc-code {
-	font-family: var(--gc-font-code);
+	letter-spacing: -0.03em;
 }
 
 .gc-value {
@@ -225,39 +182,97 @@ select {
 	font-size: 1.6rem;
 	font-weight: 700;
 	line-height: 1;
-	letter-spacing: -0.05em;
+	letter-spacing: -0.04em;
+}
+
+/* CHROME register — JetBrains Mono 700 ALL CAPS, structural labels */
+.gc-stamp {
+	font-family: var(--gc-font-mono);
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.08em;
+	line-height: 1;
+	text-transform: uppercase;
+	color: var(--gc-ink-3);
+}
+
+.gc-eyebrow {
+	font-family: var(--gc-font-mono);
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.1em;
+	line-height: 1;
+	text-transform: uppercase;
+	color: var(--gc-ink-3);
+}
+
+.gc-badge {
+	display: inline-flex;
+	align-items: center;
+	border-radius: 2px;
+	border: 1.5px solid var(--gc-border);
+	padding: 2px 6px;
+	font-family: var(--gc-font-mono);
+	font-size: 10px;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	line-height: 1;
 	text-transform: uppercase;
 }
 
-.gc-card-accent {
-	border-color: var(--gc-cyan);
+/* CONTENT register — DM Sans, all readable body text */
+.gc-copy {
+	font-family: var(--gc-font-body);
+	font-size: 14px;
+	line-height: 1.55;
 }
 
-.gc-card-warning {
-	border-color: var(--gc-orange);
+.gc-secondary {
+	font-family: var(--gc-font-body);
+	font-size: 13px;
+	line-height: 1.5;
+	color: var(--gc-ink-2);
 }
+
+/* DATA register — JetBrains Mono 400, machine facts */
+.gc-machine {
+	font-family: var(--gc-font-mono);
+	font-size: 12px;
+	font-weight: 400;
+	line-height: 1.45;
+	color: var(--gc-ink-2);
+	font-variant-numeric: tabular-nums;
+}
+
+.gc-code {
+	font-family: var(--gc-font-mono);
+	font-size: 12px;
+	font-weight: 400;
+}
+
+/* ─── Form controls ─────────────────────────────────────────────────────────── */
 
 .gc-control {
 	box-sizing: border-box;
 	width: 100%;
 	min-height: 3rem;
-	border: 2px solid var(--gc-border-strong);
-	background: var(--gc-surface-soft);
-	padding: 0.8rem 1rem;
+	border: 1.5px solid var(--gc-border-strong);
+	background: var(--gc-surface-raised);
+	padding: 0.75rem 1rem;
 	color: var(--gc-ink);
 	outline: none;
+	border-radius: 0;
 	transition:
-		border-color 140ms ease,
-		background-color 140ms ease,
-		color 140ms ease;
+		border-color 120ms ease,
+		background-color 120ms ease;
 }
 
 .gc-control:focus {
-	border-color: var(--gc-orange);
+	border-color: var(--gc-primary);
 }
 
 .gc-control::placeholder {
-	color: var(--gc-text-tertiary);
+	color: var(--gc-ink-3);
 }
 
 .gc-control option {
@@ -268,89 +283,118 @@ select {
 textarea.gc-control {
 	min-height: 7rem;
 	resize: vertical;
+	font-family: var(--gc-font-body);
 }
+
+/* ─── Buttons ───────────────────────────────────────────────────────────────── */
 
 .gc-action {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	gap: 0.75rem;
-	min-height: 3rem;
-	border: 2px solid var(--gc-border-strong);
-	padding: 0.75rem 1rem;
+	gap: 0.6rem;
+	min-height: 2.75rem;
+	border: 1.5px solid var(--gc-border-strong);
+	padding: 0.625rem 1rem;
 	font-family: var(--gc-font-mono);
-	font-size: 0.78rem;
+	font-size: 11px;
 	font-weight: 700;
-	letter-spacing: 0.18em;
+	letter-spacing: 0.08em;
 	line-height: 1;
 	text-transform: uppercase;
+	border-radius: 0;
+	cursor: pointer;
 	transition:
-		border-color 140ms ease,
-		background-color 140ms ease,
-		color 140ms ease,
-		opacity 140ms ease;
+		border-color 120ms ease,
+		background-color 120ms ease,
+		color 120ms ease,
+		opacity 120ms ease;
 }
 
 .gc-action:hover {
 	color: var(--gc-ink);
 }
 
+.gc-action:focus-visible {
+	outline: 2px solid var(--gc-primary);
+	outline-offset: 2px;
+}
+
 .gc-action:disabled,
 .gc-action[aria-disabled='true'] {
 	cursor: not-allowed;
-	opacity: 0.6;
+	opacity: 0.5;
 }
 
+/* Signal/accent — cyan border for secondary actions */
 .gc-action-accent {
-	border-color: var(--gc-cyan);
+	border-color: var(--gc-signal);
 }
 
 .gc-action-accent:hover {
-	background: rgba(83, 199, 240, 0.1);
+	background: var(--gc-signal-dim);
 }
 
+/* Warning — orange border for primary operator actions */
 .gc-action-warning {
-	border-color: var(--gc-orange);
+	border-color: var(--gc-primary);
+	color: var(--gc-primary);
 }
 
 .gc-action-warning:hover {
-	background: rgba(255, 92, 57, 0.12);
+	background: var(--gc-primary-dim);
 }
 
+/* Solid — filled primary action */
 .gc-action-solid {
-	border-color: var(--gc-orange);
-	background: var(--gc-orange);
-	color: #0a0f14;
+	border-color: var(--gc-primary);
+	background: var(--gc-primary);
+	color: #09090c;
 }
 
 .gc-action-solid:hover {
-	border-color: var(--gc-orange-hover);
-	background: var(--gc-orange-hover);
-	color: #0a0f14;
+	border-color: var(--gc-primary-hover);
+	background: var(--gc-primary-hover);
+	color: #09090c;
 }
+
+/* ─── Chips / legacy badges ─────────────────────────────────────────────────── */
 
 .gc-chip {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.5rem;
-	border: 2px solid var(--gc-border);
-	background: var(--gc-chip-bg);
-	padding: 0.5rem 0.75rem;
+	border: 1.5px solid var(--gc-border);
+	background: var(--gc-surface-raised);
+	padding: 4px 8px;
+	border-radius: 2px;
 	font-family: var(--gc-font-mono);
-	font-size: 0.72rem;
+	font-size: 10px;
 	font-weight: 700;
-	letter-spacing: 0.12em;
+	letter-spacing: 0.08em;
 	line-height: 1;
 	text-transform: uppercase;
-	color: var(--gc-text-secondary);
+	color: var(--gc-ink-2);
 }
 
 .gc-chip-accent {
-	border-color: var(--gc-cyan);
-	color: var(--gc-ink);
+	border-color: var(--gc-signal);
+	color: var(--gc-signal);
+	background: var(--gc-signal-dim);
 }
 
 .gc-chip-warning {
-	border-color: var(--gc-orange);
-	color: var(--gc-ink);
+	border-color: var(--gc-primary);
+	color: var(--gc-primary);
+	background: var(--gc-primary-dim);
+}
+
+/* ─── Card tone borders ─────────────────────────────────────────────────────── */
+
+.gc-card-accent {
+	border-color: var(--gc-signal);
+}
+
+.gc-card-warning {
+	border-color: var(--gc-primary);
 }

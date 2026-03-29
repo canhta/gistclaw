@@ -550,8 +550,8 @@ func TestDismissWorkMarksInterruptedRunDismissed(t *testing.T) {
 	if !dismissResp.Dismissed || dismissResp.RunID != "run-work-dismiss" || dismissResp.Status != "dismissed" {
 		t.Fatalf("unexpected dismiss response %+v", dismissResp)
 	}
-	if dismissResp.NextHref != "/work" {
-		t.Fatalf("next_href = %q, want %q", dismissResp.NextHref, "/work")
+	if dismissResp.NextHref != "/chat" {
+		t.Fatalf("next_href = %q, want %q", dismissResp.NextHref, "/chat")
 	}
 
 	indexRR := httptest.NewRecorder()

@@ -118,8 +118,8 @@ func TestOnboardingProjectAPIActivatesRepoAndMarksCompleted(t *testing.T) {
 	if !resp.Completed {
 		t.Fatal("expected onboarding to be completed after binding a repo")
 	}
-	if resp.EntryHref != pageWork {
-		t.Fatalf("entry_href = %q, want %q", resp.EntryHref, pageWork)
+	if resp.EntryHref != pageChat {
+		t.Fatalf("entry_href = %q, want %q", resp.EntryHref, pageChat)
 	}
 	if resp.Project.ActivePath != repo {
 		t.Fatalf("active_path = %q, want %q", resp.Project.ActivePath, repo)
@@ -169,8 +169,8 @@ func TestOnboardingProjectAPIUsesStarterProject(t *testing.T) {
 	if !resp.Completed {
 		t.Fatal("expected onboarding to complete with starter project")
 	}
-	if resp.EntryHref != pageWork {
-		t.Fatalf("entry_href = %q, want %q", resp.EntryHref, pageWork)
+	if resp.EntryHref != pageChat {
+		t.Fatalf("entry_href = %q, want %q", resp.EntryHref, pageChat)
 	}
 	if resp.Project.ActivePath != h.workspaceRoot {
 		t.Fatalf("active_path = %q, want %q", resp.Project.ActivePath, h.workspaceRoot)
@@ -278,9 +278,9 @@ func TestOnboardingPreviewAPIStartsPreviewRunAndReturnsWorkPath(t *testing.T) {
 		close(prov.release)
 		t.Fatal("expected run_id in preview response")
 	}
-	if resp.NextHref != pageWork+"/"+resp.RunID {
+	if resp.NextHref != pageChat {
 		close(prov.release)
-		t.Fatalf("next_href = %q, want %q", resp.NextHref, pageWork+"/"+resp.RunID)
+		t.Fatalf("next_href = %q, want %q", resp.NextHref, pageChat)
 	}
 
 	select {

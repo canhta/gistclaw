@@ -353,7 +353,7 @@ func TestRuns(t *testing.T) {
 		if resp.ID != "run-child-approval-node" {
 			t.Fatalf("unexpected node detail identity: %+v", resp)
 		}
-		if resp.SessionURL != "/conversations/sess-child-approval-node" {
+		if resp.SessionURL != "/sessions" {
 			t.Fatalf("expected session detail URL, got %+v", resp)
 		}
 		if resp.Approval.ID != approvalID {
@@ -698,14 +698,18 @@ func TestPageRouteMap(t *testing.T) {
 		}
 
 		for _, path := range []string{
-			"/work",
-			"/team",
-			"/knowledge",
-			"/recover",
-			"/conversations",
-			"/automate",
-			"/history",
-			"/settings",
+			"/chat",
+			"/channels",
+			"/instances",
+			"/sessions",
+			"/cron",
+			"/skills",
+			"/nodes",
+			"/approvals",
+			"/config",
+			"/debug",
+			"/logs",
+			"/update",
 		} {
 			t.Run(path, func(t *testing.T) {
 				rr := httptest.NewRecorder()
@@ -922,7 +926,7 @@ func TestProjectSwitcher(t *testing.T) {
 
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/projects/activate",
-			strings.NewReader("project_id="+url.QueryEscape(otherProjectID)+"&redirect_to=%2Fwork"))
+			strings.NewReader("project_id="+url.QueryEscape(otherProjectID)+"&redirect_to=%2Fchat"))
 		req.Header.Set("Authorization", "Bearer "+h.adminToken)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -931,8 +935,8 @@ func TestProjectSwitcher(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if rr.Header().Get("Location") != "/work" {
-			t.Fatalf("expected redirect back to /work, got %q", rr.Header().Get("Location"))
+		if rr.Header().Get("Location") != "/chat" {
+			t.Fatalf("expected redirect back to /chat, got %q", rr.Header().Get("Location"))
 		}
 		if got := lookupSetting(h.db, "active_project_id"); got != otherProjectID {
 			t.Fatalf("expected active_project_id %q, got %q", otherProjectID, got)
@@ -954,7 +958,7 @@ func TestProjectSwitcher(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid redirect falls back to runs", func(t *testing.T) {
+	t.Run("invalid redirect falls back to chat", func(t *testing.T) {
 		h := newServerHarness(t)
 		otherRoot := t.TempDir()
 		otherProjectID := h.insertProject(t, "seo-test", otherRoot)
@@ -970,15 +974,15 @@ func TestProjectSwitcher(t *testing.T) {
 		if rr.Code != http.StatusSeeOther {
 			t.Fatalf("expected 303 redirect, got %d body=%s", rr.Code, rr.Body.String())
 		}
-		if rr.Header().Get("Location") != "/work" {
-			t.Fatalf("expected invalid redirect to fall back to /work, got %q", rr.Header().Get("Location"))
+		if rr.Header().Get("Location") != "/chat" {
+			t.Fatalf("expected invalid redirect to fall back to /chat, got %q", rr.Header().Get("Location"))
 		}
 	})
 }
 
 func TestRequestPathWithQuery(t *testing.T) {
-	if got := requestPathWithQuery(nil); got != "/work" {
-		t.Fatalf("expected nil request fallback %q, got %q", "/work", got)
+	if got := requestPathWithQuery(nil); got != "/chat" {
+		t.Fatalf("expected nil request fallback %q, got %q", "/chat", got)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/work?scope=all&q=fix", nil)
@@ -1022,12 +1026,12 @@ func TestActionPaths(t *testing.T) {
 		got  string
 		want string
 	}{
-		{name: "run detail", got: runDetailPath("run 1"), want: "/work/run%201"},
+		{name: "run detail", got: runDetailPath("run 1"), want: "/chat"},
 		{name: "run graph", got: runGraphPath("run 1"), want: "/api/work/run%201/graph"},
 		{name: "run events", got: runEventsPath("run 1"), want: "/api/work/run%201/events"},
 		{name: "run node detail template", got: runNodeDetailTemplatePath("run 1"), want: "/api/work/run%201/nodes/__RUN_ID__"},
 		{name: "work dismiss", got: workDismissPath("run 1", "interrupted"), want: "/api/work/run%201/dismiss"},
-		{name: "session detail", got: sessionDetailPath("session 1"), want: "/conversations/session%201"},
+		{name: "session detail", got: sessionDetailPath("session 1"), want: "/sessions"},
 		{name: "session message", got: sessionMessagePath("session 1"), want: "/api/conversations/session%201/messages"},
 		{name: "session retry delivery", got: sessionRetryDeliveryPath("session 1", "delivery/1"), want: "/api/conversations/session%201/deliveries/delivery%2F1/retry"},
 		{name: "approval resolve", got: approvalResolvePath("approval/1"), want: "/api/recover/approvals/approval%2F1/resolve"},
@@ -1037,11 +1041,50 @@ func TestActionPaths(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			if tc.got != tc.want {
 				t.Fatalf("expected %q, got %q", tc.want, tc.got)
+			}
+		})
+	}
+}
+
+func TestSPARoutes(t *testing.T) {
+	t.Parallel()
+
+	newRoutes := []string{
+		pageChat, pageChannels, pageInstances, pageSessions,
+		pageCron, pageSkills, pageNodes, pageApprovals,
+		pageConfig, pageDebug, pageLogs, pageUpdate,
+	}
+	oldRoutes := []string{
+		"/work", "/team", "/knowledge", "/recover",
+		"/conversations", "/automate", "/history", "/settings",
+	}
+
+	h := newServerHarness(t)
+
+	for _, route := range newRoutes {
+		t.Run("new route "+route, func(t *testing.T) {
+			t.Parallel()
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, route, nil)
+			h.server.ServeHTTP(rr, req)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("GET %s: expected 200, got %d", route, rr.Code)
+			}
+		})
+	}
+
+	for _, route := range oldRoutes {
+		t.Run("old route removed "+route, func(t *testing.T) {
+			t.Parallel()
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, route, nil)
+			h.server.ServeHTTP(rr, req)
+			if rr.Code == http.StatusOK {
+				t.Fatalf("GET %s: expected non-200 (route removed), got 200", route)
 			}
 		})
 	}
@@ -1067,7 +1110,6 @@ func TestSameOriginRequest(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 

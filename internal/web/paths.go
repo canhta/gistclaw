@@ -6,17 +6,21 @@ import (
 )
 
 const (
-	pageLogin         = "/login"
-	pageLogout        = "/logout"
-	pageOnboarding    = "/onboarding"
-	pageWork          = "/work"
-	pageTeam          = "/team"
-	pageKnowledge     = "/knowledge"
-	pageRecover       = "/recover"
-	pageConversations = "/conversations"
-	pageAutomate      = "/automate"
-	pageHistory       = "/history"
-	pageSettings      = "/settings"
+	pageLogin      = "/login"
+	pageLogout     = "/logout"
+	pageOnboarding = "/onboarding"
+	pageChat       = "/chat"
+	pageChannels   = "/channels"
+	pageInstances  = "/instances"
+	pageSessions   = "/sessions"
+	pageCron       = "/cron"
+	pageSkills     = "/skills"
+	pageNodes      = "/nodes"
+	pageApprovals  = "/approvals"
+	pageConfig     = "/config"
+	pageDebug      = "/debug"
+	pageLogs       = "/logs"
+	pageUpdate     = "/update"
 )
 
 func runDetailPath(runID string) string {
@@ -49,8 +53,8 @@ func workAPIPath(runID string) string {
 	return "/api/work/" + url.PathEscape(runID)
 }
 
-func workPagePath(runID string) string {
-	return pageWork + "/" + url.PathEscape(runID)
+func workPagePath(_ string) string {
+	return pageChat
 }
 
 func workGraphPath(runID string) string {
@@ -72,8 +76,8 @@ func workDismissPath(runID, status string) string {
 	return workAPIPath(runID) + "/dismiss"
 }
 
-func sessionDetailPath(sessionID string) string {
-	return pageConversations + "/" + url.PathEscape(sessionID)
+func sessionDetailPath(_ string) string {
+	return pageSessions
 }
 
 func sessionMessagePath(sessionID string) string {

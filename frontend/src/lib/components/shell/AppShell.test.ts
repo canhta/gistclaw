@@ -4,40 +4,28 @@ import AppShell from './AppShell.svelte';
 
 const baseProps = {
 	navigation: [
-		{ id: 'work', label: 'Work', href: '/work' },
-		{ id: 'recover', label: 'Recover', href: '/recover' },
-		{ id: 'history', label: 'History', href: '/history' }
+		{ id: 'chat', label: 'Chat', href: '/chat' },
+		{ id: 'approvals', label: 'Exec Approvals', href: '/approvals' },
+		{ id: 'logs', label: 'Logs', href: '/logs' }
 	],
 	project: {
 		active_id: 'proj-primary',
 		active_name: 'starter-project',
 		active_path: '/tmp/starter-project'
 	},
-	currentPath: '/recover',
-	inspectorTitle: 'Signal',
-	inspectorItems: [
-		{ label: 'Pending approvals', value: '3' },
-		{ label: 'Route failures', value: '1' }
-	]
+	currentPath: '/approvals'
 };
 
 describe('AppShell', () => {
-	it('does not render the xl:block header panel', () => {
-		const { body } = render(AppShell, { props: baseProps });
-		expect(body).not.toContain('Active surface');
-	});
-
 	it('does not render internal surface IDs in nav', () => {
 		const { body } = render(AppShell, { props: baseProps });
 		// Labels must appear
-		expect(body).toContain('Work');
-		expect(body).toContain('Recover');
-		expect(body).toContain('History');
+		expect(body).toContain('Chat');
+		expect(body).toContain('Exec Approvals');
+		expect(body).toContain('Logs');
 		// Internal IDs must not appear as standalone nav text items
-		// (they are still used in data attributes for icons, but not as visible span text)
-		expect(body).not.toContain('<span class="gc-machine">work</span>');
-		expect(body).not.toContain('<span class="gc-machine">recover</span>');
-		expect(body).not.toContain('<span class="gc-machine">history</span>');
+		expect(body).not.toContain('<span class="gc-machine">chat</span>');
+		expect(body).not.toContain('<span class="gc-machine">approvals</span>');
 	});
 
 	it('renders the active project name in the shell', () => {
@@ -50,22 +38,25 @@ describe('AppShell', () => {
 		expect(body).toContain('aria-current="page"');
 	});
 
-	it('renders inspector items', () => {
+	it('renders the desktop layout at xl breakpoint', () => {
 		const { body } = render(AppShell, { props: baseProps });
-		expect(body).toContain('Pending approvals');
-		expect(body).toContain('Route failures');
+		expect(body).toContain('xl:flex');
 	});
 
-	it('renders the info toggle button for mobile', () => {
+	it('renders the mobile layout for small screens', () => {
 		const { body } = render(AppShell, { props: baseProps });
-		expect(body).toContain('System info');
+		expect(body).toContain('xl:hidden');
 	});
 
-	it('renders the current shell branding', () => {
+	it('renders GistClaw branding in mobile drawer', () => {
 		const { body } = render(AppShell, {
 			props: { ...baseProps, project: { ...baseProps.project, active_name: 'gistclaw' } }
 		});
-		expect(body).toContain('GistClaw');
-		expect(body).toContain('System info');
+		expect(body).toContain('gistclaw');
+	});
+
+	it('renders inspector placeholder when no item selected', () => {
+		const { body } = render(AppShell, { props: baseProps });
+		expect(body).toContain('Select an item to inspect');
 	});
 });

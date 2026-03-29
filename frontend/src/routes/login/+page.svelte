@@ -83,26 +83,26 @@
 			<h1 class="gc-page-title mt-4">Bring the local machine under operator control</h1>
 			<p class="gc-copy mt-5 max-w-2xl text-[var(--gc-text-secondary)]">
 				Sign in to open the GistClaw control deck. The runtime stays local-first, while this browser
-				becomes a hard-edged cockpit for work, recovery, conversations, and history.
+				becomes a hard-edged cockpit for chat, sessions, approvals, and live logs.
 			</p>
 
 			<div class="mt-8 grid gap-4 md:grid-cols-3">
 				<div class="gc-panel-soft gc-card-accent px-4 py-4">
-					<p class="gc-stamp">Work</p>
+					<p class="gc-stamp">Chat</p>
 					<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-						Steer live objectives, graph topology, and active machine signal.
+						Send tasks, watch runs in progress, inject notes, and tail live tool output.
 					</p>
 				</div>
 				<div class="gc-panel-soft px-4 py-4">
-					<p class="gc-stamp">Recover</p>
+					<p class="gc-stamp">Sessions</p>
 					<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-						Clear approvals, inspect replay evidence, and repair stalled routes.
+						Inspect session routes, override delivery settings, and jump to any conversation.
 					</p>
 				</div>
 				<div class="gc-panel-soft gc-card-warning px-4 py-4">
-					<p class="gc-stamp">History</p>
+					<p class="gc-stamp">Approvals</p>
 					<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
-						Explain what happened without reading through raw machine internals.
+						Gate shell execution, manage allowlists, and approve or deny pending commands.
 					</p>
 				</div>
 			</div>

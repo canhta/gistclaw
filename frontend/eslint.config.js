@@ -37,7 +37,11 @@ export default defineConfig(
 		}
 	},
 	{
-		files: ['src/lib/components/shell/AppShell.svelte', 'src/routes/knowledge/+page.svelte'],
+		files: [
+			'src/lib/components/shell/AppShell.svelte',
+			'src/lib/components/shell/LeftNav.svelte',
+			'src/lib/components/shell/MobileShell.svelte'
+		],
 		rules: {
 			'svelte/no-navigation-without-resolve': 'off'
 		}

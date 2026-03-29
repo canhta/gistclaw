@@ -83,14 +83,14 @@ func TestAuthProtectedPagesRedirectToLogin(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/work", nil)
+	req := httptest.NewRequest(http.MethodGet, "/chat", nil)
 	h.rawServer.ServeHTTP(rr, req)
 
 	if rr.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303, got %d", rr.Code)
 	}
 	loc := rr.Header().Get("Location")
-	if !strings.HasPrefix(loc, "/login?") || !strings.Contains(loc, "next=%2Fwork") {
+	if !strings.HasPrefix(loc, "/login?") || !strings.Contains(loc, "next=%2Fchat") {
 		t.Fatalf("expected redirect to login with next path, got %q", loc)
 	}
 }
@@ -108,7 +108,7 @@ func TestAuthLoginCreatesSessionCookiesAndUnlocksOperatorPages(t *testing.T) {
 	sessionCookie, deviceCookie := loginForTest(t, h, "secret-pass")
 
 	pageResp := httptest.NewRecorder()
-	pageReq := httptest.NewRequest(http.MethodGet, "/work", nil)
+	pageReq := httptest.NewRequest(http.MethodGet, "/chat", nil)
 	pageReq.AddCookie(sessionCookie)
 	pageReq.AddCookie(deviceCookie)
 	h.rawServer.ServeHTTP(pageResp, pageReq)
@@ -117,7 +117,7 @@ func TestAuthLoginCreatesSessionCookiesAndUnlocksOperatorPages(t *testing.T) {
 		t.Fatalf("expected authenticated page load 200, got %d", pageResp.Code)
 	}
 	if pageResp.Body.String() != string(wantBody) {
-		t.Fatalf("expected work route to serve spa index")
+		t.Fatalf("expected chat route to serve spa index")
 	}
 }
 
@@ -156,7 +156,7 @@ func TestAuthSettingsPageServesSPAWhenAuthenticated(t *testing.T) {
 	sessionCookie, deviceCookie := loginForTest(t, h, "secret-pass")
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req := httptest.NewRequest(http.MethodGet, "/config", nil)
 	req.AddCookie(sessionCookie)
 	req.AddCookie(deviceCookie)
 	h.rawServer.ServeHTTP(rr, req)
@@ -165,7 +165,7 @@ func TestAuthSettingsPageServesSPAWhenAuthenticated(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
 	if rr.Body.String() != string(wantBody) {
-		t.Fatalf("expected settings route to serve spa index")
+		t.Fatalf("expected config route to serve spa index")
 	}
 }
 

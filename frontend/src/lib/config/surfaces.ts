@@ -1,108 +1,46 @@
-type Tone = 'default' | 'accent' | 'warning';
+// Section configuration for the 12 left-nav sections.
 
-export type SurfaceID =
-	| 'work'
-	| 'team'
-	| 'knowledge'
-	| 'recover'
-	| 'conversations'
-	| 'automate'
-	| 'history'
-	| 'settings';
+export type SectionID =
+	| 'chat'
+	| 'channels'
+	| 'instances'
+	| 'sessions'
+	| 'cron'
+	| 'skills'
+	| 'nodes'
+	| 'approvals'
+	| 'config'
+	| 'debug'
+	| 'logs'
+	| 'update';
 
-interface SurfaceInspectorItem {
+export interface SectionMeta {
+	id: SectionID;
+	href: string;
 	label: string;
-	value: string;
-	tone?: Tone;
 }
 
-export interface SurfaceMeta {
-	id: SurfaceID;
-	inspectorTitle: string;
-	inspectorItems: SurfaceInspectorItem[];
-}
+export const sections: SectionMeta[] = [
+	{ id: 'chat', href: '/chat', label: 'Chat' },
+	{ id: 'channels', href: '/channels', label: 'Channels' },
+	{ id: 'instances', href: '/instances', label: 'Instances' },
+	{ id: 'sessions', href: '/sessions', label: 'Sessions' },
+	{ id: 'cron', href: '/cron', label: 'Cron Jobs' },
+	{ id: 'skills', href: '/skills', label: 'Skills' },
+	{ id: 'nodes', href: '/nodes', label: 'Nodes' },
+	{ id: 'approvals', href: '/approvals', label: 'Exec Approvals' },
+	{ id: 'config', href: '/config', label: 'Config' },
+	{ id: 'debug', href: '/debug', label: 'Debug' },
+	{ id: 'logs', href: '/logs', label: 'Logs' },
+	{ id: 'update', href: '/update', label: 'Update' }
+];
 
-const surfaces: Record<SurfaceID, SurfaceMeta> = {
-	work: {
-		id: 'work',
-		inspectorTitle: 'At a glance',
-		inspectorItems: [
-			{ label: 'Best for', value: 'Start and steer work', tone: 'accent' },
-			{ label: 'Watch for', value: 'Approvals and blocked runs', tone: 'warning' },
-			{ label: 'Next', value: 'Open the run that matters' }
-		]
-	},
-	team: {
-		id: 'team',
-		inspectorTitle: 'Setup',
-		inspectorItems: [
-			{ label: 'Best for', value: 'Team shape and roles', tone: 'accent' },
-			{ label: 'Watch for', value: 'Unclear ownership', tone: 'warning' },
-			{ label: 'Next', value: 'Save the setup you trust' }
-		]
-	},
-	knowledge: {
-		id: 'knowledge',
-		inspectorTitle: 'Remember',
-		inspectorItems: [
-			{ label: 'Best for', value: 'Rules and context', tone: 'accent' },
-			{ label: 'Watch for', value: 'Stale guidance', tone: 'warning' },
-			{ label: 'Next', value: 'Review what still matters' }
-		]
-	},
-	recover: {
-		id: 'recover',
-		inspectorTitle: 'Needs attention',
-		inspectorItems: [
-			{ label: 'Best for', value: 'Approvals and retries', tone: 'accent' },
-			{ label: 'Check first', value: 'Expired approvals', tone: 'warning' },
-			{ label: 'Next', value: 'Clear the queue' }
-		]
-	},
-	conversations: {
-		id: 'conversations',
-		inspectorTitle: 'Inbox health',
-		inspectorItems: [
-			{ label: 'Best for', value: 'Sessions and replies', tone: 'accent' },
-			{ label: 'Check first', value: 'Failed deliveries', tone: 'warning' },
-			{ label: 'Next', value: 'Open the right thread' }
-		]
-	},
-	automate: {
-		id: 'automate',
-		inspectorTitle: 'Schedule health',
-		inspectorItems: [
-			{ label: 'Best for', value: 'Recurring tasks', tone: 'accent' },
-			{ label: 'Check first', value: 'Next run and drift', tone: 'warning' },
-			{ label: 'Next', value: 'Review the schedule list' }
-		]
-	},
-	history: {
-		id: 'history',
-		inspectorTitle: 'What changed',
-		inspectorItems: [
-			{ label: 'Best for', value: 'Finished runs and evidence', tone: 'accent' },
-			{ label: 'Check first', value: 'Approvals and failures', tone: 'warning' },
-			{ label: 'Next', value: 'Open the clearest run' }
-		]
-	},
-	settings: {
-		id: 'settings',
-		inspectorTitle: 'Machine info',
-		inspectorItems: [
-			{ label: 'Best for', value: 'Access and limits', tone: 'accent' },
-			{ label: 'Check first', value: 'Signed-in browsers', tone: 'warning' },
-			{ label: 'Next', value: 'Update the defaults' }
-		]
-	}
-};
+export const sectionMap = Object.fromEntries(sections.map((s) => [s.id, s])) as Record<
+	SectionID,
+	SectionMeta
+>;
 
-export function surfaceByID(id: SurfaceID): SurfaceMeta {
-	return surfaces[id];
-}
-
-export function surfaceForPath(path: string): SurfaceMeta {
-	const key = path.replace(/^\/+/, '').split('/')[0] as SurfaceID;
-
-	return surfaces[key] ?? surfaces.work;
+export function sectionForPath(path: string): SectionMeta | undefined {
+	const key = path.replace(/^\/+/, '').split('/')[0] as SectionID;
+	return sectionMap[key];
 }

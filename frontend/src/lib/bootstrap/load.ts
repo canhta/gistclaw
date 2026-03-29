@@ -18,7 +18,7 @@ export function resolveEntryHref(state: Pick<AppShellState, 'auth' | 'onboarding
 	if (!state.auth.authenticated) {
 		return '/login';
 	}
-	return state.onboarding?.entry_href ?? '/work';
+	return state.onboarding?.entry_href ?? '/chat';
 }
 
 export async function loadAppShell(fetcher: typeof fetch): Promise<AppShellState> {

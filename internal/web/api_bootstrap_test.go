@@ -48,14 +48,18 @@ func TestBootstrapAPIReportsUserFirstNavigationAndProjectContext(t *testing.T) {
 		Label string
 		Href  string
 	}{
-		{ID: "work", Label: "Work", Href: "/work"},
-		{ID: "team", Label: "Team", Href: "/team"},
-		{ID: "knowledge", Label: "Knowledge", Href: "/knowledge"},
-		{ID: "recover", Label: "Recover", Href: "/recover"},
-		{ID: "conversations", Label: "Conversations", Href: "/conversations"},
-		{ID: "automate", Label: "Automate", Href: "/automate"},
-		{ID: "history", Label: "History", Href: "/history"},
-		{ID: "settings", Label: "Settings", Href: "/settings"},
+		{ID: "chat", Label: "Chat", Href: "/chat"},
+		{ID: "channels", Label: "Channels", Href: "/channels"},
+		{ID: "instances", Label: "Instances", Href: "/instances"},
+		{ID: "sessions", Label: "Sessions", Href: "/sessions"},
+		{ID: "cron", Label: "Cron Jobs", Href: "/cron"},
+		{ID: "skills", Label: "Skills", Href: "/skills"},
+		{ID: "nodes", Label: "Nodes", Href: "/nodes"},
+		{ID: "approvals", Label: "Exec Approvals", Href: "/approvals"},
+		{ID: "config", Label: "Config", Href: "/config"},
+		{ID: "debug", Label: "Debug", Href: "/debug"},
+		{ID: "logs", Label: "Logs", Href: "/logs"},
+		{ID: "update", Label: "Update", Href: "/update"},
 	}
 	if len(resp.Navigation) != len(want) {
 		t.Fatalf("navigation length = %d, want %d", len(resp.Navigation), len(want))

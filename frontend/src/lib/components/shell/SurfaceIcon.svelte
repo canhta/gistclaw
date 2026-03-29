@@ -1,26 +1,34 @@
 <script lang="ts">
 	import type { Icon as TablerIcon } from '@tabler/icons-svelte-runes';
 	import {
-		IconBooks,
-		IconBriefcase2,
+		IconBug,
 		IconCalendarStats,
-		IconHistory,
+		IconCpu,
+		IconFileText,
+		IconGitBranch,
 		IconLayoutGrid,
-		IconLifebuoy,
+		IconList,
 		IconMessages,
-		IconSettingsCog,
-		IconUsersGroup
+		IconRefresh,
+		IconSettings2,
+		IconShieldCheck,
+		IconTerminal2,
+		IconWifi
 	} from '@tabler/icons-svelte-runes';
 
 	const icons: Record<string, TablerIcon> = {
-		work: IconBriefcase2,
-		team: IconUsersGroup,
-		knowledge: IconBooks,
-		recover: IconLifebuoy,
-		conversations: IconMessages,
-		automate: IconCalendarStats,
-		history: IconHistory,
-		settings: IconSettingsCog
+		chat: IconMessages,
+		channels: IconWifi,
+		instances: IconCpu,
+		sessions: IconGitBranch,
+		cron: IconCalendarStats,
+		skills: IconFileText,
+		nodes: IconTerminal2,
+		approvals: IconShieldCheck,
+		config: IconSettings2,
+		debug: IconBug,
+		logs: IconList,
+		update: IconRefresh
 	};
 
 	let { surfaceID }: { surfaceID: string } = $props();
@@ -30,7 +38,7 @@
 
 <span
 	data-nav-icon={surfaceID}
-	class="inline-flex h-10 w-10 items-center justify-center border-2 border-[var(--gc-border)] bg-[var(--gc-canvas)] text-[var(--gc-text-secondary)]"
+	class="inline-flex items-center justify-center text-[var(--gc-ink-2)]"
 >
-	<Icon aria-hidden="true" size={18} stroke={1.8} />
+	<Icon aria-hidden="true" size={18} stroke={1.6} />
 </span>

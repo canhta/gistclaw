@@ -918,7 +918,7 @@ func buildRunNodeApprovalView(approvals []runApprovalRecord, events []model.Even
 		StatusLabel:    strings.TrimSpace(strings.ReplaceAll(selected.Status, "_", " ")),
 		StatusClass:    approvalStatusClass(selected.Status),
 		ResolveURL:     approvalResolvePath(selected.ID),
-		ViewURL:        pageRecover + "?q=" + url.QueryEscape(selected.ID),
+		ViewURL:        pageApprovals + "?q=" + url.QueryEscape(selected.ID),
 		CanResolve:     selected.Status == "pending",
 	}
 	if requestedAt := parseRunListTimestamp(selected.CreatedAt); !requestedAt.IsZero() {

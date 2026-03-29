@@ -258,5 +258,5 @@ func (s *Server) defaultEntryPath() string {
 	if !onboardingCompleted(s.db) {
 		return pageOnboarding
 	}
-	return pageWork
+	return pageChat
 }

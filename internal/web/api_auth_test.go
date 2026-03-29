@@ -34,7 +34,7 @@ func TestGETLoginServesSPAIndex(t *testing.T) {
 	}
 }
 
-func TestAuthenticatedGETWorkServesSPAIndex(t *testing.T) {
+func TestAuthenticatedGETChatServesSPAIndex(t *testing.T) {
 	t.Parallel()
 
 	h := newServerHarness(t)
@@ -49,7 +49,7 @@ func TestAuthenticatedGETWorkServesSPAIndex(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/work", nil)
+	req := httptest.NewRequest(http.MethodGet, "/chat", nil)
 	req.AddCookie(sessionCookie)
 	req.AddCookie(deviceCookie)
 	h.rawServer.ServeHTTP(rr, req)
@@ -58,7 +58,7 @@ func TestAuthenticatedGETWorkServesSPAIndex(t *testing.T) {
 		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 	}
 	if rr.Body.String() != string(wantBody) {
-		t.Fatalf("expected work route to serve spa index")
+		t.Fatalf("expected chat route to serve spa index")
 	}
 }
 
@@ -76,7 +76,7 @@ func TestAuthenticatedGETNestedSPARoutesServeIndex(t *testing.T) {
 		t.Fatalf("read spa index: %v", err)
 	}
 
-	for _, path := range []string{"/work/run-work-root", "/conversations/session-1"} {
+	for _, path := range []string{"/chat", "/sessions"} {
 		rr := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		req.AddCookie(sessionCookie)
@@ -183,7 +183,7 @@ func TestAuthLoginAPIAuthenticatesAndSetsCookies(t *testing.T) {
 	}
 
 	rr := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"password":"secret-pass","next":"/knowledge"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", bytes.NewBufferString(`{"password":"secret-pass","next":"/chat"}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "GistClaw Test Browser")
 	h.rawServer.ServeHTTP(rr, req)
@@ -202,8 +202,8 @@ func TestAuthLoginAPIAuthenticatesAndSetsCookies(t *testing.T) {
 	if !resp.Authenticated {
 		t.Fatal("expected authenticated response")
 	}
-	if resp.Next != "/knowledge" {
-		t.Fatalf("next = %q, want %q", resp.Next, "/knowledge")
+	if resp.Next != "/chat" {
+		t.Fatalf("next = %q, want %q", resp.Next, "/chat")
 	}
 	if findCookie(rr.Result().Cookies(), sessionCookieName) == nil {
 		t.Fatal("expected session cookie to be set")

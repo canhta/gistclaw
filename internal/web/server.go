@@ -109,16 +109,18 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET "+pageLogout, s.handleLogout)
 	s.mux.HandleFunc("POST "+pageLogout, s.handleLogout)
 	s.mux.HandleFunc("GET "+pageOnboarding, s.handleSPADocument)
-	s.mux.HandleFunc("GET "+pageWork, s.handleSPADocument)
-	s.mux.HandleFunc("GET "+pageWork+"/{id}", s.handleSPADocument)
-	s.mux.HandleFunc("GET "+pageTeam, s.handleSPADocument)
-	s.mux.HandleFunc("GET "+pageKnowledge, s.handleSPADocument)
-	s.mux.HandleFunc("GET "+pageRecover, s.handleSPADocument)
-	s.mux.HandleFunc("GET "+pageConversations, s.handleSPADocument)
-	s.mux.HandleFunc("GET "+pageConversations+"/{id}", s.handleSPADocument)
-	s.mux.HandleFunc("GET "+pageAutomate, s.handleSPADocument)
-	s.mux.HandleFunc("GET "+pageHistory, s.handleSPADocument)
-	s.mux.HandleFunc("GET "+pageSettings, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageChat, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageChannels, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageInstances, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageSessions, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageCron, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageSkills, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageNodes, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageApprovals, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageConfig, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageDebug, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageLogs, s.handleSPADocument)
+	s.mux.HandleFunc("GET "+pageUpdate, s.handleSPADocument)
 	s.mux.HandleFunc("GET /api/auth/session", s.handleAuthSession)
 	s.mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
 	s.mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
@@ -235,13 +237,14 @@ func (s *Server) projectLayoutData(r *http.Request) (shellProjectLayout, error) 
 
 func requestPathWithQuery(r *http.Request) string {
 	if r == nil || r.URL == nil {
-		return pageWork
+		return pageChat
 	}
 	if raw := r.URL.RequestURI(); raw != "" {
 		return raw
 	}
 	return r.URL.Path
 }
+
 
 func (s *Server) authorizedByBearer(r *http.Request, adminToken string) bool {
 	return r.Header.Get("Authorization") == "Bearer "+adminToken

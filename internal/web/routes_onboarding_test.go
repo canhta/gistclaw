@@ -151,7 +151,7 @@ func TestAllowsOnboardingSetupPath(t *testing.T) {
 		{path: pageOnboarding + "/details", want: true},
 		{path: "/api/bootstrap", want: true},
 		{path: "/api/onboarding/project", want: true},
-		{path: pageWork, want: false},
+		{path: pageChat, want: false},
 	}
 
 	for _, tc := range tests {

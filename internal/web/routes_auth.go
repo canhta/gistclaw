@@ -140,21 +140,29 @@ func isCurrentAppPath(path string) bool {
 		return true
 	case path == pageOnboarding, strings.HasPrefix(path, pageOnboarding+"/"), strings.HasPrefix(path, pageOnboarding+"?"):
 		return true
-	case path == pageWork, strings.HasPrefix(path, pageWork+"/"), strings.HasPrefix(path, pageWork+"?"):
+	case path == pageChat, strings.HasPrefix(path, pageChat+"/"), strings.HasPrefix(path, pageChat+"?"):
 		return true
-	case path == pageTeam, strings.HasPrefix(path, pageTeam+"?"):
+	case path == pageChannels, strings.HasPrefix(path, pageChannels+"?"):
 		return true
-	case path == pageKnowledge, strings.HasPrefix(path, pageKnowledge+"?"):
+	case path == pageInstances, strings.HasPrefix(path, pageInstances+"?"):
 		return true
-	case path == pageRecover, strings.HasPrefix(path, pageRecover+"?"):
+	case path == pageSessions, strings.HasPrefix(path, pageSessions+"/"), strings.HasPrefix(path, pageSessions+"?"):
 		return true
-	case path == pageConversations, strings.HasPrefix(path, pageConversations+"/"), strings.HasPrefix(path, pageConversations+"?"):
+	case path == pageCron, strings.HasPrefix(path, pageCron+"?"):
 		return true
-	case path == pageAutomate, strings.HasPrefix(path, pageAutomate+"?"):
+	case path == pageSkills, strings.HasPrefix(path, pageSkills+"?"):
 		return true
-	case path == pageHistory, strings.HasPrefix(path, pageHistory+"?"):
+	case path == pageNodes, strings.HasPrefix(path, pageNodes+"?"):
 		return true
-	case path == pageSettings, strings.HasPrefix(path, pageSettings+"?"):
+	case path == pageApprovals, strings.HasPrefix(path, pageApprovals+"?"):
+		return true
+	case path == pageConfig, strings.HasPrefix(path, pageConfig+"?"):
+		return true
+	case path == pageDebug, strings.HasPrefix(path, pageDebug+"?"):
+		return true
+	case path == pageLogs, strings.HasPrefix(path, pageLogs+"?"):
+		return true
+	case path == pageUpdate, strings.HasPrefix(path, pageUpdate+"?"):
 		return true
 	default:
 		return false

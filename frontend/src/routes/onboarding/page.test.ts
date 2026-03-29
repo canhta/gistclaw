@@ -39,8 +39,8 @@ describe('Onboarding page', () => {
 						active_path: '/tmp/starter-project'
 					},
 					navigation: [
-						{ id: 'work', label: 'Work', href: '/work' },
-						{ id: 'team', label: 'Team', href: '/team' }
+						{ id: 'chat', label: 'Chat', href: '/chat' },
+						{ id: 'sessions', label: 'Sessions', href: '/sessions' }
 					],
 					currentPath: '/onboarding',
 					currentSearch: ''

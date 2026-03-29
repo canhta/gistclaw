@@ -233,7 +233,7 @@ func (s *Server) handleWorkDismiss(w http.ResponseWriter, r *http.Request) {
 		Dismissed: true,
 		RunID:     runID,
 		Status:    "dismissed",
-		NextHref:  pageWork,
+		NextHref:  pageChat,
 	})
 }
 
