@@ -153,9 +153,8 @@
 					{#if nodeDetail.session_id && nodeDetail.session_short_id}
 						<div class="flex items-center justify-between gap-3">
 							<p class="gc-stamp">Session</p>
-							<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
 							<a
-								href={`${resolve('/sessions')}?selected=${encodeURIComponent(nodeDetail.session_id)}`}
+								href={resolve(`/sessions?selected=${encodeURIComponent(nodeDetail.session_id)}`)}
 								class="gc-machine text-[var(--gc-cyan)]"
 							>
 								{nodeDetail.session_short_id}

@@ -269,6 +269,34 @@ export interface WorkCreateResponse {
 	objective: string;
 }
 
+export interface LogEntryResponse {
+	id: number;
+	source: string;
+	level: string;
+	level_label: string;
+	message: string;
+	raw: string;
+	created_at_label: string;
+}
+
+export interface LogsResponse {
+	summary: {
+		buffered_entries: number;
+		visible_entries: number;
+		error_entries: number;
+		warning_entries: number;
+	};
+	filters: {
+		query: string;
+		level: string;
+		source: string;
+		limit: number;
+	};
+	sources: string[];
+	stream_url: string;
+	entries: LogEntryResponse[];
+}
+
 export interface TeamProfileResponse {
 	id: string;
 	label: string;

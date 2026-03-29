@@ -3,7 +3,7 @@ package app
 import (
 	"context"
 	"errors"
-	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -222,7 +222,7 @@ func (s *connectorSupervisor) persistSnapshots(ctx context.Context, now time.Tim
 	}
 	if err := s.cfg.persistSnapshots(ctx, snapshots); err != nil {
 		if ctx.Err() == nil {
-			fmt.Printf("connector health persist warning: %v\n", err)
+			log.Printf("runtime warn connector_health_persist err=%v", err)
 		}
 		return
 	}

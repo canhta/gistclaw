@@ -18,6 +18,7 @@ import (
 	authpkg "github.com/canhta/gistclaw/internal/auth"
 	"github.com/canhta/gistclaw/internal/authority"
 	"github.com/canhta/gistclaw/internal/conversations"
+	"github.com/canhta/gistclaw/internal/logstream"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/replay"
@@ -2507,6 +2508,7 @@ type serverHarness struct {
 	server          *testServer
 	rawServer       *Server
 	broadcaster     *SSEBroadcaster
+	logs            *logstream.Sink
 	rt              *runtime.Runtime
 	adminToken      string
 	activeProjectID string
@@ -2666,6 +2668,7 @@ func newServerHarnessWithProviderAndConnectorHealth(t *testing.T, prov runtime.P
 		reg.Register(tool)
 	}
 	broadcaster := NewSSEBroadcaster()
+	logs := logstream.New(500)
 	rt := runtime.New(db, cs, reg, nil, mem, prov, broadcaster)
 	t.Cleanup(func() {
 		rt.WaitAsync()
@@ -2686,6 +2689,7 @@ func newServerHarnessWithProviderAndConnectorHealth(t *testing.T, prov runtime.P
 		Replay:          replay.NewService(db),
 		Broadcaster:     broadcaster,
 		Runtime:         rt,
+		Logs:            logs,
 		StorageRoot:     storageRoot,
 		ConnectorHealth: source,
 	})
@@ -2698,6 +2702,7 @@ func newServerHarnessWithProviderAndConnectorHealth(t *testing.T, prov runtime.P
 		server:          &testServer{raw: server, adminToken: adminToken},
 		rawServer:       server,
 		broadcaster:     broadcaster,
+		logs:            logs,
 		rt:              rt,
 		adminToken:      adminToken,
 		activeProjectID: activeProjectID,
@@ -2747,6 +2752,7 @@ func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, e
 		reg.Register(tool)
 	}
 	broadcaster := NewSSEBroadcaster()
+	logs := logstream.New(500)
 	rt := runtime.New(db, cs, reg, nil, mem, prov, broadcaster)
 	t.Cleanup(func() {
 		rt.WaitAsync()
@@ -2767,6 +2773,7 @@ func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, e
 		Replay:      replay.NewService(db),
 		Broadcaster: broadcaster,
 		Runtime:     rt,
+		Logs:        logs,
 		StorageRoot: storageRoot,
 	})
 	if err != nil {
@@ -2778,6 +2785,7 @@ func newServerHarnessWithProviderAndTools(t *testing.T, prov runtime.Provider, e
 		server:          &testServer{raw: server, adminToken: adminToken},
 		rawServer:       server,
 		broadcaster:     broadcaster,
+		logs:            logs,
 		rt:              rt,
 		adminToken:      adminToken,
 		activeProjectID: activeProjectID,

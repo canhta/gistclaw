@@ -19,6 +19,7 @@ import (
 	whatsappconnector "github.com/canhta/gistclaw/internal/connectors/whatsapp"
 	zalopersonalconnector "github.com/canhta/gistclaw/internal/connectors/zalopersonal"
 	"github.com/canhta/gistclaw/internal/conversations"
+	"github.com/canhta/gistclaw/internal/logstream"
 	"github.com/canhta/gistclaw/internal/memory"
 	"github.com/canhta/gistclaw/internal/model"
 	anthropicprov "github.com/canhta/gistclaw/internal/providers/anthropic"
@@ -41,6 +42,7 @@ type App struct {
 	runtime          *runtime.Runtime
 	scheduler        *scheduler.Service
 	replay           *replay.Service
+	logs             *logstream.Sink
 	webServer        *web.Server
 	connectors       []model.Connector
 	supervisor       *connectorSupervisor
@@ -142,6 +144,7 @@ func Bootstrap(cfg Config) (*App, error) {
 	}
 	rp := replayWiring(db)
 	sched := scheduler.NewService(scheduler.NewStore(db), schedulerRuntimeDispatcher{runtime: rt})
+	logs := logstream.New(500)
 
 	var whatsappHealth *whatsappconnector.HealthState
 	if cfg.WhatsApp.PhoneNumberID != "" || cfg.WhatsApp.AccessToken != "" || cfg.WhatsApp.VerifyToken != "" {
@@ -162,6 +165,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		runtime:    rt,
 		scheduler:  sched,
 		replay:     rp,
+		logs:       logs,
 		connectors: connectors,
 		toolCloser: toolCloser,
 	}
@@ -172,6 +176,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		Replay:          rp,
 		Broadcaster:     broadcaster,
 		Runtime:         rt,
+		Logs:            logs,
 		Schedules:       application,
 		StorageRoot:     cfg.StorageRoot,
 		WhatsAppWebhook: buildWhatsAppWebhook(cfg, db, convStore, rt, whatsappHealth),
@@ -501,6 +506,13 @@ func (a *App) WebAddress() string {
 	a.webAddrMu.RLock()
 	defer a.webAddrMu.RUnlock()
 	return a.webAddress
+}
+
+func (a *App) LogWriter() io.Writer {
+	if a == nil || a.logs == nil {
+		return nil
+	}
+	return a.logs
 }
 
 func (a *App) setWebAddress(addr string) {

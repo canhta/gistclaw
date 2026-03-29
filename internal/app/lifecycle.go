@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -39,7 +40,7 @@ func (a *App) Prepare(ctx context.Context) error {
 		n, err := a.runtime.ExpireStaleApprovals(ctx)
 		if err != nil {
 			// Non-fatal — log and continue.
-			fmt.Printf(`{"level":"warn","event":"expire_stale_approvals_failed","error":%q}`+"\n", err.Error())
+			log.Printf("runtime warn expire_stale_approvals_failed err=%v", err)
 		} else {
 			expiredApprovals = n
 		}
@@ -53,14 +54,17 @@ func (a *App) Prepare(ctx context.Context) error {
 	// Advisory disk-space check.
 	checkDiskSpace(a.cfg.DatabasePath)
 
-	fmt.Printf(`{"level":"info","event":"startup_reconciled","reconciled_runs":%d,"expired_approvals":%d}`+"\n",
-		reconciledRuns, expiredApprovals)
+	log.Printf(
+		"runtime info startup_reconciled reconciled_runs=%d expired_approvals=%d",
+		reconciledRuns,
+		expiredApprovals,
+	)
 
 	// Drain any pending outbound intents from a previous session for all connectors.
 	for _, c := range a.connectors {
 		if err := c.Drain(ctx); err != nil {
 			// Drain failure is non-fatal — log and continue.
-			fmt.Printf("connector %s: drain warning: %v\n", c.Metadata().ID, err)
+			log.Printf("runtime warn connector_drain connector=%s err=%v", c.Metadata().ID, err)
 		}
 	}
 
@@ -92,7 +96,7 @@ func checkDiskSpace(dbPath string) {
 	}
 	available := stat.Bavail * uint64(stat.Bsize)
 	if available < lowThresholdBytes {
-		fmt.Printf(`{"level":"warn","event":"low_disk_space","available_bytes":%d}`+"\n", available)
+		log.Printf("runtime warn low_disk_space available_bytes=%d", available)
 	}
 }
 

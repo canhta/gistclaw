@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/canhta/gistclaw/internal/logstream"
 	"github.com/canhta/gistclaw/internal/model"
 	"github.com/canhta/gistclaw/internal/replay"
 	"github.com/canhta/gistclaw/internal/runtime"
@@ -22,6 +23,7 @@ type Options struct {
 	Replay          *replay.Service
 	Broadcaster     *SSEBroadcaster
 	Runtime         *runtime.Runtime
+	Logs            *logstream.Sink
 	Schedules       scheduleService
 	StorageRoot     string
 	WhatsAppWebhook http.Handler
@@ -33,6 +35,7 @@ type Server struct {
 	replay          *replay.Service
 	broadcaster     *SSEBroadcaster
 	rt              *runtime.Runtime
+	logs            *logstream.Sink
 	schedules       scheduleService
 	storageRoot     string
 	whatsAppWebhook http.Handler
@@ -84,6 +87,7 @@ func NewServer(opts Options) (*Server, error) {
 		replay:          opts.Replay,
 		broadcaster:     opts.Broadcaster,
 		rt:              opts.Runtime,
+		logs:            opts.Logs,
 		schedules:       opts.Schedules,
 		storageRoot:     opts.StorageRoot,
 		whatsAppWebhook: opts.WhatsAppWebhook,
@@ -121,6 +125,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("GET "+pageDebug, s.handleSPADocument)
 	s.mux.HandleFunc("GET "+pageLogs, s.handleSPADocument)
 	s.mux.HandleFunc("GET "+pageUpdate, s.handleSPADocument)
+	s.mux.HandleFunc("GET /api/logs", s.handleLogsIndex)
+	s.mux.HandleFunc("GET /api/logs/stream", s.handleLogsStream)
 	s.mux.HandleFunc("GET /api/auth/session", s.handleAuthSession)
 	s.mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
 	s.mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
@@ -188,9 +194,9 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		runID := runIDFromRequest(r)
 		if runID != "" {
-			log.Printf("web request method=%s path=%s run_id=%s", r.Method, r.URL.Path, runID)
+			log.Printf("web info request method=%s path=%s run_id=%s", r.Method, r.URL.Path, runID)
 		} else {
-			log.Printf("web request method=%s path=%s", r.Method, r.URL.Path)
+			log.Printf("web info request method=%s path=%s", r.Method, r.URL.Path)
 		}
 		next.ServeHTTP(w, r)
 	})
@@ -200,7 +206,7 @@ func (s *Server) recoverMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				log.Printf("web panic method=%s path=%s err=%v", r.Method, r.URL.Path, rec)
+				log.Printf("web error panic method=%s path=%s err=%v", r.Method, r.URL.Path, rec)
 				http.Error(w, "internal server error", http.StatusInternalServerError)
 			}
 		}()
@@ -244,7 +250,6 @@ func requestPathWithQuery(r *http.Request) string {
 	}
 	return r.URL.Path
 }
-
 
 func (s *Server) authorizedByBearer(r *http.Request, adminToken string) bool {
 	return r.Header.Get("Authorization") == "Bearer "+adminToken

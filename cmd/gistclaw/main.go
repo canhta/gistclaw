@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -103,12 +104,20 @@ func runWithInput(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 }
 
 func runServe(opts globalOptions, stdout, stderr io.Writer) int {
-	application, err := loadPreparedApp(opts)
+	application, err := loadApp(opts)
 	if err != nil {
 		fmt.Fprintf(stderr, "bootstrap app: %v\n", err)
 		return 1
 	}
 	defer func() { _ = application.Stop() }()
+
+	if writer := application.LogWriter(); writer != nil {
+		log.SetOutput(io.MultiWriter(stderr, writer))
+	}
+	if err := application.Prepare(context.Background()); err != nil {
+		fmt.Fprintf(stderr, "prepare app: %v\n", err)
+		return 1
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
