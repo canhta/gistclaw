@@ -1,13 +1,14 @@
 package maintenance
 
 type Status struct {
-	Notice  string        `json:"notice,omitempty"`
-	Release ReleaseStatus `json:"release"`
-	Runtime RuntimeStatus `json:"runtime"`
-	Install InstallStatus `json:"install"`
-	Service ServiceStatus `json:"service"`
-	Storage StorageStatus `json:"storage"`
-	Guides  GuideStatus   `json:"guides"`
+	Notice   string        `json:"notice,omitempty"`
+	Release  ReleaseStatus `json:"release"`
+	Runtime  RuntimeStatus `json:"runtime"`
+	Install  InstallStatus `json:"install"`
+	Service  ServiceStatus `json:"service"`
+	Commands CommandStatus `json:"commands"`
+	Storage  StorageStatus `json:"storage"`
+	Guides   GuideStatus   `json:"guides"`
 }
 
 func FallbackStatus(notice string) Status {
@@ -35,6 +36,10 @@ func FallbackStatus(notice string) Status {
 		Service: ServiceStatus{
 			RestartPolicy: "unknown",
 			UnitPreview:   "Unavailable",
+		},
+		Commands: CommandStatus{
+			RunUpdate:     []OperatorCommand{},
+			RestartReport: []OperatorCommand{},
 		},
 		Storage: StorageStatus{
 			BackupStatus: "unknown",
@@ -79,6 +84,18 @@ type InstallStatus struct {
 type ServiceStatus struct {
 	RestartPolicy string `json:"restart_policy"`
 	UnitPreview   string `json:"unit_preview"`
+}
+
+type OperatorCommand struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Detail  string `json:"detail"`
+	Command string `json:"command"`
+}
+
+type CommandStatus struct {
+	RunUpdate     []OperatorCommand `json:"run_update"`
+	RestartReport []OperatorCommand `json:"restart_report"`
 }
 
 type StorageStatus struct {

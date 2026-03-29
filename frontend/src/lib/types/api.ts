@@ -326,6 +326,20 @@ export interface UpdateStatusResponse {
 		restart_policy: string;
 		unit_preview: string;
 	};
+	commands: {
+		run_update: Array<{
+			id: string;
+			label: string;
+			detail: string;
+			command: string;
+		}>;
+		restart_report: Array<{
+			id: string;
+			label: string;
+			detail: string;
+			command: string;
+		}>;
+	};
 	storage: {
 		database_bytes: number;
 		wal_bytes: number;

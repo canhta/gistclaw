@@ -37,6 +37,10 @@ export function fallbackUpdateStatus(
 			restart_policy: 'unknown',
 			unit_preview: 'Unavailable'
 		},
+		commands: {
+			run_update: [],
+			restart_report: []
+		},
 		storage: {
 			database_bytes: 0,
 			wal_bytes: 0,

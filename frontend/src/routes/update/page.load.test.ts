@@ -42,6 +42,30 @@ describe('update load', () => {
 						restart_policy: 'on-failure',
 						unit_preview: '[Unit]\\nDescription=GistClaw service\\n'
 					},
+					commands: {
+						run_update: [
+							{
+								id: 'binary-version',
+								label: 'Installed binary',
+								detail: 'Confirm the installed binary reports the expected release metadata.',
+								command: '/usr/local/bin/gistclaw version'
+							},
+							{
+								id: 'restart-daemon',
+								label: 'Restart daemon',
+								detail: 'Restart the shipped service after replacing the binary or config.',
+								command: 'sudo systemctl restart gistclaw'
+							}
+						],
+						restart_report: [
+							{
+								id: 'service-status',
+								label: 'Service status',
+								detail: 'Verify the service came back cleanly after the restart.',
+								command: 'systemctl status gistclaw --no-pager'
+							}
+						]
+					},
 					storage: {
 						database_bytes: 4096,
 						wal_bytes: 256,
@@ -72,6 +96,8 @@ describe('update load', () => {
 		expect(result.update.release.version).toBe('v1.2.3');
 		expect(result.update.runtime.pending_approvals).toBe(3);
 		expect(result.update.install.config_path).toBe('/etc/gistclaw/config.yaml');
+		expect(result.update.commands.run_update[0]?.command).toBe('/usr/local/bin/gistclaw version');
+		expect(result.update.commands.restart_report[0]?.label).toBe('Service status');
 	});
 
 	it('returns a safe fallback when the update request fails', async () => {
@@ -88,6 +114,8 @@ describe('update load', () => {
 		expect(result.update.notice).toBe('Update status could not be loaded. Reload to retry.');
 		expect(result.update.release.version).toBe('unknown');
 		expect(result.update.runtime.uptime_label).toBe('Unavailable');
+		expect(result.update.commands.run_update).toEqual([]);
+		expect(result.update.commands.restart_report).toEqual([]);
 		expect(result.update.guides.release_notes_url).toBe(
 			'https://github.com/canhta/gistclaw/releases'
 		);

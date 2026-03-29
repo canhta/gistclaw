@@ -55,6 +55,24 @@ func TestUpdateStatusReturnsMaintenanceSnapshot(t *testing.T) {
 				RestartPolicy: "on-failure",
 				UnitPreview:   "[Unit]\nDescription=GistClaw service\n",
 			},
+			Commands: maintenance.CommandStatus{
+				RunUpdate: []maintenance.OperatorCommand{
+					{
+						ID:      "restart-daemon",
+						Label:   "Restart daemon",
+						Detail:  "Restart the shipped service after applying the updated binary.",
+						Command: "sudo systemctl restart gistclaw",
+					},
+				},
+				RestartReport: []maintenance.OperatorCommand{
+					{
+						ID:      "recent-journal",
+						Label:   "Recent journal",
+						Detail:  "Review the most recent daemon boot logs.",
+						Command: "journalctl -u gistclaw -n 100 --no-pager",
+					},
+				},
+			},
 			Storage: maintenance.StorageStatus{
 				DatabaseBytes:       4096,
 				WALBytes:            256,
@@ -99,6 +117,16 @@ func TestUpdateStatusReturnsMaintenanceSnapshot(t *testing.T) {
 			RestartPolicy string `json:"restart_policy"`
 			UnitPreview   string `json:"unit_preview"`
 		} `json:"service"`
+		Commands struct {
+			RunUpdate []struct {
+				Label   string `json:"label"`
+				Command string `json:"command"`
+			} `json:"run_update"`
+			RestartReport []struct {
+				Label   string `json:"label"`
+				Command string `json:"command"`
+			} `json:"restart_report"`
+		} `json:"commands"`
 		Storage struct {
 			BackupStatus     string   `json:"backup_status"`
 			LatestBackupPath string   `json:"latest_backup_path"`
@@ -125,6 +153,12 @@ func TestUpdateStatusReturnsMaintenanceSnapshot(t *testing.T) {
 	if resp.Service.RestartPolicy != "on-failure" || resp.Service.UnitPreview == "" {
 		t.Fatalf("unexpected service: %+v", resp.Service)
 	}
+	if len(resp.Commands.RunUpdate) != 1 || resp.Commands.RunUpdate[0].Label != "Restart daemon" {
+		t.Fatalf("unexpected run update commands: %+v", resp.Commands.RunUpdate)
+	}
+	if len(resp.Commands.RestartReport) != 1 || resp.Commands.RestartReport[0].Command != "journalctl -u gistclaw -n 100 --no-pager" {
+		t.Fatalf("unexpected restart report commands: %+v", resp.Commands.RestartReport)
+	}
 	if resp.Storage.BackupStatus != "healthy" || resp.Storage.LatestBackupPath == "" || len(resp.Storage.Warnings) != 1 {
 		t.Fatalf("unexpected storage: %+v", resp.Storage)
 	}
@@ -147,13 +181,17 @@ func TestUpdateStatusReturnsFallbackWhenSourceMissing(t *testing.T) {
 	}
 
 	var resp struct {
-		Notice string `json:"notice"`
+		Notice  string `json:"notice"`
 		Release struct {
 			Version string `json:"version"`
 		} `json:"release"`
 		Runtime struct {
 			UptimeLabel string `json:"uptime_label"`
 		} `json:"runtime"`
+		Commands struct {
+			RunUpdate     []struct{} `json:"run_update"`
+			RestartReport []struct{} `json:"restart_report"`
+		} `json:"commands"`
 		Guides struct {
 			ReleaseNotesURL string `json:"release_notes_url"`
 		} `json:"guides"`
@@ -170,6 +208,9 @@ func TestUpdateStatusReturnsFallbackWhenSourceMissing(t *testing.T) {
 	}
 	if resp.Runtime.UptimeLabel != "Unavailable" {
 		t.Fatalf("unexpected fallback runtime: %+v", resp.Runtime)
+	}
+	if len(resp.Commands.RunUpdate) != 0 || len(resp.Commands.RestartReport) != 0 {
+		t.Fatalf("expected empty fallback commands, got %+v", resp.Commands)
 	}
 	if resp.Guides.ReleaseNotesURL != "https://github.com/canhta/gistclaw/releases" {
 		t.Fatalf("unexpected fallback guides: %+v", resp.Guides)

@@ -51,6 +51,19 @@ func (a *App) MaintenanceStatus(ctx context.Context) (maintenance.Status, error)
 	if binaryPath == "" {
 		binaryPath = SystemdBinaryPath
 	}
+	installStatus := maintenance.InstallStatus{
+		ConfigPath:       configPath,
+		StateDir:         a.cfg.StateDir,
+		DatabaseDir:      filepath.Dir(a.cfg.DatabasePath),
+		StorageRoot:      a.cfg.StorageRoot,
+		BinaryPath:       binaryPath,
+		WorkingDirectory: SystemdWorkingDirectory,
+		ServiceUnitPath:  SystemdServiceUnitPath,
+	}
+	serviceStatus := maintenance.ServiceStatus{
+		RestartPolicy: "on-failure",
+		UnitPreview:   RenderSystemdUnit(binaryPath, configPath),
+	}
 
 	return maintenance.Status{
 		Release: maintenance.ReleaseStatus{
@@ -67,19 +80,9 @@ func (a *App) MaintenanceStatus(ctx context.Context) (maintenance.Status, error)
 			InterruptedRuns:  status.InterruptedRuns,
 			PendingApprovals: status.PendingApprovals,
 		},
-		Install: maintenance.InstallStatus{
-			ConfigPath:       configPath,
-			StateDir:         a.cfg.StateDir,
-			DatabaseDir:      filepath.Dir(a.cfg.DatabasePath),
-			StorageRoot:      a.cfg.StorageRoot,
-			BinaryPath:       binaryPath,
-			WorkingDirectory: SystemdWorkingDirectory,
-			ServiceUnitPath:  SystemdServiceUnitPath,
-		},
-		Service: maintenance.ServiceStatus{
-			RestartPolicy: "on-failure",
-			UnitPreview:   RenderSystemdUnit(binaryPath, configPath),
-		},
+		Install:  installStatus,
+		Service:  serviceStatus,
+		Commands: buildMaintenanceCommands(installStatus),
 		Storage: maintenance.StorageStatus{
 			DatabaseBytes:       status.Storage.DatabaseBytes,
 			WALBytes:            status.Storage.WALBytes,
@@ -162,4 +165,94 @@ func stringifyStorageWarnings(warnings []store.HealthWarning) []string {
 		resp = append(resp, string(warning))
 	}
 	return resp
+}
+
+func buildMaintenanceCommands(install maintenance.InstallStatus) maintenance.CommandStatus {
+	commands := maintenance.CommandStatus{
+		RunUpdate:     []maintenance.OperatorCommand{},
+		RestartReport: []maintenance.OperatorCommand{},
+	}
+
+	serviceName := maintenanceServiceName(install.ServiceUnitPath)
+	if availableCommandValue(install.BinaryPath) {
+		commands.RunUpdate = append(commands.RunUpdate, maintenance.OperatorCommand{
+			ID:      "binary-version",
+			Label:   "Installed binary",
+			Detail:  "Confirm the installed binary reports the expected release metadata before restarting the daemon.",
+			Command: shellJoin(install.BinaryPath, "version"),
+		})
+	}
+	if serviceName != "" {
+		commands.RunUpdate = append(commands.RunUpdate, maintenance.OperatorCommand{
+			ID:      "service-unit",
+			Label:   "Inspect service unit",
+			Detail:  "Confirm the active systemd unit before replacing the binary or restarting the daemon.",
+			Command: shellJoin("systemctl", "cat", serviceName, "--no-pager"),
+		})
+		commands.RunUpdate = append(commands.RunUpdate, maintenance.OperatorCommand{
+			ID:      "restart-daemon",
+			Label:   "Restart daemon",
+			Detail:  "Restart the shipped service after replacing the binary or config.",
+			Command: shellJoin("sudo", "systemctl", "restart", serviceName),
+		})
+		commands.RestartReport = append(commands.RestartReport, maintenance.OperatorCommand{
+			ID:      "service-status",
+			Label:   "Service status",
+			Detail:  "Verify the service came back cleanly after the restart.",
+			Command: shellJoin("systemctl", "status", serviceName, "--no-pager"),
+		})
+		commands.RestartReport = append(commands.RestartReport, maintenance.OperatorCommand{
+			ID:      "recent-journal",
+			Label:   "Recent journal",
+			Detail:  "Review the most recent daemon boot logs.",
+			Command: shellJoin("journalctl", "-u", serviceName, "-n", "100", "--no-pager"),
+		})
+	}
+	if availableCommandValue(install.StorageRoot) {
+		commands.RestartReport = append(commands.RestartReport, maintenance.OperatorCommand{
+			ID:      "storage-footprint",
+			Label:   "Storage footprint",
+			Detail:  "Review storage usage after the restart.",
+			Command: shellJoin("du", "-sh", install.StorageRoot),
+		})
+	}
+
+	return commands
+}
+
+func maintenanceServiceName(serviceUnitPath string) string {
+	if !availableCommandValue(serviceUnitPath) {
+		return ""
+	}
+	base := filepath.Base(serviceUnitPath)
+	name := strings.TrimSuffix(base, filepath.Ext(base))
+	return strings.TrimSpace(name)
+}
+
+func availableCommandValue(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	return trimmed != "" &&
+		!strings.EqualFold(trimmed, "unavailable") &&
+		!strings.EqualFold(trimmed, "unknown")
+}
+
+func shellJoin(parts ...string) string {
+	quoted := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		quoted = append(quoted, shellQuote(part))
+	}
+	return strings.Join(quoted, " ")
+}
+
+func shellQuote(value string) string {
+	if value == "" {
+		return "''"
+	}
+	if !strings.ContainsAny(value, " \t\n'\"`$\\") {
+		return value
+	}
+	return "'" + strings.ReplaceAll(value, "'", `'"'"'`) + "'"
 }

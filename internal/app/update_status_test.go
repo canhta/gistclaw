@@ -73,4 +73,31 @@ func TestAppMaintenanceStatusReportsBuildAndInstallContext(t *testing.T) {
 	if status.Guides.ReleaseNotesURL != "https://github.com/canhta/gistclaw/releases" {
 		t.Fatalf("release notes url = %q", status.Guides.ReleaseNotesURL)
 	}
+	if len(status.Commands.RunUpdate) != 3 {
+		t.Fatalf("expected 3 run update commands, got %+v", status.Commands.RunUpdate)
+	}
+	if status.Commands.RunUpdate[0].Label != "Installed binary" {
+		t.Fatalf("unexpected first run update command: %+v", status.Commands.RunUpdate[0])
+	}
+	if status.Commands.RunUpdate[0].Command != "/opt/gistclaw/bin/gistclaw version" {
+		t.Fatalf("unexpected binary version command: %q", status.Commands.RunUpdate[0].Command)
+	}
+	if status.Commands.RunUpdate[1].Command != "systemctl cat gistclaw --no-pager" {
+		t.Fatalf("unexpected service unit command: %q", status.Commands.RunUpdate[1].Command)
+	}
+	if status.Commands.RunUpdate[2].Command != "sudo systemctl restart gistclaw" {
+		t.Fatalf("unexpected restart command: %q", status.Commands.RunUpdate[2].Command)
+	}
+	if len(status.Commands.RestartReport) != 3 {
+		t.Fatalf("expected 3 restart report commands, got %+v", status.Commands.RestartReport)
+	}
+	if status.Commands.RestartReport[0].Command != "systemctl status gistclaw --no-pager" {
+		t.Fatalf("unexpected status command: %q", status.Commands.RestartReport[0].Command)
+	}
+	if status.Commands.RestartReport[1].Command != "journalctl -u gistclaw -n 100 --no-pager" {
+		t.Fatalf("unexpected journal command: %q", status.Commands.RestartReport[1].Command)
+	}
+	if status.Commands.RestartReport[2].Command != "du -sh "+cfg.StorageRoot {
+		t.Fatalf("expected storage command to use the storage root, got %q", status.Commands.RestartReport[2].Command)
+	}
 }

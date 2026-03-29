@@ -1,6 +1,7 @@
 <script lang="ts">
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
+	import OperatorCommandCard from '$lib/components/update/OperatorCommandCard.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
 	import type { PageData } from './$types';
 
@@ -42,6 +43,8 @@
 			: data.update.storage.latest_backup_path
 	);
 	const updateNotice = $derived(data.update.notice ?? '');
+	const runUpdateCommands = $derived(data.update.commands.run_update ?? []);
+	const restartReportCommands = $derived(data.update.commands.restart_report ?? []);
 </script>
 
 <svelte:head>
@@ -171,34 +174,29 @@
 				</section>
 
 				<section class="gc-panel-soft px-5 py-5">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">Maintenance handoff</p>
-					<div class="mt-4 space-y-4">
-						<div class="border-t border-[var(--gc-border)] pt-4 first:border-t-0 first:pt-0">
-							<p class="gc-panel-title text-[var(--gc-ink)]">Review the target build</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-								Confirm version, commit, and build date before applying the release.
+					<p class="gc-stamp text-[var(--gc-ink-3)]">Operator commands</p>
+					<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+						Use the current install paths to inspect the binary, confirm the active service unit,
+						and restart the daemon without leaving the control deck.
+					</p>
+
+					{#if runUpdateCommands.length === 0}
+						<div class="mt-5 border border-[var(--gc-border)] px-4 py-4">
+							<p class="gc-copy text-[var(--gc-ink-2)]">
+								Operator commands will appear here when the daemon can report its install paths.
 							</p>
 						</div>
-						<div class="border-t border-[var(--gc-border)] pt-4">
-							<p class="gc-panel-title text-[var(--gc-ink)]">
-								Apply through the shipped install path
-							</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-								The current runtime uses {data.update.install.binary_path} and the config at
-								{` ${data.update.install.config_path}`}.
-							</p>
+					{:else}
+						<div class="mt-5 grid gap-4">
+							{#each runUpdateCommands as command (command.id)}
+								<OperatorCommandCard
+									label={command.label}
+									detail={command.detail}
+									command={command.command}
+								/>
+							{/each}
 						</div>
-						<div class="border-t border-[var(--gc-border)] pt-4">
-							<p class="gc-panel-title text-[var(--gc-ink)]">
-								Verify the runtime comes back cleanly
-							</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-								Current queue signal: {data.update.runtime.active_runs} active runs,
-								{` ${data.update.runtime.pending_approvals}`} pending approvals, and
-								{` ${data.update.runtime.interrupted_runs}`} interrupted runs.
-							</p>
-						</div>
-					</div>
+					{/if}
 				</section>
 			</div>
 		{:else}
@@ -241,37 +239,66 @@
 					</div>
 				</section>
 
-				<section class="gc-panel-soft px-5 py-5">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">Recovery evidence</p>
-					<div class="mt-4 space-y-4">
-						<div>
-							<p class="gc-stamp">Latest backup</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink)]">{backupPath}</p>
-							{#if data.update.storage.latest_backup_at_label !== ''}
-								<p class="gc-machine mt-2">{data.update.storage.latest_backup_at_label}</p>
-							{/if}
+				<div class="grid gap-4">
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Verification commands</p>
+						<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+							Run these checks after the restart to confirm the daemon, journal, and storage are
+							back in a healthy state.
+						</p>
+
+						{#if restartReportCommands.length === 0}
+							<div class="mt-5 border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-copy text-[var(--gc-ink-2)]">
+									Verification commands will appear here when the daemon can report its runtime and
+									storage paths.
+								</p>
+							</div>
+						{:else}
+							<div class="mt-5 grid gap-4">
+								{#each restartReportCommands as command (command.id)}
+									<OperatorCommandCard
+										label={command.label}
+										detail={command.detail}
+										command={command.command}
+									/>
+								{/each}
+							</div>
+						{/if}
+					</section>
+
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Recovery evidence</p>
+						<div class="mt-4 space-y-4">
+							<div>
+								<p class="gc-stamp">Latest backup</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink)]">{backupPath}</p>
+								{#if data.update.storage.latest_backup_at_label !== ''}
+									<p class="gc-machine mt-2">{data.update.storage.latest_backup_at_label}</p>
+								{/if}
+							</div>
+							<div class="border-t border-[var(--gc-border)] pt-4">
+								<p class="gc-stamp">Storage warnings</p>
+								{#if data.update.storage.warnings.length === 0}
+									<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">No storage warnings recorded.</p>
+								{:else}
+									<div class="mt-3 grid gap-2">
+										{#each data.update.storage.warnings as warning (warning)}
+											<p class="gc-machine">{warning}</p>
+										{/each}
+									</div>
+								{/if}
+							</div>
+							<div class="border-t border-[var(--gc-border)] pt-4">
+								<p class="gc-stamp">Database footprint</p>
+								<p class="gc-machine mt-2">
+									db={data.update.storage.database_bytes} wal={data.update.storage.wal_bytes}
+									free={data.update.storage.free_disk_bytes}
+								</p>
+							</div>
 						</div>
-						<div class="border-t border-[var(--gc-border)] pt-4">
-							<p class="gc-stamp">Storage warnings</p>
-							{#if data.update.storage.warnings.length === 0}
-								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">No storage warnings recorded.</p>
-							{:else}
-								<div class="mt-3 grid gap-2">
-									{#each data.update.storage.warnings as warning (warning)}
-										<p class="gc-machine">{warning}</p>
-									{/each}
-								</div>
-							{/if}
-						</div>
-						<div class="border-t border-[var(--gc-border)] pt-4">
-							<p class="gc-stamp">Database footprint</p>
-							<p class="gc-machine mt-2">
-								db={data.update.storage.database_bytes} wal={data.update.storage.wal_bytes}
-								free={data.update.storage.free_disk_bytes}
-							</p>
-						</div>
-					</div>
-				</section>
+					</section>
+				</div>
 			</div>
 		{/if}
 	</div>

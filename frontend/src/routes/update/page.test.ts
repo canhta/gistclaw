@@ -37,6 +37,48 @@ const baseData = {
 			restart_policy: 'on-failure',
 			unit_preview: '[Unit]\nDescription=GistClaw service\n'
 		},
+		commands: {
+			run_update: [
+				{
+					id: 'binary-version',
+					label: 'Installed binary',
+					detail: 'Confirm the installed binary reports the expected release metadata.',
+					command: '/usr/local/bin/gistclaw version'
+				},
+				{
+					id: 'service-unit',
+					label: 'Inspect service unit',
+					detail: 'Confirm the active service unit before restarting the daemon.',
+					command: 'systemctl cat gistclaw --no-pager'
+				},
+				{
+					id: 'restart-daemon',
+					label: 'Restart daemon',
+					detail: 'Restart the shipped service after replacing the binary or config.',
+					command: 'sudo systemctl restart gistclaw'
+				}
+			],
+			restart_report: [
+				{
+					id: 'service-status',
+					label: 'Service status',
+					detail: 'Verify the service came back cleanly after the restart.',
+					command: 'systemctl status gistclaw --no-pager'
+				},
+				{
+					id: 'recent-journal',
+					label: 'Recent journal',
+					detail: 'Review the most recent daemon boot logs.',
+					command: 'journalctl -u gistclaw -n 100 --no-pager'
+				},
+				{
+					id: 'storage-footprint',
+					label: 'Storage footprint',
+					detail: 'Review state and storage usage after the restart.',
+					command: 'du -sh /var/lib/gistclaw/storage'
+				}
+			]
+		},
 		storage: {
 			database_bytes: 4096,
 			wal_bytes: 256,
@@ -86,6 +128,9 @@ describe('Update page', () => {
 		expect(body).toContain('/etc/gistclaw/config.yaml');
 		expect(body).toContain('/etc/systemd/system/gistclaw.service');
 		expect(body).toContain('Restart policy');
+		expect(body).toContain('Operator commands');
+		expect(body).toContain('/usr/local/bin/gistclaw version');
+		expect(body).toContain('sudo systemctl restart gistclaw');
 	});
 
 	it('renders the restart report when selected through search', () => {
@@ -96,6 +141,8 @@ describe('Update page', () => {
 		expect(body).toContain('Pending approvals');
 		expect(body).toContain('/var/lib/gistclaw/backups/backup-2026-03-29.db');
 		expect(body).toContain('low_disk_space');
+		expect(body).toContain('Verification commands');
+		expect(body).toContain('journalctl -u gistclaw -n 100 --no-pager');
 	});
 
 	it('renders the fallback notice without hiding the update board', () => {
