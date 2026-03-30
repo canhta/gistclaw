@@ -19,20 +19,23 @@ type settingsResponse struct {
 }
 
 type settingsMachineResponse struct {
-	StorageRoot          string  `json:"storage_root"`
-	ApprovalMode         string  `json:"approval_mode"`
-	ApprovalModeLabel    string  `json:"approval_mode_label"`
-	HostAccessMode       string  `json:"host_access_mode"`
-	HostAccessModeLabel  string  `json:"host_access_mode_label"`
-	AdminToken           string  `json:"admin_token"`
-	PerRunTokenBudget    string  `json:"per_run_token_budget"`
-	DailyCostCapUSD      string  `json:"daily_cost_cap_usd"`
-	RollingCostUSD       float64 `json:"rolling_cost_usd"`
-	RollingCostLabel     string  `json:"rolling_cost_label"`
-	TelegramToken        string  `json:"telegram_token"`
-	ActiveProjectName    string  `json:"active_project_name"`
-	ActiveProjectPath    string  `json:"active_project_path"`
-	ActiveProjectSummary string  `json:"active_project_summary"`
+	StorageRoot           string  `json:"storage_root"`
+	ApprovalMode          string  `json:"approval_mode"`
+	ApprovalModeLabel     string  `json:"approval_mode_label"`
+	HostAccessMode        string  `json:"host_access_mode"`
+	HostAccessModeLabel   string  `json:"host_access_mode_label"`
+	AdminToken            string  `json:"admin_token"`
+	PerRunTokenBudget     string  `json:"per_run_token_budget"`
+	DailyCostCapUSD       string  `json:"daily_cost_cap_usd"`
+	RollingCostUSD        float64 `json:"rolling_cost_usd"`
+	RollingCostLabel      string  `json:"rolling_cost_label"`
+	TelegramToken         string  `json:"telegram_token"`
+	WhatsAppPhoneNumberID string  `json:"whatsapp_phone_number_id"`
+	WhatsAppAccessToken   string  `json:"whatsapp_access_token"`
+	WhatsAppVerifyToken   string  `json:"whatsapp_verify_token"`
+	ActiveProjectName     string  `json:"active_project_name"`
+	ActiveProjectPath     string  `json:"active_project_path"`
+	ActiveProjectSummary  string  `json:"active_project_summary"`
 }
 
 type settingsAccessResponse struct {
@@ -61,11 +64,14 @@ type settingsActionResponse struct {
 }
 
 type settingsUpdateRequest struct {
-	ApprovalMode      *string `json:"approval_mode"`
-	HostAccessMode    *string `json:"host_access_mode"`
-	PerRunTokenBudget *string `json:"per_run_token_budget"`
-	DailyCostCapUSD   *string `json:"daily_cost_cap_usd"`
-	TelegramBotToken  *string `json:"telegram_bot_token"`
+	ApprovalMode          *string `json:"approval_mode"`
+	HostAccessMode        *string `json:"host_access_mode"`
+	PerRunTokenBudget     *string `json:"per_run_token_budget"`
+	DailyCostCapUSD       *string `json:"daily_cost_cap_usd"`
+	TelegramBotToken      *string `json:"telegram_bot_token"`
+	WhatsAppPhoneNumberID *string `json:"whatsapp_phone_number_id"`
+	WhatsAppAccessToken   *string `json:"whatsapp_access_token"`
+	WhatsAppVerifyToken   *string `json:"whatsapp_verify_token"`
 }
 
 type settingsPasswordChangeRequest struct {
@@ -81,14 +87,17 @@ type settingsDeviceMutationResult struct {
 }
 
 type settingsMachineSnapshot struct {
-	StorageRoot       string
-	ApprovalMode      string
-	HostAccessMode    string
-	AdminToken        string
-	PerRunTokenBudget string
-	DailyCostCapUSD   string
-	RollingCostUSD    float64
-	TelegramToken     string
+	StorageRoot           string
+	ApprovalMode          string
+	HostAccessMode        string
+	AdminToken            string
+	PerRunTokenBudget     string
+	DailyCostCapUSD       string
+	RollingCostUSD        float64
+	TelegramToken         string
+	WhatsAppPhoneNumberID string
+	WhatsAppAccessToken   string
+	WhatsAppVerifyToken   string
 }
 
 func (s *Server) handleSettingsAPI(w http.ResponseWriter, r *http.Request) {
@@ -268,20 +277,23 @@ func (s *Server) loadSettingsResponse(r *http.Request) (settingsResponse, error)
 
 	return settingsResponse{
 		Machine: settingsMachineResponse{
-			StorageRoot:          machine.StorageRoot,
-			ApprovalMode:         machine.ApprovalMode,
-			ApprovalModeLabel:    approvalModeLabel(machine.ApprovalMode),
-			HostAccessMode:       machine.HostAccessMode,
-			HostAccessModeLabel:  hostAccessModeLabel(machine.HostAccessMode),
-			AdminToken:           machine.AdminToken,
-			PerRunTokenBudget:    machine.PerRunTokenBudget,
-			DailyCostCapUSD:      machine.DailyCostCapUSD,
-			RollingCostUSD:       machine.RollingCostUSD,
-			RollingCostLabel:     fmt.Sprintf("$%.2f in the last 24h", machine.RollingCostUSD),
-			TelegramToken:        machine.TelegramToken,
-			ActiveProjectName:    project.ActiveName,
-			ActiveProjectPath:    project.ActiveProjectPath,
-			ActiveProjectSummary: fmt.Sprintf("%s at %s", project.ActiveName, project.ActiveProjectPath),
+			StorageRoot:           machine.StorageRoot,
+			ApprovalMode:          machine.ApprovalMode,
+			ApprovalModeLabel:     approvalModeLabel(machine.ApprovalMode),
+			HostAccessMode:        machine.HostAccessMode,
+			HostAccessModeLabel:   hostAccessModeLabel(machine.HostAccessMode),
+			AdminToken:            machine.AdminToken,
+			PerRunTokenBudget:     machine.PerRunTokenBudget,
+			DailyCostCapUSD:       machine.DailyCostCapUSD,
+			RollingCostUSD:        machine.RollingCostUSD,
+			RollingCostLabel:      fmt.Sprintf("$%.2f in the last 24h", machine.RollingCostUSD),
+			TelegramToken:         machine.TelegramToken,
+			WhatsAppPhoneNumberID: machine.WhatsAppPhoneNumberID,
+			WhatsAppAccessToken:   machine.WhatsAppAccessToken,
+			WhatsAppVerifyToken:   machine.WhatsAppVerifyToken,
+			ActiveProjectName:     project.ActiveName,
+			ActiveProjectPath:     project.ActiveProjectPath,
+			ActiveProjectSummary:  fmt.Sprintf("%s at %s", project.ActiveName, project.ActiveProjectPath),
 		},
 		Access: settingsAccessResponse{
 			PasswordConfigured: passwordConfigured,
@@ -316,6 +328,9 @@ func (s *Server) loadSettingsMachineSnapshot(ctx context.Context) (settingsMachi
 
 	snapshot.AdminToken = maskSettingsToken(lookupSetting(s.db, "admin_token"))
 	snapshot.TelegramToken = maskSettingsToken(lookupSetting(s.db, "telegram_bot_token"))
+	snapshot.WhatsAppPhoneNumberID = lookupSetting(s.db, "whatsapp_phone_number_id")
+	snapshot.WhatsAppAccessToken = maskSettingsToken(lookupSetting(s.db, "whatsapp_access_token"))
+	snapshot.WhatsAppVerifyToken = maskSettingsToken(lookupSetting(s.db, "whatsapp_verify_token"))
 	return snapshot, nil
 }
 
@@ -364,13 +379,28 @@ func (s *Server) settingsUpdatesFromRequest(req settingsUpdateRequest) (map[stri
 	if req.TelegramBotToken != nil {
 		telegramBotToken = strings.TrimSpace(*req.TelegramBotToken)
 	}
+	whatsAppPhoneNumberID := lookupSetting(s.db, "whatsapp_phone_number_id")
+	if req.WhatsAppPhoneNumberID != nil {
+		whatsAppPhoneNumberID = strings.TrimSpace(*req.WhatsAppPhoneNumberID)
+	}
+	whatsAppAccessToken := lookupSetting(s.db, "whatsapp_access_token")
+	if req.WhatsAppAccessToken != nil {
+		whatsAppAccessToken = strings.TrimSpace(*req.WhatsAppAccessToken)
+	}
+	whatsAppVerifyToken := lookupSetting(s.db, "whatsapp_verify_token")
+	if req.WhatsAppVerifyToken != nil {
+		whatsAppVerifyToken = strings.TrimSpace(*req.WhatsAppVerifyToken)
+	}
 
 	return map[string]string{
-		"approval_mode":        approvalMode,
-		"host_access_mode":     hostAccessMode,
-		"per_run_token_budget": perRunTokenBudget,
-		"daily_cost_cap_usd":   dailyCostCapUSD,
-		"telegram_bot_token":   telegramBotToken,
+		"approval_mode":            approvalMode,
+		"host_access_mode":         hostAccessMode,
+		"per_run_token_budget":     perRunTokenBudget,
+		"daily_cost_cap_usd":       dailyCostCapUSD,
+		"telegram_bot_token":       telegramBotToken,
+		"whatsapp_phone_number_id": whatsAppPhoneNumberID,
+		"whatsapp_access_token":    whatsAppAccessToken,
+		"whatsapp_verify_token":    whatsAppVerifyToken,
 	}, nil
 }
 

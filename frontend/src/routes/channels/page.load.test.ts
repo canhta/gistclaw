@@ -193,6 +193,9 @@ describe('channels load', () => {
 							rolling_cost_usd: 0.25,
 							rolling_cost_label: '$0.25 in the last 24h',
 							telegram_token: '12345678********',
+							whatsapp_phone_number_id: 'phone-123',
+							whatsapp_access_token: 'whatsapp********',
+							whatsapp_verify_token: 'verify-s********',
 							active_project_name: 'my-project',
 							active_project_path: '/home/user/my-project',
 							active_project_summary: 'my-project at /home/user/my-project'
@@ -269,7 +272,10 @@ describe('channels load', () => {
 			notice: '',
 			settings: expect.objectContaining({
 				machine: expect.objectContaining({
-					telegram_token: '12345678********'
+					telegram_token: '12345678********',
+					whatsapp_phone_number_id: 'phone-123',
+					whatsapp_access_token: 'whatsapp********',
+					whatsapp_verify_token: 'verify-s********'
 				})
 			}),
 			surfaces: [
@@ -408,6 +414,9 @@ describe('channels load', () => {
 							rolling_cost_usd: 0.25,
 							rolling_cost_label: '$0.25 in the last 24h',
 							telegram_token: '12345678********',
+							whatsapp_phone_number_id: 'phone-123',
+							whatsapp_access_token: 'whatsapp********',
+							whatsapp_verify_token: 'verify-s********',
 							active_project_name: 'my-project',
 							active_project_path: '/home/user/my-project',
 							active_project_summary: 'my-project at /home/user/my-project'

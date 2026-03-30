@@ -16,6 +16,9 @@ const machineSettings = {
 	rolling_cost_usd: 0.42,
 	rolling_cost_label: '$0.42',
 	telegram_token: '',
+	whatsapp_phone_number_id: '',
+	whatsapp_access_token: '',
+	whatsapp_verify_token: '',
 	active_project_name: 'my-project',
 	active_project_path: '/home/user/my-project',
 	active_project_summary: '3 agents'

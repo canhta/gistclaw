@@ -21,11 +21,14 @@ func TestSettingsAPIListsMachineFactsAndAccessBoard(t *testing.T) {
 		t.Fatalf("SetPassword: %v", err)
 	}
 	if err := h.rt.UpdateSettings(context.Background(), map[string]string{
-		"approval_mode":        string(authority.ApprovalModeAutoApprove),
-		"host_access_mode":     string(authority.HostAccessModeElevated),
-		"per_run_token_budget": "100000",
-		"daily_cost_cap_usd":   "5.5",
-		"telegram_bot_token":   "12345678-secret-token",
+		"approval_mode":            string(authority.ApprovalModeAutoApprove),
+		"host_access_mode":         string(authority.HostAccessModeElevated),
+		"per_run_token_budget":     "100000",
+		"daily_cost_cap_usd":       "5.5",
+		"telegram_bot_token":       "12345678-secret-token",
+		"whatsapp_phone_number_id": "phone-123",
+		"whatsapp_access_token":    "whatsapp-secret-token",
+		"whatsapp_verify_token":    "verify-secret-token",
 	}); err != nil {
 		t.Fatalf("UpdateSettings: %v", err)
 	}
@@ -68,6 +71,9 @@ func TestSettingsAPIListsMachineFactsAndAccessBoard(t *testing.T) {
 			DailyCostCapUSD   string  `json:"daily_cost_cap_usd"`
 			RollingCostUSD    float64 `json:"rolling_cost_usd"`
 			TelegramToken     string  `json:"telegram_token"`
+			WhatsAppPhoneID   string  `json:"whatsapp_phone_number_id"`
+			WhatsAppAccess    string  `json:"whatsapp_access_token"`
+			WhatsAppVerify    string  `json:"whatsapp_verify_token"`
 		} `json:"machine"`
 		Access struct {
 			PasswordConfigured bool `json:"password_configured"`
@@ -122,6 +128,15 @@ func TestSettingsAPIListsMachineFactsAndAccessBoard(t *testing.T) {
 	if !strings.HasPrefix(resp.Machine.TelegramToken, "12345678") || strings.Contains(resp.Machine.TelegramToken, "secret-token") {
 		t.Fatalf("telegram_token = %q", resp.Machine.TelegramToken)
 	}
+	if resp.Machine.WhatsAppPhoneID != "phone-123" {
+		t.Fatalf("whatsapp_phone_number_id = %q", resp.Machine.WhatsAppPhoneID)
+	}
+	if !strings.HasPrefix(resp.Machine.WhatsAppAccess, "whatsapp") || strings.Contains(resp.Machine.WhatsAppAccess, "secret-token") {
+		t.Fatalf("whatsapp_access_token = %q", resp.Machine.WhatsAppAccess)
+	}
+	if !strings.HasPrefix(resp.Machine.WhatsAppVerify, "verify-s") || strings.Contains(resp.Machine.WhatsAppVerify, "secret-token") {
+		t.Fatalf("whatsapp_verify_token = %q", resp.Machine.WhatsAppVerify)
+	}
 	if resp.Machine.AdminToken != "test-adm********" {
 		t.Fatalf("admin_token = %q", resp.Machine.AdminToken)
 	}
@@ -146,7 +161,10 @@ func TestSettingsAPIMutationsUpdateMachineFactsPasswordAndDeviceBoard(t *testing
 			"host_access_mode":"elevated",
 			"per_run_token_budget":"50000",
 			"daily_cost_cap_usd":"3.25",
-			"telegram_bot_token":"87654321-settings-token"
+			"telegram_bot_token":"87654321-settings-token",
+			"whatsapp_phone_number_id":"phone-987",
+			"whatsapp_access_token":"whatsapp-settings-token",
+			"whatsapp_verify_token":"verify-settings-token"
 		}`))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Origin", "http://localhost")
@@ -167,6 +185,9 @@ func TestSettingsAPIMutationsUpdateMachineFactsPasswordAndDeviceBoard(t *testing
 					PerRunTokenBudget string `json:"per_run_token_budget"`
 					DailyCostCapUSD   string `json:"daily_cost_cap_usd"`
 					TelegramToken     string `json:"telegram_token"`
+					WhatsAppPhoneID   string `json:"whatsapp_phone_number_id"`
+					WhatsAppAccess    string `json:"whatsapp_access_token"`
+					WhatsAppVerify    string `json:"whatsapp_verify_token"`
 				} `json:"machine"`
 			} `json:"settings"`
 		}
@@ -184,6 +205,15 @@ func TestSettingsAPIMutationsUpdateMachineFactsPasswordAndDeviceBoard(t *testing
 		}
 		if !strings.HasPrefix(resp.Settings.Machine.TelegramToken, "87654321") || strings.Contains(resp.Settings.Machine.TelegramToken, "settings-token") {
 			t.Fatalf("telegram_token = %q", resp.Settings.Machine.TelegramToken)
+		}
+		if resp.Settings.Machine.WhatsAppPhoneID != "phone-987" {
+			t.Fatalf("whatsapp_phone_number_id = %q", resp.Settings.Machine.WhatsAppPhoneID)
+		}
+		if !strings.HasPrefix(resp.Settings.Machine.WhatsAppAccess, "whatsapp") || strings.Contains(resp.Settings.Machine.WhatsAppAccess, "settings-token") {
+			t.Fatalf("whatsapp_access_token = %q", resp.Settings.Machine.WhatsAppAccess)
+		}
+		if !strings.HasPrefix(resp.Settings.Machine.WhatsAppVerify, "verify-s") || strings.Contains(resp.Settings.Machine.WhatsAppVerify, "settings-token") {
+			t.Fatalf("whatsapp_verify_token = %q", resp.Settings.Machine.WhatsAppVerify)
 		}
 	})
 

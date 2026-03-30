@@ -197,6 +197,11 @@ func TestSeedOperatorSettings(t *testing.T) {
 			Telegram: TelegramConfig{
 				BotToken: "telegram-token",
 			},
+			WhatsApp: WhatsAppConfig{
+				PhoneNumberID: "phone-config",
+				AccessToken:   "whatsapp-access",
+				VerifyToken:   "whatsapp-verify",
+			},
 		}
 		if err := seedOperatorSettings(db, cfg); err != nil {
 			t.Fatalf("seedOperatorSettings: %v", err)
@@ -219,6 +224,15 @@ func TestSeedOperatorSettings(t *testing.T) {
 		if telegramToken != cfg.Telegram.BotToken {
 			t.Fatalf("expected telegram_bot_token %q, got %q", cfg.Telegram.BotToken, telegramToken)
 		}
+		if phoneNumberID := lookupDBSetting(db, "whatsapp_phone_number_id"); phoneNumberID != cfg.WhatsApp.PhoneNumberID {
+			t.Fatalf("expected whatsapp_phone_number_id %q, got %q", cfg.WhatsApp.PhoneNumberID, phoneNumberID)
+		}
+		if accessToken := lookupDBSetting(db, "whatsapp_access_token"); accessToken != cfg.WhatsApp.AccessToken {
+			t.Fatalf("expected whatsapp_access_token %q, got %q", cfg.WhatsApp.AccessToken, accessToken)
+		}
+		if verifyToken := lookupDBSetting(db, "whatsapp_verify_token"); verifyToken != cfg.WhatsApp.VerifyToken {
+			t.Fatalf("expected whatsapp_verify_token %q, got %q", cfg.WhatsApp.VerifyToken, verifyToken)
+		}
 	})
 
 	t.Run("preserves operator-managed settings already stored in sqlite", func(t *testing.T) {
@@ -232,7 +246,10 @@ func TestSeedOperatorSettings(t *testing.T) {
 			`INSERT INTO settings (key, value, updated_at) VALUES
 			 ('approval_mode', 'prompt', datetime('now')),
 			 ('host_access_mode', 'standard', datetime('now')),
-			 ('telegram_bot_token', 'operator-token', datetime('now'))
+			 ('telegram_bot_token', 'operator-token', datetime('now')),
+			 ('whatsapp_phone_number_id', 'operator-phone', datetime('now')),
+			 ('whatsapp_access_token', 'operator-access', datetime('now')),
+			 ('whatsapp_verify_token', 'operator-verify', datetime('now'))
 			 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
 		); err != nil {
 			t.Fatalf("seed existing settings: %v", err)
@@ -244,6 +261,11 @@ func TestSeedOperatorSettings(t *testing.T) {
 			HostAccessMode: "elevated",
 			Telegram: TelegramConfig{
 				BotToken: "config-token",
+			},
+			WhatsApp: WhatsAppConfig{
+				PhoneNumberID: "config-phone",
+				AccessToken:   "config-access",
+				VerifyToken:   "config-verify",
 			},
 		}
 		if err := seedOperatorSettings(db, cfg); err != nil {
@@ -266,7 +288,66 @@ func TestSeedOperatorSettings(t *testing.T) {
 		if telegramToken != "operator-token" {
 			t.Fatalf("expected existing telegram_bot_token to be preserved, got %q", telegramToken)
 		}
+		if phoneNumberID := lookupDBSetting(db, "whatsapp_phone_number_id"); phoneNumberID != "operator-phone" {
+			t.Fatalf("expected existing whatsapp_phone_number_id to be preserved, got %q", phoneNumberID)
+		}
+		if accessToken := lookupDBSetting(db, "whatsapp_access_token"); accessToken != "operator-access" {
+			t.Fatalf("expected existing whatsapp_access_token to be preserved, got %q", accessToken)
+		}
+		if verifyToken := lookupDBSetting(db, "whatsapp_verify_token"); verifyToken != "operator-verify" {
+			t.Fatalf("expected existing whatsapp_verify_token to be preserved, got %q", verifyToken)
+		}
 	})
+}
+
+func TestApplyOperatorSettingOverrides(t *testing.T) {
+	db, err := storeWiring(Config{DatabasePath: ":memory:"})
+	if err != nil {
+		t.Fatalf("storeWiring: %v", err)
+	}
+	defer db.Close()
+
+	if _, err := db.RawDB().Exec(
+		`INSERT INTO settings (key, value, updated_at) VALUES
+		 ('telegram_bot_token', 'operator-telegram', datetime('now')),
+		 ('whatsapp_phone_number_id', 'operator-phone', datetime('now')),
+		 ('whatsapp_access_token', 'operator-access', datetime('now')),
+		 ('whatsapp_verify_token', 'operator-verify', datetime('now'))
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+	); err != nil {
+		t.Fatalf("seed settings: %v", err)
+	}
+
+	cfg := Config{
+		Telegram: TelegramConfig{
+			BotToken: "config-telegram",
+			AgentID:  "assistant",
+		},
+		WhatsApp: WhatsAppConfig{
+			PhoneNumberID: "config-phone",
+			AccessToken:   "config-access",
+			VerifyToken:   "config-verify",
+			AgentID:       "assistant",
+		},
+	}
+
+	got := applyOperatorSettingOverrides(cfg, db)
+
+	if got.Telegram.BotToken != "operator-telegram" {
+		t.Fatalf("expected telegram override, got %q", got.Telegram.BotToken)
+	}
+	if got.WhatsApp.PhoneNumberID != "operator-phone" {
+		t.Fatalf("expected whatsapp phone override, got %q", got.WhatsApp.PhoneNumberID)
+	}
+	if got.WhatsApp.AccessToken != "operator-access" {
+		t.Fatalf("expected whatsapp access override, got %q", got.WhatsApp.AccessToken)
+	}
+	if got.WhatsApp.VerifyToken != "operator-verify" {
+		t.Fatalf("expected whatsapp verify override, got %q", got.WhatsApp.VerifyToken)
+	}
+	if got.WhatsApp.AgentID != "assistant" {
+		t.Fatalf("expected whatsapp agent id to remain unchanged, got %q", got.WhatsApp.AgentID)
+	}
 }
 
 func TestBootstrap_CreatesStarterProjectAndLeavesOnboardingIncomplete(t *testing.T) {

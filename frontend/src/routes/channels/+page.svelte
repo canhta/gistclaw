@@ -1,9 +1,11 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import { saveMachineSettings } from '$lib/settings/actions';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import ConnectorRow from '$lib/components/channels/ConnectorRow.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
+	import type { SettingsResponse } from '$lib/types/api';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -36,6 +38,26 @@
 	const accessNotice = $derived(access.notice ?? '');
 	const accessSettings = $derived(access.settings ?? null);
 	const accessSurfaces = $derived(access.surfaces ?? []);
+	let savedSettings = $state<SettingsResponse | null>(null);
+	let accessSaveMessage = $state('');
+	let accessSaveError = $state('');
+	let savingTarget = $state<'telegram' | 'whatsapp' | null>(null);
+	let telegramBotTokenInput = $state('');
+	let whatsAppPhoneNumberIDInput = $state('');
+	let whatsAppAccessTokenInput = $state('');
+	let whatsAppVerifyTokenInput = $state('');
+
+	$effect(() => {
+		savedSettings = accessSettings;
+		accessSaveMessage = '';
+		accessSaveError = '';
+		telegramBotTokenInput = '';
+		whatsAppAccessTokenInput = '';
+		whatsAppVerifyTokenInput = '';
+		whatsAppPhoneNumberIDInput = accessSettings?.machine?.whatsapp_phone_number_id ?? '';
+	});
+
+	const machineSettings = $derived(savedSettings?.machine ?? accessSettings?.machine ?? null);
 	const telegramSurface = $derived(
 		accessSurfaces.find((surface) => surface.id === 'telegram') ?? null
 	);
@@ -48,15 +70,36 @@
 	const whatsappConnector = $derived(
 		connectors.find((connector) => connector.connector_id === 'whatsapp') ?? null
 	);
-	const configuredChannelCount = $derived(
-		accessSurfaces.filter((surface) => surface.configured).length
-	);
-	const readyChannelCount = $derived(
-		accessSurfaces.filter((surface) => surface.credential_state === 'ready').length
-	);
 	const visibleRouteCount = $derived(routes?.items?.length ?? 0);
-	const telegramToken = $derived(accessSettings?.machine?.telegram_token ?? '');
+	const telegramToken = $derived(machineSettings?.telegram_token ?? '');
 	const maskedTelegramToken = $derived(telegramToken.trim() !== '' ? telegramToken : 'Missing');
+	const whatsAppPhoneNumberID = $derived(machineSettings?.whatsapp_phone_number_id ?? '');
+	const maskedWhatsAppAccessToken = $derived(
+		machineSettings?.whatsapp_access_token && machineSettings.whatsapp_access_token.trim() !== ''
+			? machineSettings.whatsapp_access_token
+			: 'Missing'
+	);
+	const maskedWhatsAppVerifyToken = $derived(
+		machineSettings?.whatsapp_verify_token && machineSettings.whatsapp_verify_token.trim() !== ''
+			? machineSettings.whatsapp_verify_token
+			: 'Missing'
+	);
+	const telegramReady = $derived(telegramToken.trim() !== '');
+	const whatsAppReady = $derived(
+		whatsAppPhoneNumberID.trim() !== '' &&
+			maskedWhatsAppAccessToken !== 'Missing' &&
+			maskedWhatsAppVerifyToken !== 'Missing'
+	);
+	const configuredChannelCount = $derived(
+		Number((telegramSurface?.configured ?? telegramConnector !== null) || telegramReady) +
+			Number(
+				(whatsappSurface?.configured ?? whatsappConnector !== null) ||
+					whatsAppPhoneNumberID.trim() !== ''
+			)
+	);
+	const readyChannelCount = $derived(Number(telegramReady) + Number(whatsAppReady));
+	const telegramCredentialState = $derived(telegramReady ? 'ready' : 'missing');
+	const whatsAppCredentialState = $derived(whatsAppReady ? 'ready' : 'missing');
 	const whatsAppWebhookPath = '/webhooks/whatsapp';
 
 	const credentialToneByState: Record<string, string> = {
@@ -87,6 +130,87 @@
 
 	function runtimeTone(value: string | undefined): string {
 		return runtimeToneByClass[value ?? 'is-muted'] ?? 'var(--gc-ink-3)';
+	}
+
+	async function handleSaveTelegramAccess(event: SubmitEvent): Promise<void> {
+		event.preventDefault();
+		accessSaveMessage = '';
+		accessSaveError = '';
+
+		const token = telegramBotTokenInput.trim();
+		if (token === '') {
+			accessSaveError = 'Enter a Telegram bot token to save.';
+			return;
+		}
+
+		savingTarget = 'telegram';
+		try {
+			const response = await saveMachineSettings(globalThis.fetch.bind(globalThis), {
+				telegram_bot_token: token
+			});
+			savedSettings = response.settings ?? savedSettings;
+			accessSaveMessage = response.notice ?? 'Machine settings updated.';
+			telegramBotTokenInput = '';
+		} catch (error) {
+			accessSaveError = error instanceof Error ? error.message : 'Failed to save Telegram access.';
+		} finally {
+			savingTarget = null;
+		}
+	}
+
+	async function handleSaveWhatsAppAccess(event: SubmitEvent): Promise<void> {
+		event.preventDefault();
+		accessSaveMessage = '';
+		accessSaveError = '';
+
+		const currentPhone = machineSettings?.whatsapp_phone_number_id ?? '';
+		const currentAccess = machineSettings?.whatsapp_access_token ?? '';
+		const currentVerify = machineSettings?.whatsapp_verify_token ?? '';
+		const nextPhone = whatsAppPhoneNumberIDInput.trim();
+		const nextAccess = whatsAppAccessTokenInput.trim();
+		const nextVerify = whatsAppVerifyTokenInput.trim();
+
+		if (nextPhone === '' && currentPhone.trim() === '') {
+			accessSaveError = 'Enter a WhatsApp phone number ID to save.';
+			return;
+		}
+		if (nextAccess === '' && currentAccess.trim() === '') {
+			accessSaveError = 'Enter a WhatsApp access token to save.';
+			return;
+		}
+		if (nextVerify === '' && currentVerify.trim() === '') {
+			accessSaveError = 'Enter a WhatsApp verify token to save.';
+			return;
+		}
+
+		const updates: Record<string, string> = {};
+		if (nextPhone !== currentPhone) {
+			updates.whatsapp_phone_number_id = nextPhone;
+		}
+		if (nextAccess !== '') {
+			updates.whatsapp_access_token = nextAccess;
+		}
+		if (nextVerify !== '') {
+			updates.whatsapp_verify_token = nextVerify;
+		}
+		if (Object.keys(updates).length === 0) {
+			accessSaveError = 'Enter a new WhatsApp value before saving.';
+			return;
+		}
+
+		savingTarget = 'whatsapp';
+		try {
+			const response = await saveMachineSettings(globalThis.fetch.bind(globalThis), updates);
+			savedSettings = response.settings ?? savedSettings;
+			accessSaveMessage = response.notice ?? 'Machine settings updated.';
+			whatsAppPhoneNumberIDInput = response.settings?.machine.whatsapp_phone_number_id ?? nextPhone;
+			whatsAppAccessTokenInput = '';
+			whatsAppVerifyTokenInput = '';
+		} catch (error) {
+			accessSaveError = error instanceof Error ? error.message : 'Failed to save WhatsApp access.';
+		} finally {
+			savingTarget = null;
+		}
 	}
 </script>
 
@@ -188,15 +312,22 @@
 					/>
 				</div>
 
+				{#if accessSaveMessage !== ''}
+					<SurfaceMessage label="SAVED" message={accessSaveMessage} className="mt-4" />
+				{/if}
+				{#if accessSaveError !== ''}
+					<SurfaceMessage label="ERROR" message={accessSaveError} className="mt-4" />
+				{/if}
+
 				<div class="mt-6 grid gap-4 lg:grid-cols-2">
 					<section class="gc-panel-soft px-5 py-5">
 						<div class="flex flex-wrap items-center gap-3">
 							<p class="gc-panel-title text-[var(--gc-ink)]">Telegram</p>
 							<span
 								class="gc-badge"
-								style={`border-color: ${credentialTone(telegramSurface?.credential_state)}; color: ${credentialTone(telegramSurface?.credential_state)};`}
+								style={`border-color: ${credentialTone(telegramCredentialState)}; color: ${credentialTone(telegramCredentialState)};`}
 							>
-								{telegramSurface?.credential_state_label ?? 'unavailable'}
+								{telegramCredentialState}
 							</span>
 							{#if telegramConnector}
 								<span
@@ -208,11 +339,13 @@
 							{/if}
 						</div>
 						<p class="gc-copy mt-3 text-[var(--gc-ink)]">
-							{telegramSurface?.summary ?? 'Telegram access details are unavailable.'}
+							{telegramReady
+								? 'Bot token is saved in machine settings.'
+								: 'Bot token is missing from machine settings.'}
 						</p>
 						<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-							{telegramSurface?.detail ??
-								'Manage the bot token through the current machine settings flow.'}
+							Save a fresh token here, then check the runtime lane below to confirm the daemon has
+							picked it up.
 						</p>
 
 						<div class="mt-5 grid gap-4">
@@ -230,6 +363,29 @@
 								{/if}
 							</div>
 						</div>
+
+						<form class="mt-5 grid gap-4" onsubmit={handleSaveTelegramAccess}>
+							<div class="flex flex-col gap-2">
+								<label for="telegram-bot-token" class="gc-stamp text-[var(--gc-ink-3)]">
+									Telegram bot token
+								</label>
+								<input
+									id="telegram-bot-token"
+									bind:value={telegramBotTokenInput}
+									placeholder="Paste a new bot token"
+									class="gc-control min-h-[2.75rem]"
+								/>
+							</div>
+							<div class="flex justify-end">
+								<button
+									type="submit"
+									class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
+									disabled={savingTarget === 'telegram'}
+								>
+									{savingTarget === 'telegram' ? 'Saving…' : 'Save Telegram access'}
+								</button>
+							</div>
+						</form>
 					</section>
 
 					<section class="gc-panel-soft px-5 py-5">
@@ -237,9 +393,9 @@
 							<p class="gc-panel-title text-[var(--gc-ink)]">WhatsApp</p>
 							<span
 								class="gc-badge"
-								style={`border-color: ${credentialTone(whatsappSurface?.credential_state)}; color: ${credentialTone(whatsappSurface?.credential_state)};`}
+								style={`border-color: ${credentialTone(whatsAppCredentialState)}; color: ${credentialTone(whatsAppCredentialState)};`}
 							>
-								{whatsappSurface?.credential_state_label ?? 'unavailable'}
+								{whatsAppCredentialState}
 							</span>
 							{#if whatsappConnector}
 								<span
@@ -251,17 +407,30 @@
 							{/if}
 						</div>
 						<p class="gc-copy mt-3 text-[var(--gc-ink)]">
-							{whatsappSurface?.summary ?? 'WhatsApp access details are unavailable.'}
+							{whatsAppReady
+								? 'Phone number, access token, and verify token are saved.'
+								: 'One or more WhatsApp credentials are missing from machine settings.'}
 						</p>
 						<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
-							{whatsappSurface?.detail ??
-								'WhatsApp access stays operator-managed through runtime config.'}
+							Keep the webhook path stable, then update the saved phone and secret values here.
 						</p>
 
 						<div class="mt-5 grid gap-4">
 							<div class="border border-[var(--gc-border)] px-4 py-4">
 								<p class="gc-stamp text-[var(--gc-ink-3)]">Webhook surface</p>
 								<p class="gc-machine mt-3 break-all">{whatsAppWebhookPath}</p>
+							</div>
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Saved phone number ID</p>
+								<p class="gc-copy mt-3 text-[var(--gc-ink)]">
+									{whatsAppPhoneNumberID.trim() !== '' ? whatsAppPhoneNumberID : 'Missing'}
+								</p>
+							</div>
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Masked access token</p>
+								<p class="gc-copy mt-3 text-[var(--gc-ink)]">{maskedWhatsAppAccessToken}</p>
+								<p class="gc-stamp mt-4 text-[var(--gc-ink-3)]">Masked verify token</p>
+								<p class="gc-copy mt-3 text-[var(--gc-ink)]">{maskedWhatsAppVerifyToken}</p>
 							</div>
 							<div class="border border-[var(--gc-border)] px-4 py-4">
 								<p class="gc-stamp text-[var(--gc-ink-3)]">Delivery queue</p>
@@ -275,6 +444,51 @@
 								</p>
 							</div>
 						</div>
+
+						<form class="mt-5 grid gap-4" onsubmit={handleSaveWhatsAppAccess}>
+							<div class="flex flex-col gap-2">
+								<label for="whatsapp-phone-number-id" class="gc-stamp text-[var(--gc-ink-3)]">
+									WhatsApp phone number ID
+								</label>
+								<input
+									id="whatsapp-phone-number-id"
+									bind:value={whatsAppPhoneNumberIDInput}
+									placeholder="Phone number ID"
+									class="gc-control min-h-[2.75rem]"
+								/>
+							</div>
+							<div class="flex flex-col gap-2">
+								<label for="whatsapp-access-token" class="gc-stamp text-[var(--gc-ink-3)]">
+									WhatsApp access token
+								</label>
+								<input
+									id="whatsapp-access-token"
+									bind:value={whatsAppAccessTokenInput}
+									placeholder="Paste a new access token"
+									class="gc-control min-h-[2.75rem]"
+								/>
+							</div>
+							<div class="flex flex-col gap-2">
+								<label for="whatsapp-verify-token" class="gc-stamp text-[var(--gc-ink-3)]">
+									WhatsApp verify token
+								</label>
+								<input
+									id="whatsapp-verify-token"
+									bind:value={whatsAppVerifyTokenInput}
+									placeholder="Paste a new verify token"
+									class="gc-control min-h-[2.75rem]"
+								/>
+							</div>
+							<div class="flex justify-end">
+								<button
+									type="submit"
+									class="gc-action gc-action-solid px-4 py-2 disabled:opacity-50"
+									disabled={savingTarget === 'whatsapp'}
+								>
+									{savingTarget === 'whatsapp' ? 'Saving…' : 'Save WhatsApp access'}
+								</button>
+							</div>
+						</form>
 					</section>
 				</div>
 			</div>
@@ -324,17 +538,18 @@
 								<p class="gc-panel-title text-[var(--gc-ink)]">Telegram config</p>
 								<span
 									class="gc-badge"
-									style={`border-color: ${credentialTone(telegramSurface?.credential_state)}; color: ${credentialTone(telegramSurface?.credential_state)};`}
+									style={`border-color: ${credentialTone(telegramCredentialState)}; color: ${credentialTone(telegramCredentialState)};`}
 								>
-									{telegramSurface?.credential_state_label ?? 'unavailable'}
+									{telegramCredentialState}
 								</span>
 							</div>
 							<p class="gc-stamp mt-3 text-[var(--gc-ink-3)]">Masked Telegram token</p>
 							<p class="gc-copy mt-3 text-[var(--gc-ink)]">{maskedTelegramToken}</p>
 							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
 								{telegramConnector?.summary ??
-									telegramSurface?.summary ??
-									'No runtime snapshot yet.'}
+									(telegramReady
+										? 'Bot token is saved in machine settings.'
+										: 'Bot token is missing from machine settings.')}
 							</p>
 						</section>
 
@@ -343,16 +558,25 @@
 								<p class="gc-panel-title text-[var(--gc-ink)]">WhatsApp webhook</p>
 								<span
 									class="gc-badge"
-									style={`border-color: ${credentialTone(whatsappSurface?.credential_state)}; color: ${credentialTone(whatsappSurface?.credential_state)};`}
+									style={`border-color: ${credentialTone(whatsAppCredentialState)}; color: ${credentialTone(whatsAppCredentialState)};`}
 								>
-									{whatsappSurface?.credential_state_label ?? 'unavailable'}
+									{whatsAppCredentialState}
 								</span>
 							</div>
 							<p class="gc-machine mt-3 break-all">{whatsAppWebhookPath}</p>
+							<p class="gc-stamp mt-4 text-[var(--gc-ink-3)]">Saved phone number ID</p>
+							<p class="gc-copy mt-3 text-[var(--gc-ink)]">
+								{whatsAppPhoneNumberID.trim() !== '' ? whatsAppPhoneNumberID : 'Missing'}
+							</p>
+							<p class="gc-stamp mt-4 text-[var(--gc-ink-3)]">Masked tokens</p>
+							<p class="gc-copy mt-3 text-[var(--gc-ink)]">
+								Access {maskedWhatsAppAccessToken} · Verify {maskedWhatsAppVerifyToken}
+							</p>
 							<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
 								{whatsappConnector?.summary ??
-									whatsappSurface?.summary ??
-									'No runtime snapshot yet.'}
+									(whatsAppReady
+										? 'Phone number and webhook secrets are saved in machine settings.'
+										: 'One or more WhatsApp machine settings are still missing.')}
 							</p>
 						</section>
 					</div>

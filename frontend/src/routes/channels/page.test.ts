@@ -35,6 +35,9 @@ const baseData = {
 					rolling_cost_usd: 0.25,
 					rolling_cost_label: '$0.25 in the last 24h',
 					telegram_token: '12345678********',
+					whatsapp_phone_number_id: 'phone-123',
+					whatsapp_access_token: 'whatsapp********',
+					whatsapp_verify_token: 'verify-s********',
 					active_project_name: 'my-project',
 					active_project_path: '/home/user/my-project',
 					active_project_summary: 'my-project at /home/user/my-project'
@@ -218,9 +221,13 @@ describe('Channels page', () => {
 		expect(body).toContain('Telegram');
 		expect(body).toContain('12345678********');
 		expect(body).toContain('ready');
+		expect(body).toContain('Save Telegram access');
+		expect(body).toContain('Save WhatsApp access');
+		expect(body).toContain('Telegram bot token');
+		expect(body).toContain('WhatsApp phone number ID');
 		expect(body).toContain('WhatsApp');
 		expect(body).toContain('/webhooks/whatsapp');
-		expect(body).not.toContain('Bring a channel online');
+		expect(body).not.toContain('Manage the bot token through the current machine settings flow.');
 	});
 
 	it('renders settings guidance when selected through search', () => {

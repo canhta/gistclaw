@@ -79,6 +79,7 @@ func Bootstrap(cfg Config) (*App, error) {
 		_ = db.Close()
 		return nil, err
 	}
+	cfg = applyOperatorSettingOverrides(cfg, db)
 
 	project, err := ensureProjectState(context.Background(), db, cfg)
 	if err != nil {
@@ -343,7 +344,41 @@ func seedOperatorSettings(db *store.DB, cfg Config) error {
 	if err := insertSettingIfMissing(db, "telegram_bot_token", cfg.Telegram.BotToken); err != nil {
 		return fmt.Errorf("bootstrap: seed telegram_bot_token: %w", err)
 	}
+	if err := insertSettingIfMissing(db, "whatsapp_phone_number_id", cfg.WhatsApp.PhoneNumberID); err != nil {
+		return fmt.Errorf("bootstrap: seed whatsapp_phone_number_id: %w", err)
+	}
+	if err := insertSettingIfMissing(db, "whatsapp_access_token", cfg.WhatsApp.AccessToken); err != nil {
+		return fmt.Errorf("bootstrap: seed whatsapp_access_token: %w", err)
+	}
+	if err := insertSettingIfMissing(db, "whatsapp_verify_token", cfg.WhatsApp.VerifyToken); err != nil {
+		return fmt.Errorf("bootstrap: seed whatsapp_verify_token: %w", err)
+	}
 	return nil
+}
+
+func applyOperatorSettingOverrides(cfg Config, db *store.DB) Config {
+	if value, ok := lookupDBSettingValue(db, "telegram_bot_token"); ok {
+		cfg.Telegram.BotToken = value
+	}
+	if value, ok := lookupDBSettingValue(db, "whatsapp_phone_number_id"); ok {
+		cfg.WhatsApp.PhoneNumberID = value
+	}
+	if value, ok := lookupDBSettingValue(db, "whatsapp_access_token"); ok {
+		cfg.WhatsApp.AccessToken = value
+	}
+	if value, ok := lookupDBSettingValue(db, "whatsapp_verify_token"); ok {
+		cfg.WhatsApp.VerifyToken = value
+	}
+	return cfg
+}
+
+func lookupDBSettingValue(db *store.DB, key string) (string, bool) {
+	var value string
+	err := db.RawDB().QueryRow("SELECT value FROM settings WHERE key = ?", key).Scan(&value)
+	if err != nil {
+		return "", false
+	}
+	return value, true
 }
 
 func insertSettingIfMissing(db *store.DB, key, value string) error {

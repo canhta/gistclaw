@@ -828,6 +828,9 @@ export interface SettingsMachineResponse {
 	rolling_cost_usd: number;
 	rolling_cost_label: string;
 	telegram_token: string;
+	whatsapp_phone_number_id: string;
+	whatsapp_access_token: string;
+	whatsapp_verify_token: string;
 	active_project_name: string;
 	active_project_path: string;
 	active_project_summary: string;
