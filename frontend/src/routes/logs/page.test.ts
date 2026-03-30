@@ -9,6 +9,7 @@ const baseData = {
 	onboarding: null,
 	currentPath: '/logs',
 	currentSearch: '',
+	logsLoadError: '',
 	logs: {
 		summary: {
 			buffered_entries: 18,
@@ -101,5 +102,21 @@ describe('Logs page', () => {
 		expect(body).toContain('Download JSONL');
 		expect(body).toContain('Copy JSONL');
 		expect(body).toContain('2 entries ready to hand off');
+	});
+
+	it('renders an honest load error instead of a synthetic empty board', () => {
+		const data = {
+			...baseData,
+			logs: null,
+			logsLoadError: 'Logs could not be loaded. Reload to retry.'
+		};
+
+		const { body } = render(LogsPage, { props: { data } });
+
+		expect(body).toContain('Logs');
+		expect(body).toContain('Logs could not be loaded. Reload to retry.');
+		expect(body).toContain('Logs board unavailable');
+		expect(body).not.toContain('Live tail');
+		expect(body).not.toContain('Buffered Lines');
 	});
 });

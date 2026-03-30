@@ -67,27 +67,12 @@ describe('logs load', () => {
 		const result = await load(makeLoadEvent(fetcher));
 
 		if (!result) {
-			throw new Error('expected logs load to return fallback data');
+			throw new Error('expected logs load to return error state');
 		}
 
 		expect(result).toEqual({
-			logs: {
-				summary: {
-					buffered_entries: 0,
-					visible_entries: 0,
-					error_entries: 0,
-					warning_entries: 0
-				},
-				filters: {
-					query: '',
-					level: 'all',
-					source: 'all',
-					limit: 200
-				},
-				sources: [],
-				stream_url: '/api/logs/stream?limit=200',
-				entries: []
-			}
+			logs: null,
+			logsLoadError: 'Logs could not be loaded. Reload to retry.'
 		});
 	});
 });

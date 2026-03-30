@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
+	import SurfaceLoadErrorPanel from '$lib/components/common/SurfaceLoadErrorPanel.svelte';
+	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
 	import { connectLogStream } from '$lib/logs/events';
@@ -47,16 +49,19 @@
 
 	function filterTabQuery(): string {
 		const parts = ['tab=filters'];
-		if (data.logs.filters.query !== '') {
-			parts.push(`q=${encodeURIComponent(data.logs.filters.query)}`);
+		if (!logs) {
+			return parts.join('&');
 		}
-		if (data.logs.filters.level !== 'all') {
-			parts.push(`level=${encodeURIComponent(data.logs.filters.level)}`);
+		if (logs.filters.query !== '') {
+			parts.push(`q=${encodeURIComponent(logs.filters.query)}`);
 		}
-		if (data.logs.filters.source !== 'all') {
-			parts.push(`source=${encodeURIComponent(data.logs.filters.source)}`);
+		if (logs.filters.level !== 'all') {
+			parts.push(`level=${encodeURIComponent(logs.filters.level)}`);
 		}
-		parts.push(`limit=${encodeURIComponent(String(data.logs.filters.limit))}`);
+		if (logs.filters.source !== 'all') {
+			parts.push(`source=${encodeURIComponent(logs.filters.source)}`);
+		}
+		parts.push(`limit=${encodeURIComponent(String(logs.filters.limit))}`);
 		return parts.join('&');
 	}
 
@@ -94,16 +99,18 @@
 	const activeTab = $derived(activeTabOverride ?? requestedTab);
 	const projectName = $derived(data.project?.active_name ?? 'No project');
 	const projectPath = $derived(data.project?.active_path ?? 'No active project path');
+	const logs = $derived(data.logs);
+	const logsNotice = $derived(data.logsLoadError);
 	const filterSourceOptions = $derived.by(() => [
 		'all',
-		...data.logs.sources.filter((source) => source !== 'all')
+		...(logs?.sources.filter((source) => source !== 'all') ?? [])
 	]);
 	const renderedEntries = $derived(
-		entries.length === 0 && data.logs.entries.length > 0 ? data.logs.entries : entries
+		entries.length === 0 && (logs?.entries.length ?? 0) > 0 ? (logs?.entries ?? []) : entries
 	);
 	const renderedBufferedEntries = $derived(
-		bufferedEntries === 0 && data.logs.summary.buffered_entries > 0
-			? data.logs.summary.buffered_entries
+		bufferedEntries === 0 && (logs?.summary.buffered_entries ?? 0) > 0
+			? (logs?.summary.buffered_entries ?? 0)
 			: bufferedEntries
 	);
 	const errorEntries = $derived(renderedEntries.filter((entry) => entry.level === 'error').length);
@@ -154,24 +161,31 @@
 	);
 
 	$effect(() => {
-		entries = [...data.logs.entries];
-		bufferedEntries = data.logs.summary.buffered_entries;
+		if (!logs) {
+			entries = [];
+			bufferedEntries = 0;
+			streamError = '';
+			exportNotice = '';
+			return;
+		}
+		entries = [...logs.entries];
+		bufferedEntries = logs.summary.buffered_entries;
 		streamError = '';
 		exportNotice = '';
 	});
 
 	$effect(() => {
-		if (activeTab !== 'live-tail' || tailPaused) {
+		if (!logs || activeTab !== 'live-tail' || tailPaused) {
 			tailState = 'idle';
 			return;
 		}
 
 		tailState = 'connecting';
 		const disconnect = connectLogStream(
-			data.logs.stream_url,
+			logs.stream_url,
 			(entry) => {
 				bufferedEntries += 1;
-				entries = trimEntries([...entries, entry], data.logs.filters.limit);
+				entries = trimEntries([...entries, entry], logs.filters.limit);
 				tailState = 'live';
 				streamError = '';
 				if (autoFollow && outputPane) {
@@ -207,264 +221,278 @@
 	</div>
 
 	<div class="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
-		<div class="grid gap-4 xl:grid-cols-4">
-			<SurfaceMetricCard
-				label="Tail Status"
-				value={tailStatusValue}
-				detail={tailStatusDetail}
-				tone={tailState === 'error' ? 'warning' : tailState === 'live' ? 'accent' : 'default'}
-			/>
-			<SurfaceMetricCard
-				label="Buffered Lines"
-				value={String(renderedBufferedEntries)}
-				detail="Process-local lines currently retained by the daemon."
-			/>
-			<SurfaceMetricCard
-				label="Visible Window"
-				value={String(renderedEntries.length)}
-				detail={`Filtered window capped at ${data.logs.filters.limit} lines.`}
-			/>
-			<SurfaceMetricCard label="Project" value={projectName} detail={projectPath} tone="accent" />
-		</div>
-
-		{#if activeTab === 'live-tail'}
-			<div class="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.8fr)]">
-				<section class="gc-panel-soft px-5 py-5">
-					<div class="flex flex-wrap items-start justify-between gap-4">
-						<div>
-							<p class="gc-stamp text-[var(--gc-ink-3)]">LIVE TAIL</p>
-							<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Live tail</h2>
-							<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-								Current process output, filtered through the active query and kept pinned to the
-								most recent lines when auto-follow is on.
-							</p>
-						</div>
-
-						<div class="flex flex-wrap gap-3">
-							<button
-								type="button"
-								onclick={() => {
-									tailPaused = !tailPaused;
-									streamError = '';
-								}}
-								class={`gc-action px-4 py-2 ${tailPaused ? 'gc-action-solid' : ''}`}
-							>
-								{tailPaused ? 'Resume Tail' : 'Pause Tail'}
-							</button>
-							<button
-								type="button"
-								onclick={() => (autoFollow = !autoFollow)}
-								class={`gc-action px-4 py-2 ${autoFollow ? 'gc-action-solid' : ''}`}
-								aria-pressed={autoFollow}
-							>
-								Auto-follow
-							</button>
-							<a href={resolve(`/logs?${filterTabQuery()}`)} class="gc-action px-4 py-2">
-								Review Filters
-							</a>
-						</div>
-					</div>
-
-					<div
-						bind:this={outputPane}
-						class="mt-5 max-h-[34rem] overflow-y-auto border border-[var(--gc-border)] bg-[var(--gc-canvas)] px-4 py-4"
-					>
-						<div
-							class="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--gc-border)] pb-3"
-						>
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Runtime output</p>
-							<p class="gc-copy text-[var(--gc-ink-3)]">{renderedEntries.length} visible</p>
-						</div>
-
-						{#if streamError !== ''}
-							<div
-								class="mt-4 border border-[var(--gc-warning)] bg-[var(--gc-warning-dim)] px-4 py-3"
-							>
-								<p class="gc-stamp text-[var(--gc-warning)]">Connection</p>
-								<p class="gc-copy mt-2 text-[var(--gc-ink)]">{streamError}</p>
-							</div>
-						{/if}
-
-						{#if renderedEntries.length === 0}
-							<p class="gc-copy mt-4 text-[var(--gc-ink-2)]">
-								No log lines match the current filter set.
-							</p>
-						{:else}
-							<div class="mt-4 flex flex-col gap-4">
-								{#each renderedEntries as entry (entry.id)}
-									<article
-										class="border-b border-[var(--gc-border)] pb-4 last:border-b-0 last:pb-0"
-									>
-										<div class="flex flex-wrap items-center gap-3">
-											<span class="gc-badge border-[var(--gc-border)] text-[var(--gc-ink-2)]">
-												{entry.source}
-											</span>
-											<span
-												class={`gc-badge ${
-													entry.level === 'error'
-														? 'border-[var(--gc-error)] text-[var(--gc-error)]'
-														: entry.level === 'warn'
-															? 'border-[var(--gc-warning)] text-[var(--gc-warning)]'
-															: 'border-[var(--gc-signal)] text-[var(--gc-signal)]'
-												}`}
-											>
-												{entry.level_label}
-											</span>
-											<span class="gc-machine text-[var(--gc-ink-3)]">{entry.created_at_label}</span
-											>
-										</div>
-										<p class="gc-copy mt-3 text-[var(--gc-ink)]">{entry.message}</p>
-										<pre
-											class="gc-code mt-3 overflow-x-auto text-[var(--gc-ink-3)]">{entry.raw}</pre>
-									</article>
-								{/each}
-							</div>
-						{/if}
-					</div>
-				</section>
-
-				<section class="gc-panel-soft px-5 py-5">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">Window summary</p>
-					<div class="mt-4 grid gap-4">
-						<div class="border border-[var(--gc-border)] px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Errors</p>
-							<p class="gc-value mt-2 text-[1.2rem]">{errorEntries}</p>
-						</div>
-						<div class="border border-[var(--gc-border)] px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Warnings</p>
-							<p class="gc-value mt-2 text-[1.2rem]">{warningEntries}</p>
-						</div>
-						<div class="border border-[var(--gc-border)] px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Stream</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink)]">{data.logs.stream_url}</p>
-						</div>
-					</div>
-				</section>
-			</div>
-		{:else if activeTab === 'filters'}
-			<div class="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
-				<section class="gc-panel-soft px-5 py-5">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">Filter toolbar</p>
-					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Shape the current tail window</h2>
-
-					<form method="GET" action="/logs" class="mt-5 grid gap-4 md:grid-cols-2">
-						<input type="hidden" name="tab" value="filters" />
-
-						<label class="block">
-							<span class="gc-stamp text-[var(--gc-ink-3)]">Search logs</span>
-							<input
-								type="text"
-								name="q"
-								value={data.logs.filters.query}
-								placeholder="panic method=GET"
-								class="gc-control mt-2 w-full"
-							/>
-						</label>
-
-						<label class="block">
-							<span class="gc-stamp text-[var(--gc-ink-3)]">Level</span>
-							<select name="level" class="gc-control mt-2 w-full" value={data.logs.filters.level}>
-								<option value="all">All levels</option>
-								<option value="info">Info</option>
-								<option value="warn">Warn</option>
-								<option value="error">Error</option>
-							</select>
-						</label>
-
-						<label class="block">
-							<span class="gc-stamp text-[var(--gc-ink-3)]">Source</span>
-							<select name="source" class="gc-control mt-2 w-full" value={data.logs.filters.source}>
-								{#each filterSourceOptions as source (source)}
-									<option value={source}>{source === 'all' ? 'All sources' : source}</option>
-								{/each}
-							</select>
-						</label>
-
-						<label class="block">
-							<span class="gc-stamp text-[var(--gc-ink-3)]">Window Size</span>
-							<select
-								name="limit"
-								class="gc-control mt-2 w-full"
-								value={String(data.logs.filters.limit)}
-							>
-								{#each limitOptions as limit (limit)}
-									<option value={String(limit)}>{limit} lines</option>
-								{/each}
-							</select>
-						</label>
-
-						<div class="flex flex-wrap gap-3 md:col-span-2">
-							<button type="submit" class="gc-action gc-action-solid px-4 py-2"
-								>Apply Filters</button
-							>
-							<a href={resolve('/logs?tab=filters')} class="gc-action px-4 py-2"> Clear Filters </a>
-						</div>
-					</form>
-				</section>
-
-				<section class="gc-panel-soft px-5 py-5">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">Current shape</p>
-					<div class="mt-4 grid gap-4">
-						<div class="border border-[var(--gc-border)] px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Matching lines</p>
-							<p class="gc-value mt-2 text-[1.2rem]">{renderedEntries.length}</p>
-						</div>
-						<div class="border border-[var(--gc-border)] px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Current query</p>
-							<p class="gc-copy mt-2 text-[var(--gc-ink)]">
-								{data.logs.filters.query === ''
-									? 'No text filter applied.'
-									: data.logs.filters.query}
-							</p>
-						</div>
-						<div class="border border-[var(--gc-border)] px-4 py-4">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">Stream path</p>
-							<p class="gc-copy mt-2 break-all text-[var(--gc-ink)]">{data.logs.stream_url}</p>
-						</div>
-					</div>
-				</section>
+		{#if logs === null}
+			{#if logsNotice !== ''}
+				<SurfaceMessage label="LOGS" message={logsNotice} className="mb-4" />
+			{/if}
+			<div class="mt-2">
+				<SurfaceLoadErrorPanel
+					label="LOGS"
+					title="Logs board unavailable"
+					detail="The browser could not load the runtime log feed from this daemon. Reload to retry."
+				/>
 			</div>
 		{:else}
-			<div class="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
-				<section class="gc-panel-soft px-5 py-5">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">Export buffer</p>
-					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
-						Capture the current investigation window
-					</h2>
-					<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">{exportCountLabel}</p>
-
-					<div class="mt-5 flex flex-wrap gap-3">
-						<button
-							type="button"
-							onclick={downloadJSONL}
-							class="gc-action gc-action-solid px-4 py-2"
-						>
-							Download JSONL
-						</button>
-						<button type="button" onclick={copyJSONL} class="gc-action px-4 py-2">
-							Copy JSONL
-						</button>
-					</div>
-
-					{#if exportNotice !== ''}
-						<p class="gc-copy mt-4 text-[var(--gc-signal)]">{exportNotice}</p>
-					{/if}
-
-					<pre
-						class="gc-code mt-5 max-h-[26rem] overflow-auto border border-[var(--gc-border)] bg-[var(--gc-canvas)] px-4 py-4">{exportJSONL ===
-						''
-							? 'No lines ready.'
-							: exportJSONL}</pre>
-				</section>
-
-				<section class="gc-panel-soft px-5 py-5">
-					<p class="gc-stamp text-[var(--gc-ink-3)]">Handoff note</p>
-					<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-						The exported buffer preserves the current filter set and the same line order you are
-						seeing in Live Tail.
-					</p>
-				</section>
+			<div class="grid gap-4 xl:grid-cols-4">
+				<SurfaceMetricCard
+					label="Tail Status"
+					value={tailStatusValue}
+					detail={tailStatusDetail}
+					tone={tailState === 'error' ? 'warning' : tailState === 'live' ? 'accent' : 'default'}
+				/>
+				<SurfaceMetricCard
+					label="Buffered Lines"
+					value={String(renderedBufferedEntries)}
+					detail="Process-local lines currently retained by the daemon."
+				/>
+				<SurfaceMetricCard
+					label="Visible Window"
+					value={String(renderedEntries.length)}
+					detail={`Filtered window capped at ${logs.filters.limit} lines.`}
+				/>
+				<SurfaceMetricCard label="Project" value={projectName} detail={projectPath} tone="accent" />
 			</div>
+
+			{#if activeTab === 'live-tail'}
+				<div class="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(18rem,0.8fr)]">
+					<section class="gc-panel-soft px-5 py-5">
+						<div class="flex flex-wrap items-start justify-between gap-4">
+							<div>
+								<p class="gc-stamp text-[var(--gc-ink-3)]">LIVE TAIL</p>
+								<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Live tail</h2>
+								<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+									Current process output, filtered through the active query and kept pinned to the
+									most recent lines when auto-follow is on.
+								</p>
+							</div>
+
+							<div class="flex flex-wrap gap-3">
+								<button
+									type="button"
+									onclick={() => {
+										tailPaused = !tailPaused;
+										streamError = '';
+									}}
+									class={`gc-action px-4 py-2 ${tailPaused ? 'gc-action-solid' : ''}`}
+								>
+									{tailPaused ? 'Resume Tail' : 'Pause Tail'}
+								</button>
+								<button
+									type="button"
+									onclick={() => (autoFollow = !autoFollow)}
+									class={`gc-action px-4 py-2 ${autoFollow ? 'gc-action-solid' : ''}`}
+									aria-pressed={autoFollow}
+								>
+									Auto-follow
+								</button>
+								<a href={resolve(`/logs?${filterTabQuery()}`)} class="gc-action px-4 py-2">
+									Review Filters
+								</a>
+							</div>
+						</div>
+
+						<div
+							bind:this={outputPane}
+							class="mt-5 max-h-[34rem] overflow-y-auto border border-[var(--gc-border)] bg-[var(--gc-canvas)] px-4 py-4"
+						>
+							<div
+								class="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--gc-border)] pb-3"
+							>
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Runtime output</p>
+								<p class="gc-copy text-[var(--gc-ink-3)]">{renderedEntries.length} visible</p>
+							</div>
+
+							{#if streamError !== ''}
+								<div
+									class="mt-4 border border-[var(--gc-warning)] bg-[var(--gc-warning-dim)] px-4 py-3"
+								>
+									<p class="gc-stamp text-[var(--gc-warning)]">Connection</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink)]">{streamError}</p>
+								</div>
+							{/if}
+
+							{#if renderedEntries.length === 0}
+								<p class="gc-copy mt-4 text-[var(--gc-ink-2)]">
+									No log lines match the current filter set.
+								</p>
+							{:else}
+								<div class="mt-4 flex flex-col gap-4">
+									{#each renderedEntries as entry (entry.id)}
+										<article
+											class="border-b border-[var(--gc-border)] pb-4 last:border-b-0 last:pb-0"
+										>
+											<div class="flex flex-wrap items-center gap-3">
+												<span class="gc-badge border-[var(--gc-border)] text-[var(--gc-ink-2)]">
+													{entry.source}
+												</span>
+												<span
+													class={`gc-badge ${
+														entry.level === 'error'
+															? 'border-[var(--gc-error)] text-[var(--gc-error)]'
+															: entry.level === 'warn'
+																? 'border-[var(--gc-warning)] text-[var(--gc-warning)]'
+																: 'border-[var(--gc-signal)] text-[var(--gc-signal)]'
+													}`}
+												>
+													{entry.level_label}
+												</span>
+												<span class="gc-machine text-[var(--gc-ink-3)]"
+													>{entry.created_at_label}</span
+												>
+											</div>
+											<p class="gc-copy mt-3 text-[var(--gc-ink)]">{entry.message}</p>
+											<pre
+												class="gc-code mt-3 overflow-x-auto text-[var(--gc-ink-3)]">{entry.raw}</pre>
+										</article>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					</section>
+
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Window summary</p>
+						<div class="mt-4 grid gap-4">
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Errors</p>
+								<p class="gc-value mt-2 text-[1.2rem]">{errorEntries}</p>
+							</div>
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Warnings</p>
+								<p class="gc-value mt-2 text-[1.2rem]">{warningEntries}</p>
+							</div>
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Stream</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink)]">{logs.stream_url}</p>
+							</div>
+						</div>
+					</section>
+				</div>
+			{:else if activeTab === 'filters'}
+				<div class="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(18rem,0.85fr)]">
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Filter toolbar</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Shape the current tail window</h2>
+
+						<form method="GET" action="/logs" class="mt-5 grid gap-4 md:grid-cols-2">
+							<input type="hidden" name="tab" value="filters" />
+
+							<label class="block">
+								<span class="gc-stamp text-[var(--gc-ink-3)]">Search logs</span>
+								<input
+									type="text"
+									name="q"
+									value={logs.filters.query}
+									placeholder="panic method=GET"
+									class="gc-control mt-2 w-full"
+								/>
+							</label>
+
+							<label class="block">
+								<span class="gc-stamp text-[var(--gc-ink-3)]">Level</span>
+								<select name="level" class="gc-control mt-2 w-full" value={logs.filters.level}>
+									<option value="all">All levels</option>
+									<option value="info">Info</option>
+									<option value="warn">Warn</option>
+									<option value="error">Error</option>
+								</select>
+							</label>
+
+							<label class="block">
+								<span class="gc-stamp text-[var(--gc-ink-3)]">Source</span>
+								<select name="source" class="gc-control mt-2 w-full" value={logs.filters.source}>
+									{#each filterSourceOptions as source (source)}
+										<option value={source}>{source === 'all' ? 'All sources' : source}</option>
+									{/each}
+								</select>
+							</label>
+
+							<label class="block">
+								<span class="gc-stamp text-[var(--gc-ink-3)]">Window Size</span>
+								<select
+									name="limit"
+									class="gc-control mt-2 w-full"
+									value={String(logs.filters.limit)}
+								>
+									{#each limitOptions as limit (limit)}
+										<option value={String(limit)}>{limit} lines</option>
+									{/each}
+								</select>
+							</label>
+
+							<div class="flex flex-wrap gap-3 md:col-span-2">
+								<button type="submit" class="gc-action gc-action-solid px-4 py-2"
+									>Apply Filters</button
+								>
+								<a href={resolve('/logs?tab=filters')} class="gc-action px-4 py-2">
+									Clear Filters
+								</a>
+							</div>
+						</form>
+					</section>
+
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Current shape</p>
+						<div class="mt-4 grid gap-4">
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Matching lines</p>
+								<p class="gc-value mt-2 text-[1.2rem]">{renderedEntries.length}</p>
+							</div>
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Current query</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+									{logs.filters.query === '' ? 'No text filter applied.' : logs.filters.query}
+								</p>
+							</div>
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Stream path</p>
+								<p class="gc-copy mt-2 break-all text-[var(--gc-ink)]">{logs.stream_url}</p>
+							</div>
+						</div>
+					</section>
+				</div>
+			{:else}
+				<div class="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(18rem,0.9fr)]">
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Export buffer</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">
+							Capture the current investigation window
+						</h2>
+						<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">{exportCountLabel}</p>
+
+						<div class="mt-5 flex flex-wrap gap-3">
+							<button
+								type="button"
+								onclick={downloadJSONL}
+								class="gc-action gc-action-solid px-4 py-2"
+							>
+								Download JSONL
+							</button>
+							<button type="button" onclick={copyJSONL} class="gc-action px-4 py-2">
+								Copy JSONL
+							</button>
+						</div>
+
+						{#if exportNotice !== ''}
+							<p class="gc-copy mt-4 text-[var(--gc-signal)]">{exportNotice}</p>
+						{/if}
+
+						<pre
+							class="gc-code mt-5 max-h-[26rem] overflow-auto border border-[var(--gc-border)] bg-[var(--gc-canvas)] px-4 py-4">{exportJSONL ===
+							''
+								? 'No lines ready.'
+								: exportJSONL}</pre>
+					</section>
+
+					<section class="gc-panel-soft px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Handoff note</p>
+						<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+							The exported buffer preserves the current filter set and the same line order you are
+							seeing in Live Tail.
+						</p>
+					</section>
+				</div>
+			{/if}
 		{/if}
 	</div>
 </div>
