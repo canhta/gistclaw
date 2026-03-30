@@ -82,6 +82,9 @@ type runGraphNodeView struct {
 	TriggerLabel         string                `json:"trigger_label,omitempty"`
 	ExecutorLabel        string                `json:"executor_label,omitempty"`
 	TokenSummary         string                `json:"token_summary"`
+	InputTokens          int                   `json:"input_tokens"`
+	OutputTokens         int                   `json:"output_tokens"`
+	TotalTokens          int                   `json:"total_tokens"`
 	TimeLabel            string                `json:"time_label"`
 	StartedAtLabel       string                `json:"started_at_label"`
 	UpdatedAtLabel       string                `json:"updated_at_label"`
@@ -157,6 +160,9 @@ func buildGraphNodes(snapshot replay.RunGraphSnapshot, rootAgentID string) []run
 			ModelDisplay:         formatRunModelDisplay(node.ModelID, node.ModelLane),
 			ExecutorLabel:        "GistClaw agent",
 			TokenSummary:         formatRunTokenSummary(node.InputTokens, node.OutputTokens),
+			InputTokens:          node.InputTokens,
+			OutputTokens:         node.OutputTokens,
+			TotalTokens:          node.InputTokens + node.OutputTokens,
 			TimeLabel:            formatRunCompactTimestamp(node.CreatedAt),
 			StartedAtLabel:       formatRunCompactTimestamp(node.CreatedAt),
 			UpdatedAtLabel:       formatRunTimestamp(node.UpdatedAt),

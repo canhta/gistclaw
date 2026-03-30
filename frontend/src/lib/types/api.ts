@@ -177,6 +177,9 @@ export interface WorkGraphNodeResponse {
 	trigger_label?: string;
 	executor_label?: string;
 	token_summary: string;
+	input_tokens?: number;
+	output_tokens?: number;
+	total_tokens?: number;
 	time_label: string;
 	started_at_label: string;
 	updated_at_label: string;
@@ -273,6 +276,9 @@ export interface WorkNodeDetailResponse {
 	model_display: string;
 	token_summary: string;
 	token_exact_summary: string;
+	input_tokens?: number;
+	output_tokens?: number;
+	total_tokens?: number;
 	started_at_label: string;
 	last_activity_label: string;
 	task: WorkStructuredTextResponse;
@@ -296,6 +302,9 @@ export interface WorkDetailResponse {
 		last_activity_label: string;
 		model_display: string;
 		token_summary: string;
+		input_tokens?: number;
+		output_tokens?: number;
+		total_tokens?: number;
 		event_count: number;
 		turn_count: number;
 		stream_url: string;

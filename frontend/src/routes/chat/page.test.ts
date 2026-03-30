@@ -358,6 +358,173 @@ describe('Chat page', () => {
 		expect(body).toContain('run-worker-1');
 	});
 
+	it('renders a real usage board when run token data is available', () => {
+		const data = {
+			...baseData,
+			currentSearch: 'tab=usage',
+			chat: {
+				...baseData.chat,
+				selectedRunID: 'run-abc123',
+				detail: {
+					run: {
+						id: 'run-abc123',
+						short_id: 'run-abc123',
+						objective_text: 'Fix the authentication bug',
+						trigger_label: 'Chat',
+						status: 'active',
+						status_label: 'Active',
+						status_class: 'is-active',
+						state_label: 'Running',
+						started_at_label: 'Started 10:00',
+						last_activity_label: 'Last activity 10:05',
+						model_display: 'claude-3-5',
+						token_summary: '1.2K in / 600 out',
+						input_tokens: 1200,
+						output_tokens: 600,
+						total_tokens: 1800,
+						event_count: 8,
+						turn_count: 2,
+						stream_url: '/api/work/run-abc123/events',
+						graph_url: '/api/work/run-abc123/graph',
+						node_detail_url_template: '/api/work/run-abc123/nodes/{node_id}',
+						dismissible: false
+					},
+					graph: {
+						root_run_id: 'run-abc123',
+						headline: '1 task waiting on you.',
+						summary: {
+							total: 2,
+							pending: 0,
+							active: 1,
+							needs_approval: 1,
+							completed: 0,
+							failed: 0,
+							interrupted: 0,
+							root_status: 'active'
+						},
+						active_path: ['run-abc123', 'run-worker-1'],
+						nodes: [
+							{
+								id: 'run-abc123',
+								short_id: 'abc123',
+								short_label: 'abc123',
+								parent_run_id: '',
+								agent_id: 'assistant',
+								objective: 'Fix the authentication bug',
+								objective_preview: 'Fix the authentication bug',
+								status: 'active',
+								status_label: 'active',
+								status_class: 'is-active',
+								kind: 'root',
+								lane_id: 'lead',
+								model_display: 'claude-3-5',
+								token_summary: '1.2K in / 600 out',
+								input_tokens: 1200,
+								output_tokens: 600,
+								total_tokens: 1800,
+								time_label: '5m ago',
+								started_at_label: '5m ago',
+								updated_at_label: '1m ago',
+								depth: 0,
+								is_root: true,
+								is_active_path: true,
+								child_count: 1
+							},
+							{
+								id: 'run-worker-1',
+								short_id: 'worker1',
+								short_label: 'worker1',
+								parent_run_id: 'run-abc123',
+								agent_id: 'researcher',
+								objective: 'Inspect auth logs',
+								objective_preview: 'Inspect auth logs',
+								status: 'needs_approval',
+								status_label: 'needs approval',
+								status_class: 'is-approval',
+								kind: 'worker',
+								lane_id: 'researcher',
+								model_display: 'claude-3-5-haiku',
+								token_summary: '400 in / 120 out',
+								input_tokens: 400,
+								output_tokens: 120,
+								total_tokens: 520,
+								time_label: '3m ago',
+								started_at_label: '3m ago',
+								updated_at_label: '1m ago',
+								depth: 1,
+								is_root: false,
+								is_active_path: true,
+								child_count: 0
+							}
+						],
+						edges: []
+					}
+				},
+				nodeDetail: {
+					id: 'run-worker-1',
+					short_id: 'worker-1',
+					parent_run_id: 'run-abc123',
+					parent_short_id: 'run-abc123',
+					agent_id: 'researcher',
+					session_id: 'sess-123',
+					session_short_id: 'sess-123',
+					session_url: '/sessions?selected=sess-123',
+					status: 'needs_approval',
+					status_label: 'needs approval',
+					status_class: 'is-approval',
+					model_display: 'gpt-5.4-mini',
+					token_summary: '400 in / 120 out',
+					token_exact_summary: '400 input / 120 output',
+					started_at_label: 'Started 3 minutes ago',
+					last_activity_label: 'Last activity 1 minute ago',
+					task: {
+						plain_text: 'Inspect auth logs',
+						preview_text: 'Inspect auth logs',
+						has_overflow: false,
+						blocks: []
+					},
+					output: {
+						plain_text: 'Approval required before shell command can continue.',
+						preview_text: 'Approval required before shell command can continue.',
+						has_overflow: false,
+						blocks: []
+					},
+					chain: {
+						path: [
+							{
+								run_id: 'run-abc123',
+								short_id: 'abc123',
+								agent_id: 'assistant',
+								status: 'active',
+								status_label: 'active'
+							},
+							{
+								run_id: 'run-worker-1',
+								short_id: 'worker-1',
+								agent_id: 'researcher',
+								status: 'needs_approval',
+								status_label: 'needs approval'
+							}
+						],
+						children: []
+					},
+					logs: []
+				}
+			}
+		};
+
+		const { body } = render(ChatPage, { props: { data } });
+
+		expect(body).toContain('Usage board');
+		expect(body).toContain('Total tokens');
+		expect(body).toContain('1,800');
+		expect(body).toContain('Focused node');
+		expect(body).toContain('400 input / 120 output');
+		expect(body).toContain('Node ledger');
+		expect(body).toContain('Inspect auth logs');
+		expect(body).not.toContain('Token usage will appear here after a run completes.');
+	});
+
 	it('renders the focused node inspector when graph detail is available', () => {
 		const data = {
 			...baseData,

@@ -18,6 +18,7 @@
 		WorkCreateResponse,
 		WorkDetailResponse,
 		WorkDismissResponse,
+		WorkGraphNodeResponse,
 		WorkNodeDetailResponse
 	} from '$lib/types/api';
 	import type { PageData } from './$types';
@@ -97,6 +98,32 @@
 		const status = activeDetail?.run.status ?? '';
 		return status === 'active' || status === 'pending' || status === 'needs_approval';
 	});
+	const usageTotals = $derived.by(() => {
+		const input = activeDetail?.run.input_tokens ?? transcript.tokenSummary.inputTokens;
+		const output = activeDetail?.run.output_tokens ?? transcript.tokenSummary.outputTokens;
+		return {
+			input,
+			output,
+			total: activeDetail?.run.total_tokens ?? input + output
+		};
+	});
+	const usageLedger = $derived.by(() =>
+		[...(activeDetail?.graph.nodes ?? [])]
+			.filter((node) => usageNodeTotal(node) > 0 || node.token_summary.trim() !== '')
+			.sort((left, right) => {
+				if (left.is_root !== right.is_root) {
+					return left.is_root ? -1 : 1;
+				}
+				if (left.is_active_path !== right.is_active_path) {
+					return left.is_active_path ? -1 : 1;
+				}
+				const totalDelta = usageNodeTotal(right) - usageNodeTotal(left);
+				if (totalDelta !== 0) {
+					return totalDelta;
+				}
+				return left.agent_id.localeCompare(right.agent_id);
+			})
+	);
 
 	function isTabID(value: string | null): value is TabID {
 		return (
@@ -108,6 +135,29 @@
 		if (isTabID(id)) {
 			activeTabOverride = id;
 		}
+	}
+
+	function formatUsageCount(value: number | undefined): string {
+		return (value ?? 0).toLocaleString();
+	}
+
+	function usageNodeTotal(node: WorkGraphNodeResponse): number {
+		if (typeof node.total_tokens === 'number') {
+			return node.total_tokens;
+		}
+		return (node.input_tokens ?? 0) + (node.output_tokens ?? 0);
+	}
+
+	function usageNodeObjective(node: WorkGraphNodeResponse): string {
+		const preview = node.objective_preview.trim();
+		if (preview !== '') {
+			return preview;
+		}
+		const objective = node.objective.trim();
+		if (objective !== '') {
+			return objective;
+		}
+		return 'No task text saved.';
 	}
 
 	function connectToRun(runId: string, streamURL: string): void {
@@ -522,35 +572,167 @@
 						{/if}
 					{/if}
 				</div>
-			{:else}
-				<div class="flex flex-1 items-center justify-center p-10">
-					{#if transcript.tokenSummary.inputTokens > 0 || transcript.tokenSummary.outputTokens > 0}
-						<div class="gc-panel max-w-sm px-6 py-5 text-center">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">TOKEN USAGE</p>
-							<div class="mt-4 grid grid-cols-2 gap-4">
-								<div>
-									<p class="gc-stamp text-[var(--gc-ink-3)]">Input</p>
-									<p class="gc-panel-title mt-1 text-[var(--gc-ink)]">
-										{transcript.tokenSummary.inputTokens.toLocaleString()}
+			{:else if activeDetail}
+				<div class="grid flex-1 gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(18rem,0.85fr)]">
+					<section class="gc-panel flex-1 overflow-y-auto border-[var(--gc-border)] px-5 py-5">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">Usage board</p>
+						<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Run token usage</h2>
+						<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
+							Current totals and node-by-node token posture from the selected run graph.
+						</p>
+
+						<div class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Total tokens</p>
+								<p class="gc-value mt-2 text-[1.2rem]">{formatUsageCount(usageTotals.total)}</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">{activeDetail.run.token_summary}</p>
+							</div>
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Input</p>
+								<p class="gc-value mt-2 text-[1.2rem]">{formatUsageCount(usageTotals.input)}</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">Prompt and context tokens</p>
+							</div>
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Output</p>
+								<p class="gc-value mt-2 text-[1.2rem]">{formatUsageCount(usageTotals.output)}</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">Assistant response tokens</p>
+							</div>
+							<div class="border border-[var(--gc-border)] px-4 py-4">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Active path</p>
+								<p class="gc-value mt-2 text-[1.2rem]">{activeDetail.graph.active_path.length}</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">Nodes currently on the live path</p>
+							</div>
+						</div>
+
+						<div class="mt-6">
+							<div class="flex flex-wrap items-center justify-between gap-3">
+								<p class="gc-stamp text-[var(--gc-ink-3)]">Node ledger</p>
+								<p class="gc-copy text-[var(--gc-ink-3)]">{usageLedger.length} nodes visible</p>
+							</div>
+
+							{#if usageLedger.length === 0}
+								<div class="mt-4 border border-[var(--gc-border)] px-4 py-4">
+									<p class="gc-copy text-[var(--gc-ink-2)]">
+										This run has not reported token usage from any graph node yet.
 									</p>
 								</div>
-								<div>
-									<p class="gc-stamp text-[var(--gc-ink-3)]">Output</p>
-									<p class="gc-panel-title mt-1 text-[var(--gc-ink)]">
-										{transcript.tokenSummary.outputTokens.toLocaleString()}
+							{:else}
+								<div class="mt-4 grid gap-3">
+									{#each usageLedger as node (node.id)}
+										<article class="border border-[var(--gc-border)] px-4 py-4">
+											<div class="flex flex-wrap items-start justify-between gap-4">
+												<div class="min-w-0 flex-1">
+													<div class="flex flex-wrap items-center gap-2">
+														<p class="gc-panel-title text-[var(--gc-ink)]">{node.agent_id}</p>
+														{#if node.is_active_path}
+															<span
+																class="gc-badge border-[var(--gc-signal)] text-[var(--gc-signal)]"
+															>
+																ACTIVE PATH
+															</span>
+														{/if}
+														{#if activeNodeDetail?.id === node.id}
+															<span
+																class="gc-badge border-[var(--gc-primary)] text-[var(--gc-primary)]"
+															>
+																FOCUSED
+															</span>
+														{/if}
+													</div>
+													<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+														{usageNodeObjective(node)}
+													</p>
+													<div class="mt-3 flex flex-wrap gap-2">
+														<span class="gc-badge border-[var(--gc-border)] text-[var(--gc-ink-2)]">
+															{node.status_label}
+														</span>
+														<span class="gc-badge border-[var(--gc-border)] text-[var(--gc-ink-2)]">
+															{node.model_display}
+														</span>
+													</div>
+												</div>
+
+												<div class="text-right">
+													<p class="gc-value text-[1.2rem]">
+														{formatUsageCount(usageNodeTotal(node))}
+													</p>
+													<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">{node.token_summary}</p>
+												</div>
+											</div>
+										</article>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					</section>
+
+					<aside class="grid gap-4">
+						<section class="gc-panel-soft px-5 py-5">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Focused node</p>
+							{#if activeNodeDetail}
+								<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">{activeNodeDetail.agent_id}</p>
+								<p class="gc-copy mt-2 text-[var(--gc-ink-2)]">
+									{activeNodeDetail.task.preview_text ||
+										activeNodeDetail.task.plain_text ||
+										'No task text saved.'}
+								</p>
+								<div class="mt-4 grid gap-3">
+									<div class="border border-[var(--gc-border)] px-4 py-4">
+										<p class="gc-stamp text-[var(--gc-ink-3)]">Exact usage</p>
+										<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+											{activeNodeDetail.token_exact_summary}
+										</p>
+									</div>
+									<div class="border border-[var(--gc-border)] px-4 py-4">
+										<p class="gc-stamp text-[var(--gc-ink-3)]">Summary</p>
+										<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+											{activeNodeDetail.token_summary}
+										</p>
+									</div>
+									<div class="border border-[var(--gc-border)] px-4 py-4">
+										<p class="gc-stamp text-[var(--gc-ink-3)]">Status</p>
+										<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+											{activeNodeDetail.status_label}
+										</p>
+									</div>
+								</div>
+							{:else}
+								<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+									Select a graph node to inspect exact per-node usage.
+								</p>
+							{/if}
+						</section>
+
+						<section class="gc-panel-soft px-5 py-5">
+							<p class="gc-stamp text-[var(--gc-ink-3)]">Coverage</p>
+							<div class="mt-4 grid gap-3">
+								<div class="border border-[var(--gc-border)] px-4 py-4">
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Nodes with usage</p>
+									<p class="gc-value mt-2 text-[1.1rem]">{usageLedger.length}</p>
+								</div>
+								<div class="border border-[var(--gc-border)] px-4 py-4">
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Run model</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink)]">{activeDetail.run.model_display}</p>
+								</div>
+								<div class="border border-[var(--gc-border)] px-4 py-4">
+									<p class="gc-stamp text-[var(--gc-ink-3)]">Last activity</p>
+									<p class="gc-copy mt-2 text-[var(--gc-ink)]">
+										{activeDetail.run.last_activity_label}
 									</p>
 								</div>
 							</div>
-						</div>
-					{:else}
-						<div class="text-center">
-							<p class="gc-stamp text-[var(--gc-ink-3)]">USAGE</p>
-							<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">No usage data</p>
-							<p class="gc-copy mt-3 max-w-xs text-[var(--gc-ink-2)]">
-								Token usage will appear here after a run completes.
-							</p>
-						</div>
-					{/if}
+						</section>
+					</aside>
+				</div>
+			{:else}
+				<div class="flex flex-1 items-center justify-center p-10">
+					<div class="text-center">
+						<p class="gc-stamp text-[var(--gc-ink-3)]">USAGE</p>
+						<p class="gc-panel-title mt-3 text-[var(--gc-ink)]">No run selected</p>
+						<p class="gc-copy mt-3 max-w-xs text-[var(--gc-ink-2)]">
+							Choose a run from the queue to inspect token usage and node-level totals.
+						</p>
+					</div>
 				</div>
 			{/if}
 		</div>

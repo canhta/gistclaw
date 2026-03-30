@@ -76,6 +76,9 @@ type workRunDetailResponse struct {
 	LastActivityLabel     string `json:"last_activity_label"`
 	ModelDisplay          string `json:"model_display"`
 	TokenSummary          string `json:"token_summary"`
+	InputTokens           int    `json:"input_tokens"`
+	OutputTokens          int    `json:"output_tokens"`
+	TotalTokens           int    `json:"total_tokens"`
 	EventCount            int    `json:"event_count"`
 	TurnCount             int    `json:"turn_count"`
 	StreamURL             string `json:"stream_url"`
@@ -190,6 +193,9 @@ func (s *Server) handleWorkDetail(w http.ResponseWriter, r *http.Request) {
 			LastActivityLabel:     pageData.LastActivityLabel,
 			ModelDisplay:          pageData.ModelDisplay,
 			TokenSummary:          pageData.TokenSummary,
+			InputTokens:           pageData.InputTokens,
+			OutputTokens:          pageData.OutputTokens,
+			TotalTokens:           pageData.TotalTokens,
 			EventCount:            pageData.EventCount,
 			TurnCount:             pageData.TurnCount,
 			StreamURL:             workEventsPath(pageData.RunID),

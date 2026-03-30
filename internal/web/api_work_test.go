@@ -247,9 +247,15 @@ func TestWorkDetailReturnsRunSummaryGraphAndInspectorSeed(t *testing.T) {
 		},
 	})
 	if _, err := h.db.RawDB().Exec(
+		`UPDATE runs SET input_tokens = 900, output_tokens = 450 WHERE id = ?`,
+		"run-work-detail",
+	); err != nil {
+		t.Fatalf("set work detail root tokens: %v", err)
+	}
+	if _, err := h.db.RawDB().Exec(
 		`INSERT INTO runs
-		 (id, conversation_id, agent_id, session_id, project_id, team_id, parent_run_id, objective, cwd, status, created_at, updated_at)
-		 VALUES (?, ?, 'researcher', 'sess-work-child', ?, 'repo-task-team', ?, ?, ?, 'needs_approval', '2026-03-25 08:03:00', '2026-03-25 08:05:00')`,
+		 (id, conversation_id, agent_id, session_id, project_id, team_id, parent_run_id, objective, cwd, status, input_tokens, output_tokens, created_at, updated_at)
+		 VALUES (?, ?, 'researcher', 'sess-work-child', ?, 'repo-task-team', ?, ?, ?, 'needs_approval', 300, 120, '2026-03-25 08:03:00', '2026-03-25 08:05:00')`,
 		"run-work-child",
 		"conv-work-detail",
 		h.activeProjectID,
@@ -278,6 +284,9 @@ func TestWorkDetailReturnsRunSummaryGraphAndInspectorSeed(t *testing.T) {
 			StreamURL      string `json:"stream_url"`
 			ModelDisplay   string `json:"model_display"`
 			TokenSummary   string `json:"token_summary"`
+			InputTokens    int    `json:"input_tokens"`
+			OutputTokens   int    `json:"output_tokens"`
+			TotalTokens    int    `json:"total_tokens"`
 			TriggerLabel   string `json:"trigger_label"`
 			LastActivity   string `json:"last_activity_label"`
 			StartedAtLabel string `json:"started_at_label"`
@@ -286,10 +295,13 @@ func TestWorkDetailReturnsRunSummaryGraphAndInspectorSeed(t *testing.T) {
 			RootRunID  string   `json:"root_run_id"`
 			ActivePath []string `json:"active_path"`
 			Nodes      []struct {
-				ID       string `json:"id"`
-				AgentID  string `json:"agent_id"`
-				Status   string `json:"status"`
-				IsActive bool   `json:"is_active_path"`
+				ID           string `json:"id"`
+				AgentID      string `json:"agent_id"`
+				Status       string `json:"status"`
+				InputTokens  int    `json:"input_tokens"`
+				OutputTokens int    `json:"output_tokens"`
+				TotalTokens  int    `json:"total_tokens"`
+				IsActive     bool   `json:"is_active_path"`
 			} `json:"nodes"`
 		} `json:"graph"`
 		InspectorSeed *struct {
@@ -314,6 +326,9 @@ func TestWorkDetailReturnsRunSummaryGraphAndInspectorSeed(t *testing.T) {
 	if resp.Run.StreamURL != "/api/work/run-work-detail/events" {
 		t.Fatalf("stream_url = %q", resp.Run.StreamURL)
 	}
+	if resp.Run.InputTokens != 900 || resp.Run.OutputTokens != 450 || resp.Run.TotalTokens != 1350 {
+		t.Fatalf("unexpected root token counts: in=%d out=%d total=%d", resp.Run.InputTokens, resp.Run.OutputTokens, resp.Run.TotalTokens)
+	}
 	if resp.Graph.RootRunID != "run-work-detail" {
 		t.Fatalf("graph.root_run_id = %q", resp.Graph.RootRunID)
 	}
@@ -322,6 +337,14 @@ func TestWorkDetailReturnsRunSummaryGraphAndInspectorSeed(t *testing.T) {
 	}
 	if len(resp.Graph.ActivePath) != 2 || resp.Graph.ActivePath[1] != "run-work-child" {
 		t.Fatalf("unexpected active_path %+v", resp.Graph.ActivePath)
+	}
+	if resp.Graph.Nodes[1].InputTokens != 300 || resp.Graph.Nodes[1].OutputTokens != 120 || resp.Graph.Nodes[1].TotalTokens != 420 {
+		t.Fatalf(
+			"unexpected child token counts: in=%d out=%d total=%d",
+			resp.Graph.Nodes[1].InputTokens,
+			resp.Graph.Nodes[1].OutputTokens,
+			resp.Graph.Nodes[1].TotalTokens,
+		)
 	}
 	if resp.InspectorSeed == nil {
 		t.Fatal("expected inspector_seed")

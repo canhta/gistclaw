@@ -91,6 +91,9 @@ type runDetailPageData struct {
 	LastActivityLabel     string
 	ModelDisplay          string
 	TokenSummary          string
+	InputTokens           int
+	OutputTokens          int
+	TotalTokens           int
 	EventCount            int
 	TurnCount             int
 	StreamURL             string
@@ -159,6 +162,9 @@ type runNodeDetailView struct {
 	ModelDisplay      string                `json:"model_display"`
 	TokenSummary      string                `json:"token_summary"`
 	TokenExactSummary string                `json:"token_exact_summary"`
+	InputTokens       int                   `json:"input_tokens"`
+	OutputTokens      int                   `json:"output_tokens"`
+	TotalTokens       int                   `json:"total_tokens"`
 	StartedAtLabel    string                `json:"started_at_label"`
 	LastActivityLabel string                `json:"last_activity_label"`
 	Task              runStructuredTextView `json:"task"`
@@ -526,7 +532,7 @@ func (s *Server) loadRunDetailPageData(ctx context.Context, runID string) (runDe
 		return runDetailPageData{}, fmt.Errorf("decorate run graph: %w", err)
 	}
 
-	objectiveText, modelDisplay, tokenSummary := runDetailRootSummary(graphView)
+	objectiveText, modelDisplay, tokenSummary, inputTokens, outputTokens, totalTokens := runDetailRootSummary(graphView)
 	triggerLabel := runDetailTriggerLabel(graphView)
 	lastEventCursor := ""
 	if len(replayRun.Events) > 0 {
@@ -546,6 +552,9 @@ func (s *Server) loadRunDetailPageData(ctx context.Context, runID string) (runDe
 		LastActivityLabel:     formatRunTimestamp(lastActivity),
 		ModelDisplay:          modelDisplay,
 		TokenSummary:          tokenSummary,
+		InputTokens:           inputTokens,
+		OutputTokens:          outputTokens,
+		TotalTokens:           totalTokens,
 		EventCount:            len(events),
 		TurnCount:             len(turns),
 		StreamURL:             runEventsPathAfter(replayRun.RunID, lastEventCursor),
@@ -852,6 +861,9 @@ func buildRunNodeDetailView(
 		ModelDisplay:      formatRunModelDisplay(record.ModelID, record.ModelLane),
 		TokenSummary:      formatRunTokenSummary(record.InputTokens, record.OutputTokens),
 		TokenExactSummary: fmt.Sprintf("%d input / %d output", record.InputTokens, record.OutputTokens),
+		InputTokens:       record.InputTokens,
+		OutputTokens:      record.OutputTokens,
+		TotalTokens:       record.InputTokens + record.OutputTokens,
 		StartedAtLabel:    formatRunTimestamp(record.CreatedAt),
 		LastActivityLabel: formatRunTimestamp(record.UpdatedAt),
 		Task:              buildStructuredTextView(record.Objective, 3),
@@ -1150,7 +1162,7 @@ func buildExecutionSnapshotView(teamID string, raw []byte) runExecutionSnapshotV
 	return view
 }
 
-func runDetailRootSummary(graph runGraphView) (objectiveText, modelDisplay, tokenSummary string) {
+func runDetailRootSummary(graph runGraphView) (objectiveText, modelDisplay, tokenSummary string, inputTokens, outputTokens, totalTokens int) {
 	objectiveText = "No task text saved for this run."
 	modelDisplay = "not recorded"
 	tokenSummary = "0 in / 0 out"
@@ -1169,9 +1181,12 @@ func runDetailRootSummary(graph runGraphView) (objectiveText, modelDisplay, toke
 		if strings.TrimSpace(node.TokenSummary) != "" {
 			tokenSummary = node.TokenSummary
 		}
+		inputTokens = node.InputTokens
+		outputTokens = node.OutputTokens
+		totalTokens = node.TotalTokens
 		break
 	}
-	return objectiveText, modelDisplay, tokenSummary
+	return objectiveText, modelDisplay, tokenSummary, inputTokens, outputTokens, totalTokens
 }
 
 type runCoderExecInput struct {
