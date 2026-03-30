@@ -80,9 +80,10 @@ describe('instances load', () => {
 			pending_delivery_count: 2
 		});
 		expect(result.instances.lanes[0]?.agent_id).toBe('assistant');
+		expect(result.instancesLoadError).toBe('');
 	});
 
-	it('returns fallback inventory data when the instances feed fails', async () => {
+	it('returns a load error when the instances feed fails', async () => {
 		const fetcher = vi.fn<typeof fetch>(async () => {
 			throw new Error('boom');
 		});
@@ -90,16 +91,12 @@ describe('instances load', () => {
 		const result = await load(makeLoadEvent(fetcher));
 
 		if (!result) {
-			throw new Error('expected instances load to return fallback data');
+			throw new Error('expected instances load to return error data');
 		}
 
-		expect(result.instances.summary).toEqual({
-			front_lane_count: 0,
-			specialist_lane_count: 0,
-			live_connector_count: 0,
-			pending_delivery_count: 0
-		});
-		expect(result.instances.lanes).toEqual([]);
-		expect(result.instances.connectors).toEqual([]);
+		expect(result.instances).toBeNull();
+		expect(result.instancesLoadError).toBe(
+			'Instance inventory could not be loaded. Reload to retry.'
+		);
 	});
 });

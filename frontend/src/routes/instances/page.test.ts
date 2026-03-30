@@ -68,6 +68,7 @@ const baseData = {
 	onboarding: null,
 	currentPath: '/instances',
 	currentSearch: '',
+	instancesLoadError: '',
 	instances: baseInstances
 };
 
@@ -143,5 +144,17 @@ describe('Instances page', () => {
 		const { body } = render(InstancesPage, { props: { data } });
 		expect(body).toContain('No active runtime presence');
 		expect(body).toContain('Run work from Chat or connect a channel');
+	});
+
+	it('renders a load error panel when the inventory request fails', () => {
+		const data = {
+			...baseData,
+			instances: null,
+			instancesLoadError: 'Instance inventory could not be loaded. Reload to retry.'
+		};
+		const { body } = render(InstancesPage, { props: { data } });
+		expect(body).toContain('Instance inventory could not be loaded. Reload to retry.');
+		expect(body).toContain('Instances board unavailable');
+		expect(body).not.toContain('Runtime presence board');
 	});
 });

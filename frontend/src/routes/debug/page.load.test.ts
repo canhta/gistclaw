@@ -187,9 +187,10 @@ describe('debug load', () => {
 		expect(result.debug.health.connectors[0].connector_id).toBe('telegram');
 		expect(result.debug.rpc?.summary.selected_probe).toBe('status');
 		expect(result.debug.events?.summary.selected_run_id).toBe('run-root');
+		expect(result.debugRPCLoadError).toBe('');
 	});
 
-	it('returns partial fallbacks when requests fail', async () => {
+	it('returns a targeted rpc load error when the probe board fails', async () => {
 		const fetcher = vi.fn<typeof fetch>(async (input) => {
 			if (String(input) === '/api/work') {
 				return new Response(
@@ -218,6 +219,15 @@ describe('debug load', () => {
 					{ status: 200, headers: { 'content-type': 'application/json' } }
 				);
 			}
+			if (String(input) === '/api/deliveries/health') {
+				return new Response(
+					JSON.stringify({
+						Connectors: [],
+						RuntimeConnectors: []
+					}),
+					{ status: 200, headers: { 'content-type': 'application/json' } }
+				);
+			}
 
 			throw new Error('boom');
 		});
@@ -225,7 +235,7 @@ describe('debug load', () => {
 		const result = await load(makeLoadEvent(fetcher));
 
 		if (!result) {
-			throw new Error('expected debug load to return fallback data');
+			throw new Error('expected debug load to return partial error data');
 		}
 
 		expect(result).toEqual({
@@ -257,43 +267,10 @@ describe('debug load', () => {
 					connectors: [],
 					runtime_connectors: []
 				},
-				rpc: {
-					notice: 'RPC probes could not be loaded. Reload to retry.',
-					summary: {
-						probe_count: 4,
-						read_only: true,
-						default_probe: 'status',
-						selected_probe: 'status'
-					},
-					probes: [
-						expect.objectContaining({
-							name: 'status',
-							label: 'Status'
-						}),
-						expect.objectContaining({
-							name: 'connector_health',
-							label: 'Connector health'
-						}),
-						expect.objectContaining({
-							name: 'active_project',
-							label: 'Active project'
-						}),
-						expect.objectContaining({
-							name: 'schedule_status',
-							label: 'Scheduler'
-						})
-					],
-					result: {
-						probe: 'status',
-						label: 'Status',
-						summary: 'RPC probes could not be loaded. Reload to retry.',
-						executed_at: '',
-						executed_at_label: 'Unavailable',
-						data: {}
-					}
-				},
+				rpc: null,
 				events: null
-			}
+			},
+			debugRPCLoadError: 'RPC probes could not be loaded. Reload to retry.'
 		});
 	});
 
