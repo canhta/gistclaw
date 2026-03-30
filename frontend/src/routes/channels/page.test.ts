@@ -11,6 +11,9 @@ const baseData = {
 	onboarding: null,
 	currentPath: '/channels',
 	currentSearch: '',
+	channelsLoadError: '',
+	channelAccessLoadError: '',
+	channelRoutesLoadError: '',
 	channels: {
 		summary: {
 			connector_count: 0,
@@ -21,7 +24,6 @@ const baseData = {
 			restart_suggested_count: 0
 		},
 		access: {
-			notice: '',
 			settings: {
 				machine: {
 					storage_root: '/srv/gistclaw',
@@ -246,21 +248,47 @@ describe('Channels page', () => {
 		expect(body).not.toContain('Channel settings moved');
 	});
 
-	it('renders an access notice without hiding the channels boards', () => {
+	it('renders a top-level load error panel when the channels board fails', () => {
+		const data = {
+			...baseData,
+			channels: null,
+			channelsLoadError: 'Channel status could not be loaded. Reload to retry.'
+		};
+		const { body } = render(ChannelsPage, { props: { data } });
+		expect(body).toContain('Channel status could not be loaded. Reload to retry.');
+		expect(body).toContain('Channels board unavailable');
+		expect(body).not.toContain('No channels connected');
+	});
+
+	it('renders an access load error panel on the login tab', () => {
 		const data = {
 			...baseData,
 			currentSearch: 'tab=login',
+			channelAccessLoadError: 'Channel access details could not be loaded. Reload to retry.',
 			channels: {
 				...baseData.channels,
-				access: {
-					notice: 'Channel access details could not be loaded. Reload to retry.',
-					settings: null,
-					surfaces: []
-				}
+				access: null
 			}
 		};
 		const { body } = render(ChannelsPage, { props: { data } });
 		expect(body).toContain('Channel access details could not be loaded. Reload to retry.');
-		expect(body).toContain('Channel access board');
+		expect(body).toContain('Channel access unavailable');
+		expect(body).not.toContain('Save Telegram access');
+	});
+
+	it('renders a route load error panel on the settings tab', () => {
+		const data = {
+			...baseData,
+			currentSearch: 'tab=settings',
+			channelRoutesLoadError: 'Route directory could not be loaded. Reload to retry.',
+			channels: {
+				...baseData.channels,
+				routes: null
+			}
+		};
+		const { body } = render(ChannelsPage, { props: { data } });
+		expect(body).toContain('Route directory could not be loaded. Reload to retry.');
+		expect(body).toContain('Route directory unavailable');
+		expect(body).not.toContain('Next route page');
 	});
 });

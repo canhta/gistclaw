@@ -81,9 +81,12 @@ describe('channels load', () => {
 				terminal_count: 0
 			})
 		]);
+		expect(result.channelsLoadError).toBe('');
+		expect(result.channelAccessLoadError).toBe('');
+		expect(result.channelRoutesLoadError).toBe('');
 	});
 
-	it('returns empty channels data when the request fails', async () => {
+	it('returns a load error when the channels status request fails', async () => {
 		const fetcher = vi.fn<typeof fetch>(async () => {
 			throw new Error('boom');
 		});
@@ -91,42 +94,13 @@ describe('channels load', () => {
 		const result = await load(makeLoadEvent(fetcher));
 
 		if (!result) {
-			throw new Error('expected channels load to return fallback data');
+			throw new Error('expected channels load to return error data');
 		}
 
-		expect(result).toEqual({
-			channels: {
-				summary: {
-					connector_count: 0,
-					active_count: 0,
-					pending_count: 0,
-					retrying_count: 0,
-					terminal_count: 0,
-					restart_suggested_count: 0
-				},
-				items: [],
-				access: {
-					notice: '',
-					settings: null,
-					surfaces: []
-				},
-				routes: {
-					filters: {
-						connector_id: '',
-						status: '',
-						query: '',
-						limit: 50
-					},
-					items: [],
-					paging: {
-						has_next: false,
-						has_prev: false,
-						nextHref: undefined,
-						prevHref: undefined
-					}
-				}
-			}
-		});
+		expect(result.channels).toBeNull();
+		expect(result.channelsLoadError).toBe('Channel status could not be loaded. Reload to retry.');
+		expect(result.channelAccessLoadError).toBe('');
+		expect(result.channelRoutesLoadError).toBe('');
 	});
 
 	it('loads channel access data when the login tab is requested', async () => {
@@ -269,7 +243,6 @@ describe('channels load', () => {
 		expect(fetcher).toHaveBeenCalledWith('/api/settings', expect.any(Object));
 		expect(fetcher).toHaveBeenCalledWith('/api/skills', expect.any(Object));
 		expect(result.channels.access).toEqual({
-			notice: '',
 			settings: expect.objectContaining({
 				machine: expect.objectContaining({
 					telegram_token: '12345678********',
@@ -289,9 +262,10 @@ describe('channels load', () => {
 				})
 			]
 		});
+		expect(result.channelAccessLoadError).toBe('');
 	});
 
-	it('returns an access notice when channel access reads fail', async () => {
+	it('returns an access load error when channel access reads fail', async () => {
 		const fetcher = vi.fn<typeof fetch>(async (input) => {
 			if (input === '/api/conversations') {
 				return new Response(
@@ -327,14 +301,13 @@ describe('channels load', () => {
 		const result = await load(makeLoadEvent(fetcher, '?tab=login'));
 
 		if (!result) {
-			throw new Error('expected channels load to return fallback access data');
+			throw new Error('expected channels load to return access error data');
 		}
 
-		expect(result.channels.access).toEqual({
-			notice: 'Channel access details could not be loaded. Reload to retry.',
-			settings: null,
-			surfaces: []
-		});
+		expect(result.channels.access).toBeNull();
+		expect(result.channelAccessLoadError).toBe(
+			'Channel access details could not be loaded. Reload to retry.'
+		);
 	});
 
 	it('loads route inventory when the settings tab is requested', async () => {
@@ -513,5 +486,113 @@ describe('channels load', () => {
 			expect.objectContaining({ id: 'telegram' }),
 			expect.objectContaining({ id: 'whatsapp' })
 		]);
+		expect(result.channelRoutesLoadError).toBe('');
+		expect(result.channelAccessLoadError).toBe('');
+	});
+
+	it('returns a route load error when the route directory read fails', async () => {
+		const fetcher = vi.fn<typeof fetch>(async (input) => {
+			if (input === '/api/conversations') {
+				return new Response(
+					JSON.stringify({
+						summary: {
+							session_count: 2,
+							connector_count: 1,
+							terminal_deliveries: 0
+						},
+						filters: {
+							query: '',
+							agent_id: '',
+							role: '',
+							status: '',
+							connector_id: '',
+							binding: ''
+						},
+						sessions: [],
+						paging: { has_next: false, has_prev: false },
+						health: [],
+						runtime_connectors: []
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
+			if (input === '/api/settings' || input === '/api/skills') {
+				return new Response(
+					JSON.stringify({
+						machine: {
+							storage_root: '/srv/gistclaw',
+							approval_mode: 'prompt',
+							approval_mode_label: 'Prompt',
+							host_access_mode: 'standard',
+							host_access_mode_label: 'Standard',
+							admin_token: 'abcd1234****',
+							per_run_token_budget: '50000',
+							daily_cost_cap_usd: '5.00',
+							rolling_cost_usd: 0.25,
+							rolling_cost_label: '$0.25 in the last 24h',
+							telegram_token: '12345678********',
+							whatsapp_phone_number_id: 'phone-123',
+							whatsapp_access_token: 'whatsapp********',
+							whatsapp_verify_token: 'verify-s********',
+							active_project_name: 'my-project',
+							active_project_path: '/home/user/my-project',
+							active_project_summary: 'my-project at /home/user/my-project'
+						},
+						access: {
+							password_configured: true,
+							other_active_devices: [],
+							blocked_devices: []
+						},
+						summary: {
+							shipped_surfaces: 2,
+							configured_surfaces: 2,
+							installed_tools: 0,
+							ready_credentials: 2,
+							missing_credentials: 0
+						},
+						surfaces: [
+							{
+								id: 'telegram',
+								name: 'Telegram',
+								kind: 'connector',
+								configured: true,
+								active: true,
+								credential_state: 'ready',
+								credential_state_label: 'ready',
+								summary: 'Bot token configured.',
+								detail: 'Front agent assistant'
+							}
+						],
+						tools: []
+					}),
+					{
+						status: 200,
+						headers: { 'content-type': 'application/json' }
+					}
+				);
+			}
+
+			throw new Error('boom');
+		});
+
+		const result = await load(
+			makeLoadEvent(
+				fetcher,
+				'?tab=settings&route_connector_id=telegram&route_status=all&route_limit=10'
+			)
+		);
+
+		if (!result) {
+			throw new Error('expected channels load to return route error data');
+		}
+
+		expect(result.channels.routes).toBeNull();
+		expect(result.channelRoutesLoadError).toBe(
+			'Route directory could not be loaded. Reload to retry.'
+		);
 	});
 });
