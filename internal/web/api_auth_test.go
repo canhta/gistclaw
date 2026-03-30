@@ -255,18 +255,32 @@ func TestAuthLoginAPIRejectsInvalidPassword(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	h.rawServer.ServeHTTP(rr, req)
 
-	if rr.Code != http.StatusUnauthorized {
-		t.Fatalf("expected 401, got %d body=%s", rr.Code, rr.Body.String())
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rr.Code, rr.Body.String())
 	}
 
 	var resp struct {
-		Message string `json:"message"`
+		Authenticated bool   `json:"authenticated"`
+		Next          string `json:"next"`
+		Message       string `json:"message"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
+	if resp.Authenticated {
+		t.Fatal("expected unauthenticated response")
+	}
 	if resp.Message == "" {
 		t.Fatal("expected error message")
+	}
+	if resp.Next != "" {
+		t.Fatalf("expected empty next on login rejection, got %q", resp.Next)
+	}
+	if findCookie(rr.Result().Cookies(), sessionCookieName) != nil {
+		t.Fatal("expected no session cookie on login rejection")
+	}
+	if findCookie(rr.Result().Cookies(), deviceCookieName) != nil {
+		t.Fatal("expected no device cookie on login rejection")
 	}
 }
 

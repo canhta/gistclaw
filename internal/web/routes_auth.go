@@ -87,8 +87,10 @@ func loginFailureMessage(err error) string {
 	switch {
 	case errors.Is(err, authpkg.ErrInvalidPassword):
 		return "Password did not match. Try again."
+	case errors.Is(err, authpkg.ErrPasswordRequired):
+		return "Enter the browser password."
 	case errors.Is(err, authpkg.ErrPasswordNotSet):
-		return ""
+		return "Set the browser password from the local CLI before signing in."
 	case errors.Is(err, authpkg.ErrDeviceBlocked):
 		return "This device has been blocked. Use another authorized device or reset access locally with the CLI."
 	default:

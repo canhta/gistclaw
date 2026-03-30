@@ -8,7 +8,8 @@ export interface AuthSessionResponse {
 
 export interface AuthLoginResponse {
 	authenticated: boolean;
-	next: string;
+	next?: string;
+	message?: string;
 }
 
 export interface BootstrapProjectResponse {

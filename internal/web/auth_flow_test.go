@@ -239,8 +239,21 @@ func TestAuthPasswordChangeRotatesBrowserPassword(t *testing.T) {
 	oldLoginReq := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/login", strings.NewReader(`{"password":"secret-pass"}`))
 	oldLoginReq.Header.Set("Content-Type", "application/json")
 	h.rawServer.ServeHTTP(oldLoginResp, oldLoginReq)
-	if oldLoginResp.Code != http.StatusUnauthorized {
-		t.Fatalf("expected old password to fail with 401, got %d body=%s", oldLoginResp.Code, oldLoginResp.Body.String())
+	if oldLoginResp.Code != http.StatusOK {
+		t.Fatalf("expected old password rejection to stay in-band, got %d body=%s", oldLoginResp.Code, oldLoginResp.Body.String())
+	}
+	var oldLoginBody struct {
+		Authenticated bool   `json:"authenticated"`
+		Message       string `json:"message"`
+	}
+	if err := json.Unmarshal(oldLoginResp.Body.Bytes(), &oldLoginBody); err != nil {
+		t.Fatalf("decode old password response: %v", err)
+	}
+	if oldLoginBody.Authenticated {
+		t.Fatal("expected old password response to remain unauthenticated")
+	}
+	if oldLoginBody.Message == "" {
+		t.Fatal("expected old password response message")
 	}
 
 	newLoginResp := httptest.NewRecorder()

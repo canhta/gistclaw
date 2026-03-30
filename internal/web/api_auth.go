@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -24,7 +25,8 @@ type authLoginRequest struct {
 
 type authLoginResponse struct {
 	Authenticated bool   `json:"authenticated"`
-	Next          string `json:"next"`
+	Next          string `json:"next,omitempty"`
+	Message       string `json:"message,omitempty"`
 }
 
 type authLogoutResponse struct {
@@ -76,7 +78,14 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		if strings.TrimSpace(message) == "" {
 			message = "Unable to sign in right now."
 		}
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": message})
+		if authFailureIsUserInput(err) {
+			writeJSON(w, http.StatusOK, authLoginResponse{
+				Authenticated: false,
+				Message:       message,
+			})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"message": message})
 		return
 	}
 
@@ -85,6 +94,21 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 		Authenticated: true,
 		Next:          safeRedirectPath(req.Next, s.defaultEntryPath()),
 	})
+}
+
+func authFailureIsUserInput(err error) bool {
+	switch {
+	case errors.Is(err, authpkg.ErrInvalidPassword):
+		return true
+	case errors.Is(err, authpkg.ErrPasswordRequired):
+		return true
+	case errors.Is(err, authpkg.ErrPasswordNotSet):
+		return true
+	case errors.Is(err, authpkg.ErrDeviceBlocked):
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {

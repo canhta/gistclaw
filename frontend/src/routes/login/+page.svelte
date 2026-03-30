@@ -51,6 +51,15 @@
 				})
 			});
 
+			if (!result.authenticated) {
+				errorMessage = result.message ?? 'Unable to sign in right now. Try again.';
+				return;
+			}
+			if (!result.next) {
+				errorMessage = 'Unable to sign in right now. Try again.';
+				return;
+			}
+
 			// eslint-disable-next-line svelte/no-navigation-without-resolve
 			await goto(result.next, { replaceState: true, invalidateAll: true });
 		} catch (error) {
