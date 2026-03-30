@@ -146,6 +146,89 @@ describe('Update page', () => {
 		expect(body).toContain('journalctl -u gistclaw -n 100 --no-pager');
 	});
 
+	it('renders fallback operator commands instead of guidance-only empty states', () => {
+		const data = {
+			...baseData,
+			update: {
+				...baseData.update,
+				notice: 'Maintenance status source is not wired into this daemon.',
+				install: {
+					config_path: 'Unavailable',
+					state_dir: 'Unavailable',
+					database_dir: 'Unavailable',
+					storage_root: 'Unavailable',
+					binary_path: 'Unavailable',
+					working_directory: 'Unavailable',
+					service_unit_path: 'Unavailable'
+				},
+				service: {
+					restart_policy: 'unknown',
+					unit_preview: 'Unavailable'
+				},
+				commands: {
+					run_update: [
+						{
+							id: 'path-version',
+							label: 'Binary on PATH',
+							detail: 'Confirm a gistclaw binary is available before applying an update.',
+							command: 'gistclaw version'
+						},
+						{
+							id: 'ubuntu-service-unit',
+							label: 'Ubuntu service unit',
+							detail:
+								'Inspect the shipped systemd unit when this machine uses the Ubuntu install path.',
+							command: 'systemctl cat gistclaw --no-pager'
+						},
+						{
+							id: 'homebrew-service-info',
+							label: 'Homebrew service info',
+							detail:
+								'Inspect the managed Homebrew service when this machine uses the macOS install path.',
+							command: 'brew services info gistclaw'
+						}
+					],
+					restart_report: [
+						{
+							id: 'ubuntu-status',
+							label: 'Ubuntu service status',
+							detail: 'Verify the systemd service came back cleanly after the restart.',
+							command: 'systemctl status gistclaw --no-pager'
+						},
+						{
+							id: 'homebrew-status',
+							label: 'Homebrew service info',
+							detail: 'Verify the Homebrew service state after the restart.',
+							command: 'brew services info gistclaw'
+						},
+						{
+							id: 'ubuntu-inspect',
+							label: 'Ubuntu runtime inspect',
+							detail: 'Inspect the shipped Ubuntu config path after the restart.',
+							command: 'gistclaw inspect status --config /etc/gistclaw/config.yaml'
+						}
+					]
+				}
+			}
+		};
+		const { body } = render(UpdatePage, { props: { data } });
+		expect(body).toContain('Maintenance status source is not wired into this daemon.');
+		expect(body).toContain('Binary on PATH');
+		expect(body).toContain('Ubuntu service unit');
+		expect(body).toContain('brew services info gistclaw');
+		expect(body).not.toContain(
+			'Operator commands will appear here when the daemon can report its install paths.'
+		);
+
+		const restartData = { ...data, currentSearch: 'tab=restart-report' };
+		const { body: restartBody } = render(UpdatePage, { props: { data: restartData } });
+		expect(restartBody).toContain('Ubuntu service status');
+		expect(restartBody).toContain('gistclaw inspect status --config /etc/gistclaw/config.yaml');
+		expect(restartBody).not.toContain(
+			'Verification commands will appear here when the daemon can report its runtime'
+		);
+	});
+
 	it('renders a load error panel instead of fake fallback values', () => {
 		const data = {
 			...baseData,

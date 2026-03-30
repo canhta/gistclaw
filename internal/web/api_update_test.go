@@ -189,8 +189,14 @@ func TestUpdateStatusReturnsFallbackWhenSourceMissing(t *testing.T) {
 			UptimeLabel string `json:"uptime_label"`
 		} `json:"runtime"`
 		Commands struct {
-			RunUpdate     []struct{} `json:"run_update"`
-			RestartReport []struct{} `json:"restart_report"`
+			RunUpdate []struct {
+				Label   string `json:"label"`
+				Command string `json:"command"`
+			} `json:"run_update"`
+			RestartReport []struct {
+				Label   string `json:"label"`
+				Command string `json:"command"`
+			} `json:"restart_report"`
 		} `json:"commands"`
 		Guides struct {
 			ReleaseNotesURL string `json:"release_notes_url"`
@@ -209,8 +215,41 @@ func TestUpdateStatusReturnsFallbackWhenSourceMissing(t *testing.T) {
 	if resp.Runtime.UptimeLabel != "Unavailable" {
 		t.Fatalf("unexpected fallback runtime: %+v", resp.Runtime)
 	}
-	if len(resp.Commands.RunUpdate) != 0 || len(resp.Commands.RestartReport) != 0 {
-		t.Fatalf("expected empty fallback commands, got %+v", resp.Commands)
+	if len(resp.Commands.RunUpdate) != 5 {
+		t.Fatalf("expected fallback run update commands, got %+v", resp.Commands.RunUpdate)
+	}
+	if resp.Commands.RunUpdate[0].Label != "Binary on PATH" || resp.Commands.RunUpdate[0].Command != "gistclaw version" {
+		t.Fatalf("unexpected first fallback run update command: %+v", resp.Commands.RunUpdate[0])
+	}
+	if resp.Commands.RunUpdate[1].Command != "systemctl cat gistclaw --no-pager" {
+		t.Fatalf("unexpected Ubuntu fallback service command: %+v", resp.Commands.RunUpdate[1])
+	}
+	if resp.Commands.RunUpdate[2].Command != "brew services info gistclaw" {
+		t.Fatalf("unexpected Homebrew fallback service command: %+v", resp.Commands.RunUpdate[2])
+	}
+	if resp.Commands.RunUpdate[3].Command != "sudo systemctl restart gistclaw" {
+		t.Fatalf("unexpected Ubuntu fallback restart command: %+v", resp.Commands.RunUpdate[3])
+	}
+	if resp.Commands.RunUpdate[4].Command != "brew services restart gistclaw" {
+		t.Fatalf("unexpected Homebrew fallback restart command: %+v", resp.Commands.RunUpdate[4])
+	}
+	if len(resp.Commands.RestartReport) != 5 {
+		t.Fatalf("expected fallback restart report commands, got %+v", resp.Commands.RestartReport)
+	}
+	if resp.Commands.RestartReport[0].Command != "systemctl status gistclaw --no-pager" {
+		t.Fatalf("unexpected Ubuntu fallback status command: %+v", resp.Commands.RestartReport[0])
+	}
+	if resp.Commands.RestartReport[1].Command != "brew services info gistclaw" {
+		t.Fatalf("unexpected Homebrew fallback status command: %+v", resp.Commands.RestartReport[1])
+	}
+	if resp.Commands.RestartReport[2].Command != "journalctl -u gistclaw -n 100 --no-pager" {
+		t.Fatalf("unexpected fallback journal command: %+v", resp.Commands.RestartReport[2])
+	}
+	if resp.Commands.RestartReport[3].Command != "gistclaw inspect status --config /etc/gistclaw/config.yaml" {
+		t.Fatalf("unexpected Ubuntu fallback inspect command: %+v", resp.Commands.RestartReport[3])
+	}
+	if resp.Commands.RestartReport[4].Command != "gistclaw inspect status --config /opt/homebrew/etc/gistclaw/config.yaml" {
+		t.Fatalf("unexpected Homebrew fallback inspect command: %+v", resp.Commands.RestartReport[4])
 	}
 	if resp.Guides.ReleaseNotesURL != "https://github.com/canhta/gistclaw/releases" {
 		t.Fatalf("unexpected fallback guides: %+v", resp.Guides)

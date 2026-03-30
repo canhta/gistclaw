@@ -51,6 +51,12 @@
 	const updateNotice = $derived(data.updateLoadError || update?.notice || '');
 	const runUpdateCommands = $derived(update?.commands.run_update ?? []);
 	const restartReportCommands = $derived(update?.commands.restart_report ?? []);
+	const updateUsesFallbackCommands = $derived(
+		update !== null &&
+			update.notice !== undefined &&
+			update.notice !== '' &&
+			update.install.config_path === 'Unavailable'
+	);
 </script>
 
 <svelte:head>
@@ -194,10 +200,17 @@
 
 					<section class="gc-panel-soft px-5 py-5">
 						<p class="gc-stamp text-[var(--gc-ink-3)]">Operator commands</p>
-						<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-							Use the current install paths to inspect the binary, confirm the active service unit,
-							and restart the daemon without leaving the control deck.
-						</p>
+						{#if updateUsesFallbackCommands}
+							<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+								The daemon could not report install metadata, so this board falls back to the
+								shipped Ubuntu and Homebrew operator paths.
+							</p>
+						{:else}
+							<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+								Use the current install paths to inspect the binary, confirm the active service
+								unit, and restart the daemon without leaving the control deck.
+							</p>
+						{/if}
 
 						{#if runUpdateCommands.length === 0}
 							<div class="mt-5 border border-[var(--gc-border)] px-4 py-4">
@@ -261,10 +274,17 @@
 					<div class="grid gap-4">
 						<section class="gc-panel-soft px-5 py-5">
 							<p class="gc-stamp text-[var(--gc-ink-3)]">Verification commands</p>
-							<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-								Run these checks after the restart to confirm the daemon, journal, and storage are
-								back in a healthy state.
-							</p>
+							{#if updateUsesFallbackCommands}
+								<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+									The daemon could not report runtime metadata, so these checks cover the shipped
+									Ubuntu and Homebrew verification paths.
+								</p>
+							{:else}
+								<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
+									Run these checks after the restart to confirm the daemon, journal, and storage are
+									back in a healthy state.
+								</p>
+							{/if}
 
 							{#if restartReportCommands.length === 0}
 								<div class="mt-5 border border-[var(--gc-border)] px-4 py-4">
