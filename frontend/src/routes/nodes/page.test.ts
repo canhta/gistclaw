@@ -9,6 +9,7 @@ const baseData = {
 	onboarding: null,
 	currentPath: '/nodes',
 	currentSearch: '',
+	nodesLoadError: '',
 	nodes: {
 		summary: {
 			connectors: 2,
@@ -125,16 +126,15 @@ describe('Nodes page', () => {
 		expect(body).toContain('app_action');
 	});
 
-	it('renders the fallback notice without hiding the nodes board', () => {
+	it('renders a load error panel when node inventory is unavailable', () => {
 		const data = {
 			...baseData,
-			nodes: {
-				...baseData.nodes,
-				notice: 'Node inventory source is not wired into this daemon.'
-			}
+			nodes: null,
+			nodesLoadError: 'Node inventory could not be loaded. Reload to retry.'
 		};
 		const { body } = render(NodesPage, { props: { data } });
-		expect(body).toContain('Node inventory source is not wired into this daemon.');
-		expect(body).toContain('Configured connector inventory');
+		expect(body).toContain('Node inventory could not be loaded. Reload to retry.');
+		expect(body).toContain('Nodes board unavailable');
+		expect(body).not.toContain('Configured connector inventory');
 	});
 });

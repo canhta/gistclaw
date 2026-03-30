@@ -71,7 +71,7 @@ describe('nodes load', () => {
 		expect(result.nodes.capabilities[0].name).toBe('connector_send');
 	});
 
-	it('returns a safe fallback when the nodes request fails', async () => {
+	it('returns a load error when the nodes request fails', async () => {
 		const fetcher = vi.fn<typeof fetch>(async () => {
 			throw new Error('boom');
 		});
@@ -79,13 +79,10 @@ describe('nodes load', () => {
 		const result = await load(makeLoadEvent(fetcher));
 
 		if (!result) {
-			throw new Error('expected nodes load to return fallback data');
+			throw new Error('expected nodes load to return error data');
 		}
 
-		expect(result.nodes.notice).toBe('Node inventory could not be loaded. Reload to retry.');
-		expect(result.nodes.summary.connectors).toBe(0);
-		expect(result.nodes.connectors).toEqual([]);
-		expect(result.nodes.runs).toEqual([]);
-		expect(result.nodes.capabilities).toEqual([]);
+		expect(result.nodes).toBeNull();
+		expect(result.nodesLoadError).toBe('Node inventory could not be loaded. Reload to retry.');
 	});
 });

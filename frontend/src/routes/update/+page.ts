@@ -1,14 +1,16 @@
-import { fallbackUpdateStatus, loadUpdateStatus } from '$lib/update/load';
+import { loadUpdateStatus } from '$lib/update/load';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ fetch }) => {
 	try {
 		return {
-			update: await loadUpdateStatus(fetch)
+			update: await loadUpdateStatus(fetch),
+			updateLoadError: ''
 		};
 	} catch {
 		return {
-			update: fallbackUpdateStatus()
+			update: null,
+			updateLoadError: 'Update status could not be loaded. Reload to retry.'
 		};
 	}
 };

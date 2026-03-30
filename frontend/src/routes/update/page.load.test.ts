@@ -100,7 +100,7 @@ describe('update load', () => {
 		expect(result.update.commands.restart_report[0]?.label).toBe('Service status');
 	});
 
-	it('returns a safe fallback when the update request fails', async () => {
+	it('returns a load error when the update request fails', async () => {
 		const fetcher = vi.fn<typeof fetch>(async () => {
 			throw new Error('boom');
 		});
@@ -108,16 +108,10 @@ describe('update load', () => {
 		const result = await load(makeLoadEvent(fetcher));
 
 		if (!result) {
-			throw new Error('expected update load to return fallback data');
+			throw new Error('expected update load to return error data');
 		}
 
-		expect(result.update.notice).toBe('Update status could not be loaded. Reload to retry.');
-		expect(result.update.release.version).toBe('unknown');
-		expect(result.update.runtime.uptime_label).toBe('Unavailable');
-		expect(result.update.commands.run_update).toEqual([]);
-		expect(result.update.commands.restart_report).toEqual([]);
-		expect(result.update.guides.release_notes_url).toBe(
-			'https://github.com/canhta/gistclaw/releases'
-		);
+		expect(result.update).toBeNull();
+		expect(result.updateLoadError).toBe('Update status could not be loaded. Reload to retry.');
 	});
 });

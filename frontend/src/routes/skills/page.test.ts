@@ -9,6 +9,7 @@ const baseData = {
 	onboarding: null,
 	currentPath: '/skills',
 	currentSearch: '',
+	skillsLoadError: '',
 	skills: {
 		summary: {
 			shipped_surfaces: 6,
@@ -154,16 +155,15 @@ describe('Skills page', () => {
 		expect(body).toContain('missing');
 	});
 
-	it('renders the fallback notice without hiding the skills board', () => {
+	it('renders a load error panel when skills status is unavailable', () => {
 		const data = {
 			...baseData,
-			skills: {
-				...baseData.skills,
-				notice: 'Extension status source is not wired into this daemon.'
-			}
+			skills: null,
+			skillsLoadError: 'Skills status could not be loaded. Reload to retry.'
 		};
 		const { body } = render(SkillsPage, { props: { data } });
-		expect(body).toContain('Extension status source is not wired into this daemon.');
-		expect(body).toContain('Configured extension inventory');
+		expect(body).toContain('Skills status could not be loaded. Reload to retry.');
+		expect(body).toContain('Skills board unavailable');
+		expect(body).not.toContain('Configured extension inventory');
 	});
 });

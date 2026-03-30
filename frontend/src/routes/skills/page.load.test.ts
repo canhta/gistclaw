@@ -61,7 +61,7 @@ describe('skills load', () => {
 		expect(result.skills.tools[0].name).toBe('connector_send');
 	});
 
-	it('returns a safe fallback when the skills request fails', async () => {
+	it('returns a load error when the skills request fails', async () => {
 		const fetcher = vi.fn<typeof fetch>(async () => {
 			throw new Error('boom');
 		});
@@ -69,12 +69,10 @@ describe('skills load', () => {
 		const result = await load(makeLoadEvent(fetcher));
 
 		if (!result) {
-			throw new Error('expected skills load to return fallback data');
+			throw new Error('expected skills load to return error data');
 		}
 
-		expect(result.skills.notice).toBe('Skills status could not be loaded. Reload to retry.');
-		expect(result.skills.summary.shipped_surfaces).toBe(0);
-		expect(result.skills.surfaces).toEqual([]);
-		expect(result.skills.tools).toEqual([]);
+		expect(result.skills).toBeNull();
+		expect(result.skillsLoadError).toBe('Skills status could not be loaded. Reload to retry.');
 	});
 });

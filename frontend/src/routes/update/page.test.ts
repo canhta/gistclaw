@@ -9,6 +9,7 @@ const baseData = {
 	onboarding: null,
 	currentPath: '/update',
 	currentSearch: '',
+	updateLoadError: '',
 	update: {
 		release: {
 			version: 'v1.2.3',
@@ -145,16 +146,15 @@ describe('Update page', () => {
 		expect(body).toContain('journalctl -u gistclaw -n 100 --no-pager');
 	});
 
-	it('renders the fallback notice without hiding the update board', () => {
+	it('renders a load error panel instead of fake fallback values', () => {
 		const data = {
 			...baseData,
-			update: {
-				...baseData.update,
-				notice: 'Maintenance status source is not wired into this daemon.'
-			}
+			update: null,
+			updateLoadError: 'Update status could not be loaded. Reload to retry.'
 		};
 		const { body } = render(UpdatePage, { props: { data } });
-		expect(body).toContain('Maintenance status source is not wired into this daemon.');
-		expect(body).toContain('Run the shipped update path');
+		expect(body).toContain('Update status could not be loaded. Reload to retry.');
+		expect(body).toContain('Update board unavailable');
+		expect(body).not.toContain('Runtime Uptime');
 	});
 });
