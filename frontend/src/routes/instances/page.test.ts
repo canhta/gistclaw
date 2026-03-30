@@ -1,9 +1,9 @@
 import { render } from 'svelte/server';
 import { describe, expect, it } from 'vitest';
-import type { InstancePresenceData } from '$lib/instances/presence';
+import type { InstancesResponse } from '$lib/types/api';
 import InstancesPage from './+page.svelte';
 
-const baseInstances: InstancePresenceData = {
+const baseInstances: InstancesResponse = {
 	summary: {
 		front_lane_count: 1,
 		specialist_lane_count: 1,
@@ -39,9 +39,9 @@ const baseInstances: InstancePresenceData = {
 	connectors: [
 		{
 			connector_id: 'telegram',
-			state: 'active',
-			state_label: 'Active',
-			state_class: 'is-success',
+			state: 'healthy',
+			state_label: 'Healthy',
+			state_class: 'is-active',
 			summary: 'Presence beacons healthy',
 			checked_at_label: '1 min ago',
 			restart_suggested: false,
@@ -96,6 +96,7 @@ describe('Instances page', () => {
 	it('renders runtime presence board by default', () => {
 		const { body } = render(InstancesPage, { props: { data: baseData } });
 		expect(body).toContain('Runtime presence board');
+		expect(body).toContain('inventory feed');
 		expect(body).toContain('assistant');
 		expect(body).toContain('reviewer');
 		expect(body).toContain('Review the repo');
@@ -108,6 +109,7 @@ describe('Instances page', () => {
 		const data = { ...baseData, currentSearch: 'tab=details' };
 		const { body } = render(InstancesPage, { props: { data } });
 		expect(body).toContain('Source surfaces');
+		expect(body).toContain('instance inventory API');
 		expect(body).toContain('1 active run');
 		expect(body).toContain('2');
 		expect(body).toContain('Chat');

@@ -86,9 +86,9 @@
 					<p class="gc-stamp text-[var(--gc-ink-3)]">PRESENCE</p>
 					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Runtime presence board</h2>
 					<p class="gc-copy mt-3 max-w-2xl text-[var(--gc-ink-2)]">
-						OpenClaw treats presence as a live operator board. GistClaw does not ship a dedicated
-						instance inventory endpoint yet, so this page composes the current work lanes and live
-						connector beacons the runtime already exposes.
+						OpenClaw treats presence as a live operator board. GistClaw now exposes a dedicated
+						inventory feed that merges active work lanes with the connector beacons the daemon
+						already tracks.
 					</p>
 
 					{#if lanes.length === 0 && connectors.length === 0}
@@ -171,8 +171,9 @@
 					<p class="gc-stamp text-[var(--gc-ink-3)]">DETAILS</p>
 					<h2 class="gc-panel-title mt-3 text-[var(--gc-ink)]">Source surfaces</h2>
 					<p class="gc-copy mt-3 text-[var(--gc-ink-2)]">
-						Instances stays honest about its inputs. Every value on this page comes from shipped
-						work and conversation APIs rather than a fake frontend-only inventory layer.
+						Instances stays honest about its inputs. Every value on this page comes through the
+						instance inventory API, which is assembled from the shipped work, session, and connector
+						health seams.
 					</p>
 
 					<div class="mt-5 grid gap-3 md:grid-cols-3">

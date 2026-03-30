@@ -110,6 +110,56 @@ export interface WorkIndexResponse {
 	clusters: WorkClusterResponse[];
 }
 
+export interface InstancesSummaryResponse {
+	front_lane_count: number;
+	specialist_lane_count: number;
+	live_connector_count: number;
+	pending_delivery_count: number;
+}
+
+export interface InstancesLaneResponse {
+	id: string;
+	kind: 'front' | 'specialist';
+	agent_id: string;
+	objective: string;
+	status: string;
+	status_label: string;
+	status_class: string;
+	model_display: string;
+	token_summary: string;
+	last_activity_short: string;
+}
+
+export interface InstancesConnectorResponse {
+	connector_id: string;
+	state: string;
+	state_label: string;
+	state_class: string;
+	summary: string;
+	checked_at_label?: string;
+	restart_suggested: boolean;
+	pending_count: number;
+	retrying_count: number;
+	terminal_count: number;
+}
+
+export interface InstancesSourcesResponse {
+	queue_headline: string;
+	root_runs: number;
+	active_runs: number;
+	needs_approval_runs: number;
+	session_count: number;
+	connector_count: number;
+	terminal_deliveries: number;
+}
+
+export interface InstancesResponse {
+	summary: InstancesSummaryResponse;
+	lanes: InstancesLaneResponse[];
+	connectors: InstancesConnectorResponse[];
+	sources: InstancesSourcesResponse;
+}
+
 export interface WorkGraphNodeResponse {
 	id: string;
 	short_id: string;

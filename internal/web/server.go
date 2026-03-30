@@ -165,6 +165,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
 	s.mux.HandleFunc("GET /api/bootstrap", s.handleBootstrap)
 	s.mux.HandleFunc("GET /api/onboarding", s.handleOnboardingAPI)
+	s.mux.HandleFunc("GET /api/instances", s.handleInstancesStatus)
 	s.mux.Handle("POST /api/onboarding/project", s.adminAuth(http.HandlerFunc(s.handleOnboardingProjectAPI)))
 	s.mux.Handle("POST /api/onboarding/preview", s.adminAuth(http.HandlerFunc(s.handleOnboardingPreviewAPI)))
 	s.mux.HandleFunc("GET /api/work", s.handleWorkIndex)
