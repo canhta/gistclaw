@@ -39,15 +39,30 @@ type onboardingPreviewResponse struct {
 }
 
 type onboardingPreviewStatusView struct {
-	Available   bool   `json:"available"`
-	StatusLabel string `json:"status_label"`
-	Detail      string `json:"detail"`
+	Available   bool                          `json:"available"`
+	StatusLabel string                        `json:"status_label"`
+	Detail      string                        `json:"detail"`
+	Actions     []onboardingPreviewActionView `json:"actions"`
+	Checks      []onboardingPreviewCheckView  `json:"checks"`
 }
 
 type onboardingPreviewState struct {
 	onboardingPreviewStatusView
 	frontAgentID string
 	httpStatus   int
+}
+
+type onboardingPreviewActionView struct {
+	ID    string `json:"id"`
+	Label string `json:"label"`
+	Href  string `json:"href"`
+}
+
+type onboardingPreviewCheckView struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Detail  string `json:"detail"`
+	Command string `json:"command"`
 }
 
 func (s *Server) handleOnboardingAPI(w http.ResponseWriter, r *http.Request) {
@@ -196,6 +211,8 @@ func (s *Server) resolveOnboardingPreviewState(ctx context.Context, project mode
 				Available:   false,
 				StatusLabel: "Bind a repo",
 				Detail:      "Bind a repo before starting a preview run.",
+				Actions:     []onboardingPreviewActionView{},
+				Checks:      []onboardingPreviewCheckView{},
 			},
 			httpStatus: http.StatusUnprocessableEntity,
 		}
@@ -206,6 +223,33 @@ func (s *Server) resolveOnboardingPreviewState(ctx context.Context, project mode
 				Available:   false,
 				StatusLabel: "Runtime unavailable",
 				Detail:      "Preview runs are unavailable right now. Check the runtime configuration and try again.",
+				Actions: []onboardingPreviewActionView{
+					{
+						ID:    "open-update",
+						Label: "Open Update board",
+						Href:  pageUpdate,
+					},
+				},
+				Checks: []onboardingPreviewCheckView{
+					{
+						ID:      "ubuntu-doctor",
+						Label:   "Ubuntu doctor",
+						Detail:  "Check the shipped Ubuntu config before retrying preview runs.",
+						Command: "gistclaw doctor --config /etc/gistclaw/config.yaml",
+					},
+					{
+						ID:      "ubuntu-inspect",
+						Label:   "Ubuntu runtime inspect",
+						Detail:  "Inspect the shipped Ubuntu daemon state from the CLI.",
+						Command: "gistclaw inspect status --config /etc/gistclaw/config.yaml",
+					},
+					{
+						ID:      "homebrew-inspect",
+						Label:   "Homebrew runtime inspect",
+						Detail:  "Inspect the shipped Homebrew daemon state from the CLI.",
+						Command: "gistclaw inspect status --config /opt/homebrew/etc/gistclaw/config.yaml",
+					},
+				},
 			},
 			httpStatus: http.StatusServiceUnavailable,
 		}
@@ -217,6 +261,14 @@ func (s *Server) resolveOnboardingPreviewState(ctx context.Context, project mode
 				Available:   false,
 				StatusLabel: "Team setup required",
 				Detail:      "Unable to resolve the front assistant for preview runs. Check the team configuration and try again.",
+				Actions: []onboardingPreviewActionView{
+					{
+						ID:    "open-agents-routing",
+						Label: "Open Agents & Routing",
+						Href:  pageConfig + "?tab=agents",
+					},
+				},
+				Checks: []onboardingPreviewCheckView{},
 			},
 			httpStatus: http.StatusServiceUnavailable,
 		}
@@ -226,6 +278,8 @@ func (s *Server) resolveOnboardingPreviewState(ctx context.Context, project mode
 			Available:   true,
 			StatusLabel: "Ready to launch",
 			Detail:      "Start a preview run with the active project and current front assistant.",
+			Actions:     []onboardingPreviewActionView{},
+			Checks:      []onboardingPreviewCheckView{},
 		},
 		frontAgentID: frontAgentID,
 		httpStatus:   http.StatusOK,

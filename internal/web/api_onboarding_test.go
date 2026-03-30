@@ -110,6 +110,14 @@ func TestOnboardingAPIReturnsBlockedPreviewStateWhenRuntimeUnavailable(t *testin
 			Available   bool   `json:"available"`
 			StatusLabel string `json:"status_label"`
 			Detail      string `json:"detail"`
+			Actions     []struct {
+				Label string `json:"label"`
+				Href  string `json:"href"`
+			} `json:"actions"`
+			Checks []struct {
+				Label   string `json:"label"`
+				Command string `json:"command"`
+			} `json:"checks"`
 		} `json:"preview"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
@@ -124,6 +132,21 @@ func TestOnboardingAPIReturnsBlockedPreviewStateWhenRuntimeUnavailable(t *testin
 	}
 	if resp.Preview.Detail != "Preview runs are unavailable right now. Check the runtime configuration and try again." {
 		t.Fatalf("unexpected preview detail: %+v", resp.Preview)
+	}
+	if len(resp.Preview.Actions) != 1 || resp.Preview.Actions[0].Label != "Open Update board" || resp.Preview.Actions[0].Href != "/update" {
+		t.Fatalf("unexpected preview actions: %+v", resp.Preview.Actions)
+	}
+	if len(resp.Preview.Checks) != 3 {
+		t.Fatalf("unexpected preview checks: %+v", resp.Preview.Checks)
+	}
+	if resp.Preview.Checks[0].Command != "gistclaw doctor --config /etc/gistclaw/config.yaml" {
+		t.Fatalf("unexpected first preview check: %+v", resp.Preview.Checks[0])
+	}
+	if resp.Preview.Checks[1].Command != "gistclaw inspect status --config /etc/gistclaw/config.yaml" {
+		t.Fatalf("unexpected second preview check: %+v", resp.Preview.Checks[1])
+	}
+	if resp.Preview.Checks[2].Command != "gistclaw inspect status --config /opt/homebrew/etc/gistclaw/config.yaml" {
+		t.Fatalf("unexpected third preview check: %+v", resp.Preview.Checks[2])
 	}
 }
 

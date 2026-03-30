@@ -2,7 +2,7 @@
 	import SurfaceLoadErrorPanel from '$lib/components/common/SurfaceLoadErrorPanel.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import SurfaceMetricCard from '$lib/components/common/SurfaceMetricCard.svelte';
-	import OperatorCommandCard from '$lib/components/update/OperatorCommandCard.svelte';
+	import OperatorCommandCard from '$lib/components/common/OperatorCommandCard.svelte';
 	import SectionTabs from '$lib/components/shell/SectionTabs.svelte';
 	import type { PageData } from './$types';
 

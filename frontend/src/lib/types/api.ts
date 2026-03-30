@@ -41,6 +41,19 @@ export interface OnboardingTaskCandidateResponse {
 	signal: string;
 }
 
+export interface OnboardingPreviewActionResponse {
+	id: string;
+	label: string;
+	href: string;
+}
+
+export interface OnboardingPreviewCheckResponse {
+	id: string;
+	label: string;
+	detail: string;
+	command: string;
+}
+
 export interface OnboardingResponse {
 	completed: boolean;
 	entry_href: string;
@@ -49,6 +62,8 @@ export interface OnboardingResponse {
 		available: boolean;
 		status_label: string;
 		detail: string;
+		actions: OnboardingPreviewActionResponse[];
+		checks: OnboardingPreviewCheckResponse[];
 	};
 	suggested_tasks: OnboardingTaskCandidateResponse[];
 }

@@ -23,7 +23,9 @@ describe('Onboarding page', () => {
 						preview: {
 							available: true,
 							status_label: 'Ready to launch',
-							detail: 'Start a preview run with the active project and current front assistant.'
+							detail: 'Start a preview run with the active project and current front assistant.',
+							actions: [],
+							checks: []
 						},
 						suggested_tasks: [
 							{
@@ -86,7 +88,28 @@ describe('Onboarding page', () => {
 							available: false,
 							status_label: 'Runtime unavailable',
 							detail:
-								'Preview runs are unavailable right now. Check the runtime configuration and try again.'
+								'Preview runs are unavailable right now. Check the runtime configuration and try again.',
+							actions: [
+								{
+									id: 'open-update',
+									label: 'Open Update board',
+									href: '/update'
+								}
+							],
+							checks: [
+								{
+									id: 'ubuntu-doctor',
+									label: 'Ubuntu doctor',
+									detail: 'Check the shipped Ubuntu config before retrying preview runs.',
+									command: 'gistclaw doctor --config /etc/gistclaw/config.yaml'
+								},
+								{
+									id: 'ubuntu-inspect',
+									label: 'Ubuntu runtime inspect',
+									detail: 'Inspect the shipped Ubuntu daemon state from the CLI.',
+									command: 'gistclaw inspect status --config /etc/gistclaw/config.yaml'
+								}
+							]
 						},
 						suggested_tasks: [
 							{
@@ -113,6 +136,9 @@ describe('Onboarding page', () => {
 
 		expect(body).toContain('Runtime unavailable');
 		expect(body).toContain('Preview unavailable');
+		expect(body).toContain('Preview recovery');
+		expect(body).toContain('Open Update board');
+		expect(body).toContain('gistclaw doctor --config /etc/gistclaw/config.yaml');
 		expect(body).toContain('disabled');
 	});
 });

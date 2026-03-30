@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
+	import OperatorCommandCard from '$lib/components/common/OperatorCommandCard.svelte';
 	import SurfaceActionButton from '$lib/components/common/SurfaceActionButton.svelte';
 	import SurfaceMessage from '$lib/components/common/SurfaceMessage.svelte';
 	import { HTTPError, requestJSON } from '$lib/http/client';
@@ -22,6 +23,8 @@
 	const activeProject = $derived(onboardingState.project);
 	const previewState = $derived(onboardingState.preview);
 	const starterAvailable = $derived(!onboardingState.completed && !!onboardingState.project);
+	const previewActions = $derived(previewState.actions ?? []);
+	const previewChecks = $derived(previewState.checks ?? []);
 
 	async function bindProject(source: 'starter' | 'existing_repo' | 'new_project'): Promise<void> {
 		errorMessage = '';
@@ -215,6 +218,42 @@
 					</p>
 				</div>
 			</div>
+
+			{#if previewActions.length > 0 || previewChecks.length > 0}
+				<div class="gc-panel-soft mt-6 px-4 py-4">
+					<div class="flex flex-wrap items-start justify-between gap-4">
+						<div class="min-w-0 flex-1">
+							<p class="gc-stamp">Preview recovery</p>
+							<p class="gc-copy mt-3 text-[var(--gc-text-secondary)]">
+								Use these checks to get preview runs back to a launchable state without leaving the
+								control deck.
+							</p>
+						</div>
+						{#if previewActions.length > 0}
+							<div class="flex flex-wrap gap-3">
+								{#each previewActions as action (action.id)}
+									<!-- eslint-disable-next-line svelte/no-navigation-without-resolve -->
+									<a href={action.href} class="gc-action gc-action-solid px-4 py-2">
+										{action.label}
+									</a>
+								{/each}
+							</div>
+						{/if}
+					</div>
+
+					{#if previewChecks.length > 0}
+						<div class="mt-5 grid gap-4">
+							{#each previewChecks as check (check.id)}
+								<OperatorCommandCard
+									label={check.label}
+									detail={check.detail}
+									command={check.command}
+								/>
+							{/each}
+						</div>
+					{/if}
+				</div>
+			{/if}
 
 			{#if activeProject}
 				<div class="gc-panel-soft mt-6 px-4 py-4">
